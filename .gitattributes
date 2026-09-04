@@ -1,0 +1,27 @@
+# Line endings, decided here rather than by whatever `core.autocrlf` each clone happens to have.
+#
+# The entry that matters is `*.sh`. Both smoke scripts run inside a Linux container, and a shebang
+# followed by a carriage return fails with `/usr/bin/env: 'bash\r': No such file or directory` — a
+# message that names the wrong thing and sends people looking for a missing interpreter. Git on
+# Windows will happily produce exactly that on checkout without this line.
+* text=auto
+
+*.sh          text eol=lf
+Dockerfile    text eol=lf
+*.Dockerfile  text eol=lf
+*.yml         text eol=lf
+*.yaml        text eol=lf
+*.sql         text eol=lf
+
+*.ps1         text eol=crlf
+
+# Binary: never normalised, never diffed as text. `v1-seeded.sqlite` is the migration test's
+# fixture — a real v1 database, so the upgrade path is tested against one that existed rather than
+# one written to pass.
+*.sqlite      binary
+*.png         binary
+*.jpg         binary
+*.ico         binary
+*.woff        binary
+*.woff2       binary
+*.pfx         binary

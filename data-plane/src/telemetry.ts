@@ -1,0 +1,175 @@
+import {
+  addBuckets,
+  bucketIndex,
+  emptyBuckets,
+  windowStartOf,
+  type Outcome,
+  type TelemetryReport,
+  type TelemetrySeries,
+} from "../../shared/telemetry.ts";
+
+/**
+ * Per-instance counters (plan G4). Everything here is bounded, and every bound has a defined
+ * behaviour past it with a counter attached — silent truncation would read as "that traffic did
+ * not happen".
+ *
+ * A request is attributed to the minute it **completed**, so a window that has closed can never
+ * reopen. That is what lets the control plane replace rather than add on flush, which in turn is
+ * what makes a re-sent report idempotent (review V1-01).
+ */
+export interface TelemetryOptions {
+  maxSeries: number;
+  maxWindowsPerReport: number;
+}
+
+interface Cell {
+  count: number;
+  durationMsSum: number;
+  durationMsMax: number;
+  bytesIn: number;
+  bytesOut: number;
+  buckets: number[];
+}
+
+export interface RecordInput {
+  resourceId: string | null;
+  subscriptionId: string | null;
+  outcome: Outcome;
+  status: number;
+  durationMs: number;
+  bytesIn: number;
+  bytesOut: number;
+  completedAtMs?: number;
+}
+
+const OVERFLOW = "overflow";
+
+export class InstanceTelemetry {
+  /** windowStart → seriesKey → cell */
+  private windows = new Map<string, Map<string, Cell>>();
+  requestsTotal = 0;
+  droppedSeries = 0;
+  droppedWindows = 0;
+  private batchSize: number;
+
+  constructor(private readonly options: TelemetryOptions) {
+    this.batchSize = options.maxWindowsPerReport;
+  }
+
+  /**
+   * Counts the request as soon as its status is decided, and returns a handle for the bytes,
+   * which are only known once the response body has finished streaming. Counting at completion
+   * instead would lose every response whose body a client never reads — and would break the
+   * identity the plan promises: requests sent = requestsTotal = the control plane's sum.
+   *
+   * `durationMs` therefore measures the gateway's own work up to the response, not the time
+   * spent streaming a body to a slow client.
+   */
+  record(input: RecordInput): { addBytesOut: (bytes: number) => void } {
+    this.requestsTotal++;
+    const windowStart = windowStartOf(input.completedAtMs ?? Date.now());
+    let window = this.windows.get(windowStart);
+    if (!window) {
+      window = new Map();
+      this.windows.set(windowStart, window);
+    }
+
+    const resourceId = input.resourceId ?? "";
+    const subscriptionId = input.subscriptionId ?? "";
+    let key = `${resourceId}|${subscriptionId}|${input.outcome}|${input.status}`;
+    if (!window.has(key) && this.seriesCount() >= this.options.maxSeries) {
+      // Fold rather than drop: the request still shows up in the totals, and the counter says
+      // how much detail was lost.
+      this.droppedSeries++;
+      key = `||${OVERFLOW}|0`;
+    }
+
+    let cell = window.get(key);
+    if (!cell) {
+      cell = { count: 0, durationMsSum: 0, durationMsMax: 0, bytesIn: 0, bytesOut: 0, buckets: emptyBuckets() };
+      window.set(key, cell);
+    }
+    cell.count++;
+    cell.durationMsSum += input.durationMs;
+    cell.durationMsMax = Math.max(cell.durationMsMax, input.durationMs);
+    cell.bytesIn += input.bytesIn;
+    cell.bytesOut += input.bytesOut;
+    cell.buckets[bucketIndex(input.durationMs)]!++;
+
+    const target = cell;
+    return {
+      addBytesOut: (bytes: number) => {
+        target.bytesOut += bytes;
+      },
+    };
+  }
+
+  private seriesCount(): number {
+    let total = 0;
+    for (const window of this.windows.values()) total += window.size;
+    return total;
+  }
+
+  /**
+   * Absolute values for every held window, oldest first. Nothing is cleared here: the instance
+   * clears only what the control plane acknowledges, and only once the window has closed.
+   */
+  snapshot(): TelemetryReport {
+    const ordered = [...this.windows.keys()].sort();
+    if (ordered.length > this.batchSize) {
+      // Past the cap the oldest windows are dropped for good — they would otherwise never be
+      // sent, and pretending they are still queued would be worse than counting them.
+      const excess = ordered.splice(0, ordered.length - this.batchSize);
+      for (const windowStart of excess) {
+        this.windows.delete(windowStart);
+        this.droppedWindows++;
+      }
+    }
+
+    return {
+      droppedSeries: this.droppedSeries,
+      droppedWindows: this.droppedWindows,
+      windows: ordered.map((windowStart) => ({
+        windowStart,
+        series: [...this.windows.get(windowStart)!.entries()].map(([key, cell]) => {
+          const [resourceId, subscriptionId, outcome, status] = key.split("|");
+          const series: TelemetrySeries = {
+            resourceId: resourceId!,
+            subscriptionId: subscriptionId!,
+            outcome: outcome as Outcome,
+            status: Number(status),
+            count: cell.count,
+            durationMsSum: cell.durationMsSum,
+            durationMsMax: cell.durationMsMax,
+            bytesIn: cell.bytesIn,
+            bytesOut: cell.bytesOut,
+            buckets: addBuckets(emptyBuckets(), cell.buckets),
+          };
+          return series;
+        }),
+      })),
+    };
+  }
+
+  /** Clears exactly the windows the control plane took responsibility for. */
+  clearAccepted(windowStarts: string[]): void {
+    for (const windowStart of windowStarts) this.windows.delete(windowStart);
+    this.batchSize = this.options.maxWindowsPerReport;
+  }
+
+  /** Backpressure with a defined direction: a 413 means send less, not retry the same thing. */
+  halveBatch(): number {
+    this.batchSize = Math.max(1, Math.floor(this.batchSize / 2));
+    return this.batchSize;
+  }
+
+  stats(): Record<string, number> {
+    return {
+      series: this.seriesCount(),
+      pendingWindows: this.windows.size,
+      droppedSeries: this.droppedSeries,
+      droppedWindows: this.droppedWindows,
+      batchSize: this.batchSize,
+    };
+  }
+}

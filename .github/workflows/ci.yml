@@ -1,0 +1,57 @@
+# Every push and every pull request. Three commands, in the order that fails fastest and cheapest:
+# a type error is found in seconds, a broken test in a minute.
+#
+# The performance guardrail is already inside `bun test` — it is one of the three ways the load
+# suite is used regularly. The *full* load harness is not here on purpose: a loopback load run on
+# shared CI hardware is too noisy to gate a pull request on, and treating it as a gate teaches
+# people to ignore it. `perf.yml` runs it on a schedule instead.
+name: ci
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+# A second push to the same branch cancels the first: the only run whose result anybody acts on is
+# the one for the current head.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # One version, pinned exactly, in five places: here, `images.yml`, `perf.yml`, and both
+  # Dockerfiles. docs/deployment.md §1 names all five, because they have to move together.
+  BUN_VERSION: "1.4.1"
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install
+        run: |
+          bun install --frozen-lockfile
+          cd ui && bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Control plane and gateway tests
+        run: bun test ./test
+        env:
+          NODE_ENV: test
+
+      - name: UI tests
+        run: bun run test:ui
+
+      # The SPA is served by the control-plane image, so a build failure here is a deployment
+      # failure found at the cheapest possible moment.
+      - name: Build the SPA
+        run: cd ui && bun run build

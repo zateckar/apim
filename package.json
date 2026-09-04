@@ -1,0 +1,26 @@
+{
+  "name": "apim",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "cp": "bun run control-plane/src/server.ts",
+    "dp": "bun run data-plane/src/server.ts",
+    "backend": "bun run tools/backend/server.ts",
+    "mcp": "bun run tools/mcp/server.ts",
+    "a2a": "bun run tools/a2a/agent.ts",
+    "seed": "bun run scripts/seed.ts",
+    "test": "bun test ./test && cd ui && bun test ./test",
+    "test:ui": "cd ui && bun test ./test",
+    "typecheck": "tsc --noEmit && cd ui && bun run typecheck",
+    "perf": "bun run tools/loadgen/index.ts",
+    "capacity": "bun run tools/capacity/index.ts",
+    "build:ui": "cd ui && bun install && bun run build",
+    "dev:ui": "cd ui && bun run dev",
+    "stack": "pwsh -File scripts/stack.ps1 -Up",
+    "demo": "pwsh -File scripts/demo.ps1"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.0",
+    "typescript": "^7.0.2"
+  }
+}

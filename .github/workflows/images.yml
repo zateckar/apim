@@ -1,0 +1,110 @@
+# Two images, built and pushed separately, because the two planes are separate programs that share
+# one document and nothing else. A gateway image that carried the control plane's SQLite code and
+# its SPA would be a gateway whose attack surface included both.
+#
+# The smoke test below is what makes this workflow worth having. Building an image nobody has
+# started proves that the COPY lines are spelled right and nothing else.
+name: images
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  workflow_dispatch:
+
+concurrency:
+  group: images-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io
+  BUN_VERSION: "1.4.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    permissions:
+      contents: read
+      packages: write
+      # Provenance attestations are signed with this. An image nobody can trace to a commit is an
+      # image nobody can decide about during an incident.
+      id-token: write
+      attestations: write
+
+    strategy:
+      # Both are attempted even when one fails: "the gateway image is broken" and "both images are
+      # broken" are different situations and the run should say which one this is.
+      fail-fast: false
+      matrix:
+        include:
+          - plane: control-plane
+            dockerfile: docker/control-plane.Dockerfile
+          - plane: data-plane
+            dockerfile: docker/data-plane.Dockerfile
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to the registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags and labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.plane }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=short
+
+      # Built for this runner's architecture first and loaded locally, so the smoke test runs
+      # against the image that is about to be published rather than against a rebuild of it.
+      - name: Build for the smoke test
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          load: true
+          tags: apim-${{ matrix.plane }}:smoke
+          cache-from: type=gha,scope=${{ matrix.plane }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.plane }}
+
+      - name: Smoke-test the control plane
+        if: matrix.plane == 'control-plane'
+        run: bash .github/scripts/smoke-control-plane.sh apim-control-plane:smoke
+
+      - name: Smoke-test the gateway
+        if: matrix.plane == 'data-plane'
+        run: bash .github/scripts/smoke-data-plane.sh apim-data-plane:smoke
+
+      - name: Build and push
+        id: push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
+          cache-from: type=gha,scope=${{ matrix.plane }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.plane }}
+
+      - name: Attest
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ github.repository }}/${{ matrix.plane }}
+          subject-digest: ${{ steps.push.outputs.digest }}
+          push-to-registry: true

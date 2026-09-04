@@ -1,0 +1,460 @@
+import { useState } from "react";
+import {
+  api,
+  type Meta,
+  type TrustAnchorCopy,
+  type TrustAnchorList,
+  type TrustAnchorPreview,
+  type TrustAnchorRow,
+} from "../api";
+import {
+  Card,
+  DangerZone,
+  EmptyState,
+  Field,
+  Notice,
+  Skeleton,
+  StatusChip,
+  Term,
+  useAction,
+  useAsync,
+} from "../components";
+import { ALLOWED, permitAdmin } from "../lib/capabilities";
+
+/**
+ * Certificate authorities, per environment (G4, plan §8).
+ *
+ * This is rung 1 of the TLS ladder and it is the one that should absorb most cases: a backend whose
+ * certificate chains to an authority registered here **verifies normally, with no exception**. The
+ * screen therefore says two things that are easy to get wrong and expensive to get wrong:
+ *
+ *  - **an anchor is not an exception.** It is never counted as one, and registering the authority
+ *    that signed your internal backends is what removes the need for exceptions rather than what
+ *    creates them.
+ *  - **it applies to every gateway in this environment**, at the next poll — not to one API, not to
+ *    one backend, and not to the next environment along the chain. Trusting a CA in PROD is a PROD
+ *    decision, so copying is an explicit act with a diff and a confirmation.
+ */
+
+export function TrustAnchors({
+  meta,
+  environment,
+  isAdmin,
+}: {
+  meta: Meta;
+  environment: string;
+  isAdmin: boolean;
+}) {
+  const permission = permitAdmin(isAdmin, "register or remove a certificate authority");
+  const anchors = useAsync(
+    () =>
+      isAdmin
+        ? api.get<TrustAnchorList>(`/api/trust/anchors?environment=${environment}`)
+        : Promise.resolve(null),
+    [environment, isAdmin],
+  );
+
+  if (!isAdmin) {
+    // `[P1-26]`: the screen is not hidden, and it names who can change what is on it.
+    return (
+      <EmptyState
+        title="Certificate authorities are managed by platform administrators"
+        detail={permission.reason!}
+        action={
+          <span className="muted small">
+            Deciding whose certificates a gateway verifies is an estate-wide decision, not an API's.
+          </span>
+        }
+      />
+    );
+  }
+
+  if (anchors.error) return <Notice kind="error">{anchors.error}</Notice>;
+  if (!anchors.data) return <Skeleton rows={5} />;
+  const items = anchors.data.items;
+  const expiring = items.filter((row) => row.live && row.expiresInDays <= 30);
+
+  return (
+    <>
+      {expiring.length > 0 && (
+        <Notice kind="warn">
+          {expiring.length} authorit{expiring.length === 1 ? "y expires" : "ies expire"} within 30
+          days. When one lapses, every backend whose certificate chains to it stops verifying —
+          register the replacement before that date rather than after.
+        </Notice>
+      )}
+
+      <Card
+        title={`Authorities trusted in ${environment.toUpperCase()}`}
+        hint={anchors.data.note}
+      >
+        {items.length === 0 ? (
+          <EmptyState
+            title="No internal authority registered here"
+            detail="Until one is, a backend presenting an internally-signed certificate fails verification, and the only way past it is a dated TLS exception per backend."
+            action={<span className="muted small">Register one below — it is the shorter path.</span>}
+          />
+        ) : (
+          <table>
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Subject</th>
+                <th>Issuer</th>
+                <th>Expires</th>
+                <th>Fingerprint</th>
+                <th>Also trusted in</th>
+                <th />
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <AnchorRow key={row.id} row={row} onChanged={anchors.reload} />
+              ))}
+            </tbody>
+          </table>
+        )}
+        <p className="muted small">
+          At most {anchors.data.maxAnchors} authorities per <Term name="environment" />. Each one is
+          a set of backends somebody has decided to believe, so the list is meant to be short.
+        </p>
+      </Card>
+
+      <Register environment={environment} onRegistered={anchors.reload} />
+      <CopyFrom meta={meta} environment={environment} onCopied={anchors.reload} />
+    </>
+  );
+}
+
+function AnchorRow({ row, onChanged }: { row: TrustAnchorRow; onChanged: () => void }) {
+  const action = useAction();
+
+  return (
+    <>
+      <tr className={row.expired ? "row-dim" : ""}>
+        <td>
+          <strong>{row.name}</strong>
+          <div className="muted small">
+            {row.addedBy} · {new Date(row.addedAt).toLocaleDateString()}
+            {row.selfSigned === false && " · not self-signed (an intermediate)"}
+            {row.keyAlgorithm && ` · ${row.keyAlgorithm}`}
+          </div>
+        </td>
+        <td className="small">{row.subject}</td>
+        <td className="small muted">{row.issuer}</td>
+        <td>
+          <StatusChip
+            chip={
+              row.expired
+                ? { label: "Expired", tone: "stop", title: `expired on ${row.notAfter}` }
+                : row.expiresInDays <= 30
+                  ? { label: `${row.expiresInDays} days`, tone: "warn", title: `expires on ${row.notAfter}` }
+                  : { label: `${row.expiresInDays} days`, tone: "live", title: `expires on ${row.notAfter}` }
+            }
+          />
+        </td>
+        <td className="mono small" title={row.thumbprint}>
+          {row.thumbprint.slice(0, 12)}…
+        </td>
+        <td>
+          {row.alsoLiveIn.length === 0 ? (
+            <span className="muted">only here</span>
+          ) : (
+            row.alsoLiveIn.map((other) => (
+              <span key={other} className="pill">
+                {other}
+              </span>
+            ))
+          )}
+        </td>
+        <td className="right">
+          <DangerZone
+            what={`Remove ${row.name}`}
+            name={row.name}
+            consequence={`Every gateway in ${row.environment.toUpperCase()} stops trusting it at the next poll, and any backend whose certificate chains to it fails verification from that moment.`}
+            permission={ALLOWED}
+            busy={action.busy}
+            error={action.error}
+            onConfirm={async () => {
+              const ok = await action.run(() => api.del(`/api/trust/anchors/${row.id}`));
+              if (ok) onChanged();
+            }}
+          />
+        </td>
+      </tr>
+    </>
+  );
+}
+
+/** Parse, look, then register. Nothing is stored by the preview, so nobody trusts blind. */
+function Register({ environment, onRegistered }: { environment: string; onRegistered: () => void }) {
+  const [pem, setPem] = useState("");
+  const [name, setName] = useState("");
+  const [preview, setPreview] = useState<TrustAnchorPreview | null>(null);
+  const previewAction = useAction();
+  const registerAction = useAction();
+
+  return (
+    <Card
+      title={`Register an authority for ${environment.toUpperCase()}`}
+      hint="Paste the certificate authority's certificate in PEM form. It is parsed and shown to you before anything is stored."
+    >
+      <Notice kind="error">{previewAction.error || registerAction.error}</Notice>
+      <Notice kind="ok">{registerAction.message}</Notice>
+
+      <div className="field">
+        <label htmlFor="anchor-pem">Certificate (PEM)</label>
+        <textarea
+          id="anchor-pem"
+          value={pem}
+          placeholder={"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}
+          onChange={(event) => {
+            setPem(event.target.value);
+            setPreview(null);
+          }}
+        />
+      </div>
+
+      {preview ? (
+        <>
+          <dl className="kv">
+            <dt>Subject</dt>
+            <dd>{preview.subject}</dd>
+            <dt>Issuer</dt>
+            <dd>{preview.issuer}</dd>
+            <dt>Valid until</dt>
+            <dd>
+              {preview.notAfter} ({preview.expiresInDays} days)
+            </dd>
+            <dt>Fingerprint</dt>
+            <dd className="mono">{preview.thumbprint}</dd>
+            <dt>Key</dt>
+            <dd>{preview.keyAlgorithm}</dd>
+            <dt>Kind</dt>
+            <dd>
+              {preview.ca ? "a certificate authority" : "not marked as an authority"}
+              {preview.selfSigned ? ", self-signed (a root)" : ", signed by another (an intermediate)"}
+            </dd>
+          </dl>
+          {!preview.ca && (
+            <Notice kind="warn">
+              This certificate is not marked as a certificate authority. Registering a server's own
+              certificate here trusts exactly that one server and nothing it signs — which is
+              usually not what was meant.
+            </Notice>
+          )}
+          <Field
+            label="Name it"
+            value={name}
+            onChange={setName}
+            placeholder="corp-internal-root"
+          />
+          <p className="muted small">
+            Lowercase letters, digits and hyphens. This is how the anchor is referred to everywhere
+            else, including when somebody removes it.
+          </p>
+          <button
+            disabled={registerAction.busy || name.trim().length < 2}
+            onClick={async () => {
+              const ok = await registerAction.run(
+                () => api.post("/api/trust/anchors", { environment, name, pem }),
+                `${name} is registered. Every gateway in ${environment.toUpperCase()} will trust it at its next poll.`,
+              );
+              if (ok) {
+                setPem("");
+                setName("");
+                setPreview(null);
+                onRegistered();
+              }
+            }}
+          >
+            Trust this authority in {environment.toUpperCase()}
+          </button>
+        </>
+      ) : (
+        <button
+          className="ghost"
+          disabled={previewAction.busy || pem.trim().length === 0}
+          onClick={async () => {
+            setPreview(null);
+            await previewAction.run(async () => {
+              setPreview(await api.post<TrustAnchorPreview>("/api/trust/anchors/preview", { pem }));
+            });
+          }}
+        >
+          Read this certificate
+        </button>
+      )}
+    </Card>
+  );
+}
+
+/**
+ * Copying to another environment is an explicit act with a diff and a confirmation, exactly as
+ * promoting a policy is: nothing about trust propagates along the chain on its own.
+ */
+function CopyFrom({
+  meta,
+  environment,
+  onCopied,
+}: {
+  meta: Meta;
+  environment: string;
+  onCopied: () => void;
+}) {
+  const others = meta.chain.filter((candidate) => candidate !== environment);
+  const [from, setFrom] = useState(others[0] ?? "");
+  const [chosen, setChosen] = useState<string[]>([]);
+  const [plan, setPlan] = useState<TrustAnchorCopy | null>(null);
+  const source = useAsync(
+    () => (from ? api.get<TrustAnchorList>(`/api/trust/anchors?environment=${from}`) : Promise.resolve(null)),
+    [from],
+  );
+  const action = useAction();
+
+  if (others.length === 0) return null;
+  const candidates = (source.data?.items ?? []).filter((row) => row.live);
+
+  return (
+    <Card
+      title="Copy an authority from another environment"
+      hint="Trusting a certificate authority in PROD is a PROD decision, so nothing arrives here by being promoted. This copies what you pick, after showing you what it would do."
+    >
+      <Notice kind="error">{action.error}</Notice>
+      <Notice kind="ok">{action.message}</Notice>
+
+      <div className="row wrap">
+        <div className="field">
+          <label htmlFor="copy-from">From</label>
+          <select
+            id="copy-from"
+            value={from}
+            onChange={(event) => {
+              setFrom(event.target.value);
+              setChosen([]);
+              setPlan(null);
+            }}
+          >
+            {others.map((candidate) => (
+              <option key={candidate} value={candidate}>
+                {candidate.toUpperCase()}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
+      {source.error ? (
+        // "Trusts nothing" and "could not be read" look identical as an empty list, and the first
+        // is the one somebody would act on by uploading a duplicate PEM.
+        <Notice kind="error">
+          {from.toUpperCase()}'s authorities could not be listed: {source.error}
+        </Notice>
+      ) : candidates.length === 0 ? (
+        <p className="muted small">{from.toUpperCase()} trusts no authorities of its own.</p>
+      ) : (
+        <ul className="plain">
+          {candidates.map((row) => (
+            <li key={row.id}>
+              <label className="check-inline">
+                <input
+                  type="checkbox"
+                  checked={chosen.includes(row.id)}
+                  onChange={(event) => {
+                    setPlan(null);
+                    setChosen(
+                      event.target.checked
+                        ? [...chosen, row.id]
+                        : chosen.filter((id) => id !== row.id),
+                    );
+                  }}
+                />
+                <strong>{row.name}</strong>
+                <span className="muted small">
+                  {row.subject} · expires in {row.expiresInDays} days
+                </span>
+              </label>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {plan && (
+        <>
+          {plan.copy.length > 0 && (
+            <Notice kind="warn">
+              {plan.copy.length} authorit{plan.copy.length === 1 ? "y" : "ies"} would become trusted
+              by every gateway in {environment.toUpperCase()}:{" "}
+              {plan.copy.map((entry) => entry.name).join(", ")}.
+            </Notice>
+          )}
+          {plan.skipped.length > 0 && (
+            <ul className="plain small muted">
+              {plan.skipped.map((entry) => (
+                <li key={entry.id}>
+                  {candidates.find((row) => row.id === entry.id)?.name ?? entry.id}: {entry.reason}
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
+      )}
+
+      <div className="inline">
+        <button
+          className="ghost"
+          disabled={action.busy || chosen.length === 0}
+          onClick={async () => {
+            await action.run(async () => {
+              setPlan(
+                await api.post<TrustAnchorCopy>("/api/trust/anchors/copy-from", {
+                  fromEnvironment: from,
+                  environment,
+                  ids: chosen,
+                }),
+              );
+            });
+          }}
+        >
+          Show me what this would do
+        </button>
+        <span className="action">
+          <button
+            disabled={action.busy || plan === null || plan.copy.length === 0}
+            title={
+              plan === null
+                ? "Read the plan first: copying trust is not something to do by accident."
+                : plan.copy.length === 0
+                  ? "Nothing would be copied."
+                  : undefined
+            }
+            onClick={async () => {
+              const ok = await action.run(
+                () =>
+                  api.post("/api/trust/anchors/copy-from", {
+                    fromEnvironment: from,
+                    environment,
+                    ids: chosen,
+                    dryRun: false,
+                  }),
+                `Copied into ${environment.toUpperCase()}. Every gateway there picks it up at its next poll.`,
+              );
+              if (ok) {
+                setPlan(null);
+                setChosen([]);
+                onCopied();
+              }
+            }}
+          >
+            Copy into {environment.toUpperCase()}
+          </button>
+          {plan === null && (
+            <span className="action-reason">
+              Read the plan first: copying trust is not something to do by accident.
+            </span>
+          )}
+        </span>
+      </div>
+    </Card>
+  );
+}

@@ -1,0 +1,36 @@
+{
+  "_comment": "TARGETS_FILE (design section 11). One entry per (environment, adapter); UNIQUE(environment, adapter) means an environment may hold several adapters but only one of each. v2 ships the 'standalone' adapter across the whole promotion chain; 'apim' and 'kafka' are out of scope. v4 adds config.gatewayUrls: where the playground may send a request in that environment (plan section 11). In a real deployment this is the F5 vhost, not an instance; two entries exist for dev so calls x instances is demonstrable by hand. An environment without it has no playground, and the portal says so.",
+  "targets": [
+    {
+      "environment": "dev",
+      "adapter": "standalone",
+      "enforce": true,
+      "paused": false,
+      "config": {
+        "note": "two instances, so calls x instances is visible (design section 5.7)",
+        "gatewayUrls": [
+          { "label": "dev-1", "url": "http://127.0.0.1:8081" },
+          { "label": "dev-2", "url": "http://127.0.0.1:8082" }
+        ]
+      }
+    },
+    {
+      "environment": "test",
+      "adapter": "standalone",
+      "enforce": true,
+      "paused": false,
+      "config": {
+        "gatewayUrls": [{ "label": "test-1", "url": "http://127.0.0.1:8083" }]
+      }
+    },
+    {
+      "environment": "prod",
+      "adapter": "standalone",
+      "enforce": true,
+      "paused": false,
+      "config": {
+        "gatewayUrls": [{ "label": "prod-1", "url": "http://127.0.0.1:8084" }]
+      }
+    }
+  ]
+}

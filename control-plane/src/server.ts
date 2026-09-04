@@ -1,0 +1,175 @@
+import { existsSync, statSync } from "node:fs";
+import { join, normalize, resolve, sep } from "node:path";
+import {
+  assertAuthConfig,
+  assertGatewayUrlsAllowed,
+  assertIssuerAllowed,
+  loadConfig,
+  type CpConfig,
+} from "./config.ts";
+import { ensureBootstrapAdmin } from "./auth-local.ts";
+import { loadOrCreateKek } from "./crypto.ts";
+import { openDb } from "./db.ts";
+import { startJobRunner } from "./jobs.ts";
+import { ensureDevDirectory } from "./principals.ts";
+import { QuotaService } from "./quota.ts";
+import { dispatch, Router, type App } from "./router.ts";
+import { TelemetryAggregator } from "./telemetry.ts";
+import { registerAdminRoutes } from "./api/admin.ts";
+import { registerAuthRoutes } from "./api/auth.ts";
+import { registerCatalogRoutes } from "./api/catalog.ts";
+import { registerDashboardRoutes } from "./api/dashboard.ts";
+import { registerFleetRoutes } from "./api/fleet.ts";
+import { registerGatewayRoutes } from "./api/gateway.ts";
+import { registerMarketRoutes } from "./api/market.ts";
+import { registerPlaygroundRoutes } from "./api/playground.ts";
+import { registerPolicyRoutes } from "./api/policy.ts";
+import { registerPromotionRoutes } from "./api/promotion.ts";
+import { registerResourceRoutes } from "./api/resources.ts";
+import { registerTelemetryRoutes } from "./api/telemetry.ts";
+import { registerTrustRoutes } from "./api/trust.ts";
+import { registerUserRoutes } from "./api/users.ts";
+
+export function createRouter(): Router {
+  const router = new Router();
+  registerGatewayRoutes(router);
+  registerAuthRoutes(router);
+  registerAdminRoutes(router);
+  registerUserRoutes(router);
+  registerFleetRoutes(router);
+  registerTelemetryRoutes(router);
+  registerResourceRoutes(router);
+  registerPromotionRoutes(router);
+  registerCatalogRoutes(router);
+  registerMarketRoutes(router);
+  registerPolicyRoutes(router);
+  registerPlaygroundRoutes(router);
+  registerDashboardRoutes(router);
+  registerTrustRoutes(router);
+  return router;
+}
+
+export function createApp(config: CpConfig): App {
+  const db = openDb(config.dbPath);
+  const kek = loadOrCreateKek(config.kekPath);
+  const telemetry = new TelemetryAggregator(db, config.maxRunsPerInstanceWindow);
+  const quota = new QuotaService(db, config.maxQuotaEntries);
+  const app: App = { db, config, kek, telemetry, quota };
+  syncTargets(app);
+  // The directory has to exist before anything can sign in, and both of these are idempotent and
+  // no-ops unless their provider is enabled — so `AUTH_PROVIDERS=dev` on an empty database is
+  // self-sufficient, and a `local` deployment comes up with exactly one account.
+  ensureDevDirectory(app);
+  return app;
+}
+
+/** TARGETS_FILE is the source of truth for which targets exist (design section 11). */
+function syncTargets(app: App): void {
+  for (const target of app.config.targets) {
+    const existing = app.db
+      .query<{ id: string }, [string, string]>(
+        "SELECT id FROM target WHERE environment = ? AND adapter = ?",
+      )
+      .get(target.environment, target.adapter);
+    if (existing) {
+      app.db.run("UPDATE target SET enforce = ?, paused = ?, config_json = ? WHERE id = ?", [
+        target.enforce ? 1 : 0,
+        target.paused ? 1 : 0,
+        JSON.stringify(target.config ?? {}),
+        existing.id,
+      ]);
+    } else {
+      app.db.run(
+        "INSERT INTO target (id, environment, adapter, config_json, enforce, paused) VALUES (?, ?, ?, ?, ?, ?)",
+        [
+          `tgt_${target.environment}_${target.adapter}`,
+          target.environment,
+          target.adapter,
+          JSON.stringify(target.config ?? {}),
+          target.enforce ? 1 : 0,
+          target.paused ? 1 : 0,
+        ],
+      );
+    }
+  }
+}
+
+/**
+ * Anything not here is served from `uiDist`, which answers `index.html` for an unknown path so the
+ * SPA can route it. `/auth` has to be on this list `[P2-04]`: without it `/auth/login` returns the
+ * SPA with a 200 and the sign-in button appears to do nothing at all.
+ */
+const API_PREFIXES = ["/api", "/auth", "/healthz", "/readyz"];
+
+function serveStatic(pathname: string, uiDist: string): Response {
+  const root = resolve(uiDist);
+  const requested = normalize(join(root, pathname === "/" ? "index.html" : pathname));
+  if (requested !== root && !requested.startsWith(root + sep)) {
+    return new Response("Forbidden", { status: 403 });
+  }
+  if (existsSync(requested) && statSync(requested).isFile()) {
+    return new Response(Bun.file(requested));
+  }
+  const index = join(root, "index.html");
+  if (existsSync(index)) return new Response(Bun.file(index));
+  return new Response(
+    `<!doctype html><meta charset="utf-8"><title>Integration Portal</title>
+     <body style="font-family:system-ui;max-width:40rem;margin:4rem auto;line-height:1.6">
+     <h1>UI is not built</h1>
+     <p>The control-plane API is running. Build the SPA with:</p>
+     <pre style="background:#f4f4f5;padding:1rem;border-radius:.5rem">bun run build:ui</pre>
+     <p>Or run it in dev mode with <code>bun run dev:ui</code> (http://localhost:5173).</p>
+     </body>`,
+    { status: 200, headers: { "content-type": "text/html; charset=utf-8" } },
+  );
+}
+
+export function startServer(app: App, router = createRouter()) {
+  const server = Bun.serve({
+    port: app.config.port,
+    idleTimeout: 60,
+    fetch: (req) => {
+      const url = new URL(req.url);
+      if (API_PREFIXES.some((p) => url.pathname === p || url.pathname.startsWith(p + "/"))) {
+        return dispatch(app, router, req);
+      }
+      if (req.method !== "GET") return new Response("Method Not Allowed", { status: 405 });
+      return serveStatic(url.pathname, app.config.uiDist);
+    },
+  });
+  return server;
+}
+
+if (import.meta.main) {
+  const config = loadConfig();
+  assertAuthConfig(config);
+  // The playground's targets and the identity provider are both admin configuration, so they are
+  // checked against the egress allowlist here — once, loudly — rather than on the request path
+  // (plan §11). Neither check touches the network: a control plane that would not start while
+  // Keycloak restarts is an availability coupling nobody asked for `[P1-15]`.
+  await assertGatewayUrlsAllowed(config);
+  await assertIssuerAllowed(config);
+  const app = createApp(config);
+  await ensureBootstrapAdmin(app);
+  const server = startServer(app);
+  startJobRunner(app);
+  app.telemetry.start(config.telemetryFlushIntervalSec * 1000);
+  app.quota.start(config.usageFlushIntervalSec * 1000);
+  console.log(
+    `[cp] control plane on http://localhost:${server.port} — db ${config.dbPath}, ` +
+      `environments ${config.promotionChain.join(",")}, UI from ${config.uiDist}, ` +
+      `sign-in ${config.authProviders.join("+")}` +
+      `${config.oidc ? ` (${config.oidc.issuer})` : ""}, ` +
+      `telemetry flush ${config.telemetryFlushIntervalSec}s / retain ${config.telemetryRetentionHours}h, ` +
+      `quota flush ${config.usageFlushIntervalSec}s (the quota RPO)`,
+  );
+  // Said once, loudly, on purpose: an operator reading a log should not have to infer that this
+  // process will hand out an administrator session to anybody who asks.
+  if (config.authProviders.includes("dev")) {
+    console.warn(
+      "[cp] the DEVELOPMENT SIGN-IN BYPASS is enabled: anybody who can reach this control plane " +
+        "can become any of its development users without a password. Never in a deployment that " +
+        "holds anything real.",
+    );
+  }
+}

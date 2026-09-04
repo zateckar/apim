@@ -1,0 +1,9 @@
+# Test discovery is scoped to this project's own suite.
+#
+# `existing-portal-example/` is a vendored copy of a separate application, kept as a design
+# reference. It carries 56 test files of its own, its own package.json and its own dependencies —
+# none of them installed here — so an unscoped `bun test` walks into it and dies on a missing
+# `zod` before reaching a single test of this project's. Scoping the root is the fix rather than
+# installing that application's dependencies, because its suite is not ours to keep green.
+[test]
+root = "test"

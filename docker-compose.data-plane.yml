@@ -1,0 +1,91 @@
+# One gateway, alone.
+#
+# This is the plane that carries traffic and holds nothing: no database, no volume worth backing up,
+# no state that is not derived from the config document it polls for. It scales horizontally, it is
+# disposable, and it keeps serving its last activated config through an unbounded control-plane
+# outage — which is why it deploys separately from the control plane rather than beside it.
+#
+# On one machine, run both files as one project:
+#
+#   docker compose -f docker-compose.control-plane.yml -f docker-compose.data-plane.yml up -d
+#
+# On its own host:
+#
+#   GATEWAY_CP_URL=https://portal.example.com docker compose -f docker-compose.data-plane.yml up -d
+#
+# Either way the token has to exist first. It is minted by the control plane — from the Gateways
+# screen, or from a shell on the control-plane host:
+#
+#   docker compose -f docker-compose.control-plane.yml run --rm --no-deps control-plane \
+#       bun run scripts/mint-instance.ts dev dev-1 > .secrets/dev-1
+#   chmod 600 .secrets/dev-1
+#
+# and copied to this host. There is deliberately no enrolment secret and no self-enrolment: that
+# would be a second credential to protect, with no owner and no revocation story, to save one
+# command.
+#
+# `.secrets/dev-1` is mounted as a *file*, and Docker silently creates an empty *directory* at that
+# path if it does not exist yet. The gateway then fails to read its token, and the message blames
+# the token rather than the missing file. Mint before you bring this up.
+
+name: apim
+
+services:
+  gateway:
+    build:
+      context: .
+      dockerfile: docker/data-plane.Dockerfile
+    image: apim-data-plane:local
+    restart: unless-stopped
+    ports:
+      - "${DP_PORT:-8081}:8081"
+    environment:
+      DP_NAME: ${DP_NAME:-dev-1}
+      DP_PORT: 8081
+      # No default, on purpose. `http://control-plane:8080` is right only when this file was passed
+      # to the same `docker compose` as the control plane's; on its own host it is a real URL, and a
+      # gateway that silently polled a name that does not resolve would look like a network fault.
+      GATEWAY_CP_URL: ${GATEWAY_CP_URL:?set GATEWAY_CP_URL — http://control-plane:8080 when running both compose files together, otherwise the portal's URL}
+      # A file, not a value. An environment variable is visible to every process in the container
+      # and `docker inspect` prints it; a mounted file is readable by this user and nobody else.
+      GATEWAY_TOKEN_FILE: /run/secrets/gateway-token
+      POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-5}
+      # The largest request body any route on this gateway must accept. Per instance, not per
+      # route: raising it for one large-upload API raises it for every API here.
+      MAX_BODY_BYTES: ${MAX_BODY_BYTES:-50331648}
+      # Empty means "trust nothing about X-Forwarded-For". Set it to the reverse proxy's CIDRs, or
+      # every client IP the gateway logs and rate-limits on is one the caller chose.
+      TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+    volumes:
+      # Per instance and it must be: the artifact cache holds compiled validators, and certificate
+      # material beside it is written 0600, so two gateways sharing one directory would race on file
+      # names and on permissions. A second instance needs its own volume and its own token.
+      - gateway-data:/var/lib/apim
+      - ${GATEWAY_TOKEN_PATH:-./.secrets/dev-1}:/run/secrets/gateway-token:ro
+    networks:
+      - apim
+    ulimits:
+      # Four times MAX_CONCURRENT_REQUESTS (8192 in the image): a held request keeps a client socket
+      # and an upstream socket, and the process needs headroom above the sum of both.
+      nofile:
+        soft: 32768
+        hard: 32768
+
+  # A second gateway is a copy of the block above with its own DP_NAME, its own published port, its
+  # own volume and its own minted token — not `deploy.replicas`, which would give every replica the
+  # same name and the same cache directory. Rate limits are counted per instance, so two instances
+  # mean twice the configured number in total; the portal states that arithmetic on every limit.
+
+volumes:
+  gateway-data:
+
+networks:
+  # Same name as the control plane's file, so passing both to one `docker compose` merges them onto
+  # one network. Run apart and this side gets its own, and reaches the portal over a URL.
+  apim:
+
+# There is deliberately no sample backend service here. `tools/` is excluded from the images by
+# `.dockerignore` — a published image should not carry a toy HTTP server — so a service pointing at
+# one would be a service that cannot start. To exercise the whole product against something, run the
+# local stack from source: `pwsh -File scripts/stack.ps1 -Up`, which brings up four upstreams, the
+# control plane and four gateways. docs/walkthrough.md is the guided version.

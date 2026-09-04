@@ -1,0 +1,49 @@
+# The third way the load suite is used regularly (plan G6). The other two need no remote: the
+# guardrail runs inside `bun test`, and scripts/schedule-perf.ps1 registers a daily local task.
+#
+# This workflow is committed unused until the repository has a remote. It is deliberately a
+# schedule plus a manual trigger rather than a per-push job: a loopback load run on shared CI
+# hardware is too noisy to gate a pull request on, and treating it as a gate would teach people
+# to ignore it.
+name: performance
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+    inputs:
+      profile:
+        description: quick or full
+        default: quick
+
+jobs:
+  perf:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.4.1"
+
+      - name: Install
+        run: bun install
+
+      - name: Unit and integration tests
+        run: bun test
+        env:
+          NODE_ENV: test
+
+      - name: Performance run
+        run: bun run tools/loadgen/index.ts --profile=${{ inputs.profile || 'quick' }}
+
+      # The report is a generated artifact, not a committed one: CI hardware differs from a
+      # developer's, so committing it would make the history a record of runner variance.
+      - name: Publish the report
+        uses: actions/upload-artifact@v4
+        with:
+          name: perf-report
+          path: |
+            docs/perf-report.md
+            .data/perf/

@@ -1,0 +1,94 @@
+# The control plane, alone.
+#
+# This is the plane that holds state: one SQLite writer, one volume, one process. It is deliberately
+# a separate file from the gateway's, because in any real deployment the two live on different hosts
+# — the portal beside its backup schedule, the gateways beside the traffic. A single compose file
+# implies they scale and move together, and they do not.
+#
+# On one machine, run both files as one project:
+#
+#   docker compose -f docker-compose.control-plane.yml -f docker-compose.data-plane.yml up -d
+#
+# On separate hosts, run this file there and the gateway file here, and give the gateway a real
+# GATEWAY_CP_URL. docs/deployment.md §2 is the long version.
+#
+# Bring it up in three steps — the middle one is the enrolment:
+#
+#   cp .env.example .env && $EDITOR .env      # the bootstrap admin's first password
+#   docker compose -f docker-compose.control-plane.yml up -d
+#   mkdir -p .secrets && docker compose -f docker-compose.control-plane.yml run --rm --no-deps \
+#       control-plane bun run scripts/mint-instance.ts dev dev-1 > .secrets/dev-1
+#   chmod 600 .secrets/dev-1
+#
+# Then http://localhost:8080, sign in as the bootstrap administrator, and choose a password — the
+# one from `.env` is in a file, a shell history and `docker inspect`, so the portal will not let it
+# be kept.
+
+name: apim
+
+services:
+  control-plane:
+    build:
+      context: .
+      dockerfile: docker/control-plane.Dockerfile
+    image: apim-control-plane:local
+    restart: unless-stopped
+    ports:
+      - "${CP_PORT:-8080}:8080"
+    environment:
+      # How people sign in. There is no default (D36): a control plane that guessed would either be
+      # unreachable or wide open. Add `oidc` — or use it alone — once OIDC_* is filled in below.
+      AUTH_PROVIDERS: ${AUTH_PROVIDERS:-local}
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      PROMOTION_CHAIN: ${PROMOTION_CHAIN:-dev,test,prod}
+
+      # Created once, only while the local directory is completely empty, and always with
+      # "must change the password at first sign-in" — because this value reaches the process
+      # through the environment and is therefore in `.env`, in `docker inspect`, and in whatever
+      # shell wrote it.
+      BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?set BOOTSTRAP_ADMIN_PASSWORD in .env}
+
+      # Uncomment together with `AUTH_PROVIDERS=local,oidc` in `.env` to add an identity provider.
+      # The redirect URI's origin must equal PUBLIC_URL's, or the callback sets a session cookie on
+      # an origin the browser will never send it back to and the user lands signed out.
+      # OIDC_ISSUER: ${OIDC_ISSUER}
+      # OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      # OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      # OIDC_REDIRECT_URI: ${PUBLIC_URL:-http://localhost:8080}/auth/callback
+      # OIDC_ADMIN_ROLE: ${OIDC_ADMIN_ROLE:-apim-admin}
+      # OIDC_DISPLAY_NAME: ${OIDC_DISPLAY_NAME:-Company sign-in}
+
+      SESSION_IDLE_MIN: ${SESSION_IDLE_MIN:-60}
+      SESSION_LIFETIME_HOURS: ${SESSION_LIFETIME_HOURS:-8}
+    volumes:
+      # The database and the key that encrypts what is in it. Back up both together or neither:
+      # the database without the KEK yields no subscription key and no certificate, and the KEK
+      # without the database is a file of random bytes.
+      - control-plane-data:/data
+      # Read-only, and not baked into the image: the repository's copies allow egress to loopback
+      # so the local stack works, which is not a default anybody should inherit. `/app/config.sample`
+      # in the image holds them to copy from.
+      - ./config:/etc/apim:ro
+    networks:
+      - apim
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/readyz"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 20s
+
+    # No `deploy.replicas` here, and it is not an omission. Design §13: one SQLite writer, so the
+    # control plane is a single process by construction. It is also the plane that may be down —
+    # gateways keep serving their last activated config while it is unreachable. Scale the gateway
+    # instead; docs/deployment.md §11 has the argument in full.
+
+volumes:
+  control-plane-data:
+
+networks:
+  # Declared in both files under the same name, so passing both to one `docker compose` merges them
+  # onto one network and the gateway can reach `http://control-plane:8080`. Run apart and each side
+  # gets its own; they talk over a URL then, which is what a real deployment does anyway.
+  apim:

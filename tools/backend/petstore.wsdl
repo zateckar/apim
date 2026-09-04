@@ -1,0 +1,88 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  A minimal, self-contained WSDL 1.1 document/literal contract for the local petstore.
+  Self-contained on purpose: wsdl:import and xsd:import with a location are refused on upload,
+  because an uploaded contract must not depend on someone else's web server (design section 5.3).
+-->
+<definitions xmlns="http://schemas.xmlsoap.org/wsdl/"
+             xmlns:soap="http://schemas.xmlsoap.org/wsdl/soap/"
+             xmlns:xsd="http://www.w3.org/2001/XMLSchema"
+             xmlns:tns="urn:apim:petstore"
+             targetNamespace="urn:apim:petstore"
+             name="PetstoreService">
+
+  <documentation>Local petstore over SOAP 1.1, document/literal. Two operations.</documentation>
+
+  <types>
+    <xsd:schema targetNamespace="urn:apim:petstore" elementFormDefault="qualified">
+      <xsd:element name="GetPetRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="petId" type="xsd:long"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="GetPetResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="petId" type="xsd:long"/>
+            <xsd:element name="name" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AddPetRequest">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="name" type="xsd:string"/>
+            <xsd:element name="status" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+      <xsd:element name="AddPetResponse">
+        <xsd:complexType>
+          <xsd:sequence>
+            <xsd:element name="petId" type="xsd:long"/>
+            <xsd:element name="name" type="xsd:string"/>
+          </xsd:sequence>
+        </xsd:complexType>
+      </xsd:element>
+    </xsd:schema>
+  </types>
+
+  <message name="GetPetIn"><part name="parameters" element="tns:GetPetRequest"/></message>
+  <message name="GetPetOut"><part name="parameters" element="tns:GetPetResponse"/></message>
+  <message name="AddPetIn"><part name="parameters" element="tns:AddPetRequest"/></message>
+  <message name="AddPetOut"><part name="parameters" element="tns:AddPetResponse"/></message>
+
+  <portType name="PetstorePortType">
+    <operation name="GetPet">
+      <input message="tns:GetPetIn"/>
+      <output message="tns:GetPetOut"/>
+    </operation>
+    <operation name="AddPet">
+      <input message="tns:AddPetIn"/>
+      <output message="tns:AddPetOut"/>
+    </operation>
+  </portType>
+
+  <binding name="PetstoreBinding" type="tns:PetstorePortType">
+    <soap:binding style="document" transport="http://schemas.xmlsoap.org/soap/http"/>
+    <operation name="GetPet">
+      <soap:operation soapAction="urn:apim:petstore:GetPet" style="document"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+    <operation name="AddPet">
+      <soap:operation soapAction="urn:apim:petstore:AddPet" style="document"/>
+      <input><soap:body use="literal"/></input>
+      <output><soap:body use="literal"/></output>
+    </operation>
+  </binding>
+
+  <service name="PetstoreService">
+    <port name="PetstorePort" binding="tns:PetstoreBinding">
+      <soap:address location="http://127.0.0.1:9080/soap/petstore"/>
+    </port>
+  </service>
+</definitions>

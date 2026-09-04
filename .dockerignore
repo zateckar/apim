@@ -1,0 +1,35 @@
+# What must never reach a published image.
+#
+# The first two entries are the ones that matter `[P1-23]`. A developer's `.data/apim.sqlite` holds
+# every subscription key and every certificate private key this repository has ever minted, all
+# encrypted with the KEK — and `.data/kek.key` sits beside it. Copying the build context wholesale
+# into an image publishes both, and nothing about the resulting image looks wrong.
+.data/
+*.sqlite
+*.sqlite-*
+*.key
+.env
+.env.*
+.secrets/
+
+# Build outputs and dependencies: reinstalled and rebuilt inside the image, and a host
+# `node_modules` may hold platform binaries for the wrong architecture.
+node_modules/
+ui/node_modules/
+ui/dist/
+
+# History and tooling that has no runtime role.
+.git/
+.github/
+.gitignore
+docs/
+test/
+ui/test/
+tools/
+# The vendored reference portal — a different application, kept as a design reference. It carries
+# its own dependencies, its own build cache and its own licence, and none of it runs here.
+existing-portal-example/
+*.log
+
+# `scripts/` is deliberately absent from this list: `scripts/mint-instance.ts` runs inside the
+# control-plane image, because a deployment with no browser still has to enrol a gateway.

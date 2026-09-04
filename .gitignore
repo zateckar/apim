@@ -1,0 +1,19 @@
+# Everything the local stack generates: the SQLite database and its key encryption key, one env
+# file per gateway, each gateway's artifact cache, and the perf and capacity harnesses' scratch
+# space. All of it is rebuilt by `bun run seed` and `scripts/stack.ps1 -Up`; none of it is input.
+.data/
+node_modules/
+ui/dist/
+.env.local
+*.log
+
+# A vendored copy of a *different* application, kept in the working tree as a design reference for
+# the OIDC flow and the authorization model. Not committed by default: 24 MB of another team's
+# source, with its own licence and its own history, that nothing here builds or runs. Delete this
+# line if you do want it in the repository.
+existing-portal-example/
+
+# The compose deployment's own secrets: `.env` holds the bootstrap password, `.secrets/` holds one
+# minted gateway token per instance. `.env.example` is committed and neither of these ever is.
+.env
+.secrets/

@@ -194,11 +194,16 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
     return (
       <EmptyState
         title="No such subscription"
-        detail="It may have been deleted, or it belongs to another team."
+        detail="It may have been deleted, or you are on neither side of it — neither the team whose application holds the keys nor the team that publishes the product."
         action={<Link to="/subscriptions">Back to my subscriptions →</Link>}
       />
     );
   }
+
+  // A publisher reaches this page from their own product. They may end the relationship and may not
+  // reach inside it, so the keys card is absent rather than present-and-refusing: every control on
+  // it would 403, and a row of buttons that all fail teaches the opposite of the rule.
+  const asPublisher = subscription.viewerIs === "publisher";
 
   return (
     <>
@@ -215,6 +220,16 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
         </div>
       </div>
 
+      {asPublisher ? (
+        <Card title="Keys">
+          <p className="muted">
+            This subscription's keys belong to the team that owns {subscription.applicationName}.
+            You publish {subscription.productName}, which lets you see that they are calling it and
+            lets you stop them — it does not let you read or replace their credentials, because a
+            rotated key would break their caller at a moment of your choosing.
+          </p>
+        </Card>
+      ) : (
       <Card
         title="Keys"
         hint="Two at once, so a key can be replaced without a moment where neither works: create the second, move your callers, then rotate the first."
@@ -277,6 +292,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
           </button>
         </div>
       </Card>
+      )}
 
       <Card
         title="What it has spent"
@@ -315,15 +331,25 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
         {usage.data && <p className="muted small">{usage.data.note}</p>}
       </Card>
 
-      <Card title="Stop using it">
+      <Card title={asPublisher ? "Withdraw their access" : "Stop using it"}>
         <DangerZone
-          what="Revoke this subscription"
+          what={asPublisher ? "Withdraw this subscription" : "Revoke this subscription"}
           name={subscription.applicationName ?? subscription.id}
-          consequence="The keys stop working at the next gateway poll and cannot be brought back; subscribing again issues new ones."
+          consequence={
+            asPublisher
+              ? "Their keys stop working at the next gateway poll and cannot be brought back. They are not told, beyond the calls failing — and the audit log records that you did it."
+              : "The keys stop working at the next gateway poll and cannot be brought back; subscribing again issues new ones."
+          }
           permission={
-            subscription.state === "active"
-              ? ALLOWED
-              : { enabled: false, reason: "This subscription is already revoked." }
+            subscription.state !== "active"
+              ? { enabled: false, reason: "This subscription is already revoked." }
+              : (subscription.capabilities ?? []).includes("delete")
+                ? ALLOWED
+                : {
+                    enabled: false,
+                    reason:
+                      "You are on neither side of this subscription: it is not your team's application, and not your team's product.",
+                  }
           }
           busy={action.busy}
           error={action.error}

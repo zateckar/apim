@@ -449,6 +449,14 @@ export interface Subscription {
   applicationName?: string;
   productName?: string;
   keyRotatedAt: string | null;
+  /**
+   * Which side of it you are. A subscription has two, and the same row means "our application
+   * calls their product" to one team and the reverse to the other — so a list that did not say
+   * which would be a list of rows nobody can read.
+   */
+  viewerIs?: "consumer" | "publisher" | "other";
+  /** `read`+`delete` for a publisher: they may end it, and may not reach into it for the keys. */
+  capabilities?: string[];
 }
 
 // ------------------------------------------------------------------ the Catalog (goal G6)

@@ -5,6 +5,7 @@ import { newId, nowIso } from "../db.ts";
 import {
   badRequest,
   conflict,
+  forbidden,
   json,
   notFound,
   readJson,
@@ -12,6 +13,7 @@ import {
   Router,
   type Ctx,
 } from "../router.ts";
+import type { User } from "../auth.ts";
 import { assertCan, environmentOf, nextCursor, pageOf } from "./common.ts";
 
 interface SubscriptionRow {
@@ -26,7 +28,21 @@ interface SubscriptionRow {
   created_at: string;
 }
 
-function subscriptionView(ctx: Ctx, row: SubscriptionRow, appTeam: string, extra: object = {}) {
+/**
+ * A subscription as the two sides of it see it. Never carries key material — the keys come from
+ * `/reveal` alone, which is consumer-only — so the same shape is safe to hand to a publisher.
+ *
+ * `viewerIs` is what makes the row readable rather than merely visible: the same subscription means
+ * "our application calls their product" to one team and "their application calls our product" to
+ * the other, and a list that did not say which is which would be a list of eight opaque rows.
+ */
+function subscriptionView(
+  ctx: Ctx,
+  row: SubscriptionRow,
+  teams: { appTeam: string; productTeam: string },
+  extra: object = {},
+) {
+  const asConsumer = can(ctx.user, teams.appTeam);
   return {
     id: row.id,
     productId: row.product_id,
@@ -35,20 +51,66 @@ function subscriptionView(ctx: Ctx, row: SubscriptionRow, appTeam: string, extra
     state: row.state,
     keyRotatedAt: row.key_rotated_at,
     createdAt: row.created_at,
-    capabilities: capabilitiesFor(ctx.user, appTeam),
+    viewerIs: asConsumer ? "consumer" : can(ctx.user, teams.productTeam) ? "publisher" : "other",
+    // The consumer's own capabilities are the ordinary ones. A publisher gets `delete` and nothing
+    // else: they may end the relationship, and may not reach into it and rotate somebody else's
+    // key. `capabilitiesFor` cannot express that, because it answers about one team at a time.
+    capabilities: asConsumer
+      ? capabilitiesFor(ctx.user, teams.appTeam)
+      : can(ctx.user, teams.productTeam)
+        ? ["read", "delete"]
+        : ["read"],
     ...extra,
   };
 }
 
-function subscriptionOr404(ctx: Ctx, id: string): SubscriptionRow & { app_team: string } {
+/**
+ * A subscription plus the two teams that have a say in it: the one owning the **application** doing
+ * the calling, and the one owning the **product** being called. They are usually different teams,
+ * and the difference is the whole of `assertMayRevoke` below.
+ */
+type SubscriptionWithTeams = SubscriptionRow & {
+  app_team: string;
+  app_name: string;
+  product_team: string;
+  product_name: string;
+};
+
+function subscriptionOr404(ctx: Ctx, id: string): SubscriptionWithTeams {
   const row = ctx.app.db
-    .query<SubscriptionRow & { app_team: string }, [string]>(
-      `SELECT s.*, a.team_id AS app_team FROM subscription s
-         JOIN application a ON a.id = s.application_id WHERE s.id = ?`,
+    .query<SubscriptionWithTeams, [string]>(
+      `SELECT s.*, a.team_id AS app_team, a.name AS app_name,
+              p.team_id AS product_team, p.name AS product_name
+         FROM subscription s
+         JOIN application a ON a.id = s.application_id
+         JOIN product p ON p.id = s.product_id
+        WHERE s.id = ?`,
     )
     .get(id);
   if (!row) throw notFound(`no subscription ${id}`);
   return row;
+}
+
+/**
+ * Who may end a subscription: the team whose application holds the keys, **or** the team whose
+ * product is being called.
+ *
+ * The second half is the asymmetry, and it is deliberate. Withdrawing access is the publisher's
+ * decision — an abusive or compromised consumer is the publisher's problem, and needing to find an
+ * administrator to stop it makes the platform the bottleneck in exactly the moment it should not
+ * be. Granting was already the publisher's decision, by putting the API in the product.
+ *
+ * It does **not** extend to the keys. Reveal and rotate stay consumer-only, because a publisher who
+ * could rotate another team's key could break their caller silently at a moment of their choosing,
+ * and would learn a credential that is not theirs. So the publisher may end the relationship and
+ * may not reach inside it — which is the same shape as ending a subscription to anything else.
+ */
+function assertMayRevoke(user: User, row: SubscriptionWithTeams): void {
+  if (can(user, row.app_team) || can(user, row.product_team)) return;
+  throw forbidden(
+    `you are in neither the team that owns ${row.app_name} nor the team that publishes ${row.product_name}`,
+    { fix: { screen: "teams" } },
+  );
 }
 
 export function registerCatalogRoutes(router: Router): void {
@@ -278,7 +340,8 @@ export function registerCatalogRoutes(router: Router): void {
     const applicationId = ctx.url.searchParams.get("application");
     const productId = ctx.url.searchParams.get("product");
     let sql =
-      `SELECT s.*, a.team_id AS app_team, a.name AS app_name, p.name AS product_name
+      `SELECT s.*, a.team_id AS app_team, a.name AS app_name,
+              p.team_id AS product_team, p.name AS product_name
          FROM subscription s JOIN application a ON a.id = s.application_id
          JOIN product p ON p.id = s.product_id WHERE 1 = 1`;
     const args: unknown[] = [];
@@ -291,16 +354,23 @@ export function registerCatalogRoutes(router: Router): void {
       args.push(productId);
     }
     sql += " ORDER BY s.created_at DESC";
-    // A subscription is a credential relationship, not a discovery surface: you see the ones
-    // belonging to your own team's applications (design section 9's can(), applied to reads).
+    // A subscription is a credential relationship, not a discovery surface — but it has two sides,
+    // and both of them are entitled to know it exists. You see the ones your team's applications
+    // hold, and the ones somebody holds against your team's products. Never anybody else's, and in
+    // neither case any key material: `/reveal` is what carries a key and it stays consumer-only.
     const rows = (
       ctx.app.db.query(sql).all(...(args as never[])) as Array<
-        SubscriptionRow & { app_team: string; app_name: string; product_name: string }
+        SubscriptionRow & {
+          app_team: string;
+          app_name: string;
+          product_team: string;
+          product_name: string;
+        }
       >
-    ).filter((row) => can(user, row.app_team));
+    ).filter((row) => can(user, row.app_team) || can(user, row.product_team));
     return json({
       items: rows.map((row) =>
-        subscriptionView(ctx, row, row.app_team, {
+        subscriptionView(ctx, row, { appTeam: row.app_team, productTeam: row.product_team }, {
           applicationName: row.app_name,
           productName: row.product_name,
         }),
@@ -466,13 +536,20 @@ function registerSubscriptionRoutes(router: Router): void {
   router.add("DELETE", "/api/subscriptions/:id", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = subscriptionOr404(ctx, ctx.params.id!);
-    assertCan(user, row.app_team, "revoke this subscription");
+    assertMayRevoke(user, row);
     ctx.app.db.run("UPDATE subscription SET state = 'revoked' WHERE id = ?", [row.id]);
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "subscription.revoke",
       subject: `subscription:${row.id}`,
       outcome: "ok",
+      // Which side ended it, on the row. "Our key stopped working and nobody here did it" is the
+      // question this answers, and it is only answerable if the audit says so at the time.
+      detail: {
+        by: can(user, row.app_team) ? "consumer" : "publisher",
+        application: row.app_name,
+        product: row.product_name,
+      },
     });
     // Revocation fails closed at the next config poll (design section 8.5).
     return json({ id: row.id, state: "revoked" });

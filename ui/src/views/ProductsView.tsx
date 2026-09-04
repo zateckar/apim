@@ -152,28 +152,39 @@ function ProductCard({
           its APIs.
         </p>
       ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Application</th>
-              <th>Environment</th>
-              <th>State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {subscriptions.map((subscription) => (
-              <tr key={subscription.id}>
-                <td>{subscription.applicationName ?? subscription.applicationId}</td>
-                <td>
-                  <span className="pill">{subscription.environment}</span>
-                </td>
-                <td>
-                  <StatusChip chip={subscriptionChip(subscription.state)} />
-                </td>
+        <>
+          <table>
+            <thead>
+              <tr>
+                <th>Application</th>
+                <th>Environment</th>
+                <th>State</th>
+                <th />
               </tr>
-            ))}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {subscriptions.map((subscription) => (
+                <tr key={subscription.id}>
+                  <td>{subscription.applicationName ?? subscription.applicationId}</td>
+                  <td>
+                    <span className="pill">{subscription.environment}</span>
+                  </td>
+                  <td>
+                    <StatusChip chip={subscriptionChip(subscription.state)} />
+                  </td>
+                  <td className="right">
+                    <Link to={`/subscriptions/${subscription.id}`}>Withdraw it →</Link>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+          <p className="muted small">
+            You publish this product, so you can withdraw anybody's access to it — an abusive or
+            compromised caller is yours to stop, without finding an administrator first. You cannot
+            see or replace their keys: those belong to the team that owns the application.
+          </p>
+        </>
       )}
     </Card>
   );

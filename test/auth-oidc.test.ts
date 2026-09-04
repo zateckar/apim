@@ -6,6 +6,7 @@ import {
   safeReturnTo,
 } from "../control-plane/src/auth-oidc.ts";
 import { membershipsOf, principalBySubject } from "../control-plane/src/principals.ts";
+import { ownedSubjectsAt, roleNamesAt } from "../shared/jwt.ts";
 import { makeCp, ORIGIN, type TestCp } from "./helpers.ts";
 import { startStubIdp, type StubIdp } from "./idp-stub.ts";
 
@@ -454,6 +455,176 @@ describe("claims become roles and teams", () => {
     };
     expect(me.user.isAdmin).toBe(true);
     expect(me.user.adminFrom).toBe("local");
+  });
+});
+
+/**
+ * A realm that scopes its roles per application, which is the shape the corporate Keycloak this was
+ * built for actually issues. There is no `groups` claim and no `realm_access`; instead:
+ *
+ *   "roles": ["PODP.ADMIN"]
+ *   "apps_with_role": { "podp.admin": ["PODP"] }
+ *
+ * The map says "this person holds `podp.admin` **for** PODP". Read the wrong way round it yields a
+ * team called `podp.admin` and an administrator role called `PODP`, so the direction is asserted
+ * here rather than left to the reader of the code.
+ *
+ * The tokens below carry invented identifiers. A real one from that realm also carries an employee
+ * number, a department and a work email, none of which this product reads or stores.
+ */
+describe("reading a claim that is a role → applications map", () => {
+  const MAP = { apps_with_role: { "podp.admin": ["PODP"], "api.developers": ["PODP", "MVIS"] } };
+
+  test("ownership reads the values", () => {
+    expect(ownedSubjectsAt(MAP, "apps_with_role").sort()).toEqual(["MVIS", "PODP"]);
+  });
+
+  test("roles read the keys, bare and qualified", () => {
+    expect(roleNamesAt(MAP, "apps_with_role").sort()).toEqual([
+      "MVIS.api.developers",
+      "PODP.api.developers",
+      "PODP.podp.admin",
+      "api.developers",
+      "podp.admin",
+    ]);
+  });
+
+  test("both still read the two list shapes", () => {
+    const list = { groups: ["/apim/orders", "/apim/platform"], scope: "openid profile" };
+    expect(ownedSubjectsAt(list, "groups")).toEqual(["/apim/orders", "/apim/platform"]);
+    expect(roleNamesAt(list, "groups")).toEqual(["/apim/orders", "/apim/platform"]);
+    expect(ownedSubjectsAt(list, "scope")).toEqual(["openid", "profile"]);
+  });
+
+  test("a path that is not there is empty rather than a throw", () => {
+    expect(ownedSubjectsAt(MAP, "realm_access.roles")).toEqual([]);
+    expect(roleNamesAt(MAP, "nothing.here.at.all")).toEqual([]);
+  });
+
+  test("non-string members are dropped rather than stringified", () => {
+    const messy = { apps_with_role: { admins: ["PODP", 7, null, { app: "X" }] } };
+    expect(ownedSubjectsAt(messy, "apps_with_role")).toEqual(["PODP"]);
+  });
+});
+
+describe("a realm whose roles are scoped per application", () => {
+  const SCOPED = {
+    roleClaim: "roles",
+    adminRole: "PODP.ADMIN",
+    groupClaim: "apps_with_role",
+  } as const;
+
+  function scopedClaims(appsWithRole: Record<string, string[]>, roles: string[]): void {
+    idp.claims = {
+      sub: "keycloak-subject-1",
+      preferred_username: "DZCRZKN",
+      name: "A Person",
+      email: "a.person@example.test",
+      roles,
+      apps_with_role: appsWithRole,
+    };
+  }
+
+  test("the map's values are the teams and its keys are the roles", async () => {
+    const cp = oidcCp(SCOPED);
+    team(cp, "team_podp", "PODP", "PODP");
+    team(cp, "team_other", "Something Else", "MVIS");
+    scopedClaims({ "podp.admin": ["PODP"] }, ["PODP.ADMIN"]);
+
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      user: { isAdmin: boolean; adminFrom: string };
+      teams: Array<{ teamId: string; source: string; sourceGroup: string | null }>;
+      unmappedGroups: string[];
+      noGroupsInToken: boolean;
+    };
+
+    // The value `PODP` became the team. Had the reader taken the keys, this would be `podp.admin`
+    // and would match nothing, and the person would sign in successfully owning nothing at all.
+    expect(me.teams.map((t) => [t.teamId, t.source])).toEqual([["team_podp", "idp"]]);
+    expect(me.teams[0]!.sourceGroup).toBe("PODP");
+    expect(me.unmappedGroups).toEqual([]);
+    expect(me.noGroupsInToken).toBe(false);
+    // And the flat `roles` claim carried the administrator role.
+    expect(me.user.isAdmin).toBe(true);
+    expect(me.user.adminFrom).toBe("idp");
+  });
+
+  test("one role for several applications is membership of each", async () => {
+    const cp = oidcCp(SCOPED);
+    team(cp, "team_podp", "PODP", "PODP");
+    team(cp, "team_mvis", "MVIS", "mvis");
+    scopedClaims({ "api.developers": ["PODP", "MVIS", "NO-TEAM-HERE"] }, []);
+
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      user: { isAdmin: boolean };
+      teams: Array<{ teamId: string }>;
+      unmappedGroups: string[];
+    };
+    expect(me.teams.map((t) => t.teamId).sort()).toEqual(["team_mvis", "team_podp"]);
+    // Matched case-insensitively, and still matched rather than created.
+    expect(me.unmappedGroups).toEqual(["NO-TEAM-HERE"]);
+    expect(me.user.isAdmin).toBe(false);
+  });
+
+  test("several roles for one application collapse to one membership", async () => {
+    const cp = oidcCp(SCOPED);
+    team(cp, "team_podp", "PODP", "PODP");
+    scopedClaims({ "api.developers": ["PODP"], "api.readers": ["PODP"] }, []);
+
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      teams: Array<{ teamId: string }>;
+    };
+    // A real flattening, and worth pinning: this product's teams have members and administrators
+    // and nothing in between, so a realm that tells a reader from a developer cannot say so here.
+    expect(me.teams.map((t) => t.teamId)).toEqual(["team_podp"]);
+  });
+
+  test("the administrator role can be read out of the map instead of the flat roles claim", async () => {
+    // Some realms carry the grant only in the map, so the role claim is pointed at the map too —
+    // and then it is read by its keys. Both `admins` and `PODP.admins` are offered, so a deployment
+    // can name whichever its realm actually spells.
+    const cp = oidcCp({ ...SCOPED, roleClaim: "apps_with_role", adminRole: "PODP.admins" });
+    team(cp, "team_podp", "PODP", "PODP");
+    scopedClaims({ admins: ["PODP"] }, []);
+
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      user: { isAdmin: boolean; adminFrom: string };
+    };
+    expect(me.user.isAdmin).toBe(true);
+    expect(me.user.adminFrom).toBe("idp");
+  });
+
+  test("a group claim that carried nothing is reported as itself, not as a missing team", async () => {
+    const cp = oidcCp({ ...SCOPED, groupClaim: "groups" });
+    team(cp, "team_podp", "PODP", "PODP");
+    scopedClaims({ "podp.admin": ["PODP"] }, ["PODP.ADMIN"]);
+
+    // `groups` is the default and this realm does not issue it. The person signs in perfectly well
+    // and owns nothing, which is indistinguishable from "not granted access yet" unless the portal
+    // says which of the two happened.
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      teams: unknown[];
+      unmappedGroups: string[];
+      noGroupsInToken: boolean;
+    };
+    expect(me.teams).toEqual([]);
+    expect(me.unmappedGroups).toEqual([]);
+    expect(me.noGroupsInToken).toBe(true);
+  });
+
+  test("a sign-in that read no token never claims its groups came from one", async () => {
+    const cp = makeCp({ authProviders: ["dev"] });
+    worlds.push(cp);
+    const session = await cp.login("alice");
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session })).json()) as {
+      noGroupsInToken: boolean;
+    };
+    expect(me.noGroupsInToken).toBe(false);
   });
 });
 

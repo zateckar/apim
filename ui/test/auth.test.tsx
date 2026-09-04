@@ -163,6 +163,18 @@ describe("your own account", () => {
     expect(html).toContain("SG-NOBODY-MAPPED");
     expect(html).toContain("no team here is mapped to");
   });
+
+  test("a token that carried no groups reads as a configuration problem, not a missing team", () => {
+    // The two are told apart on purpose. "Your groups match no team" is fixable on the Teams
+    // screen; "your token had no groups" is fixable nowhere in the product, and saying the first
+    // when the second is true sends somebody to audit a directory that is not wrong.
+    const html = renderToStaticMarkup(
+      <AccountView me={meFor(member, { teams: [], noGroupsInToken: true })} reload={() => {}} />,
+    );
+    expect(html).toContain("sent no groups at all");
+    expect(html).toContain("which claim carries group membership");
+    expect(html).not.toContain("no team here is mapped to");
+  });
 });
 
 describe("teams", () => {

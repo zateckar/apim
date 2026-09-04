@@ -4,7 +4,8 @@ import {
   claimAt,
   decodeJwt,
   JwksCache,
-  stringListAt,
+  ownedSubjectsAt,
+  roleNamesAt,
   timeWindowOk,
   verifyJwtSignature,
 } from "../../shared/jwt.ts";
@@ -400,13 +401,17 @@ export function claimsToIdentity(claims: Record<string, unknown>, oidc: OidcConf
   const sub = str("sub");
   const username = str("preferred_username") || sub;
   const email = str("email") || null;
-  const roles = stringListAt(claims, oidc.roleClaim);
+  // Two readers, not one, because a role → subjects map has to be read in opposite directions for
+  // the two questions. Its keys answer "which roles does this person hold"; its values answer
+  // "which things may they act on". A single reader would get one of the two backwards, and the
+  // symptom would be either nobody is an administrator or everybody is in a team named `api.admin`.
+  const roles = roleNamesAt(claims, oidc.roleClaim);
   return {
     username,
     email,
     displayName: str("name") || username || email || sub,
     isAdmin: roles.some((role) => role.toLowerCase() === oidc.adminRole.toLowerCase()),
-    groups: stringListAt(claims, oidc.groupClaim),
+    groups: ownedSubjectsAt(claims, oidc.groupClaim),
   };
 }
 
@@ -445,11 +450,24 @@ export function mapGroupsToTeams(
   return { teamIds: [...teamIds], unmapped };
 }
 
-/** The groups a signed-in OIDC user carried that map to no team — `GET /api/me` reports them. */
-const unmappedByUser = new Map<string, string[]>();
+/** What the last claim read produced for one user — `GET /api/me` reports both fields. */
+const idpGroupsByUser = new Map<string, { unmapped: string[]; carried: number }>();
 
 export function unmappedGroupsFor(userId: string): string[] {
-  return unmappedByUser.get(userId) ?? [];
+  return idpGroupsByUser.get(userId)?.unmapped ?? [];
+}
+
+/**
+ * True when the token was read successfully and the configured group claim held **nothing at all**.
+ *
+ * This is the misconfiguration with no other symptom. Point `OIDC_GROUP_CLAIM` at a path the realm
+ * does not use — or at one whose shape is not read — and every user signs in fine, is in no team,
+ * can publish nothing, and there is no unmapped group to report because there was no group. It
+ * looks exactly like "this person has not been given access yet", which is what makes it expensive:
+ * the administrator goes looking in the directory, and the directory is right.
+ */
+export function groupClaimWasEmpty(userId: string): boolean {
+  return idpGroupsByUser.get(userId)?.carried === 0;
 }
 
 /**
@@ -475,7 +493,7 @@ export function applyClaims(
     ],
   );
   syncIdpMemberships(app.db, row.id, teamIds);
-  unmappedByUser.set(row.id, unmapped);
+  idpGroupsByUser.set(row.id, { unmapped, carried: identity.groups.length });
   return { unmapped };
 }
 

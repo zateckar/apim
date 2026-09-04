@@ -190,9 +190,9 @@ username does not create a second one.
 | `OIDC_CLIENT_SECRET` | — | Absent means a public PKCE client, which is the Keycloak default for this shape |
 | `OIDC_REDIRECT_URI` | **required** | Absolute. Its path is the callback and must be registered on the client. **Its origin must equal `PUBLIC_URL`'s**, checked at boot |
 | `OIDC_SCOPE` | `openid profile email offline_access` | Without `offline_access` there is no refresh token and therefore no claim re-read |
-| `OIDC_ROLE_CLAIM` | `realm_access.roles` | A dotted path into the token |
+| `OIDC_ROLE_CLAIM` | `realm_access.roles` | A dotted path into the token — §5.1 |
 | `OIDC_ADMIN_ROLE` | `apim-admin` | The role that makes somebody an administrator here |
-| `OIDC_GROUP_CLAIM` | `groups` | A dotted path. Keycloak group paths are matched whole *and* by last segment |
+| `OIDC_GROUP_CLAIM` | `groups` | A dotted path. Group paths are matched whole *and* by last segment — §5.1 |
 | `OIDC_CLAIMS_REFRESH_SEC` | 300 | How stale a session's roles and teams may be |
 | `OIDC_AUTO_CREATE` | 1 | `0` means an administrator pre-creates the account and an unknown subject is refused |
 | `OIDC_END_SESSION` | 0 | `1` redirects sign-out through the provider, ending every session behind it |
@@ -338,21 +338,77 @@ Single sign-on for people, plus a small number of local administrators for the d
 unreachable or misconfigured. The order is the order the buttons appear in. Keeping `local` on
 beside `oidc` keeps a way in exactly when you most need one.
 
-### What to configure on the Keycloak side
+### 5.1 The two claims, and the three shapes they come in
+
+Everything about who somebody is comes from two claims, each named by a dotted path, and each read
+in whichever of three shapes the realm happens to issue.
+
+```
+["/apim/orders", "/apim/platform"]         a list of group paths
+"orders platform"                           one space-separated string
+{ "api.developers": ["ORDERS", "EAI"] }     a role → applications map
+```
+
+The first two are the same thing written differently. The third is a realm that **scopes its roles
+per application**, and it is read in opposite directions for the two questions:
+
+| | Reads | `{ "podp.admin": ["PODP"] }` gives |
+|---|---|---|
+| `OIDC_GROUP_CLAIM` | the map's **values** — what the person may act on | `PODP` |
+| `OIDC_ROLE_CLAIM` | the map's **keys** — what they hold | `podp.admin`, and `PODP.podp.admin` |
+
+Each key is offered bare *and* qualified by every application it applies to, because a realm may
+spell its administrator grant either way and there is no way to tell which from inside a token.
+
+**Holding any role for an application is membership of the team that application maps to.** This
+product's teams have members and administrators and nothing in between, so a realm that
+distinguishes `api.readers` from `api.developers` for the same application collapses to one
+membership here. If that distinction has to survive, it has to survive as two teams.
+
+For a realm of this shape the settings are:
+
+```
+OIDC_GROUP_CLAIM=apps_with_role
+OIDC_ROLE_CLAIM=roles                # or apps_with_role, if the grant is only in the map
+OIDC_ADMIN_ROLE=PODP.ADMIN
+```
+
+and each team's source group is the **application name** — `PODP`, `MVIS` — matched
+case-insensitively.
+
+**Choose `OIDC_ADMIN_ROLE` carefully.** It names one role that makes somebody an administrator of
+the *whole portal*: every team, the gateway fleet, the trust store, the audit log, the directory. In
+a realm where each application has its own admin role, that means picking the platform team's admin
+role specifically. Naming a role many applications carry would make every one of their admins a
+portal administrator.
+
+**If the claim path is wrong, nothing fails.** Everybody signs in, everybody is in no team, and
+there is no unmapped group to report because there was no group — which looks exactly like "these
+people have not been granted access yet". The portal therefore tells the two apart: a user whose
+token carried no groups at all is told so on their account page, in those words, rather than being
+left to look like an ungranted user.
+
+### 5.2 What to configure on the Keycloak side
 
 - A client with the standard flow enabled and **PKCE required**. A public client needs no secret;
   a confidential one needs `OIDC_CLIENT_SECRET`.
 - The exact `OIDC_REDIRECT_URI` registered as a valid redirect URI.
-- A realm role for administrators, named to match `OIDC_ADMIN_ROLE`.
-- Groups for teams, and a mapper putting them in the claim named by `OIDC_GROUP_CLAIM`. Then, in
-  the portal, give each team the group that fills it. Groups are matched to teams whole *and* by
-  last segment, so `/apim/orders` matches a team whose source group is either.
+- A role for administrators, named to match `OIDC_ADMIN_ROLE`, and a mapper putting it wherever
+  `OIDC_ROLE_CLAIM` points.
+- Whatever carries ownership — groups, or per-application roles — mapped into the claim named by
+  `OIDC_GROUP_CLAIM`. Then, in the portal, give each team the group or application name that fills
+  it. Values are matched whole *and* by last path segment, so `/apim/orders` matches a team whose
+  source group is either.
 - `offline_access` in the client's scopes, or there is no refresh token and roles and teams stop
   being re-read.
 
 **Groups map to teams that already exist; they never create one.** Unmatched group names are shown
 to administrators on the Teams screen, so "half my department can see nothing" has a visible cause
 and a one-click fix.
+
+Check it against a real token before rolling out. Decode one from your realm, find the claim that
+carries application or group membership, and point `OIDC_GROUP_CLAIM` at that path — not at
+`groups` because it is the default.
 
 ---
 

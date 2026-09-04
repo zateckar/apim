@@ -145,6 +145,12 @@ Roles and team membership come from the token's claims and are re-read on a boun
 group removed in Keycloak takes effect without a sign-out. Groups are matched to teams that already
 exist, never creating one, and unmatched group names are shown to administrators.
 
+Both claims are named by a dotted path and read in whichever shape your realm issues — a list of
+group paths, a space-separated string, or a role → applications map, where the values are the teams
+and the keys are the roles. **Decode a real token before trusting the defaults**: a claim path that
+matches nothing produces users who sign in fine and own nothing, which looks like a permissions
+problem and is not. See [`docs/deployment.md`](docs/deployment.md) §5.1.
+
 **Both, which is usually right:** `AUTH_PROVIDERS=oidc,local` — single sign-on for people, plus a
 few local administrators for the day the provider is unreachable. The order is the order the buttons
 appear in.

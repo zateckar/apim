@@ -109,6 +109,15 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
             <Link to="/teams">Teams</Link> screen.
           </Notice>
         )}
+        {me.noGroupsInToken && (
+          <Notice kind="warn">
+            Your <Term name="identity provider">identity provider</Term> sent no groups at all, so
+            there is nothing for this portal to map to a <Term name="team">team</Term>. That is a
+            configuration question rather than something you or an administrator can fix from a
+            screen here: whoever set the portal up needs to check which claim carries group
+            membership in your realm, and that the portal is reading that one.
+          </Notice>
+        )}
       </Card>
 
       {user.provider === "local" && <ChangePassword onChanged={reload} />}

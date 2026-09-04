@@ -154,6 +154,8 @@ export interface Me {
   claimsStale?: boolean;
   /** Groups the token carried that map to no team — the Teams screen offers to create them. */
   unmappedGroups?: string[];
+  /** The token carried no groups at all: a claim-path problem, not a missing-team one. */
+  noGroupsInToken?: boolean;
 }
 
 export interface SessionView {

@@ -215,8 +215,62 @@ export function claimAt(claims: Record<string, unknown>, path: string): unknown 
 
 /** A claim that should be a list of strings, tolerating the single-string shape some IdPs use. */
 export function stringListAt(claims: Record<string, unknown>, path: string): string[] {
-  const value = claimAt(claims, path);
+  return listOfStrings(claimAt(claims, path));
+}
+
+function listOfStrings(value: unknown): string[] {
   if (Array.isArray(value)) return value.filter((v): v is string => typeof v === "string");
   if (typeof value === "string") return value.split(/\s+/).filter(Boolean);
   return [];
+}
+
+function isMap(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/**
+ * The **scopes of ownership** a role claim carries — what a team's source group is matched against.
+ *
+ * Three shapes, because directories disagree and all three are in the wild:
+ *
+ *   ["/apim/orders", "/apim/platform"]        Keycloak's group mapper: paths
+ *   "orders platform"                          one space-separated string
+ *   { "api.developers": ["ORDERS", "EAI"] }    a role → subjects map
+ *
+ * The third is the one that needs explaining. A realm that scopes roles per application says "this
+ * person holds `api.developers` **for** ORDERS and EAI", and it is ORDERS and EAI — the *values* —
+ * that name the thing being owned. So the values are what a team is matched on, and holding any
+ * role for an application is membership of the team that application maps to.
+ *
+ * That last part is a real flattening: this product's teams have members and administrators and
+ * nothing in between, so a realm distinguishing `api.readers` from `api.developers` for the same
+ * application collapses to one membership here.
+ */
+export function ownedSubjectsAt(claims: Record<string, unknown>, path: string): string[] {
+  const value = claimAt(claims, path);
+  if (!isMap(value)) return listOfStrings(value);
+  const out = new Set<string>();
+  for (const entry of Object.values(value)) for (const name of listOfStrings(entry)) out.add(name);
+  return [...out];
+}
+
+/**
+ * The **role names** a role claim carries. Same three shapes; the map is read the other way round,
+ * because there its *keys* are the roles.
+ *
+ * Each key is offered twice — bare, and qualified by every subject it applies to, so
+ * `{ "admin": ["PODP"] }` yields both `admin` and `PODP.admin`. A realm that scopes roles per
+ * application may name the portal's administrator role either way and there is no way to tell
+ * which from inside the token. Offering both costs one comparison and removes a configuration
+ * failure whose only symptom is that nobody is an administrator.
+ */
+export function roleNamesAt(claims: Record<string, unknown>, path: string): string[] {
+  const value = claimAt(claims, path);
+  if (!isMap(value)) return listOfStrings(value);
+  const out = new Set<string>();
+  for (const [role, entry] of Object.entries(value)) {
+    out.add(role);
+    for (const subject of listOfStrings(entry)) out.add(`${subject}.${role}`);
+  }
+  return [...out];
 }

@@ -30,6 +30,7 @@ import {
   requireOidc,
   revokeAtProvider,
   safeReturnTo,
+  groupClaimWasEmpty,
   unmappedGroupsFor,
   verifyIdToken,
 } from "../auth-oidc.ts";
@@ -135,6 +136,13 @@ function meFor(ctx: Ctx, user: User | null): Record<string, unknown> {
         : false,
     /** Groups the token carried that map to no team — the Teams screen offers to create them. */
     unmappedGroups: unmappedGroupsFor(user.id),
+    /**
+     * The token carried no groups at all at the configured claim. Distinct from the line above and
+     * reported separately: "your groups match no team here" is a portal problem an administrator
+     * fixes on the Teams screen, and "your token had no groups" is a claim-path problem nobody can
+     * fix from any screen. Told apart, or the second is diagnosed as the first for an afternoon.
+     */
+    noGroupsInToken: row?.provider === "oidc" ? groupClaimWasEmpty(user.id) : false,
   };
 }
 

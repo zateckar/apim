@@ -573,6 +573,29 @@ group paths look like `/apim/orders` and people configure them both ways.
 unmatched group names are shown to administrators on the Teams screen — so "half my department
 cannot see anything" has a visible cause and a one-click fix, instead of being invisible.
 
+**Some directories scope their roles per application**, and say so in one claim rather than two: a
+map from a role to the applications the person holds it for. In that arrangement the *applications*
+are what teams are matched on and the *roles* are what the administrator check reads, and the portal
+reads the one claim both ways round rather than asking a deployment to duplicate it.
+
+Two consequences of reading it that way, both deliberate:
+
+- **Holding any role for an application is membership of the team that application maps to.** Teams
+  here have members and administrators and nothing between, so a directory that tells a reader from
+  a developer for the same application cannot say so through this. If that distinction has to
+  survive, it survives as two teams.
+- **The administrator role names one role, and it means the whole portal** — every team, the fleet,
+  the trust store, the audit log, the directory. Where each application has its own admin role, the
+  right answer is the platform team's; naming one that many applications carry would make every one
+  of their administrators a portal administrator.
+
+**A group claim that carried nothing is reported as itself.** Point the claim at a path the
+directory does not use and everybody signs in perfectly well, is in no team, and owns nothing — with
+no unmatched group to report, because there was no group. That is indistinguishable from "these
+people have not been granted access yet", and it sends an administrator to look in a directory that
+is not wrong. So the portal tells the two apart and says which one happened, on the account page of
+the person who is stuck.
+
 **Two kinds of membership, and the difference is on the row.** A membership either came from the
 directory or was granted here by an administrator. On every re-read, the directory-sourced
 memberships are replaced wholesale by what the token now says; locally granted ones are never

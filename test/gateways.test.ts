@@ -315,6 +315,53 @@ describe("replicas belong to a gateway", () => {
   });
 });
 
+describe("an upgraded installation", () => {
+  test("the file adopts the gateway it named before gateways had names", () => {
+    // What schema-008 leaves behind on a database whose target row predates `label`: one gateway
+    // in the environment, named after its adapter, holding every replica and every route.
+    const dev = cp.app.db
+      .query<{ id: string }, []>("SELECT id FROM target WHERE environment = 'dev'")
+      .all()[0]!;
+    cp.app.db.run(
+      "UPDATE target SET name = adapter, public_url = NULL, label = NULL WHERE id = ?",
+      [dev.id],
+    );
+
+    // A restart runs `syncTargets` again, and TARGETS_FILE now calls that gateway `local`.
+    cp.restart();
+
+    const after = cp.app.db
+      .query<{ id: string; name: string; public_url: string | null }, []>(
+        "SELECT id, name, public_url FROM target WHERE environment = 'dev'",
+      )
+      .all();
+    // Renamed, not duplicated — a second row here would split the estate in half, with every
+    // replica and route on one gateway and every published address on the other.
+    expect(after).toHaveLength(1);
+    expect(after[0]!.id).toBe(dev.id);
+    expect(after[0]!.name).toBe("local");
+    // And the addresses the file declares land, because `NULL` means nobody ever set one.
+    expect(after[0]!.public_url).toBe("http://127.0.0.1:8081");
+  });
+
+  test("a gateway an administrator added is never adopted or renamed", async () => {
+    const alice = await cp.login("alice");
+    await addOnPrem(alice);
+    cp.app.db.run("UPDATE target SET name = adapter WHERE environment = 'dev' AND name = 'local'");
+
+    cp.restart();
+
+    // Two gateways in the environment, so the file cannot claim to have created either. It adds
+    // the one it names instead of renaming something it does not own.
+    const names = cp.app.db
+      .query<{ name: string }, []>("SELECT name FROM target WHERE environment = 'dev'")
+      .all()
+      .map((r) => r.name)
+      .sort();
+    expect(names).toEqual(["local", "onprem", "standalone"]);
+  });
+});
+
 describe("removing a gateway", () => {
   test("is refused while an API is still published on it", async () => {
     const alice = await cp.login("alice");

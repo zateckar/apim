@@ -8,10 +8,11 @@ import {
   assertIssuerAllowed,
   loadConfig,
   type CpConfig,
+  type TargetDef,
 } from "./config.ts";
 import { ensureBootstrapAdmin } from "./auth-local.ts";
 import { loadOrCreateKek } from "./crypto.ts";
-import { openDb } from "./db.ts";
+import { newId, openDb } from "./db.ts";
 import { startJobRunner } from "./jobs.ts";
 import { ensureDevDirectory } from "./principals.ts";
 import { QuotaService } from "./quota.ts";
@@ -84,11 +85,12 @@ export function createApp(config: CpConfig): App {
 function syncTargets(app: App): void {
   for (const target of app.config.targets) {
     const name = target.name ?? target.adapter;
-    const existing = app.db
-      .query<{ id: string }, [string, string]>(
-        "SELECT id FROM target WHERE environment = ? AND name = ?",
-      )
-      .get(target.environment, name);
+    const existing =
+      app.db
+        .query<{ id: string }, [string, string]>(
+          "SELECT id FROM target WHERE environment = ? AND name = ?",
+        )
+        .get(target.environment, name) ?? adopt(app, target, name);
     if (existing) {
       app.db.run("UPDATE target SET enforce = ?, paused = ?, config_json = ? WHERE id = ?", [
         target.enforce ? 1 : 0,
@@ -102,7 +104,9 @@ function syncTargets(app: App): void {
                              public_url, intranet_url, label)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          `tgt_${target.environment}_${name}`,
+          // Random rather than derived from the name: a gateway can be renamed, and an id that
+          // spelled its old name would collide with the row that later takes it.
+          newId("tgt"),
           target.environment,
           name,
           target.category ?? "other",
@@ -117,6 +121,57 @@ function syncTargets(app: App): void {
       );
     }
   }
+}
+
+/**
+ * The gateway this file entry named before gateways had names.
+ *
+ * schema-008 had to give every existing target a name and could not read TARGETS_FILE, so it
+ * used the label where there was one and the adapter otherwise. An installation whose target row
+ * predates `label` therefore comes out called `standalone` while the file now says `local` — and
+ * without this, the very next boot would create a *second* gateway beside the one holding every
+ * replica and every route, and an administrator would find their estate apparently split in half.
+ *
+ * So: exactly one gateway in the environment, still carrying the migration's fallback name, and
+ * no file entry has claimed it — then this entry is what created it, and it is renamed rather
+ * than duplicated. Addresses and labels are filled in only where the row has none, because a
+ * `NULL` there means "nobody has ever set this" and an upgrade is the one moment a seed can still
+ * land without overwriting a decision.
+ */
+function adopt(app: App, target: TargetDef, name: string): { id: string } | null {
+  const rows = app.db
+    .query<{ id: string; name: string; adapter: string }, [string]>(
+      "SELECT id, name, adapter FROM target WHERE environment = ?",
+    )
+    .all(target.environment);
+  if (rows.length !== 1) return null;
+  const row = rows[0]!;
+  if (row.name !== row.adapter || row.adapter !== target.adapter) return null;
+  // Two file entries for one environment must not both adopt the same row.
+  if (app.config.targets.filter((t) => t.environment === target.environment).length !== 1) {
+    return null;
+  }
+  app.db.run(
+    `UPDATE target
+        SET name = ?,
+            category     = CASE WHEN category = 'other' THEN ? ELSE category END,
+            public_url   = COALESCE(public_url, ?),
+            intranet_url = COALESCE(intranet_url, ?),
+            label        = COALESCE(label, ?)
+      WHERE id = ?`,
+    [
+      name,
+      target.category ?? "other",
+      target.publicUrl ?? null,
+      target.intranetUrl ?? null,
+      target.label ?? null,
+      row.id,
+    ],
+  );
+  console.log(
+    `[cp] adopted the ${target.environment} gateway as "${name}" (it was named after its adapter)`,
+  );
+  return { id: row.id };
 }
 
 /**

@@ -195,6 +195,146 @@ export function registerTrustRoutes(router: Router): void {
     );
   });
 
+  /**
+   * Renew a certificate **in place**: same id, same name, same bindings, new material.
+   *
+   * Without this, renewing an expiring client identity meant uploading a second certificate under
+   * a second name, editing every binding that named the first, and only then deleting it — because
+   * `DELETE` refuses while a binding still points at it (rightly). That is three or four deliberate
+   * steps under time pressure, on the one screen where a mistake is an outage on every request
+   * through that route.
+   *
+   * The document already treats this as the designed path: material travels keyed
+   * `<id>-<thumbprint>`, so a new thumbprint under the same id is a new cache entry and activation
+   * waits for it (plan `[R2-15]`). Nothing about the route changes, so nothing about the route has
+   * to be re-approved.
+   *
+   * What is refused, and why:
+   *
+   *  - **a different subject.** Then it is not a renewal, it is a substitution, and every binding
+   *    that named this id would silently begin presenting a different identity to its backend. That
+   *    is a decision somebody has to make one binding at a time.
+   *  - **the same thumbprint.** Nothing would change, and a renewal that appears to work while the
+   *    old certificate keeps expiring is worse than an error.
+   *  - **an expiry no later than the current one.** A "renewal" that shortens the runway is the
+   *    wrong file, uploaded under pressure.
+   *  - **an already-expired certificate**, for the same reason `GET /api/gateway/certificates/:id`
+   *    refuses to hand one out.
+   */
+  router.add("POST", "/api/certificates/:id/renew", "session", async (ctx) => {
+    const user = requireUser(ctx);
+    const row = ctx.app.db
+      .query<
+        {
+          id: string;
+          application_id: string;
+          environment: string;
+          name: string;
+          thumbprint: string;
+          subject: string;
+          not_after: string;
+        },
+        [string]
+      >(
+        `SELECT id, application_id, environment, name, thumbprint, subject, not_after
+           FROM certificate WHERE id = ?`,
+      )
+      .get(ctx.params.id!);
+    if (!row) throw notFound(`no certificate ${ctx.params.id}`);
+    assertCan(user, row.application_id, "renew this certificate");
+
+    const body = await readJson<{ certPem?: string; chainPem?: string | null; keyPem?: string }>(
+      ctx,
+      1024 * 1024,
+    );
+    let parsed;
+    try {
+      parsed = parseCertificate({
+        certPem: body.certPem ?? "",
+        chainPem: body.chainPem ?? null,
+        keyPem: body.keyPem ?? "",
+      });
+    } catch (err) {
+      if (err instanceof CertificateError) throw badRequest(err.message);
+      throw err;
+    }
+
+    if (parsed.thumbprint === row.thumbprint) {
+      throw conflict("this is the certificate already installed — nothing would change");
+    }
+    if (parsed.subject !== row.subject) {
+      throw conflict(
+        `a renewal has to be for the same identity: ${row.name} is ${row.subject}, and this ` +
+          `certificate is ${parsed.subject}. Upload it as a new certificate and move each binding ` +
+          "to it deliberately.",
+      );
+    }
+    const now = Date.now();
+    if (Date.parse(parsed.notAfter) <= now) {
+      throw badRequest(`this certificate expired at ${parsed.notAfter}`);
+    }
+    if (Date.parse(parsed.notAfter) <= Date.parse(row.not_after)) {
+      throw conflict(
+        `this certificate expires at ${parsed.notAfter}, no later than the one installed ` +
+          `(${row.not_after}) — a renewal has to extend the runway`,
+      );
+    }
+
+    const at = nowIso();
+    ctx.app.db.run(
+      `UPDATE certificate
+          SET cert_pem = ?, chain_pem = ?, key_enc = ?, thumbprint = ?, issuer = ?,
+              not_before = ?, not_after = ?, created_by = ?, created_at = ?
+        WHERE id = ?`,
+      [
+        parsed.certPem,
+        parsed.chainPem,
+        encrypt(parsed.keyPem, ctx.app.kek),
+        parsed.thumbprint,
+        parsed.issuer,
+        parsed.notBefore,
+        parsed.notAfter,
+        user.id,
+        at,
+        row.id,
+      ],
+    );
+
+    const used = bindingsUsing(ctx, row.id);
+    writeAudit(ctx.app.db, {
+      actor: user.id,
+      action: "certificate.renew",
+      subject: `certificate:${row.id}`,
+      outcome: "ok",
+      // Both thumbprints, so "which material was this route presenting on Tuesday" is answerable
+      // from the audit alone. Never the key.
+      detail: {
+        environment: row.environment,
+        applicationId: row.application_id,
+        name: row.name,
+        from: { thumbprint: row.thumbprint, notAfter: row.not_after },
+        to: { thumbprint: parsed.thumbprint, notAfter: parsed.notAfter },
+        bindings: used.length,
+      },
+    });
+
+    return json({
+      id: row.id,
+      name: row.name,
+      environment: row.environment,
+      applicationId: row.application_id,
+      thumbprint: parsed.thumbprint,
+      previousThumbprint: row.thumbprint,
+      subject: parsed.subject,
+      issuer: parsed.issuer,
+      notBefore: parsed.notBefore,
+      notAfter: parsed.notAfter,
+      expiresInDays: daysUntil(parsed.notAfter, now),
+      /** Every route that keeps working without being touched, which is the point of the endpoint. */
+      usedBy: used,
+    });
+  });
+
   router.add("DELETE", "/api/certificates/:id", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = ctx.app.db

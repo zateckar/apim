@@ -162,8 +162,10 @@ function CertificateRowView({
 }) {
   const action = useAction();
   const mine = user.isAdmin || user.applications.includes(row.applicationId);
+  const [renewing, setRenewing] = useState(false);
 
   return (
+    <>
     <tr className={row.expired ? "row-bad" : ""}>
       <td>
         <strong>{row.name}</strong>
@@ -197,6 +199,22 @@ function CertificateRowView({
         )}
       </td>
       <td>
+        {/* Renewal comes before deletion, in that order and on the same row, because it is the
+            thing somebody arriving at an expiry warning actually came to do. Deleting and
+            re-uploading was the only path there was, and it is the one that takes the route down
+            in between. */}
+        <button
+          className="ghost small"
+          disabled={!mine}
+          title={
+            mine
+              ? undefined
+              : "Only the owning application, or an administrator, can renew this certificate."
+          }
+          onClick={() => setRenewing(!renewing)}
+        >
+          {renewing ? "Cancel" : "Renew"}
+        </button>
         <DangerZone
           what={`Delete ${row.name}`}
           name={row.name}
@@ -220,6 +238,91 @@ function CertificateRowView({
         />
       </td>
     </tr>
+    {renewing && (
+      <tr>
+        <td colSpan={7}>
+          <RenewCertificate
+            row={row}
+            onDone={() => {
+              setRenewing(false);
+              reload();
+            }}
+          />
+        </td>
+      </tr>
+    )}
+    </>
+  );
+}
+
+/**
+ * Replace one certificate's material without touching anything that names it.
+ *
+ * Deliberately not an "upload" form with the same fields: there is no name, no application and no
+ * environment to choose, because a renewal cannot change any of them. What it can change is the
+ * material, and the screen says what that means for the routes below it before anything is sent.
+ */
+function RenewCertificate({ row, onDone }: { row: CertificateRow; onDone: () => void }) {
+  const [certPem, setCertPem] = useState("");
+  const [chainPem, setChainPem] = useState("");
+  const [keyPem, setKeyPem] = useState("");
+  const action = useAction();
+
+  return (
+    <div className="subform">
+      <Notice kind="error">{action.error}</Notice>
+      <Notice kind="ok">{action.message}</Notice>
+      <p className="muted">
+        Renewing keeps the name <strong>{row.name}</strong> and the identity{" "}
+        <span className="mono">{row.subject}</span>, so the{" "}
+        {row.usedBy.length === 0
+          ? "bindings that later name it"
+          : `${row.usedBy.length} binding${row.usedBy.length === 1 ? "" : "s"} that name it`}{" "}
+        keep working and nothing has to be re-approved. A certificate for a different subject is not
+        a renewal — upload that one separately and move each binding to it deliberately.
+      </p>
+      <div className="field">
+        <label>New certificate (PEM)</label>
+        <textarea
+          value={certPem}
+          placeholder="-----BEGIN CERTIFICATE-----"
+          onChange={(event) => setCertPem(event.target.value)}
+        />
+      </div>
+      <div className="field">
+        <label>
+          Intermediates (PEM, optional) <span className="muted">leaf first, root omitted</span>
+        </label>
+        <textarea value={chainPem} onChange={(event) => setChainPem(event.target.value)} />
+      </div>
+      <div className="field">
+        <label>
+          New private key (PEM) <span className="muted">encrypted on arrival, never returned</span>
+        </label>
+        <textarea
+          value={keyPem}
+          placeholder="-----BEGIN PRIVATE KEY-----"
+          onChange={(event) => setKeyPem(event.target.value)}
+        />
+      </div>
+      <button
+        disabled={action.busy || !certPem.trim() || !keyPem.trim()}
+        onClick={async () => {
+          const ok = await action.run(
+            () =>
+              api.post(`/api/certificates/${row.id}/renew`, {
+                certPem,
+                chainPem: chainPem.trim() ? chainPem : null,
+                keyPem,
+              }),
+            "renewed — the gateways pick the new material up on their next poll",
+          );
+          if (ok) onDone();
+        }}
+      >
+        Renew in place
+      </button>
+    </div>
   );
 }
 

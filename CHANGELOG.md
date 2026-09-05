@@ -42,6 +42,9 @@ gateways — with nothing Azure-shaped carried across.
   API is read. A new version inherits it, along with the rest of the catalog card.
 - A notifications bell, counting what you have not read, and a Mail screen with the message behind
   each headline. Delivery is simulated in this phase and every message says so.
+- A client certificate can be renewed in place, keeping its name and every binding that names it.
+  A certificate for a different subject is refused: that is a substitution, and it has to be made
+  one binding at a time.
 - This Change Log, reachable from the version in the top bar.
 
 ### Changed

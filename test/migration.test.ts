@@ -56,7 +56,7 @@ describe("migrations", () => {
       const versions = db
         .query("SELECT version FROM schema_version ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5]);
+      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6]);
 
       // v3 adds tables and columns but rebuilds nothing, so every v2 row is still where it was.
       for (const table of ["artifact", "global_policy_entry", "certificate", "tls_exception", "usage_counter"]) {
@@ -73,7 +73,7 @@ describe("migrations", () => {
 
       const sql = (db.query("SELECT sql FROM sqlite_master WHERE name = 'resource'").get() as { sql: string })
         .sql;
-      expect(sql).toContain("UNIQUE (team_id, name, api_version)");
+      expect(sql).toContain("UNIQUE (application_id, name, api_version)");
 
       // The rebuild must not have taken the audit triggers with it.
       const triggers = db
@@ -278,7 +278,7 @@ describe("migrations", () => {
       expect(counts(second)).toEqual(after);
       expect(
         (second.query("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number }).n,
-      ).toBe(5);
+      ).toBe(6);
     } finally {
       second.close();
       rmSync(dir, { recursive: true, force: true });
@@ -290,9 +290,9 @@ describe("migrations", () => {
     const path = join(dir, "fresh.sqlite");
     const db = openDb(path);
     try {
-      db.run("INSERT INTO team (id, name) VALUES ('t', 'T')");
+      db.run("INSERT INTO application (id, name) VALUES ('t', 'T')");
       db.run(
-        "INSERT INTO resource (id, kind, name, team_id, created_at, updated_at) VALUES ('r','rest','n','t','x','x')",
+        "INSERT INTO resource (id, kind, name, application_id, created_at, updated_at) VALUES ('r','rest','n','t','x','x')",
       );
       db.run(
         `INSERT INTO revision (id, resource_id, rev, model, original, original_format, version_digest,

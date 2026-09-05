@@ -1075,7 +1075,7 @@ async function addRoutes(world: CapacityWorld, count: number): Promise<number> {
     const resource = await call("POST", "/api/resources", {
       kind: "rest",
       name: `filler-${i}`,
-      teamId: "team_platform",
+      applicationId: "application_platform",
     });
     await call("POST", `/api/resources/${resource.id}/revisions`, { spec });
     await call("PUT", `/api/resources/${resource.id}/routes`, {

@@ -141,7 +141,7 @@ describe("the certificate store", () => {
       cookie,
       body: {
         environment: "dev",
-        teamId: "team_platform",
+        applicationId: "application_platform",
         name: "backend-identity",
         certPem: generated.certPem,
         keyPem: generated.keyPem,
@@ -176,9 +176,9 @@ describe("the certificate store", () => {
     expect(decrypt(stored.key_enc, cp.app.kek)).toBe(generated.keyPem.trim());
   });
 
-  test("a certificate belongs to a team, and another team's owner may not upload for it", async () => {
+  test("a certificate belongs to a application, and another application's owner may not upload for it", async () => {
     const clara = await cp.login("clara");
-    const { response } = await upload(clara, { teamId: "team_platform" });
+    const { response } = await upload(clara, { applicationId: "application_platform" });
     expect(response.status).toBe(403);
   });
 
@@ -249,11 +249,11 @@ describe("the certificate store", () => {
     }
   });
 
-  test("a binding may not point at a certificate belonging to another team", async () => {
+  test("a binding may not point at a certificate belonging to another application", async () => {
     const backend = startBackend();
     try {
       const pavel = await cp.login("pavel");
-      const { response } = await upload(pavel, { teamId: "team_orders", name: "orders-identity" });
+      const { response } = await upload(pavel, { applicationId: "application_orders", name: "orders-identity" });
       expect(response.status).toBe(403);
     } finally {
       backend.stop();

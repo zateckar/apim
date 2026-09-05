@@ -47,48 +47,48 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
       </Card>
 
       <Card
-        title="Your teams"
-        hint="Being in a team is what lets you publish and change what it owns. It is not a label."
+        title="Your applications"
+        hint="Being in a application is what lets you publish and change what it owns. It is not a label."
       >
         {me.claimsStale && (
           <Notice kind="warn">
-            These are the teams your identity provider reported when you signed in. This deployment
+            These are the applications your identity provider reported when you signed in. This deployment
             has no way to re-read them without a new sign-in, so a change made there since will not
             show until you sign out and back in.
           </Notice>
         )}
-        {(me.teams ?? []).length === 0 ? (
+        {(me.applications ?? []).length === 0 ? (
           <EmptyState
-            title="You are not in any team"
-            detail="You can read the catalog and subscribe, but you cannot publish or change anything until an administrator puts you in a team."
+            title="You are not in any application"
+            detail="You can read the catalog and subscribe, but you cannot publish or change anything until an administrator puts you in a application."
             action={<Link to="/catalog">Browse the catalog →</Link>}
           />
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Team</th>
+                <th>Application</th>
                 <th>How you got it</th>
               </tr>
             </thead>
             <tbody>
-              {(me.teams ?? []).map((team) => (
-                <tr key={team.teamId}>
+              {(me.applications ?? []).map((application) => (
+                <tr key={application.applicationId}>
                   <td>
-                    <strong>{team.teamName}</strong>
+                    <strong>{application.applicationName}</strong>
                   </td>
                   <td className="muted">
-                    {team.source === "idp" ? (
+                    {application.source === "idp" ? (
                       <>
-                        From the group <span className="mono">{team.sourceGroup ?? "—"}</span> in your{" "}
+                        From the group <span className="mono">{application.sourceGroup ?? "—"}</span> in your{" "}
                         <Term name="identity provider">identity provider</Term>. Removing you from
-                        that group removes this team.
+                        that group removes this application.
                       </>
                     ) : (
                       <>
                         Granted in this portal
-                        {team.grantedByName ? <> by {team.grantedByName}</> : null}
-                        {team.grantedAt ? <> on {new Date(team.grantedAt).toLocaleDateString()}</> : null}.
+                        {application.grantedByName ? <> by {application.grantedByName}</> : null}
+                        {application.grantedAt ? <> on {new Date(application.grantedAt).toLocaleDateString()}</> : null}.
                       </>
                     )}
                   </td>
@@ -105,14 +105,14 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
                 {group}{" "}
               </span>
             ))}
-            , which no team here is mapped to. An administrator can map it on the{" "}
-            <Link to="/teams">Teams</Link> screen.
+            , which no application here is mapped to. An administrator can map it on the{" "}
+            <Link to="/applications">Applications</Link> screen.
           </Notice>
         )}
         {me.noGroupsInToken && (
           <Notice kind="warn">
             Your <Term name="identity provider">identity provider</Term> sent no groups at all, so
-            there is nothing for this portal to map to a <Term name="team">team</Term>. That is a
+            there is nothing for this portal to map to a <Term name="application">application</Term>. That is a
             configuration question rather than something you or an administrator can fix from a
             screen here: whoever set the portal up needs to check which claim carries group
             membership in your realm, and that the portal is reading that one.

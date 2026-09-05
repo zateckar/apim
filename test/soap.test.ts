@@ -414,7 +414,7 @@ describe("a soap API through the gateway", () => {
     const soapResource = await (
       await cp.call("POST", "/api/resources", {
         cookie: rest.pavel,
-        body: { kind: "soap", name: "soaponly", teamId: "team_platform" },
+        body: { kind: "soap", name: "soaponly", applicationId: "application_platform" },
       })
     ).json();
     const wrongJson = await cp.call("POST", `/api/resources/${soapResource.id}/revisions`, {

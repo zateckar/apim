@@ -112,10 +112,8 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   },
   application: {
     term: "application",
-    definition:
-      "The thing that calls an API — a service, a job, a mobile app. Keys belong to an application, so revoking one stops that caller and nobody else.",
-    see: ["subscription", "key"],
-    group: "consuming",
+    group: "identity",
+    definition: "The owner of APIs, products and subscriptions. Developers with membership act on its behalf to publish and consume services.",
   },
   subscription: {
     term: "subscription",
@@ -253,39 +251,32 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   },
 
   // ------------------------------------------------------------------ who you are (v5)
-  team: {
-    term: "team",
-    definition:
-      "The group that owns things. Every API, product and application belongs to exactly one team, and being in that team is what lets you change them.",
-    see: ["member", "administrator", "identity provider"],
-    group: "identity",
-  },
   member: {
     term: "member",
     definition:
-      "Somebody in a team. A member can publish, change and withdraw anything their teams own, and can read everything else.",
-    see: ["team", "administrator"],
+      "Somebody in a application. A member can publish, change and withdraw anything their applications own, and can read everything else.",
+    see: ["application", "administrator"],
     group: "identity",
   },
   administrator: {
     term: "administrator",
     definition:
-      "Somebody who can act on every team, plus the things no team owns: gateways, global policy, the trust store, the audit log and this directory.",
-    see: ["member", "team"],
+      "Somebody who can act on every application, plus the things no application owns: gateways, global policy, the trust store, the audit log and this directory.",
+    see: ["member", "application"],
     group: "identity",
   },
   principal: {
     term: "account",
     definition:
-      "One person as this portal knows them. An account remembers who signed in, which teams they are in and what they have changed — so it is disabled rather than deleted.",
+      "One person as this portal knows them. An account remembers who signed in, which applications they are in and what they have changed — so it is disabled rather than deleted.",
     see: ["identity provider", "session"],
     group: "identity",
   },
   "identity provider": {
     term: "identity provider",
     definition:
-      "The directory people sign in through — Keycloak, or whatever your organisation runs. It owns their name, their password and which groups they are in; the portal reads those and maps the groups to teams.",
-    see: ["team", "session"],
+      "The directory people sign in through — Keycloak, or whatever your organisation runs. It owns their name, their password and which groups they are in; the portal reads those and maps the groups to applications.",
+    see: ["application", "session"],
     group: "identity",
   },
   session: {
@@ -323,8 +314,8 @@ export const REQUIRED_TERMS = [
   "gateway",
   "trust anchor",
   // v5. "Who is allowed to do this" is the question a newcomer asks first and the portal answered
-  // nowhere: `team` in particular was a switcher in the sidebar with no definition anywhere.
-  "team",
+  // nowhere: `application` in particular was a switcher in the sidebar with no definition anywhere.
+  "application",
   "member",
   "administrator",
   "principal",

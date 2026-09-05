@@ -321,7 +321,7 @@ describe("§5.8's exclusion table, at write time", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie,
-        body: { kind, name: `x-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+        body: { kind, name: `x-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     return { id: created.id as string, cookie };

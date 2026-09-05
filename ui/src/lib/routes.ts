@@ -5,10 +5,15 @@
  * shell renders the title and purpose from this table, so a screen cannot exist without them and a
  * test can assert the property over every route rather than over every component.
  *
- * `section` decides where the link sits in the sidebar, and follows **capability, not inventory**
- * `[P1-26]`: "Publish APIs" is there for a team that has published nothing, or nobody could publish
- * a first API. Only `operate` is gated, and a non-admin who deep-links into one of its screens gets
- * the screen with every control disabled and one line naming who can change it.
+ * `section` classifies a screen by capability, not inventory `[P1-26]`: "Publish APIs" applies to a
+ * application that has published nothing, or nobody could publish a first API. Only `operate` is
+ * gated, and a non-admin who deep-links into one of its screens gets the screen with every control
+ * disabled and one line naming who can change it.
+ *
+ * The sidebar itself lives in `portal/Portal.tsx` and groups screens around the selected
+ * application rather than around these sections — `nav` and `adminOnly` say a screen is navigable
+ * and to whom, and `portal.test.tsx` holds the shell to it. This table does not build a second
+ * navigation of its own.
  */
 
 export type Section = "home" | "use" | "publish" | "operate" | "help" | "account" | "detail";
@@ -25,15 +30,6 @@ export interface RouteDef {
   nav?: string;
   adminOnly?: boolean;
 }
-
-export const SECTION_LABEL: Record<Exclude<Section, "detail">, string> = {
-  home: "",
-  use: "Use APIs",
-  publish: "Publish APIs",
-  operate: "Operate",
-  help: "",
-  account: "",
-};
 
 export const ROUTES: RouteDef[] = [
   {
@@ -89,7 +85,7 @@ export const ROUTES: RouteDef[] = [
     id: "apis",
     pattern: "/apis",
     title: "My APIs",
-    purpose: "The APIs your teams publish, and where each version is live.",
+    purpose: "The APIs your applications publish, and where each version is live.",
     section: "publish",
     nav: "My APIs",
   },
@@ -174,23 +170,23 @@ export const ROUTES: RouteDef[] = [
     id: "user",
     pattern: "/users/:userId",
     title: "Account",
-    purpose: "One account: how they sign in, which teams they are in, and where they are signed in.",
+    purpose: "One account: how they sign in, which applications they are in, and where they are signed in.",
     section: "detail",
   },
   {
-    id: "teams",
-    pattern: "/teams",
-    title: "Teams",
-    purpose: "Who owns what. Every API, product and application belongs to exactly one team.",
+    id: "applications",
+    pattern: "/applications",
+    title: "Applications",
+    purpose: "Who owns what. Every API, product and application belongs to exactly one application.",
     section: "operate",
-    nav: "Teams",
+    nav: "Applications",
     adminOnly: true,
   },
   {
-    id: "team",
-    pattern: "/teams/:teamId",
-    title: "Team",
-    purpose: "One team: who is in it, how they got there, and what it owns.",
+    id: "application",
+    pattern: "/applications/:applicationId",
+    title: "Application",
+    purpose: "One application: who is in it, how they got there, and what it owns.",
     section: "detail",
   },
   {
@@ -208,7 +204,7 @@ export const ROUTES: RouteDef[] = [
     id: "account",
     pattern: "/account",
     title: "Your account",
-    purpose: "How you sign in, which teams you are in, and where else you are signed in.",
+    purpose: "How you sign in, which applications you are in, and where else you are signed in.",
     section: "account",
     nav: "Your account",
   },
@@ -275,16 +271,7 @@ function split(path: string): string[] {
   return path.split("?")[0]!.split("/").filter(Boolean);
 }
 
-/** The sidebar, in order, with the sections a caller may see. */
-export function navigation(isAdmin: boolean): Array<{ section: Section; label: string; items: RouteDef[] }> {
-  const sections: Section[] = ["home", "use", "publish", "operate", "account", "help"];
-  return sections
-    .map((section) => ({
-      section,
-      label: SECTION_LABEL[section as Exclude<Section, "detail">],
-      items: ROUTES.filter(
-        (route) => route.section === section && route.nav && (!route.adminOnly || isAdmin),
-      ),
-    }))
-    .filter((group) => group.items.length > 0);
+/** The screens a caller of this authority may be offered a link to. */
+export function navigable(isAdmin: boolean): RouteDef[] {
+  return ROUTES.filter((route) => route.nav && (!route.adminOnly || isAdmin));
 }

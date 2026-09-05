@@ -68,7 +68,7 @@ describe("publishing an API reaches the config document", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "bare", teamId: "team_platform" },
+        body: { kind: "rest", name: "bare", applicationId: "application_platform" },
       })
     ).json();
     await cp.call("POST", `/api/resources/${resource.id}/revisions`, {
@@ -183,7 +183,7 @@ describe("what is and is not visible to the fleet", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: first.pavel,
-        body: { kind: "rest", name: "second", teamId: "team_platform" },
+        body: { kind: "rest", name: "second", applicationId: "application_platform" },
       })
     ).json();
     const response = await cp.call("PUT", `/api/resources/${resource.id}/routes`, {
@@ -244,7 +244,7 @@ describe("the config poll", () => {
 });
 
 describe("authorization, CSRF and concurrency", () => {
-  test("a member of another team cannot edit or publish", async () => {
+  test("a member of another application cannot edit or publish", async () => {
     const published = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
     const clara = published.clara;
 
@@ -269,7 +269,7 @@ describe("authorization, CSRF and concurrency", () => {
     expect(policy.status).toBe(403);
   });
 
-  test("an admin can act on any team's resource", async () => {
+  test("an admin can act on any application's resource", async () => {
     const published = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
     const alice = await cp.login("alice");
     const response = await cp.call(
@@ -285,7 +285,7 @@ describe("authorization, CSRF and concurrency", () => {
     const response = await cp.call("POST", "/api/resources", {
       cookie: pavel,
       origin: null,
-      body: { kind: "rest", name: "no-origin", teamId: "team_platform" },
+      body: { kind: "rest", name: "no-origin", applicationId: "application_platform" },
     });
     expect(response.status).toBe(403);
     expect((await response.json()).detail).toContain("Origin");
@@ -296,7 +296,7 @@ describe("authorization, CSRF and concurrency", () => {
     const response = await cp.call("POST", "/api/resources", {
       cookie: pavel,
       origin: "https://evil.example",
-      body: { kind: "rest", name: "foreign", teamId: "team_platform" },
+      body: { kind: "rest", name: "foreign", applicationId: "application_platform" },
     });
     expect(response.status).toBe(403);
   });
@@ -306,7 +306,7 @@ describe("authorization, CSRF and concurrency", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "etagged", teamId: "team_platform" },
+        body: { kind: "rest", name: "etagged", applicationId: "application_platform" },
       })
     ).json();
 
@@ -360,7 +360,7 @@ describe("input handling", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "ssrf", teamId: "team_platform" },
+        body: { kind: "rest", name: "ssrf", applicationId: "application_platform" },
       })
     ).json();
     const response = await cp.call("POST", `/api/resources/${resource.id}/revisions`, {
@@ -376,7 +376,7 @@ describe("input handling", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "badbackend", teamId: "team_platform" },
+        body: { kind: "rest", name: "badbackend", applicationId: "application_platform" },
       })
     ).json();
     const response = await cp.call("PUT", `/api/resources/${resource.id}/binding`, {
@@ -450,7 +450,7 @@ describe("input handling", () => {
     const pavel = await cp.login("pavel");
     const response = await cp.call("POST", "/api/resources", {
       cookie: pavel,
-      body: { kind: "graphql", name: "later", teamId: "team_platform" },
+      body: { kind: "graphql", name: "later", applicationId: "application_platform" },
     });
     expect(response.status).toBe(400);
     expect((await response.json()).detail).toContain("not implemented in the MVP");
@@ -461,7 +461,7 @@ describe("input handling", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "exportable", teamId: "team_platform" },
+        body: { kind: "rest", name: "exportable", applicationId: "application_platform" },
       })
     ).json();
     const original = JSON.stringify(MINI_SPEC, null, 2);

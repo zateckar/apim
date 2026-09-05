@@ -1,10 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { ForcedPasswordChange } from "../src/views/LoginView.tsx";
-import { TeamsView, TeamView } from "../src/views/TeamsView.tsx";
+import { ApplicationsView, ApplicationView } from "../src/views/ApplicationsView.tsx";
 import { AccountView } from "../src/views/AccountView.tsx";
 import { GLOSSARY } from "../src/lib/glossary.ts";
-import { matchRoute, navigation, ROUTES } from "../src/lib/routes.ts";
+import { matchRoute, navigable, ROUTES } from "../src/lib/routes.ts";
 import type { Me, User } from "../src/api.ts";
 
 /**
@@ -20,7 +20,7 @@ const member: User = {
   id: "usr_1",
   name: "Clara Consumer",
   roles: ["member"],
-  teams: ["team_orders"],
+  applications: ["application_orders"],
   isAdmin: false,
   provider: "oidc",
   username: "clara",
@@ -33,10 +33,10 @@ const admin: User = { ...member, id: "usr_2", name: "Alice Admin", isAdmin: true
 function meFor(user: User, over: Partial<Me> = {}): Me {
   return {
     user,
-    teams: [
+    applications: [
       {
-        teamId: "team_orders",
-        teamName: "Orders",
+        applicationId: "application_orders",
+        applicationName: "Orders",
         source: "idp",
         grantedBy: null,
         grantedAt: null,
@@ -52,7 +52,7 @@ function meFor(user: User, over: Partial<Me> = {}): Me {
 
 describe("the route table knows about people", () => {
   test("the identity screens exist, with a purpose each", () => {
-    for (const id of ["account", "users", "user", "teams", "team"]) {
+    for (const id of ["account", "users", "user", "applications", "application"]) {
       const route = ROUTES.find((r) => r.id === id);
       expect(route, id).toBeDefined();
       expect(route!.purpose.length, id).toBeGreaterThan(20);
@@ -61,26 +61,26 @@ describe("the route table knows about people", () => {
   });
 
   test("your own account is reachable by everybody; the directory is not", () => {
-    const asMember = navigation(false).flatMap((group) => group.items.map((route) => route.id));
+    const asMember = navigable(false).map((route) => route.id);
     expect(asMember).toContain("account");
     // The sidebar follows capability: a member has no directory to manage, and a link that always
     // answers 403 teaches nothing.
     expect(asMember).not.toContain("users");
-    expect(asMember).not.toContain("teams");
+    expect(asMember).not.toContain("applications");
 
-    const asAdmin = navigation(true).flatMap((group) => group.items.map((route) => route.id));
+    const asAdmin = navigable(true).map((route) => route.id);
     expect(asAdmin).toContain("users");
-    expect(asAdmin).toContain("teams");
+    expect(asAdmin).toContain("applications");
   });
 
-  test("a person's page and a team's page resolve to the right screen", () => {
+  test("a person's page and a application's page resolve to the right screen", () => {
     expect(matchRoute("/users/usr_1")).toMatchObject({
       route: { id: "user" },
       params: { userId: "usr_1" },
     });
-    expect(matchRoute("/teams/team_orders")).toMatchObject({
-      route: { id: "team" },
-      params: { teamId: "team_orders" },
+    expect(matchRoute("/applications/application_orders")).toMatchObject({
+      route: { id: "application" },
+      params: { applicationId: "application_orders" },
     });
     expect(matchRoute("/users").route.id).toBe("users");
     expect(matchRoute("/account").route.id).toBe("account");
@@ -89,7 +89,7 @@ describe("the route table knows about people", () => {
 
 describe("the vocabulary covers who you are", () => {
   test("every word the identity screens use is defined once", () => {
-    for (const key of ["team", "member", "administrator", "principal", "identity provider", "session"]) {
+    for (const key of ["application", "member", "administrator", "principal", "identity provider", "session"]) {
       const entry = GLOSSARY[key];
       expect(entry, key).toBeDefined();
       expect(entry!.group, key).toBe("identity");
@@ -122,10 +122,10 @@ describe("your own account", () => {
   test("says how you sign in, in words rather than a provider id", () => {
     const html = renderToStaticMarkup(<AccountView me={meFor(member)} reload={() => {}} />);
     expect(html).toContain("your organisation&#x27;s identity provider");
-    // A team from a group says which group, and what removing it would do — because that is where
+    // A application from a group says which group, and what removing it would do — because that is where
     // somebody goes when they wonder why they lost access.
     expect(html).toContain("SG-APIM-ORDERS");
-    expect(html).toContain("Removing you from that group removes this team");
+    expect(html).toContain("Removing you from that group removes this application");
   });
 
   test("a password form appears only for somebody who has a password here", () => {
@@ -138,17 +138,17 @@ describe("your own account", () => {
     expect(local).toContain("Change your password");
   });
 
-  test("somebody in no team is told what that means, not shown an empty box", () => {
+  test("somebody in no application is told what that means, not shown an empty box", () => {
     const html = renderToStaticMarkup(
-      <AccountView me={meFor({ ...member, teams: [] }, { teams: [] })} reload={() => {}} />,
+      <AccountView me={meFor({ ...member, applications: [] }, { applications: [] })} reload={() => {}} />,
     );
-    expect(html).toContain("You are not in any team");
+    expect(html).toContain("You are not in any application");
     expect(html).toContain("cannot publish or change anything");
     // An empty state carries the next action, always.
     expect(html).toMatch(/<a [^>]*href="\/catalog"/);
   });
 
-  test("a deployment that cannot re-read claims says so rather than showing stale teams silently", () => {
+  test("a deployment that cannot re-read claims says so rather than showing stale applications silently", () => {
     const html = renderToStaticMarkup(
       <AccountView me={meFor(member, { claimsStale: true })} reload={() => {}} />,
     );
@@ -156,58 +156,58 @@ describe("your own account", () => {
     expect(html).toContain("sign out and back in");
   });
 
-  test("a group that maps to no team is reported to the person it affects", () => {
+  test("a group that maps to no application is reported to the person it affects", () => {
     const html = renderToStaticMarkup(
       <AccountView me={meFor(member, { unmappedGroups: ["SG-NOBODY-MAPPED"] })} reload={() => {}} />,
     );
     expect(html).toContain("SG-NOBODY-MAPPED");
-    expect(html).toContain("no team here is mapped to");
+    expect(html).toContain("no application here is mapped to");
   });
 
-  test("a token that carried no groups reads as a configuration problem, not a missing team", () => {
-    // The two are told apart on purpose. "Your groups match no team" is fixable on the Teams
+  test("a token that carried no groups reads as a configuration problem, not a missing application", () => {
+    // The two are told apart on purpose. "Your groups match no application" is fixable on the Applications
     // screen; "your token had no groups" is fixable nowhere in the product, and saying the first
     // when the second is true sends somebody to audit a directory that is not wrong.
     const html = renderToStaticMarkup(
-      <AccountView me={meFor(member, { teams: [], noGroupsInToken: true })} reload={() => {}} />,
+      <AccountView me={meFor(member, { applications: [], noGroupsInToken: true })} reload={() => {}} />,
     );
     expect(html).toContain("sent no groups at all");
     expect(html).toContain("which claim carries group membership");
-    expect(html).not.toContain("no team here is mapped to");
+    expect(html).not.toContain("no application here is mapped to");
   });
 });
 
-describe("teams", () => {
-  test("a member does not see which group grants a team", () => {
-    // Team names are already a discovery surface. Which group grants one tells any signed-in user
+describe("applications", () => {
+  test("a member does not see which group grants a application", () => {
+    // Application names are already a discovery surface. Which group grants one tells any signed-in user
     // exactly which group to get themselves added to `[P1-18]`.
-    const html = renderToStaticMarkup(<TeamsView user={member} unmappedGroups={[]} />);
+    const html = renderToStaticMarkup(<ApplicationsView user={member} unmappedGroups={[]} />);
     expect(html).not.toContain("Granted by the group");
-    expect(html).not.toContain("Create a team");
+    expect(html).not.toContain("Create a application");
 
-    const asAdmin = renderToStaticMarkup(<TeamsView user={admin} unmappedGroups={[]} />);
+    const asAdmin = renderToStaticMarkup(<ApplicationsView user={admin} unmappedGroups={[]} />);
     expect(asAdmin).toContain("Granted by the group");
-    expect(asAdmin).toContain("Create a team");
+    expect(asAdmin).toContain("Create a application");
   });
 
-  test("an unmapped group is offered to an admin as a team to create, not created for them", () => {
+  test("an unmapped group is offered to an admin as a application to create, not created for them", () => {
     const html = renderToStaticMarkup(
-      <TeamsView user={admin} unmappedGroups={["SG-APIM-BILLING"]} />,
+      <ApplicationsView user={admin} unmappedGroups={["SG-APIM-BILLING"]} />,
     );
     expect(html).toContain("SG-APIM-BILLING");
-    expect(html).toContain("Create a team for it");
+    expect(html).toContain("Create a application for it");
     // The rule, said where somebody would otherwise ask why it did not happen automatically.
     expect(html).toContain("never turned into one automatically");
   });
 });
 
 describe("a screen that is still loading", () => {
-  test("does not claim the team is empty before it has asked", () => {
+  test("does not claim the application is empty before it has asked", () => {
     // `renderToStaticMarkup` runs no effects, so this is the pre-fetch frame — and that frame is
     // worth an assertion: an empty-state that renders before the request has been made tells the
-    // reader a team has nobody in it, and they act on it.
-    const html = renderToStaticMarkup(<TeamView teamId="team_orders" user={admin} />);
+    // reader a application has nobody in it, and they act on it.
+    const html = renderToStaticMarkup(<ApplicationView applicationId="application_orders" user={admin} />);
     expect(html).toContain("skeleton");
-    expect(html).not.toContain("Nobody is in this team");
+    expect(html).not.toContain("Nobody is in this application");
   });
 });

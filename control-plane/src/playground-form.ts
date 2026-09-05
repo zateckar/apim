@@ -61,9 +61,9 @@ export interface FormSubscription {
 export function buildPlaygroundForm(app: App, user: User, resourceId: string, environment: string) {
   const resource = app.db
     .query<
-      { id: string; name: string; api_version: string; kind: string; team_id: string },
+      { id: string; name: string; api_version: string; kind: string; application_id: string },
       [string]
-    >("SELECT id, name, api_version, kind, team_id FROM resource WHERE id = ?")
+    >("SELECT id, name, api_version, kind, application_id FROM resource WHERE id = ?")
     .get(resourceId);
   if (!resource) throw notFound(`no API ${resourceId}`);
 
@@ -108,7 +108,7 @@ export function buildPlaygroundForm(app: App, user: User, resourceId: string, en
      */
     key: key ? { in: key.in, name: key.name } : null,
     subscriptions,
-    /** The owner path `[P1-10]`: a key is required and the caller's teams hold none for it. */
+    /** The owner path `[P1-10]`: a key is required and the caller's applications hold none for it. */
     needsSubscription: key !== null && subscriptions.length === 0,
     operations: operationsFor(route, model),
     // A2A serves its card at a fixed path on the gateway, which is the copy worth seeing.
@@ -155,7 +155,7 @@ function modelFor(app: App, revisionId: string): ApiModel | null {
 
 /**
  * The caller's own subscriptions that would work here: active, in this environment, held by an
- * application on a team the caller is in, for a product that contains this API. Anything else is a
+ * application on a application the caller is in, for a product that contains this API. Anything else is a
  * key that produces a `403` the reader would read as a platform fault.
  */
 function usableSubscriptions(
@@ -170,14 +170,14 @@ function usableSubscriptions(
     .query<
       {
         id: string;
-        team_id: string;
+        application_id: string;
         application_name: string;
         product_name: string;
         secondary_key_enc: string | null;
       },
       string[]
     >(
-      `SELECT s.id, a.team_id, a.name AS application_name, p.name AS product_name, s.secondary_key_enc
+      `SELECT s.id, a.id AS application_id, a.name AS application_name, p.name AS product_name, s.secondary_key_enc
          FROM subscription s
          JOIN application a ON a.id = s.application_id
          JOIN product p ON p.id = s.product_id
@@ -187,7 +187,7 @@ function usableSubscriptions(
     .all(environment, ...route.productIds);
 
   return rows
-    .filter((row) => user.isAdmin || user.teams.includes(row.team_id))
+    .filter((row) => user.isAdmin || user.applications.includes(row.application_id))
     .map((row) => ({
       id: row.id,
       name: `${row.application_name} → ${row.product_name}`,

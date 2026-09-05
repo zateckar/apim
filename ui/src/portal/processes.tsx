@@ -1,0 +1,734 @@
+import { useState } from "react";
+import type { Session } from "../App";
+import { api } from "../api";
+import { useAsync, DangerZone } from "../components";
+import {
+  Panel,
+  Modal,
+  Field,
+  Status,
+  Empty,
+  ErrorNotice,
+  useWork,
+} from "./common";
+
+export function SubscribeDialog({
+  session: s,
+  resourceId,
+  close,
+}: {
+  session: Session;
+  resourceId: string;
+  close: () => void;
+}) {
+  const data = useAsync(
+      () => api.get<{ items: any[] }>("/api/products"),
+      [resourceId],
+    ),
+    w = useWork();
+  const [productId, setProduct] = useState(""),
+    [purpose, setPurpose] = useState(""),
+    [result, setResult] = useState<any>(null);
+  const products =
+    data.data?.items.filter(
+      (p) =>
+        p.lifecycle === "active" &&
+        p.members.some((m: any) => m.id === resourceId),
+    ) ?? [];
+  return (
+    <Modal title="Subscribe to a product" close={close}>
+      {result ? (
+        <>
+          <Status value={result.state} />
+          <p>
+            Your request has been recorded. Approval and gateway activation
+            progress appear in Subscriptions.
+          </p>
+          <button className="btn" onClick={close}>
+            Done
+          </button>
+        </>
+      ) : (
+        <form
+          onSubmit={(e) => {
+            e.preventDefault();
+            void w.run(async () =>
+              setResult(
+                await api.post("/api/subscriptions", {
+                  applicationId: s.application,
+                  productId: productId || products[0]?.id,
+                  environment: s.environment,
+                  purpose,
+                }),
+              ),
+            );
+          }}
+        >
+          <p>
+            Requesting on behalf of{" "}
+            <strong>{s.applicationName(s.application)}</strong> in{" "}
+            {s.environment.toUpperCase()}. Access to another application's
+            product requires publisher approval through simulated SkoNET.
+          </p>
+          <ErrorNotice error={data.error ?? w.error} />
+          <Field label="Product">
+            <select
+              required
+              value={productId || products[0]?.id || ""}
+              onChange={(e) => setProduct(e.target.value)}
+            >
+              {!products.length && (
+                <option value="">No subscribable product</option>
+              )}
+              {products.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <Field label="Purpose">
+            <textarea
+              required
+              minLength={3}
+              maxLength={500}
+              value={purpose}
+              onChange={(e) => setPurpose(e.target.value)}
+            />
+          </Field>
+          <button
+            className="btn primary"
+            disabled={w.busy || !products.length || !s.application}
+          >
+            Request subscription
+          </button>
+        </form>
+      )}
+    </Modal>
+  );
+}
+export function Subscriptions({
+  session: s,
+  tick,
+  resourceId,
+}: {
+  session: Session;
+  tick: number;
+  resourceId?: string;
+}) {
+  const data = useAsync(
+      () => api.get<{ items: any[] }>("/api/subscriptions"),
+      [s.application, tick],
+    ),
+    products = useAsync(
+      () => api.get<{ items: any[] }>("/api/products"),
+      [resourceId, tick],
+    ),
+    w = useWork();
+  const [key, setKey] = useState<any>(null),
+    [withdraw, setWithdraw] = useState<any>(null);
+  const rows = (data.data?.items ?? []).filter(
+    (r) =>
+      r.environment === s.environment &&
+      (resourceId
+        ? products.data?.items.some(
+            (p) =>
+              p.id === r.productId &&
+              p.members.some((m: any) => m.id === resourceId),
+          )
+        : r.applicationId === s.application),
+  );
+  return (
+    <Panel title="Subscriptions">
+      <ErrorNotice error={data.error ?? products.error ?? w.error} />
+      {rows.length ? (
+        rows.map((r) => (
+          <div className="native-row" key={r.id}>
+            <div>
+              <strong>
+                {products.data?.items.find((p) => p.id === r.productId)?.name ??
+                  r.productId}
+              </strong>
+              <small>
+                {s.applicationName(r.applicationId)} · {r.purpose}
+              </small>
+              <Status value={r.state} />
+            </div>
+            <div className="native-actions">
+              {r.state === "active" &&
+                (s.user.isAdmin ||
+                  s.user.applications.includes(r.applicationId)) && (
+                  <button
+                    className="btn"
+                    onClick={() =>
+                      void w.run(async () =>
+                        setKey({
+                          id: r.id,
+                          ...(await api.post<any>(
+                            `/api/subscriptions/${r.id}/reveal`,
+                          )),
+                        }),
+                      )
+                    }
+                  >
+                    Show keys
+                  </button>
+                )}
+              {["pending", "active", "activating"].includes(r.state) && (
+                <button
+                  className="btn"
+                  disabled={w.busy}
+                  onClick={() => setWithdraw(r)}
+                >
+                  {r.state === "pending" ? "Cancel request" : "Revoke"}
+                </button>
+              )}
+            </div>
+          </div>
+        ))
+      ) : (
+        <Empty>No subscriptions in this environment.</Empty>
+      )}
+      {key && (
+        <Modal title="Subscription keys" close={() => setKey(null)}>
+          <p>Keep these credentials private.</p>
+          <Field label="Primary key">
+            <input readOnly value={key.primaryKey ?? ""} />
+          </Field>
+          <Field label="Secondary key">
+            <input readOnly value={key.secondaryKey ?? ""} />
+          </Field>
+          <ErrorNotice error={w.error} />
+          <button
+            className="btn"
+            disabled={w.busy}
+            onClick={() =>
+              void w.run(async () => {
+                await api.post(`/api/subscriptions/${key.id}/rotate`, {
+                  which: "secondary",
+                });
+                setKey({
+                  id: key.id,
+                  ...(await api.post<any>(
+                    `/api/subscriptions/${key.id}/reveal`,
+                  )),
+                });
+              })
+            }
+          >
+            Rotate secondary key
+          </button>
+        </Modal>
+      )}
+      {withdraw && (
+        <Modal title="Withdraw access" close={() => setWithdraw(null)}>
+          <p>
+            Withdraw {s.applicationName(withdraw.applicationId)} access to{" "}
+            {products.data?.items.find((p) => p.id === withdraw.productId)
+              ?.name ?? withdraw.productId}
+            ? Gateway access is removed automatically.
+          </p>
+          <ErrorNotice error={w.error} />
+          <DangerZone
+            what="Withdraw subscription"
+            name={
+              products.data?.items.find((p) => p.id === withdraw.productId)
+                ?.name ?? withdraw.productId
+            }
+            consequence="This application will lose access to the product."
+            permission={{ enabled: true, reason: "" }}
+            busy={w.busy}
+            error={w.error}
+            onConfirm={() =>
+              w.run(async () => {
+                await api.del(`/api/subscriptions/${withdraw.id}`);
+                setWithdraw(null);
+                data.reload();
+              })
+            }
+          />
+        </Modal>
+      )}
+    </Panel>
+  );
+}
+export function Approvals({
+  session: s,
+  tick,
+}: {
+  session: Session;
+  tick: number;
+}) {
+  const data = useAsync(
+      () =>
+        api.get<{ items: any[] }>(
+          `/api/integration-events?applicationId=${s.application}`,
+        ),
+      [s.application, tick],
+    ),
+    w = useWork();
+  const [selected, setSelected] = useState<any>(null),
+    [reason, setReason] = useState("");
+  const rows = data.data?.items.filter((e) => e.integration === "skonet") ?? [];
+  return (
+    <Panel title="SkoNET approvals · simulated">
+      <p>
+        Decide requests for products and Kafka topics owned by this application.
+        Approved access is provisioned automatically.
+      </p>
+      <ErrorNotice error={data.error ?? w.error} />
+      {rows.length ? (
+        rows.map((e) => (
+          <div className="native-row" key={e.id}>
+            <div>
+              <strong>
+                {e.kind} · {s.applicationName(e.payload.consumer)}
+              </strong>
+              <p>{e.payload.purpose}</p>
+              <Status value={e.state} />
+            </div>
+            {e.state === "awaiting-decision" && (
+              <button
+                className="btn primary"
+                onClick={() => {
+                  setSelected(e);
+                  setReason("");
+                }}
+              >
+                Review request
+              </button>
+            )}
+          </div>
+        ))
+      ) : (
+        <Empty>No approval requests.</Empty>
+      )}
+      {selected && (
+        <Modal title="Review access request" close={() => setSelected(null)}>
+          <p>{selected.payload.purpose}</p>
+          <Field label="Decision reason">
+            <textarea
+              value={reason}
+              onChange={(e) => setReason(e.target.value)}
+            />
+          </Field>
+          <ErrorNotice error={w.error} />
+          <div className="native-actions">
+            {["approved", "rejected"].map((decision) => (
+              <button
+                key={decision}
+                className={`btn ${decision === "approved" ? "primary" : ""}`}
+                disabled={w.busy}
+                onClick={() =>
+                  void w.run(async () => {
+                    await api.post(
+                      `/api/integration-events/${selected.id}/decision`,
+                      { decision, reason },
+                    );
+                    setSelected(null);
+                    data.reload();
+                  })
+                }
+              >
+                {decision === "approved" ? "Approve" : "Reject"}
+              </button>
+            ))}
+          </div>
+        </Modal>
+      )}
+    </Panel>
+  );
+}
+export function Integrations({
+  session: s,
+  tick,
+  fixme,
+}: {
+  session: Session;
+  tick: number;
+  fixme?: boolean;
+}) {
+  const data = useAsync(
+      () =>
+        api.get<{ items: any[] }>(
+          `/api/integration-events?applicationId=${s.application}`,
+        ),
+      [s.application, tick],
+    ),
+    w = useWork();
+  return (
+    <>
+      <Panel title={fixme ? "FixMe diagnostics" : "Application integrations"}>
+        <p>
+          External services are simulated. Requests, responses, email
+          notifications and approval decisions are persisted.
+        </p>
+        <ErrorNotice error={data.error ?? w.error} />
+        <div className="native-actions">
+          {(fixme ? ["fixme"] : ["leanix", "ldapws", "fixme"]).map((name) => (
+            <button
+              className="btn"
+              key={name}
+              disabled={w.busy || !s.application}
+              onClick={() =>
+                void w.run(async () => {
+                  await api.post(
+                    `/api/applications/${s.application}/integrations/${name}`,
+                    { environment: s.environment },
+                  );
+                  data.reload();
+                })
+              }
+            >
+              {name === "leanix"
+                ? "Refresh LeanIX metadata"
+                : name === "ldapws"
+                  ? "Look up application contacts"
+                  : "Run FixMe diagnostics"}
+            </button>
+          ))}
+        </div>
+      </Panel>
+      <Panel title="Integration activity and mock mailbox">
+        {data.data?.items
+          .filter((e) => !fixme || e.integration === "fixme")
+          .map((e) => (
+            <details className="native-event" key={e.id}>
+              <summary>
+                <strong>
+                  {e.integration} · {e.kind}
+                </strong>{" "}
+                <Status value={e.state} />
+              </summary>
+              <pre>
+                {JSON.stringify(
+                  { request: e.payload, response: e.result, error: e.error },
+                  null,
+                  2,
+                )}
+              </pre>
+            </details>
+          ))}
+      </Panel>
+    </>
+  );
+}
+export function Kafka({
+  session: s,
+  tick,
+  proxyOnly,
+}: {
+  session: Session;
+  tick: number;
+  proxyOnly: boolean;
+}) {
+  const topics = useAsync(
+      () => api.get<{ items: any[] }>("/api/kafka/topics"),
+      [tick, s.application],
+    ),
+    access = useAsync(
+      () => api.get<{ items: any[] }>("/api/kafka/access"),
+      [tick, s.application],
+    ),
+    w = useWork();
+  const [create, setCreate] = useState(false),
+    [name, setName] = useState(""),
+    [selected, setSelected] = useState<any>(null),
+    [purpose, setPurpose] = useState(""),
+    [value, setValue] = useState(""),
+    [messages, setMessages] = useState<any[]>([]);
+  // The owner's fields, held apart from `selected` so an edit in progress is not overwritten by
+  // the three-second refresh underneath it.
+  const [draft, setDraft] = useState({ partitions: 3, description: "" });
+  const rows =
+    topics.data?.items.filter(
+      (t) =>
+        t.environment === s.environment &&
+        t.state !== "deleted" &&
+        (!proxyOnly || t.proxy_enabled),
+    ) ?? [];
+  return (
+    <>
+      <Panel
+        title={
+          proxyOnly
+            ? "Kafka REST Proxy · simulated"
+            : "Kafka topics · simulated"
+        }
+        actions={
+          <button className="btn primary" onClick={() => setCreate(true)}>
+            Create topic
+          </button>
+        }
+      >
+        <ErrorNotice error={topics.error ?? access.error ?? w.error} />
+        {rows.length ? (
+          rows.map((t) => (
+            <div className="native-row" key={t.id}>
+              <div>
+                <strong>{t.name}</strong>
+                <small>
+                  {s.applicationName(t.applicationId)} · {t.partitions}{" "}
+                  partitions
+                </small>
+                <Status value={t.state} />
+              </div>
+              <button
+                className="btn"
+                onClick={() => {
+                  setSelected(t);
+                  setMessages([]);
+                  setPurpose("");
+                  setDraft({
+                    partitions: t.partitions,
+                    description: t.description ?? "",
+                  });
+                }}
+              >
+                Open topic
+              </button>
+            </div>
+          ))
+        ) : (
+          <Empty>No topics in this environment.</Empty>
+        )}
+      </Panel>
+      <Panel title="Topic subscriptions">
+        {access.data?.items
+          .filter(
+            (a) =>
+              a.environment === s.environment &&
+              a.application_id === s.application,
+          )
+          .map((a) => (
+            <div className="native-row" key={a.id}>
+              <div>
+                <strong>{a.topicName}</strong>
+                <small>{a.purpose}</small>
+                <Status value={a.state} />
+              </div>
+              {["active", "pending", "activating"].includes(a.state) && (
+                <DangerZone
+                  what="Withdraw topic access"
+                  name={a.topicName}
+                  consequence="This application will lose access to the topic."
+                  permission={{ enabled: true, reason: "" }}
+                  busy={w.busy}
+                  error={w.error}
+                  onConfirm={() =>
+                    w.run(async () => {
+                      await api.del(`/api/kafka/access/${a.id}`);
+                      access.reload();
+                    })
+                  }
+                />
+              )}
+            </div>
+          ))}
+      </Panel>
+      {create && (
+        <Modal title="Create Kafka topic" close={() => setCreate(false)}>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              void w.run(async () => {
+                await api.post("/api/kafka/topics", {
+                  applicationId: s.application,
+                  environment: s.environment,
+                  name,
+                  partitions: draft.partitions,
+                  description: draft.description,
+                });
+                setCreate(false);
+                setName("");
+                setDraft({ partitions: 3, description: "" });
+                topics.reload();
+              });
+            }}
+          >
+            <Field label="Topic name">
+              <input
+                required
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+              />
+            </Field>
+            <Field label="Partitions">
+              <input
+                type="number"
+                min={1}
+                max={100}
+                required
+                value={draft.partitions}
+                onChange={(e) =>
+                  setDraft({ ...draft, partitions: Number(e.target.value) })
+                }
+              />
+            </Field>
+            <Field label="Description">
+              <textarea
+                value={draft.description}
+                onChange={(e) =>
+                  setDraft({ ...draft, description: e.target.value })
+                }
+              />
+            </Field>
+            <ErrorNotice error={w.error} />
+            <button className="btn primary" disabled={w.busy}>
+              Create topic
+            </button>
+          </form>
+        </Modal>
+      )}
+      {selected && (
+        <Modal title={selected.name} close={() => setSelected(null)}>
+          <ErrorNotice error={w.error} />
+          <p>Kafka broker and REST proxy transport are simulated.</p>
+          {selected.canEdit && (
+            <>
+              <Field label="Description">
+                <textarea
+                  value={draft.description}
+                  onChange={(e) =>
+                    setDraft({ ...draft, description: e.target.value })
+                  }
+                />
+              </Field>
+              <Field label="Partitions (a topic may only gain partitions)">
+                <input
+                  type="number"
+                  min={selected.partitions}
+                  max={100}
+                  value={draft.partitions}
+                  onChange={(e) =>
+                    setDraft({ ...draft, partitions: Number(e.target.value) })
+                  }
+                />
+              </Field>
+              <div className="native-actions">
+                <button
+                  className="btn primary"
+                  disabled={w.busy}
+                  onClick={() =>
+                    void w.run(async () => {
+                      await api.patch(`/api/kafka/topics/${selected.id}`, {
+                        description: draft.description,
+                        partitions: draft.partitions,
+                      });
+                      setSelected({ ...selected, ...draft });
+                      topics.reload();
+                    })
+                  }
+                >
+                  Save topic
+                </button>
+                <button
+                  className="btn"
+                  disabled={w.busy}
+                  onClick={() =>
+                    void w.run(async () => {
+                      await api.patch(`/api/kafka/topics/${selected.id}`, {
+                        proxyEnabled: !selected.proxy_enabled,
+                      });
+                      setSelected({
+                        ...selected,
+                        proxy_enabled: !selected.proxy_enabled,
+                      });
+                      topics.reload();
+                    })
+                  }
+                >
+                  {selected.proxy_enabled ? "Disable" : "Enable"} REST proxy
+                </button>
+              </div>
+              <DangerZone
+                what="Delete this topic"
+                name={selected.name}
+                consequence="The simulated topic and its messages go with it. Every application's access has to be withdrawn first."
+                permission={{ enabled: true, reason: "" }}
+                busy={w.busy}
+                error={w.error}
+                onConfirm={() =>
+                  w.run(async () => {
+                    await api.del(`/api/kafka/topics/${selected.id}`);
+                    setSelected(null);
+                    topics.reload();
+                  })
+                }
+              />
+            </>
+          )}
+          {access.data?.items.some(
+            (a) =>
+              a.topic_id === selected.id &&
+              a.application_id === s.application &&
+              a.state === "active",
+          ) ? (
+            <>
+              <Field label="Message">
+                <textarea
+                  value={value}
+                  onChange={(e) => setValue(e.target.value)}
+                />
+              </Field>
+              <div className="native-actions">
+                {["produce", "consume"].map((action) => (
+                  <button
+                    className="btn"
+                    key={action}
+                    disabled={w.busy}
+                    onClick={() =>
+                      void w.run(async () =>
+                        setMessages(
+                          (
+                            await api.post<any>(
+                              `/api/kafka/topics/${selected.id}/playground`,
+                              { applicationId: s.application, action, value },
+                            )
+                          ).items,
+                        ),
+                      )
+                    }
+                  >
+                    {action}
+                  </button>
+                ))}
+              </div>
+              <pre>{JSON.stringify(messages, null, 2)}</pre>
+            </>
+          ) : (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void w.run(async () => {
+                  await api.post(`/api/kafka/topics/${selected.id}/subscribe`, {
+                    applicationId: s.application,
+                    purpose,
+                  });
+                  setSelected(null);
+                  access.reload();
+                });
+              }}
+            >
+              <Field label="Access request purpose">
+                <textarea
+                  required
+                  minLength={3}
+                  maxLength={500}
+                  value={purpose}
+                  onChange={(e) => setPurpose(e.target.value)}
+                />
+              </Field>
+              <button
+                className="btn primary"
+                disabled={w.busy || selected.state !== "ready"}
+              >
+                Request access
+              </button>
+            </form>
+          )}
+        </Modal>
+      )}
+    </>
+  );
+}

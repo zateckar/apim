@@ -43,7 +43,7 @@ export const ATTENTION_CODES = [
   "gateway-activation-blocked",
   "job-failed",
   // the empty-estate branch of the same evaluator, and the only three that never appear in an
-  // `attention[]` block: "publish your first API" on a team that has fifty is nonsense `[P2-09]`
+  // `attention[]` block: "publish your first API" on a application that has fifty is nonsense `[P2-09]`
   "start-here-publish",
   "start-here-subscribe",
   "start-here-operate",

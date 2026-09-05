@@ -326,7 +326,7 @@ describe("reading telemetry back", () => {
     }
   });
 
-  test("reads are team-scoped, and the no-route bucket is admin-only", async () => {
+  test("reads are application-scoped, and the no-route bucket is admin-only", async () => {
     const api = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
     await poll(cp, { telemetry: report(7, { resourceId: api.resourceId }) });
     await poll(cp, { runId: "run_b", telemetry: report(4) });
@@ -341,7 +341,7 @@ describe("reading telemetry back", () => {
     ).json();
     expect(asPavel.totals.requests).toBe(7);
 
-    // Clara is in another team and owns none of it.
+    // Clara is in another application and owns none of it.
     const asClara = await (
       await cp.call("GET", "/api/telemetry/summary?environment=dev", { cookie: api.clara })
     ).json();

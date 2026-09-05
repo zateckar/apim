@@ -79,7 +79,7 @@ export function MarketListing({
               <StatusChip chip={lifecycleChip(item.lifecycle as never)} />
             </h3>
             <p className="muted small">
-              {item.summary ?? "No summary yet."} · owned by {item.teamId}
+              {item.summary ?? "No summary yet."} · owned by {item.applicationId}
               {item.unpublished && " · not published anywhere yet"}
             </p>
           </div>
@@ -406,7 +406,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
 function GettingStarted({ item }: { item: MarketListingDetail }) {
   return (
     <>
-      <Card title="1 · Subscribe" hint="A key belongs to an application, and an application belongs to your team.">
+      <Card title="1 · Subscribe" hint="A key belongs to an application, and an application belongs to your application.">
         <p>
           {item.products.length === 1
             ? "Subscribe through this product:"

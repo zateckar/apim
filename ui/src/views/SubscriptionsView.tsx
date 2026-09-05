@@ -61,7 +61,7 @@ export function SubscriptionsView({ session }: { session: Session }) {
         ))
       )}
 
-      <NewApplication teamId={session.team} onCreated={applications.reload} />
+      <NewApplication applicationId={session.application} onCreated={applications.reload} />
     </>
   );
 }
@@ -75,13 +75,13 @@ function ApplicationCard({
   subscriptions: Subscription[];
   onChanged: () => void;
 }) {
-  const canDelete = permit("delete", application.capabilities, { team: application.teamId });
+  const canDelete = permit("delete", application.capabilities, { application: application.applicationId });
   const action = useAction();
 
   return (
     <Card
       title={application.name}
-      hint={`Owned by ${application.teamId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
+      hint={`Owned by ${application.applicationId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
     >
       <Notice kind="error">{action.error}</Notice>
 
@@ -147,7 +147,7 @@ function ApplicationCard({
   );
 }
 
-function NewApplication({ teamId, onCreated }: { teamId: string; onCreated: () => void }) {
+function NewApplication({ applicationId, onCreated }: { applicationId: string; onCreated: () => void }) {
   const [name, setName] = useState("");
   const action = useAction();
   return (
@@ -161,7 +161,7 @@ function NewApplication({ teamId, onCreated }: { teamId: string; onCreated: () =
         <button
           disabled={action.busy || name.trim().length === 0}
           onClick={async () => {
-            const ok = await action.run(() => api.post("/api/applications", { name, teamId }));
+            const ok = await action.run(() => api.post("/api/applications", { name, applicationId }));
             if (ok) {
               setName("");
               onCreated();
@@ -194,7 +194,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
     return (
       <EmptyState
         title="No such subscription"
-        detail="It may have been deleted, or you are on neither side of it — neither the team whose application holds the keys nor the team that publishes the product."
+        detail="It may have been deleted, or you are on neither side of it — neither the application whose application holds the keys nor the application that publishes the product."
         action={<Link to="/subscriptions">Back to my subscriptions →</Link>}
       />
     );
@@ -223,7 +223,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
       {asPublisher ? (
         <Card title="Keys">
           <p className="muted">
-            This subscription's keys belong to the team that owns {subscription.applicationName}.
+            This subscription's keys belong to the application that owns {subscription.applicationName}.
             You publish {subscription.productName}, which lets you see that they are calling it and
             lets you stop them — it does not let you read or replace their credentials, because a
             rotated key would break their caller at a moment of your choosing.
@@ -348,7 +348,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
                 : {
                     enabled: false,
                     reason:
-                      "You are on neither side of this subscription: it is not your team's application, and not your team's product.",
+                      "You are on neither side of this subscription: it is not your application's application, and not your application's product.",
                   }
           }
           busy={action.busy}

@@ -614,7 +614,7 @@ describe("the control plane's outbound trust (§8.5)", () => {
       const resource = await (
         await cp.call("POST", "/api/resources", {
           cookie: alice,
-          body: { kind: "rest", name: "internal-api", teamId: "team_platform", apiVersion: "v1" },
+          body: { kind: "rest", name: "internal-api", applicationId: "application_platform", apiVersion: "v1" },
         })
       ).json();
 

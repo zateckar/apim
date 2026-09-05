@@ -42,30 +42,30 @@ const user = {
   id: "u1",
   name: "Alice Novak",
   roles: ["publisher"],
-  teams: ["team_platform"],
+  applications: ["application_platform"],
   isAdmin: false,
 };
 
 const session = {
   user,
   meta,
-  teams: [{ id: "team_platform", name: "Platform Team", mine: true }],
-  team: "team_platform",
-  setTeam: () => {},
-  teamName: (id: string) => (id === "team_platform" ? "Platform Team" : id),
+  applications: [{ id: "application_platform", name: "Platform Application", mine: true }],
+  application: "application_platform",
+  setApplication: () => {},
+  applicationName: (id: string) => (id === "application_platform" ? "Platform Application" : id),
   environment: "dev",
   setEnvironment: () => {},
   reload: () => {},
-  me: { user, teams: [], mustChangePassword: false, claimsStale: false, unmappedGroups: [] },
+  me: { user, applications: [], mustChangePassword: false, claimsStale: false, unmappedGroups: [] },
 };
 
 const resource = {
   id: "res_1",
   kind: "rest",
   name: "petstore",
-  teamId: "team_platform",
+  applicationId: "application_platform",
   apiVersion: "v1",
-  family: "team_platform/petstore",
+  family: "application_platform/petstore",
   lifecycle: "active",
   sunsetAt: null,
   updatedAt: "2026-01-01T00:00:00Z",
@@ -134,7 +134,7 @@ describe("the components keep their promises", () => {
   });
 
   test("an action the caller cannot perform is disabled, with the reason visible", () => {
-    const refused = permit("edit", ["read"], { team: "Orders" });
+    const refused = permit("edit", ["read"], { application: "Orders" });
     const html = renderToStaticMarkup(
       <Action permission={refused} onClick={() => {}}>
         Change this
@@ -143,7 +143,7 @@ describe("the components keep their promises", () => {
     expect(html).toContain("disabled");
     // Not only in the tooltip: a title attribute is invisible to a reader who is not hovering.
     expect(html).toContain("action-reason");
-    expect(html).toContain("the Orders team");
+    expect(html).toContain("the Orders application");
     expect(renderToStaticMarkup(<Action permission={ALLOWED} onClick={() => {}}>Go</Action>)).not.toContain(
       "disabled",
     );
@@ -218,9 +218,9 @@ describe("the wizards", () => {
     expect(html).toContain('class="stepper"');
     // A fresh account, nothing typed: the primary control is disabled rather than producing a 400.
     expect(html).toMatch(/<button disabled=""[^>]*>Next: where it answers<\/button>/);
-    // The team is the switcher's, by name rather than by id — "team_platform" is not a group
+    // The application is the switcher's, by name rather than by id — "application_platform" is not a group
     // anybody can go and find.
-    expect(html).toContain("Platform Team");
+    expect(html).toContain("Platform Application");
   });
 
   test("a new version is three steps, prefilled with the next identifier", () => {
@@ -251,7 +251,7 @@ describe("the wizards", () => {
   });
 
   test("a caller who cannot publish sees the control and the reason, not a missing screen", () => {
-    const refused = permit("publish", ["read"], { team: "Orders" });
+    const refused = permit("publish", ["read"], { application: "Orders" });
     const html = renderToStaticMarkup(
       <VersionWizard resource={resource} meta={meta} canPublish={refused} />,
     );
@@ -291,7 +291,7 @@ describe("what a journey ends with", () => {
       tags: [],
       icon: null,
       docsUrl: null,
-      teamId: "team_platform",
+      applicationId: "application_platform",
       lifecycle: "active",
       endpoints: [{ environment: "dev", host: "gw.dev.internal", basePath: "/petstore/v1", live: true }],
       products: [],

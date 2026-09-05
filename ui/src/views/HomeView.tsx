@@ -51,7 +51,7 @@ export function HomeView({ session }: { session: Session }) {
   if (!dashboard.data) return <Skeleton rows={6} />;
   const data = dashboard.data;
 
-  // A team that has neither published nor subscribed to anything gets the three paths instead of
+  // A application that has neither published nor subscribed to anything gets the three paths instead of
   // three empty blocks (plan §9.5). Empty blocks would be an accurate answer to a question nobody
   // asked; this is the answer to the question they have.
   if (data.startHere) {
@@ -93,7 +93,7 @@ export function HomeView({ session }: { session: Session }) {
       {!showOwner && !showConsumer && !showPlatform && (
         <EmptyState
           title="Nothing here yet"
-          detail="Your teams have not published or subscribed to anything, and you are not an administrator."
+          detail="Your applications have not published or subscribed to anything, and you are not an administrator."
           action={<Link to="/catalog">Browse the catalog →</Link>}
         />
       )}
@@ -125,7 +125,7 @@ function OwnerBlock({
             <h3>The APIs you publish</h3>
             <p className="hint">
               {apis.total} <Term name="api">API</Term>
-              {apis.total === 1 ? "" : "s"} across your teams
+              {apis.total === 1 ? "" : "s"} across your applications
               {environments.length > 0 && (
                 <>
                   {" — "}

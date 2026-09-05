@@ -85,7 +85,7 @@ function unitsIn(db: DB, resourceId: string, environment: string): Map<string, u
 }
 
 export interface PlanInput {
-  resource: { id: string; name: string; api_version: string; kind: string; team_id: string };
+  resource: { id: string; name: string; api_version: string; kind: string; application_id: string };
   revision: { id: string; rev: number };
   environment: string;
   skipChain?: boolean;

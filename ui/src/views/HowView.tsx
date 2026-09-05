@@ -13,7 +13,7 @@ import { define, GLOSSARY, type GlossaryEntry } from "../lib/glossary";
 const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: string; to?: string }> = [
   {
     title: "Publish an API",
-    who: "You have a definition and you want other teams to be able to call it.",
+    who: "You have a definition and you want other applications to be able to call it.",
     steps: [
       "Import the definition — upload a file, give a URL, or point at an MCP server or A2A agent and let the portal read its card.",
       "Say where it answers: a host and a base path in this environment, and the backend it forwards to.",
@@ -82,10 +82,10 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     who: "You are an administrator and a new colleague needs access.",
     steps: [
       "If they sign in through the identity provider, they get an account here the first time they arrive — you do not create one.",
-      "Put them in a team. Membership is what lets somebody publish and change; it is not a label.",
-      "A team can also be granted by an identity provider group, which the portal matches to it by name.",
+      "Put them in a application. Membership is what lets somebody publish and change; it is not a label.",
+      "A application can also be granted by an identity provider group, which the portal matches to it by name.",
     ],
-    ends: "They can act on that team's APIs at their very next request — nobody has to sign out and back in.",
+    ends: "They can act on that application's APIs at their very next request — nobody has to sign out and back in.",
     to: "/users",
   },
 ];

@@ -123,23 +123,23 @@ function meFor(ctx: Ctx, user: User | null): Record<string, unknown> {
        *  that would change nothing `[P1-17]`. */
       adminFrom: row ? adminFrom(row) : null,
     },
-    teams: membershipsOf(ctx.app.db, user.id),
+    applications: membershipsOf(ctx.app.db, user.id),
     mustChangePassword: row?.must_change === 1,
     /**
      * A deployment whose scope omits `offline_access` gets no refresh token, so the roles and
-     * teams on screen are the ones from sign-in and will not change until the next one. Saying so
+     * applications on screen are the ones from sign-in and will not change until the next one. Saying so
      * is better than silently running on eight-hour-old claims.
      */
     claimsStale:
       row?.provider === "oidc" && ctx.app.config.oidc !== null
         ? claimsAreStale(ctx)
         : false,
-    /** Groups the token carried that map to no team — the Teams screen offers to create them. */
+    /** Groups the token carried that map to no application — the Applications screen offers to create them. */
     unmappedGroups: unmappedGroupsFor(user.id),
     /**
      * The token carried no groups at all at the configured claim. Distinct from the line above and
-     * reported separately: "your groups match no team here" is a portal problem an administrator
-     * fixes on the Teams screen, and "your token had no groups" is a claim-path problem nobody can
+     * reported separately: "your groups match no application here" is a portal problem an administrator
+     * fixes on the Applications screen, and "your token had no groups" is a claim-path problem nobody can
      * fix from any screen. Told apart, or the second is diagnosed as the first for an afternoon.
      */
     noGroupsInToken: row?.provider === "oidc" ? groupClaimWasEmpty(user.id) : false,
@@ -173,7 +173,7 @@ export function registerAuthRoutes(router: Router): void {
       // Empty unless the bypass is actually on: three usernames are harmless, but an endpoint that
       // advertises accounts a deployment does not have is a support call.
       devUsers: config.authProviders.includes("dev")
-        ? DEV_USERS.map((u) => ({ id: u.id, name: u.name, role: u.role, teams: u.teams }))
+        ? DEV_USERS.map((u) => ({ id: u.id, name: u.name, role: u.role, applications: u.applications }))
         : [],
       passwordMinLength: config.localPasswordMinLen,
     });

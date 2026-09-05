@@ -404,7 +404,7 @@ export function claimsToIdentity(claims: Record<string, unknown>, oidc: OidcConf
   // Two readers, not one, because a role → subjects map has to be read in opposite directions for
   // the two questions. Its keys answer "which roles does this person hold"; its values answer
   // "which things may they act on". A single reader would get one of the two backwards, and the
-  // symptom would be either nobody is an administrator or everybody is in a team named `api.admin`.
+  // symptom would be either nobody is an administrator or everybody is in a application named `api.admin`.
   const roles = roleNamesAt(claims, oidc.roleClaim);
   return {
     username,
@@ -416,26 +416,26 @@ export function claimsToIdentity(claims: Record<string, unknown>, oidc: OidcConf
 }
 
 /**
- * Group values matched against `team.source_group` — matched, never created. A group with no
+ * Group values matched against `application.source_group` — matched, never created. A group with no
  * mapping maps to nothing and is reported back to the user, because a directory that invented
- * teams would let anybody holding an IdP group become the owner of a new scope.
+ * applications would let anybody holding an IdP group become the owner of a new scope.
  *
  * Keycloak's group mapper emits full paths (`/apim/orders`), so both the whole value and its last
  * segment are tried, case-insensitively and trimmed — directory exports are not careful.
  */
-export function mapGroupsToTeams(
+export function mapGroupsToApplications(
   db: DB,
   groups: string[],
-): { teamIds: string[]; unmapped: string[] } {
+): { applicationIds: string[]; unmapped: string[] } {
   const rows = db
     .query<{ id: string; source_group: string | null }, []>(
-      "SELECT id, source_group FROM team WHERE source_group IS NOT NULL AND source_group <> ''",
+      "SELECT id, source_group FROM application WHERE source_group IS NOT NULL AND source_group <> ''",
     )
     .all();
   const bySourceGroup = new Map<string, string>();
   for (const row of rows) bySourceGroup.set(row.source_group!.trim().toLowerCase(), row.id);
 
-  const teamIds = new Set<string>();
+  const applicationIds = new Set<string>();
   const unmapped: string[] = [];
   for (const raw of groups) {
     const value = raw.trim();
@@ -444,10 +444,10 @@ export function mapGroupsToTeams(
     const hit = candidates
       .map((candidate) => bySourceGroup.get(candidate.toLowerCase()))
       .find((id): id is string => Boolean(id));
-    if (hit) teamIds.add(hit);
+    if (hit) applicationIds.add(hit);
     else if (!unmapped.includes(value)) unmapped.push(value);
   }
-  return { teamIds: [...teamIds], unmapped };
+  return { applicationIds: [...applicationIds], unmapped };
 }
 
 /** What the last claim read produced for one user — `GET /api/me` reports both fields. */
@@ -461,7 +461,7 @@ export function unmappedGroupsFor(userId: string): string[] {
  * True when the token was read successfully and the configured group claim held **nothing at all**.
  *
  * This is the misconfiguration with no other symptom. Point `OIDC_GROUP_CLAIM` at a path the realm
- * does not use — or at one whose shape is not read — and every user signs in fine, is in no team,
+ * does not use — or at one whose shape is not read — and every user signs in fine, is in no application,
  * can publish nothing, and there is no unmapped group to report because there was no group. It
  * looks exactly like "this person has not been given access yet", which is what makes it expensive:
  * the administrator goes looking in the directory, and the directory is right.
@@ -472,14 +472,14 @@ export function groupClaimWasEmpty(userId: string): boolean {
 
 /**
  * Apply what the token says to the directory: the mutable display fields, the admin flag, and the
- * IdP-derived team memberships. Locally granted memberships are left alone (D33).
+ * IdP-derived application memberships. Locally granted memberships are left alone (D33).
  */
 export function applyClaims(
   app: App,
   row: PrincipalRow,
   identity: ClaimIdentity,
 ): { unmapped: string[] } {
-  const { teamIds, unmapped } = mapGroupsToTeams(app.db, identity.groups);
+  const { applicationIds, unmapped } = mapGroupsToApplications(app.db, identity.groups);
   app.db.run(
     `UPDATE principal
         SET username = ?, email = ?, display_name = ?, idp_admin = ?
@@ -492,7 +492,7 @@ export function applyClaims(
       row.id,
     ],
   );
-  syncIdpMemberships(app.db, row.id, teamIds);
+  syncIdpMemberships(app.db, row.id, applicationIds);
   idpGroupsByUser.set(row.id, { unmapped, carried: identity.groups.length });
   return { unmapped };
 }

@@ -16,15 +16,14 @@ afterEach(() => {
 });
 
 describe("list visibility", () => {
-  test("a publisher does not see another team's applications", async () => {
+  test("the application directory exposes ownership names but only marks authorized memberships", async () => {
     const published = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
 
-    // An application is one team's own object. Its existence, its name and how many it has are
-    // nobody else's business, and unlike a subscription it names no relationship to a publisher.
     const appsAsPublisher = await (
       await cp.call("GET", "/api/applications", { cookie: published.pavel })
     ).json();
-    expect(appsAsPublisher.items).toHaveLength(0);
+    expect(appsAsPublisher.items).toHaveLength(2);
+    expect(appsAsPublisher.items.filter((a: any) => a.mine).map((a: any) => a.id)).toEqual(["application_platform"]);
   });
 
   test("a subscription is visible to both of its sides, and says which side you are", async () => {
@@ -54,14 +53,14 @@ describe("list visibility", () => {
     }
   });
 
-  test("the publisher's right follows the product's team, not the person who published it", async () => {
+  test("the publisher's right follows the product's application, not the person who published it", async () => {
     const published = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
 
-    // Hand the product to another team. Pavel authored every part of this API and still published
-    // it — but he is now on neither side of this subscription, and the rule is about the teams the
+    // Hand the product to another application. Pavel authored every part of this API and still published
+    // it — but he is now on neither side of this subscription, and the rule is about the applications the
     // two objects belong to today rather than about who did the work. This is the case that would
     // otherwise widen quietly into "any publisher sees any subscription".
-    cp.app.db.run("UPDATE product SET team_id = 'team_orders' WHERE id = ?", [published.productId]);
+    cp.app.db.run("UPDATE product SET application_id = 'application_orders' WHERE id = ?", [published.productId]);
 
     const asPavel = await (
       await cp.call("GET", "/api/subscriptions", { cookie: published.pavel })
@@ -73,9 +72,9 @@ describe("list visibility", () => {
     });
     expect(revoke.status).toBe(403);
     // Both sides named, because "you cannot do this" without saying which relationship is missing
-    // sends somebody to ask the wrong team for access.
+    // sends somebody to ask the wrong application for access.
     const problem = await revoke.json();
-    expect(problem.detail).toContain("neither the team that owns");
+    expect(problem.detail).toContain("neither the application that owns");
   });
 
   test("an admin sees everything", async () => {
@@ -117,7 +116,7 @@ describe("list visibility", () => {
       cookie: published.pavel,
     });
     expect(revoke.status).toBe(200);
-    expect((await revoke.json()).state).toBe("revoked");
+    expect((await revoke.json()).state).toBe("revoking");
   });
 
   test("the audit says which side ended it", async () => {

@@ -178,7 +178,7 @@ export async function dispatch(app: App, router: Router, req: Request): Promise<
     if (matched.route.auth === "instance") {
       instance = instanceFrom(app, req);
     } else {
-      // An OIDC session's roles and teams are re-read from the identity provider on a bounded
+      // An OIDC session's roles and applications are re-read from the identity provider on a bounded
       // interval, and that has to happen before the directory is consulted (v5 `[P1-13]`). It is
       // skipped for the authentication routes themselves, which would otherwise recurse.
       if (!url.pathname.startsWith("/api/auth/") && !url.pathname.startsWith("/auth/")) {

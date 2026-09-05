@@ -1,3 +1,5 @@
+import { runOperations } from "./operations.ts";
+import { runIntegrationEvents } from "./integrations.ts";
 import type { App } from "./router.ts";
 import { newId, nowIso, type DB } from "./db.ts";
 import { writeAudit } from "./audit.ts";
@@ -88,7 +90,7 @@ function reconcile(app: App, payload: ReconcilePayload): string {
 
   if (target.paused) {
     // `paused` stops the reconciler from writing anything; the gateway keeps serving what it has.
-    return "target is paused; nothing applied";
+    throw new Error("environment is paused; waiting for automatic recovery");
   }
 
   return withTargetLease(db, target.id, "cp-inline-runner", () => {
@@ -135,9 +137,9 @@ function reconcile(app: App, payload: ReconcilePayload): string {
         plan = JSON.parse(stored.plan_json) as ReleasePlan;
         const resource = db
           .query<
-            { id: string; name: string; api_version: string; kind: string; team_id: string },
+            { id: string; name: string; api_version: string; kind: string; application_id: string },
             [string]
-          >("SELECT id, name, api_version, kind, team_id FROM resource WHERE id = ?")
+          >("SELECT id, name, api_version, kind, application_id FROM resource WHERE id = ?")
           .get(payload.resourceId);
         const revision = db
           .query<{ id: string; rev: number }, [string]>("SELECT id, rev FROM revision WHERE id = ?")
@@ -152,20 +154,8 @@ function reconcile(app: App, payload: ReconcilePayload): string {
           // accepted, and re-deciding it here would make a break-glass release fail on its retry.
           skipChain: plan.skipChain,
         });
-        if (planDigest(recomputed) !== stored.plan_digest) {
-          db.run("UPDATE release SET state = 'stale', reason = ? WHERE id = ?", [
-            "the plan changed between confirmation and apply; recompute and confirm again",
-            release.id,
-          ]);
-          writeAudit(db, {
-            actor: "reconciler",
-            action: "release.stale",
-            subject: `resource:${payload.resourceId}`,
-            outcome: "failed",
-            detail: { environment: target.environment, releaseId: release.id, planId: payload.planId },
-          });
-          return "plan digest moved; release marked stale";
-        }
+        if (recomputed.blockers.length) throw new Error(recomputed.blockers.map(b => b.detail).join("; "));
+        plan = recomputed;
         // The merge is applied here, in the same transaction that moves release.state, so a
         // release that fails or goes stale changes no policy at all (review V1-03).
         applySeededUnits(db, plan, release.released_by);
@@ -219,12 +209,15 @@ function reconcile(app: App, payload: ReconcilePayload): string {
 
 /** Runs every queued job once. Returns how many ran. */
 export function runDueJobs(app: App): number {
+  runIntegrationEvents(app);
+  runOperations(app);
   const { db } = app;
+  db.run("UPDATE job SET state='queued' WHERE state='running' AND updated_at<?", [new Date(Date.now()-60000).toISOString()]);
   const jobs = db
-    .query<{ id: string; kind: string; payload: string; attempts: number }, []>(
-      "SELECT id, kind, payload, attempts FROM job WHERE state = 'queued' ORDER BY created_at LIMIT 20",
+    .query<{ id: string; kind: string; payload: string; attempts: number }, [string]>(
+      "SELECT id, kind, payload, attempts FROM job WHERE state = 'queued' AND (next_attempt_at IS NULL OR next_attempt_at <= ?) ORDER BY created_at LIMIT 20",
     )
-    .all();
+    .all(nowIso());
 
   for (const job of jobs) {
     db.run("UPDATE job SET state = 'running', attempts = attempts + 1, updated_at = ? WHERE id = ?", [
@@ -250,7 +243,8 @@ export function runDueJobs(app: App): number {
     } catch (err) {
       const message = (err as Error).message;
       const attempts = job.attempts + 1;
-      const finished = attempts >= MAX_ATTEMPTS;
+      const finished = job.kind !== "reconcile" && attempts >= MAX_ATTEMPTS;
+      db.run("UPDATE job SET next_attempt_at=? WHERE id=?", [new Date(Date.now()+Math.min(300000,1000*2**Math.min(attempts,8))).toISOString(),job.id]);
       db.run("UPDATE job SET state = ?, result = ?, updated_at = ? WHERE id = ?", [
         finished ? "failed" : "queued",
         message,

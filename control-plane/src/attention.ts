@@ -19,8 +19,8 @@ import type { App } from "./router.ts";
  * one API depending on which screen they are looking at.
  *
  * **It is a fixed set of SQL queries returning candidates, never a load-everything loop**
- * `[P2-03]`. Every query is anti-joined, environment-scoped, team-scoped and `LIMIT`ed, so a team
- * with five hundred APIs costs the same shape of work as a team with five. The one place that
+ * `[P2-03]`. Every query is anti-joined, environment-scoped, application-scoped and `LIMIT`ed, so a application
+ * with five hundred APIs costs the same shape of work as a application with five. The one place that
  * leaves SQL is `config-error`, which asks the config builder — the same function the poll uses —
  * because "is this route being served" has exactly one correct answer and it lives there.
  */
@@ -42,8 +42,8 @@ export interface ConfigError {
 export interface Scope {
   /** Which environments to consider — one, or the whole chain for `environment=all`. */
   environments: string[];
-  /** The caller's teams, or `null` for an admin: null means "no team filter at all". */
-  teams: string[] | null;
+  /** The caller's applications, or `null` for an admin: null means "no application filter at all". */
+  applications: string[] | null;
   /** One resource, for the API page's banner. */
   resourceId?: string;
   now?: number;
@@ -58,7 +58,7 @@ export interface Scope {
 export function scopeFor(app: App, user: User, environment: string, resourceId?: string): Scope {
   return {
     environments: environment === "all" ? [...app.config.promotionChain] : [environment],
-    teams: user.isAdmin ? null : user.teams,
+    applications: user.isAdmin ? null : user.applications,
     ...(resourceId ? { resourceId } : {}),
   };
 }
@@ -104,14 +104,14 @@ interface Filter {
   args: string[];
 }
 
-/** The team and resource filters every owner query carries, as one reusable fragment. */
+/** The application and resource filters every owner query carries, as one reusable fragment. */
 function ownerFilter(scope: Scope, alias = "r"): Filter {
   const parts: string[] = [];
   const args: string[] = [];
-  if (scope.teams !== null) {
-    if (scope.teams.length === 0) return { sql: " AND 0 = 1", args: [] };
-    parts.push(`${alias}.team_id IN (${placeholders(scope.teams)})`);
-    args.push(...scope.teams);
+  if (scope.applications !== null) {
+    if (scope.applications.length === 0) return { sql: " AND 0 = 1", args: [] };
+    parts.push(`${alias}.application_id IN (${placeholders(scope.applications)})`);
+    args.push(...scope.applications);
   }
   if (scope.resourceId) {
     parts.push(`${alias}.id = ?`);
@@ -130,7 +130,7 @@ interface ResourceRow {
   id: string;
   name: string;
   api_version: string;
-  team_id: string;
+  application_id: string;
 }
 
 interface EnvResourceRow extends ResourceRow {
@@ -149,7 +149,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // No definition: there is nothing to publish, so nothing else about it is worth saying.
   const noDefinition = db
     .query<ResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id
+      `SELECT r.id, r.name, r.api_version, r.application_id
          FROM resource r
         WHERE NOT EXISTS (SELECT 1 FROM revision v WHERE v.resource_id = r.id)${owner.sql}
         ORDER BY r.name LIMIT ${RULE_LIMIT}`,
@@ -175,7 +175,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
    */
   const noRoute = db
     .query<EnvResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, e.environment
+      `SELECT r.id, r.name, r.api_version, r.application_id, e.environment
          FROM resource r
          JOIN (SELECT resource_id, environment FROM binding
                UNION SELECT resource_id, environment FROM release) e ON e.resource_id = r.id
@@ -200,7 +200,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
 
   const noBinding = db
     .query<EnvResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, e.environment
+      `SELECT r.id, r.name, r.api_version, r.application_id, e.environment
          FROM resource r
          JOIN (SELECT resource_id, environment FROM route
                UNION SELECT resource_id, environment FROM release) e ON e.resource_id = r.id
@@ -227,7 +227,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // screen's job, and saying it here for every API in every environment would drown the list.
   const neverReleased = db
     .query<ResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id
+      `SELECT r.id, r.name, r.api_version, r.application_id
          FROM resource r
         WHERE EXISTS (SELECT 1 FROM revision v WHERE v.resource_id = r.id)
           AND NOT EXISTS (
@@ -252,7 +252,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // since been superseded is history, not attention.
   const failed = db
     .query<EnvResourceRow & { state: string; reason: string | null; rev: number }, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, rel.environment, rel.state, rel.reason, v.rev
+      `SELECT r.id, r.name, r.api_version, r.application_id, rel.environment, rel.state, rel.reason, v.rev
          FROM release rel
          JOIN resource r  ON r.id = rel.resource_id
          JOIN revision v  ON v.id = rel.revision_id
@@ -304,7 +304,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // global tier counts, because the effective document is what the gateway runs `[R2-17]`.
   const openRoutes = db
     .query<EnvResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, rel.environment
+      `SELECT r.id, r.name, r.api_version, r.application_id, rel.environment
          FROM release rel
          JOIN resource r ON r.id = rel.resource_id
         WHERE rel.state = 'converged' AND rel.environment IN (${placeholders(envs)})
@@ -335,7 +335,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
 
   const noCeiling = db
     .query<EnvResourceRow, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, rel.environment
+      `SELECT r.id, r.name, r.api_version, r.application_id, rel.environment
          FROM release rel
          JOIN resource r ON r.id = rel.resource_id
         WHERE rel.state = 'converged' AND rel.environment IN (${placeholders(envs)})
@@ -366,7 +366,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // blocking. `json_extract` returns NULL when the key is absent, and NULL fails the comparison.
   const downgraded = db
     .query<EnvResourceRow & { request: string }, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, p.environment,
+      `SELECT r.id, r.name, r.api_version, r.application_id, p.environment,
               json_extract(p.value_json, '$.request') AS request
          FROM policy_entry p
          JOIN resource r ON r.id = p.resource_id
@@ -393,7 +393,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   // unreleased revisions would report the newest *old* one and call a current API out of date.
   const unreleased = db
     .query<ResourceRow & { rev: number }, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, v.rev
+      `SELECT r.id, r.name, r.api_version, r.application_id, v.rev
          FROM revision v
          JOIN resource r ON r.id = v.resource_id
         WHERE v.pruned_at IS NULL
@@ -431,7 +431,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   const exceptionSoon = new Date(now + TLS_EXCEPTION_WINDOW_DAYS * 86_400_000).toISOString();
   const exceptions = db
     .query<EnvResourceRow & { mode: string; expires_at: string; reason: string }, string[]>(
-      `SELECT r.id, r.name, r.api_version, r.team_id, x.environment, x.mode, x.expires_at, x.reason
+      `SELECT r.id, r.name, r.api_version, r.application_id, x.environment, x.mode, x.expires_at, x.reason
          FROM tls_exception x
          JOIN resource r ON r.id = x.resource_id
         WHERE x.revoked_at IS NULL AND x.expires_at > ? AND x.environment IN (${placeholders(envs)})${owner.sql}
@@ -455,16 +455,16 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   }
 
   const certSoon = new Date(now + EXPIRY_WINDOW_DAYS * 86_400_000).toISOString();
-  const certTeam =
-    scope.teams === null
+  const certApplication =
+    scope.applications === null
       ? { sql: "", args: [] as string[] }
       : {
           sql:
-            scope.teams.length === 0 ? " AND 0 = 1" : ` AND c.team_id IN (${placeholders(scope.teams)})`,
-          args: scope.teams,
+            scope.applications.length === 0 ? " AND 0 = 1" : ` AND c.application_id IN (${placeholders(scope.applications)})`,
+          args: scope.applications,
         };
-  // Not on one API's page: a certificate belongs to a team and an environment, and several APIs
-  // may present it, so it is the team's row rather than any single API's.
+  // Not on one API's page: a certificate belongs to a application and an environment, and several APIs
+  // may present it, so it is the application's row rather than any single API's.
   const certificates = scope.resourceId
     ? []
     : db
@@ -474,10 +474,10 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
         >(
           `SELECT c.id, c.name, c.environment, c.not_after
              FROM certificate c
-            WHERE c.not_after <= ? AND c.environment IN (${placeholders(envs)})${certTeam.sql}
+            WHERE c.not_after <= ? AND c.environment IN (${placeholders(envs)})${certApplication.sql}
             ORDER BY c.not_after LIMIT ${RULE_LIMIT}`,
         )
-        .all(certSoon, ...envs, ...certTeam.args);
+        .all(certSoon, ...envs, ...certApplication.args);
   for (const c of certificates) {
     rows.push(
       row(
@@ -495,14 +495,14 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
   return sortAttention(rows);
 }
 
-/** One row's worth of ownership, for the rules that do not carry the team through their own SQL. */
+/** One row's worth of ownership, for the rules that do not carry the application through their own SQL. */
 function ownedByScope(db: DB, scope: Scope, resourceId: string): boolean {
-  if (scope.teams === null) return true;
-  if (scope.teams.length === 0) return false;
+  if (scope.applications === null) return true;
+  if (scope.applications.length === 0) return false;
   const owner = db
-    .query<{ team_id: string }, [string]>("SELECT team_id FROM resource WHERE id = ?")
+    .query<{ application_id: string }, [string]>("SELECT application_id FROM resource WHERE id = ?")
     .get(resourceId);
-  return owner !== null && scope.teams.includes(owner.team_id);
+  return owner !== null && scope.applications.includes(owner.application_id);
 }
 
 /**
@@ -540,9 +540,9 @@ interface SubscriptionRow {
 const MAX_SUBSCRIPTIONS = 200;
 
 export function consumerSubscriptions(app: App, scope: Scope): SubscriptionRow[] {
-  const teams = scope.teams;
-  if (teams !== null && teams.length === 0) return [];
-  const teamSql = teams === null ? "" : ` AND a.team_id IN (${placeholders(teams)})`;
+  const applications = scope.applications;
+  if (applications !== null && applications.length === 0) return [];
+  const applicationSql = applications === null ? "" : ` AND a.id IN (${placeholders(applications)})`;
   return app.db
     .query<SubscriptionRow, string[]>(
       `SELECT s.id, s.environment, s.state, s.product_id, s.created_at, s.key_rotated_at,
@@ -550,10 +550,10 @@ export function consumerSubscriptions(app: App, scope: Scope): SubscriptionRow[]
          FROM subscription s
          JOIN application a ON a.id = s.application_id
          JOIN product p     ON p.id = s.product_id
-        WHERE s.environment IN (${placeholders(scope.environments)})${teamSql}
+        WHERE s.environment IN (${placeholders(scope.environments)})${applicationSql}
         ORDER BY s.created_at DESC LIMIT ${MAX_SUBSCRIPTIONS}`,
     )
-    .all(...scope.environments, ...(teams ?? []));
+    .all(...scope.environments, ...(applications ?? []));
 }
 
 export function subscriptionLabel(subscription: SubscriptionRow): string {
@@ -888,20 +888,20 @@ export function platformAttention(app: App, scope: Scope, options: { jobs: boole
  * and holds no subscription, which is the one moment a portal has to explain itself.
  */
 export function startHere(app: App, user: User, scope: Scope): AttentionRow[] | null {
-  const teams = scope.teams;
-  const teamSql = teams === null ? "" : ` WHERE team_id IN (${placeholders(teams ?? [])})`;
-  if (teams !== null && teams.length === 0) return null;
+  const applications = scope.applications;
+  const applicationSql = applications === null ? "" : ` WHERE application_id IN (${placeholders(applications ?? [])})`;
+  if (applications !== null && applications.length === 0) return null;
 
   const owned = app.db
-    .query<{ n: number }, string[]>(`SELECT COUNT(*) AS n FROM resource${teamSql}`)
-    .get(...(teams ?? []))!.n;
+    .query<{ n: number }, string[]>(`SELECT COUNT(*) AS n FROM resource${applicationSql}`)
+    .get(...(applications ?? []))!.n;
   const subscribed = app.db
     .query<{ n: number }, string[]>(
       `SELECT COUNT(*) AS n FROM subscription s JOIN application a ON a.id = s.application_id${
-        teams === null ? "" : ` WHERE a.team_id IN (${placeholders(teams)})`
+        applications === null ? "" : ` WHERE a.id IN (${placeholders(applications)})`
       }`,
     )
-    .get(...(teams ?? []))!.n;
+    .get(...(applications ?? []))!.n;
   if (owned > 0 || subscribed > 0) return null;
 
   const rows: AttentionRow[] = [

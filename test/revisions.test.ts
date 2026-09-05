@@ -174,7 +174,7 @@ describe("the revision list", () => {
       const resource = await (
         await cp.call("POST", "/api/resources", {
           cookie: alice,
-          body: { kind: "rest", name: "from-url", teamId: "team_platform", apiVersion: "v1" },
+          body: { kind: "rest", name: "from-url", applicationId: "application_platform", apiVersion: "v1" },
         })
       ).json();
       const specUrl = `http://127.0.0.1:${specServer.port}/openapi.json`;
@@ -487,7 +487,7 @@ describe("correcting an unfrozen revision", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: alice,
-        body: { kind: "rest", name: "draft-api", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "rest", name: "draft-api", applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     const created = await (
@@ -594,7 +594,7 @@ describe("correcting an unfrozen revision", () => {
     expect((await response.json()).detail).toContain("rest");
   });
 
-  test("only the owning team or an admin may correct", async () => {
+  test("only the owning application or an admin may correct", async () => {
     const { revisionId, digest } = await draft();
     const clara = await cp.login("clara");
     const response = await cp.call("PUT", `/api/revisions/${revisionId}/spec`, {
@@ -615,7 +615,7 @@ describe("retention", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: alice,
-        body: { kind: "rest", name: "churn", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "rest", name: "churn", applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     for (let i = 1; i <= count; i++) {

@@ -1,3 +1,4 @@
+import { provisionHarnessSubscription } from '../harness-subscription.ts';
 import { X509Certificate } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -370,12 +371,6 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
   });
   if (!anchor.ok) throw new Error(`registering the perf trust anchor failed: ${await anchor.text()}`);
 
-  const application = await (
-    await call(app, router, clara, "POST", "/api/applications", {
-      name: "loadgen-app",
-      teamId: "team_orders",
-    })
-  ).json();
 
   const wsdl = await Bun.file(WSDL_PATH).text();
   const apis = new Map<string, { basePath: string; key: string | null }>();
@@ -386,7 +381,7 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
       await call(app, router, pavel, "POST", "/api/resources", {
         kind: spec.kind ?? "rest",
         name: spec.name,
-        teamId: "team_platform",
+        applicationId: "application_platform",
       })
     ).json();
     await call(app, router, pavel, "POST", `/api/resources/${resource.id}/revisions`, {
@@ -430,7 +425,7 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
     const product = await (
       await call(app, router, pavel, "POST", "/api/products", {
         name: `${spec.name}-product`,
-        teamId: "team_platform",
+        applicationId: "application_platform",
         resourceIds: [resource.id],
       })
     ).json();
@@ -442,14 +437,7 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
 
     let key: string | null = null;
     if (spec.subscribe) {
-      const subscription = await (
-        await call(app, router, clara, "POST", "/api/subscriptions", {
-          productId: product.id,
-          applicationId: application.id,
-          environment: "dev",
-        })
-      ).json();
-      key = subscription.primaryKey;
+      key = await provisionHarnessSubscription(app, router, clara, pavel, product.id, instances);
     }
     apis.set(spec.name, { basePath, key });
   }

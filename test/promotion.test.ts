@@ -236,7 +236,7 @@ describe("the per-unit policy merge (design section 6.3)", () => {
     expect(unit.value).toBe(4321);
   });
 
-  test("a plan whose digest moved is refused and the release goes stale", async () => {
+  test("a changed plan is automatically reevaluated before applying", async () => {
     const api = await published();
     await prepareEnvironment(cp, api.pavel, api.resourceId, "test", "/promo", BACKEND);
 
@@ -259,13 +259,14 @@ describe("the per-unit policy merge (design section 6.3)", () => {
     });
     expect(confirm.status).toBe(202);
     const body = await confirm.json();
-    expect(body.state).toBe("stale");
+    expect(body.state).toBe("converged");
 
-    // Nothing was applied: no policy was seeded and nothing reached the fleet.
+    // The current validated policy is applied automatically.
     const config = await (
       await cp.call("GET", "/api/environments/test/config", { cookie: await cp.login("alice") })
     ).json();
-    expect(config.routes).toHaveLength(0);
+    expect(config.routes).toHaveLength(1);
+    expect(config.routes[0].policy.timeoutMs).toBe(9999);
   });
 
   test("a plan cannot be confirmed twice", async () => {

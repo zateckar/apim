@@ -1,3 +1,6 @@
+import { runIntegrationEvents } from '../control-plane/src/integrations.ts';
+import { runOperations } from '../control-plane/src/operations.ts';
+import { buildConfig } from '../control-plane/src/config-build.ts';
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -26,9 +29,16 @@ export interface TestCp {
   app: App;
   router: Router;
   token: string;
+  instances: import("../control-plane/src/seed.ts").SeededInstance[];
   dir: string;
   call(method: string, path: string, options?: CallOptions): Promise<Response>;
   login(userId: string): Promise<string>;
+  /**
+   * Close every handle and open the same database and KEK again, the way a process restart does.
+   * Sessions, queued operations and the outbox are on disk, so what survives this is exactly what
+   * survives a deployment — and `app`, `call` and `login` all go on addressing the live process.
+   */
+  restart(): void;
   close(): void;
 }
 
@@ -46,8 +56,10 @@ export function makeCp(overrides: Record<string, unknown> = {}): TestCp {
     port: 0,
     ...overrides,
   });
-  const app = createApp(config);
-  const { token } = seedBaseline(app);
+  // Reassigned by `restart()`, so everything below reads the *current* process rather than
+  // capturing the first one — a test that restarts keeps calling `cp.call` and `cp.app`.
+  let app = createApp(config);
+  const { token, instances } = seedBaseline(app);
   const router = createRouter();
 
   const call = async (method: string, path: string, options: CallOptions = {}) => {
@@ -69,9 +81,12 @@ export function makeCp(overrides: Record<string, unknown> = {}): TestCp {
   };
 
   return {
-    app,
+    get app() {
+      return app;
+    },
     router,
     token,
+    instances,
     dir,
     call,
     async login(userId: string) {
@@ -79,6 +94,10 @@ export function makeCp(overrides: Record<string, unknown> = {}): TestCp {
       const cookie = response.headers.get("set-cookie");
       if (!cookie) throw new Error(`dev-login failed: ${response.status} ${await response.text()}`);
       return cookie.split(";")[0]!;
+    },
+    restart() {
+      app.db.close();
+      app = createApp(config);
     },
     close() {
       app.db.close();
@@ -227,7 +246,7 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
       body: {
         kind: options.kind ?? "rest",
         name,
-        teamId: "team_platform",
+        applicationId: "application_platform",
         apiVersion: options.apiVersion ?? "v1",
       },
     })
@@ -259,7 +278,7 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
   const product = await (
     await cp.call("POST", "/api/products", {
       cookie: pavel,
-      body: { name: `${name}-product`, teamId: "team_platform", resourceIds: [resourceId] },
+      body: { name: `${name}-product`, applicationId: "application_platform", resourceIds: [resourceId] },
     })
   ).json();
 
@@ -273,18 +292,7 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
   let key: string | null = null;
   let subscriptionId: string | null = null;
   if (options.subscribe !== false) {
-    const application = await (
-      await cp.call("POST", "/api/applications", {
-        cookie: clara,
-        body: { name: `${name}-app`, teamId: "team_orders" },
-      })
-    ).json();
-    const subscription = await (
-      await cp.call("POST", "/api/subscriptions", {
-        cookie: clara,
-        body: { productId: product.id, applicationId: application.id, environment: "dev" },
-      })
-    ).json();
+    const subscription = await activeSubscription(cp, clara, product.id);
     key = subscription.primaryKey;
     subscriptionId = subscription.id;
   }
@@ -332,4 +340,26 @@ export async function prepareEnvironment(
     cookie,
     body: { environment, urls: [backendUrl] },
   });
+}
+
+/** Provision a consumer fixture through the real approval and gateway acknowledgment protocol. */
+export async function activeSubscription(cp: TestCp, cookie: string, productId: string, applicationId = "application_orders", environment = "dev") {
+ const response = await cp.call("POST", "/api/subscriptions", {cookie, body:{productId, applicationId, environment, purpose:"Integration test consumer"}});
+ const sub = await response.json();
+ if(response.status!==201) throw new Error(`subscribe fixture: ${JSON.stringify(sub)}`);
+ runIntegrationEvents(cp.app);
+ if(sub.state==="pending") {
+  const event=cp.app.db.query<{id:string},[string]>("SELECT id FROM integration_event WHERE subject=? AND integration='skonet'").get(sub.id)!;
+  const decision=await cp.call("POST",`/api/integration-events/${event.id}/decision`,{cookie:await cp.login("alice"),body:{decision:"approved"}});
+  if(!decision.ok)throw new Error(await decision.text());
+ }
+ const digest=buildConfig(cp.app.db,cp.app.kek,environment,cp.app.config.integrations).digest;
+ for(const instance of cp.instances.filter(i=>i.environment===environment)) {
+  const ack=await cp.call("POST","/api/gateway/poll",{headers:{authorization:`Bearer ${instance.token}`},body:{wireVersion:CONFIG_VERSION,instance:{name:instance.name,runId:"fixture",startedAt:new Date().toISOString(),activeDigest:digest,requestsTotal:0,process:{}}}});
+  if(!ack.ok)throw new Error(await ack.text());
+ }
+ runOperations(cp.app);
+ const keys=await cp.call("POST",`/api/subscriptions/${sub.id}/reveal`,{cookie});
+ if(!keys.ok)throw new Error(await keys.text());
+ return {...sub,...await keys.json(),state:"active"};
 }

@@ -27,7 +27,7 @@ import { subscriptionChip } from "../lib/status";
  */
 export function ProductsView({ session }: { session: Session }) {
   const products = useAsync(() => api.get<{ items: Product[] }>("/api/products"), []);
-  const resources = useAsync(() => api.get<{ items: Resource[] }>("/api/resources?team=mine"), []);
+  const resources = useAsync(() => api.get<{ items: Resource[] }>("/api/resources?application=mine"), []);
   const subscriptions = useAsync(() => api.get<{ items: Subscription[] }>("/api/subscriptions"), []);
 
   // `resources` feeds the members picker and `subscriptions` the counts; either failing leaves a
@@ -36,8 +36,7 @@ export function ProductsView({ session }: { session: Session }) {
     return <Notice kind="error">{products.error ?? resources.error}</Notice>;
   }
   if (!products.data || !resources.data) return <Skeleton rows={5} />;
-  const mine = products.data.items.filter((product) => product.capabilities.includes("update"));
-  const shown = mine.length > 0 ? mine : products.data.items;
+  const shown = products.data.items.filter(product => product.applicationId === session.application);
 
   return (
     <>
@@ -57,7 +56,7 @@ export function ProductsView({ session }: { session: Session }) {
           <ProductCard
             key={product.id}
             product={product}
-            resources={resources.data!.items}
+            resources={resources.data!.items.filter(r => r.applicationId === session.application)}
             subscriptions={(subscriptions.data?.items ?? []).filter(
               (row) => row.productId === product.id,
             )}
@@ -71,8 +70,8 @@ export function ProductsView({ session }: { session: Session }) {
 
       <div id="new-product">
         <NewProduct
-          teamId={session.team}
-          resources={resources.data.items}
+          applicationId={session.application}
+          resources={resources.data.items.filter(r => r.applicationId === session.application)}
           onCreated={products.reload}
         />
       </div>
@@ -91,7 +90,7 @@ function ProductCard({
   subscriptions: Subscription[];
   onChanged: () => void;
 }) {
-  const canEdit = permit("members", product.capabilities, { team: product.teamId });
+  const canEdit = permit("members", product.capabilities, { application: product.applicationId });
   const [members, setMembers] = useState(product.members.map((member) => member.id));
   const action = useAction();
   const dirty =
@@ -101,7 +100,7 @@ function ProductCard({
   return (
     <Card
       title={product.name}
-      hint={`Owned by ${product.teamId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
+      hint={`Owned by ${product.applicationId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
     >
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
@@ -182,7 +181,7 @@ function ProductCard({
           <p className="muted small">
             You publish this product, so you can withdraw anybody's access to it — an abusive or
             compromised caller is yours to stop, without finding an administrator first. You cannot
-            see or replace their keys: those belong to the team that owns the application.
+            see or replace their keys: those belong to the application that owns the application.
           </p>
         </>
       )}
@@ -191,11 +190,11 @@ function ProductCard({
 }
 
 function NewProduct({
-  teamId,
+  applicationId,
   resources,
   onCreated,
 }: {
-  teamId: string;
+  applicationId: string;
   resources: Resource[];
   onCreated: () => void;
 }) {
@@ -233,7 +232,7 @@ function NewProduct({
           disabled={action.busy || name.trim().length === 0}
           onClick={async () => {
             const ok = await action.run(() =>
-              api.post("/api/products", { name, teamId, resourceIds: selected }),
+              api.post("/api/products", { name, applicationId, resourceIds: selected }),
             );
             if (ok) {
               setName("");

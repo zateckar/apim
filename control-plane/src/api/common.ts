@@ -7,7 +7,7 @@ export interface ResourceRow {
   id: string;
   kind: string;
   name: string;
-  team_id: string;
+  application_id: string;
   api_version: string;
   lifecycle: string;
   sunset_at: string | null;
@@ -33,9 +33,9 @@ export function getResource(ctx: Ctx, id: string): ResourceRow {
   return row;
 }
 
-export function assertCan(user: User | null, teamId: string | null | undefined, what: string): void {
-  if (!can(user, teamId)) {
-    throw forbidden(`${what}: you are not a member of the owning team and not an admin`);
+export function assertCan(user: User | null, applicationId: string | null | undefined, what: string): void {
+  if (!can(user, applicationId)) {
+    throw forbidden(`${what}: you are not a member of the owning application and not an admin`);
   }
 }
 

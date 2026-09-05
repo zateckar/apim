@@ -12,38 +12,38 @@ import {
 /**
  * "You cannot do this, and here is why" (plan §9.4).
  *
- * Every action, for an owner, for another team, and for an administrator — because the failure this
+ * Every action, for an owner, for another application, and for an administrator — because the failure this
  * catches is not a wrong boolean, it is a reason that does not name anybody. A disabled button with
  * "Forbidden" beside it teaches less than a hidden one.
  */
 
 const ALL = Object.keys(ACTIONS) as Action[];
 
-/** What the control plane grants a member of the owning team, and an admin. */
+/** What the control plane grants a member of the owning application, and an admin. */
 const OWNER = ["read", "update", "delete", "publish", "policy"];
-const OTHER_TEAM = ["read"];
+const OTHER_APPLICATION = ["read"];
 
 describe("capabilities", () => {
-  test("every action is allowed for the owning team", () => {
+  test("every action is allowed for the owning application", () => {
     for (const action of ALL) {
       expect(permit(action, OWNER), action).toEqual(ALLOWED);
     }
   });
 
-  test("every action is refused for another team, and names who can do it", () => {
+  test("every action is refused for another application, and names who can do it", () => {
     for (const action of ALL) {
-      const permission = permit(action, OTHER_TEAM, { team: "Orders" });
+      const permission = permit(action, OTHER_APPLICATION, { application: "Orders" });
       expect(permission.enabled, action).toBe(false);
-      expect(permission.reason, action).toContain("the Orders team");
+      expect(permission.reason, action).toContain("the Orders application");
       expect(permission.reason, action).toContain(ACTIONS[action].verb);
       // A sentence, so it can sit beside the control and be read as one.
       expect(permission.reason!.endsWith("."), action).toBe(true);
     }
   });
 
-  test("without a team name the sentence still points somewhere", () => {
-    const permission = permit("edit", OTHER_TEAM);
-    expect(permission.reason).toContain("the owning team");
+  test("without a application name the sentence still points somewhere", () => {
+    const permission = permit("edit", OTHER_APPLICATION);
+    expect(permission.reason).toContain("the owning application");
     expect(permission.reason).toContain("administrator");
   });
 
@@ -71,8 +71,8 @@ describe("capabilities", () => {
 
   test("the first reason that applies is the one shown", () => {
     const state = blockedBecause(true, "This revision is released.");
-    const permission = permit("edit", OTHER_TEAM, { team: "Orders" });
-    expect(first(permission, state).reason).toContain("the Orders team");
+    const permission = permit("edit", OTHER_APPLICATION, { application: "Orders" });
+    expect(first(permission, state).reason).toContain("the Orders application");
     expect(first(state, permission).reason).toContain("released");
     expect(first(ALLOWED, ALLOWED)).toEqual(ALLOWED);
   });

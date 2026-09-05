@@ -16,5 +16,11 @@ export default defineConfig({
     // one directory above the project root.
     fs: { allow: [".."] },
   },
-  build: { outDir: "dist", emptyOutDir: true },
+  build: {
+    outDir: "dist", emptyOutDir: true,
+    rollupOptions: { output: { manualChunks(id) {
+      if (id.includes('codemirror') || id.includes('@lezer')) return 'definition-editor';
+      if (id.includes('node_modules')) return 'vendor';
+    } } },
+  },
 });

@@ -138,7 +138,7 @@ function Wait-Fleet {
 
 function Find-Resource {
   param([string] $Name, [string] $ApiVersion)
-  $list = Api GET "/api/resources?team=team_platform&name=$Name"
+  $list = Api GET "/api/resources?application=application_platform&name=$Name"
   return $list.items | Where-Object { $_.apiVersion -eq $ApiVersion } | Select-Object -First 1
 }
 
@@ -220,7 +220,7 @@ foreach ($entry in @(@("control plane", "$ControlPlane/healthz"), @("backend", "
 }
 
 Login "pavel"
-Write-Host "  signed in as pavel (publisher, team_platform)"
+Write-Host "  signed in as pavel (publisher, application_platform)"
 
 if ($Remove) {
   Section "removing demo objects"
@@ -236,7 +236,7 @@ Remove-Demo
 # ------------------------------------------------------------------ 1. create and import
 
 Section "1. create petstore v1 and import the real swagger.io definition"
-$v1 = Api POST "/api/resources" @{ kind = "rest"; name = "petstore"; teamId = "team_platform"; apiVersion = "v1" }
+$v1 = Api POST "/api/resources" @{ kind = "rest"; name = "petstore"; applicationId = "application_platform"; apiVersion = "v1" }
 Note "resource $($v1.id)"
 $revision = Api POST "/api/resources/$($v1.id)/revisions" @{ specUrl = "https://petstore.swagger.io/v2/swagger.json" }
 Check "imported revision" $revision.rev 1
@@ -268,7 +268,7 @@ Api PUT "/api/resources/$($v1.id)/policy/units/rateLimit" @{
 Write-Host "  attached auth.subscriptionKey, rewrite, preconditions, rateLimit"
 
 Section "3. publish to DEV"
-$product = Api POST "/api/products" @{ name = "petstore-product"; teamId = "team_platform"; resourceIds = @($v1.id) }
+$product = Api POST "/api/products" @{ name = "petstore-product"; applicationId = "application_platform"; resourceIds = @($v1.id) }
 $release = Api POST "/api/resources/$($v1.id)/releases" @{ revision = 1; environment = "dev" }
 Check "release converged" $release.state "converged"
 $fleet = Wait-Fleet "dev"
@@ -277,7 +277,7 @@ Note "two DEV gateways, so the effective rate limit is calls x instances (design
 
 Section "4. subscribe (a key per environment)"
 Login "clara"
-$application = Api POST "/api/applications" @{ name = "orders-app"; teamId = "team_orders" }
+$application = Api POST "/api/applications" @{ name = "orders-app"; applicationId = "application_orders" }
 $subDev = Api POST "/api/subscriptions" @{ productId = $product.id; applicationId = $application.id; environment = "dev" }
 $devKey = $subDev.primaryKey
 Check "dev subscription active" $subDev.state "active"
@@ -385,7 +385,7 @@ Note "Sunset: $(HeaderValue $deprecated.Headers 'Sunset')"
 # ------------------------------------------------------------------ SOAP
 
 Section "10. a SOAP API"
-$soap = Api POST "/api/resources" @{ kind = "soap"; name = "petstore-soap"; teamId = "team_platform"; apiVersion = "v1" }
+$soap = Api POST "/api/resources" @{ kind = "soap"; name = "petstore-soap"; applicationId = "application_platform"; apiVersion = "v1" }
 $wsdl = (Invoke-WebRequest -Uri "$Backend/soap/petstore?wsdl").Content
 Api POST "/api/resources/$($soap.id)/revisions" @{ spec = $wsdl } | Out-Null
 Api PUT "/api/resources/$($soap.id)/routes"  @{ environment = "dev"; host = "*"; basePath = "/petstore-soap" } | Out-Null
@@ -394,7 +394,7 @@ Api PUT "/api/resources/$($soap.id)/policy/units/rewrite" @{ value = @{ stripBas
 Api PUT "/api/resources/$($soap.id)/policy/units/auth.subscriptionKey" @{
   value = @{ in = "header"; name = "X-Api-Key"; forwardCredentials = $false }
 } | Out-Null
-$soapProduct = Api POST "/api/products" @{ name = "petstore-soap-product"; teamId = "team_platform"; resourceIds = @($soap.id) }
+$soapProduct = Api POST "/api/products" @{ name = "petstore-soap-product"; applicationId = "application_platform"; resourceIds = @($soap.id) }
 $soapRelease = Api POST "/api/resources/$($soap.id)/releases" @{ revision = 1; environment = "dev" }
 Check "soap API published" $soapRelease.state "converged"
 
@@ -572,7 +572,7 @@ Api DELETE "/api/resources/$($v1.id)/policy/units/cors" | Out-Null
 # ------------------------------------------------------------------ MCP (G4)
 
 Section "14. publish an existing MCP server and call a tool through the gateway"
-$mcp = Api POST "/api/resources" @{ kind = "mcp"; name = "petstore-mcp"; teamId = "team_platform"; apiVersion = "v1" }
+$mcp = Api POST "/api/resources" @{ kind = "mcp"; name = "petstore-mcp"; applicationId = "application_platform"; apiVersion = "v1" }
 $mcpRevision = Api POST "/api/resources/$($mcp.id)/revisions" @{ discoverUrl = $McpServer }
 Check "discovery produced a revision" $mcpRevision.rev 1
 Note "the control plane spoke the protocol once — initialize, then tools/resources/prompts — and froze what it heard"
@@ -589,9 +589,9 @@ Api PUT "/api/resources/$($mcp.id)/policy/units/auth.subscriptionKey" @{
   value = @{ in = "header"; name = "X-Api-Key"; forwardCredentials = $false }
 } | Out-Null
 
-$a2aResource = Api POST "/api/resources" @{ kind = "a2a"; name = "shelter-agent"; teamId = "team_platform"; apiVersion = "v1" }
+$a2aResource = Api POST "/api/resources" @{ kind = "a2a"; name = "shelter-agent"; applicationId = "application_platform"; apiVersion = "v1" }
 $agentsProduct = Api POST "/api/products" @{
-  name = "agents-product"; teamId = "team_platform"; resourceIds = @($mcp.id, $a2aResource.id)
+  name = "agents-product"; applicationId = "application_platform"; resourceIds = @($mcp.id, $a2aResource.id)
 }
 $mcpRelease = Api POST "/api/resources/$($mcp.id)/releases" @{ revision = 1; environment = "dev" }
 Check "mcp API published" $mcpRelease.state "converged"
@@ -883,7 +883,7 @@ $SpecV1Rev2 = @'
 # ------------------------------------------------------------------ journey 1: publish
 
 Section "20. journey 1 of 6 - publish an API"
-$walk = Api POST "/api/resources" @{ kind = "rest"; name = "walkthrough"; teamId = "team_platform"; apiVersion = "v1" }
+$walk = Api POST "/api/resources" @{ kind = "rest"; name = "walkthrough"; applicationId = "application_platform"; apiVersion = "v1" }
 Note "step 1 of the wizard: the API exists, and has nothing in it yet"
 
 $walkRev = Api POST "/api/resources/$($walk.id)/revisions" @{ spec = $SpecV1 }
@@ -994,7 +994,7 @@ Note "two base paths, two sets of subscribers; a consumer moves to v2 deliberate
 
 Section "23. journey 4 of 6 - subscribe to it"
 $walkProduct = Api POST "/api/products" @{
-  name = "walkthrough-product"; teamId = "team_platform"; resourceIds = @($walk.id, $walkV2.id)
+  name = "walkthrough-product"; applicationId = "application_platform"; resourceIds = @($walk.id, $walkV2.id)
 }
 Note "an owner puts the API in a product; a consumer subscribes to the product, never to the API"
 
@@ -1004,7 +1004,7 @@ Check "the consumer finds it in the catalog" $listing.title "walkthrough"
 Check "and the listing offers a product to subscribe to" ($listing.products.Count -gt 0) $true
 
 # The wizard's three steps, through the endpoints the wizard calls.
-$walkApp = Api POST "/api/applications" @{ name = "walkthrough-app"; teamId = "team_orders" }
+$walkApp = Api POST "/api/applications" @{ name = "walkthrough-app"; applicationId = "application_orders" }
 Note "step 1: the application, because keys belong to a caller rather than to a person"
 $terms = Api GET "/api/resources/$($walk.id)/policy/effective?environment=dev"
 Note "step 3 reads the terms from what the gateway is running: $((($terms.units | ForEach-Object { $_.unitKey }) -join ', '))"

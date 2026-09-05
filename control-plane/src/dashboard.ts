@@ -39,7 +39,7 @@ import { requireUser, type Ctx } from "./router.ts";
  *  - **`previous` is null rather than wrong.** A trend needs twice the window inside retention;
  *    when it is not there the field is null, `trendAvailable` says so, and the UI omits the delta.
  *  - **every list is bounded** with a truncation count beside it `[P1-13]`.
- *  - **`hats` describes data, not navigation** `[P1-26]`: a team that owns nothing still has the
+ *  - **`hats` describes data, not navigation** `[P1-26]`: a application that owns nothing still has the
  *    "publish an API" screen, or it could never publish its first one.
  */
 
@@ -55,7 +55,7 @@ export interface DashboardQuery {
 
 function bounded(rows: AttentionRow[]): { attention: AttentionRow[]; attentionTruncated: number } {
   // The three start-here codes are produced only into `startHere`. Asserted here rather than
-  // trusted, because a rule that leaked one would put "publish your first API" on a team with
+  // trusted, because a rule that leaked one would put "publish your first API" on a application with
   // fifty `[P2-09]`.
   const usable = rows.filter((row) => !START_HERE_CODES.includes(row.code));
   return {
@@ -108,7 +108,7 @@ export function buildDashboard(ctx: Ctx, query: DashboardQuery) {
 
   const hats: string[] = [];
   if (owner.apis.total > 0) hats.push("owner");
-  if (consumer.applications.length > 0 || subscriptions.length > 0) hats.push("consumer");
+  if (subscriptions.length > 0) hats.push("consumer");
   if (user.isAdmin) hats.push("platform");
 
   return {
@@ -128,12 +128,12 @@ export function buildDashboard(ctx: Ctx, query: DashboardQuery) {
 // --------------------------------------------------------------------------- owner
 
 function apiCounts(ctx: Ctx, scope: Scope) {
-  const teams = scope.teams;
-  if (teams !== null && teams.length === 0) {
+  const applications = scope.applications;
+  if (applications !== null && applications.length === 0) {
     return { total: 0, byLifecycle: {}, liveByEnvironment: {} };
   }
-  const where = teams === null ? "" : ` WHERE team_id IN (${teams.map(() => "?").join(", ")})`;
-  const args = (teams ?? []) as string[];
+  const where = applications === null ? "" : ` WHERE application_id IN (${applications.map(() => "?").join(", ")})`;
+  const args = (applications ?? []) as string[];
 
   const byLifecycle: Record<string, number> = {};
   let total = 0;
@@ -148,13 +148,13 @@ function apiCounts(ctx: Ctx, scope: Scope) {
 
   const liveByEnvironment: Record<string, number> = {};
   for (const environment of scope.environments) liveByEnvironment[environment] = 0;
-  const teamJoin = teams === null ? "" : ` AND r.team_id IN (${teams.map(() => "?").join(", ")})`;
+  const applicationJoin = applications === null ? "" : ` AND r.application_id IN (${applications.map(() => "?").join(", ")})`;
   for (const row of ctx.app.db
     .query<{ environment: string; n: number }, string[]>(
       `SELECT rel.environment, COUNT(*) AS n
          FROM release rel JOIN resource r ON r.id = rel.resource_id
         WHERE rel.state = 'converged'
-          AND rel.environment IN (${scope.environments.map(() => "?").join(", ")})${teamJoin}
+          AND rel.environment IN (${scope.environments.map(() => "?").join(", ")})${applicationJoin}
         GROUP BY rel.environment`,
     )
     .all(...scope.environments, ...args)) {
@@ -241,22 +241,22 @@ function trafficFor(ctx: Ctx, scope: Scope, sinceMin: number, now: number) {
 // --------------------------------------------------------------------------- consumer
 
 function applications(ctx: Ctx, scope: Scope) {
-  const teams = scope.teams;
-  if (teams !== null && teams.length === 0) return [];
-  const where = teams === null ? "" : ` WHERE a.team_id IN (${teams.map(() => "?").join(", ")})`;
+  const applications = scope.applications;
+  if (applications !== null && applications.length === 0) return [];
+  const where = applications === null ? "" : ` WHERE a.id IN (${applications.map(() => "?").join(", ")})`;
   return ctx.app.db
-    .query<{ id: string; name: string; team_id: string; subscriptions: number }, string[]>(
-      `SELECT a.id, a.name, a.team_id,
+    .query<{ id: string; name: string; application_id: string; subscriptions: number }, string[]>(
+      `SELECT a.id, a.name, a.id AS application_id,
               (SELECT COUNT(*) FROM subscription s
                 WHERE s.application_id = a.id AND s.state = 'active') AS subscriptions
          FROM application a${where}
         ORDER BY a.name LIMIT ${MAX_SUBSCRIPTIONS_LISTED}`,
     )
-    .all(...((teams ?? []) as string[]))
+    .all(...((applications ?? []) as string[]))
     .map((row) => ({
       id: row.id,
       name: row.name,
-      teamId: row.team_id,
+      applicationId: row.application_id,
       subscriptions: row.subscriptions,
     }));
 }

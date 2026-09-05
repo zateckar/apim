@@ -1,3 +1,4 @@
+import { provisionHarnessSubscription } from '../harness-subscription.ts';
 import { mkdtempSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -446,12 +447,6 @@ export async function buildCapacityWorld(options: WorldOptions): Promise<Capacit
   const claraLogin = await call(app, router, "", "POST", "/api/auth/dev-login", { userId: "clara" });
   const clara = claraLogin.headers.get("set-cookie")!.split(";")[0]!;
 
-  const application = await (
-    await call(app, router, clara, "POST", "/api/applications", {
-      name: "capacity-app",
-      teamId: "team_orders",
-    })
-  ).json();
 
   const wsdl = await Bun.file("tools/backend/petstore.wsdl").text();
   const apis = new Map<string, { basePath: string; key: string | null; resourceId: string }>();
@@ -467,7 +462,7 @@ export async function buildCapacityWorld(options: WorldOptions): Promise<Capacit
       await call(app, router, pavel, "POST", "/api/resources", {
         kind: spec.kind ?? "rest",
         name: spec.name,
-        teamId: "team_platform",
+        applicationId: "application_platform",
       })
     ).json();
     await call(app, router, pavel, "POST", `/api/resources/${resource.id}/revisions`, {
@@ -495,7 +490,7 @@ export async function buildCapacityWorld(options: WorldOptions): Promise<Capacit
     const product = await (
       await call(app, router, pavel, "POST", "/api/products", {
         name: `${spec.name}-product`,
-        teamId: "team_platform",
+        applicationId: "application_platform",
         resourceIds: [resource.id],
       })
     ).json();
@@ -505,14 +500,7 @@ export async function buildCapacityWorld(options: WorldOptions): Promise<Capacit
     });
     let key: string | null = null;
     if (spec.subscribe) {
-      const subscription = await (
-        await call(app, router, clara, "POST", "/api/subscriptions", {
-          productId: product.id,
-          applicationId: application.id,
-          environment: "dev",
-        })
-      ).json();
-      key = subscription.primaryKey;
+      key = await provisionHarnessSubscription(app, router, clara, pavel, product.id, instances);
     }
     apis.set(spec.name, { basePath, key, resourceId: resource.id as string });
   };

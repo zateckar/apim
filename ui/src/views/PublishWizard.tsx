@@ -23,7 +23,7 @@ export function PublishWizard({ session }: { session: Session }) {
   const [kind, setKind] = useState(session.meta.kinds[0] ?? "rest");
   const [name, setName] = useState("");
   const [apiVersion, setApiVersion] = useState("v1");
-  const [teamId, setTeamId] = useState(session.team);
+  const [applicationId, setApplicationId] = useState(session.application);
   const [source, setSource] = useState<"url" | "paste">("url");
   const [specUrl, setSpecUrl] = useState("");
   const [pasted, setPasted] = useState("");
@@ -40,7 +40,7 @@ export function PublishWizard({ session }: { session: Session }) {
 
   async function createAndImport() {
     const ok = await define.run(async () => {
-      const created = await api.post<Resource>("/api/resources", { kind, name, teamId, apiVersion });
+      const created = await api.post<Resource>("/api/resources", { kind, name, applicationId, apiVersion });
       try {
         await api.post(`/api/resources/${created.id}/revisions`, importBody());
       } catch (err) {
@@ -100,11 +100,11 @@ export function PublishWizard({ session }: { session: Session }) {
             <Field label="Name" value={name} onChange={setName} placeholder="petstore" />
             <Field label="Version" value={apiVersion} onChange={setApiVersion} placeholder="v1" />
             <div className="field">
-              <label htmlFor="pw-team">Owning team</label>
-              <select id="pw-team" value={teamId} onChange={(event) => setTeamId(event.target.value)}>
-                {(session.user.teams.length > 0 ? session.user.teams : [session.team]).map((team) => (
-                  <option key={team} value={team}>
-                    {session.teamName(team)}
+              <label htmlFor="pw-application">Owning application</label>
+              <select id="pw-application" value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
+                {(session.user.applications.length > 0 ? session.user.applications : [session.application]).map((application) => (
+                  <option key={application} value={application}>
+                    {session.applicationName(application)}
                   </option>
                 ))}
               </select>

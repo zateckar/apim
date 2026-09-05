@@ -144,8 +144,8 @@ export class TelemetryAggregator {
      * retention window instead of being dumped into the no-route bucket, which would report
      * requests as having matched no route when they plainly did.
      *
-     * The consequence is that such rows become admin-only, because team scoping resolves through
-     * `resource.team_id` and there is no longer a row to resolve.
+     * The consequence is that such rows become admin-only, because application scoping resolves through
+     * `resource.application_id` and there is no longer a row to resolve.
      */
     const upsert = this.db.query(
       `INSERT INTO telemetry_rollup

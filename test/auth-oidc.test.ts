@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { assertAuthConfig, loadConfig, type OidcConfig } from "../control-plane/src/config.ts";
 import {
-  mapGroupsToTeams,
+  mapGroupsToApplications,
   resetOidcCaches,
   safeReturnTo,
 } from "../control-plane/src/auth-oidc.ts";
@@ -31,8 +31,8 @@ function oidcCp(oidcOverrides: Partial<OidcConfig> = {}, overrides: Record<strin
   return cp;
 }
 
-function team(cp: TestCp, id: string, name: string, sourceGroup: string | null): void {
-  cp.app.db.run("INSERT INTO team (id, name, source_group) VALUES (?, ?, ?)", [id, name, sourceGroup]);
+function application(cp: TestCp, id: string, name: string, sourceGroup: string | null): void {
+  cp.app.db.run("INSERT INTO application (id, name, source_group) VALUES (?, ?, ?)", [id, name, sourceGroup]);
 }
 
 interface FlowResult {
@@ -152,7 +152,7 @@ describe("starting a sign-in", () => {
 describe("the callback", () => {
   test("a full sign-in creates the principal, the session and the mapped memberships", async () => {
     const cp = oidcCp();
-    team(cp, "team_platform", "Platform APIs", "SG-APIM-PLATFORM");
+    application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
     idp.claims.groups = ["SG-APIM-PLATFORM"];
 
     const { callback, session } = await signInThroughIdp(cp);
@@ -170,7 +170,7 @@ describe("the callback", () => {
     expect(row.idp_admin).toBe(1);
 
     const memberships = membershipsOf(cp.app.db, row.id);
-    expect(memberships.map((m) => [m.teamId, m.source])).toEqual([["team_platform", "idp"]]);
+    expect(memberships.map((m) => [m.applicationId, m.source])).toEqual([["application_platform", "idp"]]);
 
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
       user: { isAdmin: boolean; provider: string; adminFrom: string };
@@ -371,30 +371,30 @@ describe("verifying the id_token", () => {
   });
 });
 
-describe("claims become roles and teams", () => {
-  test("groups map to teams by source_group, by full path or last segment", async () => {
+describe("claims become roles and applications", () => {
+  test("groups map to applications by source_group, by full path or last segment", async () => {
     const cp = oidcCp();
-    team(cp, "team_platform", "Platform APIs", "SG-APIM-PLATFORM");
-    team(cp, "team_orders", "Orders", "orders");
-    team(cp, "team_unmapped", "No Group", null);
+    application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
+    application(cp, "application_orders", "Orders", "orders");
+    application(cp, "application_unmapped", "No Group", null);
 
     // Keycloak's group mapper emits full paths; directory exports are not careful about case.
-    const mapped = mapGroupsToTeams(cp.app.db, [
+    const mapped = mapGroupsToApplications(cp.app.db, [
       "sg-apim-platform",
       "/company/apim/orders",
       "  ",
       "SG-SOMETHING-ELSE",
     ]);
-    expect(mapped.teamIds.sort()).toEqual(["team_orders", "team_platform"]);
-    // Matched, never created: a directory that invented teams would let anybody holding a group
+    expect(mapped.applicationIds.sort()).toEqual(["application_orders", "application_platform"]);
+    // Matched, never created: a directory that invented applications would let anybody holding a group
     // become the owner of a new scope.
     expect(mapped.unmapped).toEqual(["SG-SOMETHING-ELSE"]);
-    expect(cp.app.db.query("SELECT COUNT(*) AS n FROM team").get()).toEqual({ n: 3 });
+    expect(cp.app.db.query("SELECT COUNT(*) AS n FROM application").get()).toEqual({ n: 3 });
   });
 
   test("an unmapped group is reported to the user rather than swallowed", async () => {
     const cp = oidcCp();
-    team(cp, "team_platform", "Platform APIs", "SG-APIM-PLATFORM");
+    application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
     idp.claims.groups = ["SG-APIM-PLATFORM", "SG-NOBODY-MAPPED"];
     const { session } = await signInThroughIdp(cp);
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
@@ -403,17 +403,17 @@ describe("claims become roles and teams", () => {
     expect(me.unmappedGroups).toEqual(["SG-NOBODY-MAPPED"]);
   });
 
-  test("a locally granted membership survives a sync that has never heard of the team", async () => {
+  test("a locally granted membership survives a sync that has never heard of the application", async () => {
     const cp = oidcCp({ claimsRefreshSec: 0 });
-    team(cp, "team_platform", "Platform APIs", "SG-APIM-PLATFORM");
-    team(cp, "team_local", "Granted Here", null);
+    application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
+    application(cp, "application_local", "Granted Here", null);
     idp.claims.groups = ["SG-APIM-PLATFORM"];
     const { session } = await signInThroughIdp(cp);
 
     const row = principalBySubject(cp.app.db, "oidc", "keycloak-subject-1")!;
     cp.app.db.run(
-      "INSERT INTO membership (team_id, user_id, source, granted_by, granted_at) VALUES (?, ?, 'local', 'admin', ?)",
-      ["team_local", row.id, new Date().toISOString()],
+      "INSERT INTO membership (application_id, user_id, source, granted_by, granted_at) VALUES (?, ?, 'local', 'admin', ?)",
+      ["application_local", row.id, new Date().toISOString()],
     );
 
     // The directory now says the platform group is gone. The IdP-derived row goes with it; the
@@ -422,7 +422,7 @@ describe("claims become roles and teams", () => {
     expect((await cp.call("GET", "/api/me", { cookie: session! })).status).toBe(200);
 
     const after = membershipsOf(cp.app.db, row.id);
-    expect(after.map((m) => [m.teamId, m.source])).toEqual([["team_local", "local"]]);
+    expect(after.map((m) => [m.applicationId, m.source])).toEqual([["application_local", "local"]]);
   });
 
   test("losing the admin role in the directory takes effect at the next re-read", async () => {
@@ -466,7 +466,7 @@ describe("claims become roles and teams", () => {
  *   "apps_with_role": { "podp.admin": ["PODP"] }
  *
  * The map says "this person holds `podp.admin` **for** PODP". Read the wrong way round it yields a
- * team called `podp.admin` and an administrator role called `PODP`, so the direction is asserted
+ * application called `podp.admin` and an administrator role called `PODP`, so the direction is asserted
  * here rather than left to the reader of the code.
  *
  * The tokens below carry invented identifiers. A real one from that realm also carries an employee
@@ -525,24 +525,24 @@ describe("a realm whose roles are scoped per application", () => {
     };
   }
 
-  test("the map's values are the teams and its keys are the roles", async () => {
+  test("the map's values are the applications and its keys are the roles", async () => {
     const cp = oidcCp(SCOPED);
-    team(cp, "team_podp", "PODP", "PODP");
-    team(cp, "team_other", "Something Else", "MVIS");
+    application(cp, "application_podp", "PODP", "PODP");
+    application(cp, "application_other", "Something Else", "MVIS");
     scopedClaims({ "podp.admin": ["PODP"] }, ["PODP.ADMIN"]);
 
     const { session } = await signInThroughIdp(cp);
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
       user: { isAdmin: boolean; adminFrom: string };
-      teams: Array<{ teamId: string; source: string; sourceGroup: string | null }>;
+      applications: Array<{ applicationId: string; source: string; sourceGroup: string | null }>;
       unmappedGroups: string[];
       noGroupsInToken: boolean;
     };
 
-    // The value `PODP` became the team. Had the reader taken the keys, this would be `podp.admin`
+    // The value `PODP` became the application. Had the reader taken the keys, this would be `podp.admin`
     // and would match nothing, and the person would sign in successfully owning nothing at all.
-    expect(me.teams.map((t) => [t.teamId, t.source])).toEqual([["team_podp", "idp"]]);
-    expect(me.teams[0]!.sourceGroup).toBe("PODP");
+    expect(me.applications.map((t) => [t.applicationId, t.source])).toEqual([["application_podp", "idp"]]);
+    expect(me.applications[0]!.sourceGroup).toBe("PODP");
     expect(me.unmappedGroups).toEqual([]);
     expect(me.noGroupsInToken).toBe(false);
     // And the flat `roles` claim carried the administrator role.
@@ -552,34 +552,34 @@ describe("a realm whose roles are scoped per application", () => {
 
   test("one role for several applications is membership of each", async () => {
     const cp = oidcCp(SCOPED);
-    team(cp, "team_podp", "PODP", "PODP");
-    team(cp, "team_mvis", "MVIS", "mvis");
-    scopedClaims({ "api.developers": ["PODP", "MVIS", "NO-TEAM-HERE"] }, []);
+    application(cp, "application_podp", "PODP", "PODP");
+    application(cp, "application_mvis", "MVIS", "mvis");
+    scopedClaims({ "api.developers": ["PODP", "MVIS", "NO-APPLICATION-HERE"] }, []);
 
     const { session } = await signInThroughIdp(cp);
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
       user: { isAdmin: boolean };
-      teams: Array<{ teamId: string }>;
+      applications: Array<{ applicationId: string }>;
       unmappedGroups: string[];
     };
-    expect(me.teams.map((t) => t.teamId).sort()).toEqual(["team_mvis", "team_podp"]);
+    expect(me.applications.map((t) => t.applicationId).sort()).toEqual(["application_mvis", "application_podp"]);
     // Matched case-insensitively, and still matched rather than created.
-    expect(me.unmappedGroups).toEqual(["NO-TEAM-HERE"]);
+    expect(me.unmappedGroups).toEqual(["NO-APPLICATION-HERE"]);
     expect(me.user.isAdmin).toBe(false);
   });
 
   test("several roles for one application collapse to one membership", async () => {
     const cp = oidcCp(SCOPED);
-    team(cp, "team_podp", "PODP", "PODP");
+    application(cp, "application_podp", "PODP", "PODP");
     scopedClaims({ "api.developers": ["PODP"], "api.readers": ["PODP"] }, []);
 
     const { session } = await signInThroughIdp(cp);
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
-      teams: Array<{ teamId: string }>;
+      applications: Array<{ applicationId: string }>;
     };
-    // A real flattening, and worth pinning: this product's teams have members and administrators
+    // A real flattening, and worth pinning: this product's applications have members and administrators
     // and nothing in between, so a realm that tells a reader from a developer cannot say so here.
-    expect(me.teams.map((t) => t.teamId)).toEqual(["team_podp"]);
+    expect(me.applications.map((t) => t.applicationId)).toEqual(["application_podp"]);
   });
 
   test("the administrator role can be read out of the map instead of the flat roles claim", async () => {
@@ -587,7 +587,7 @@ describe("a realm whose roles are scoped per application", () => {
     // and then it is read by its keys. Both `admins` and `PODP.admins` are offered, so a deployment
     // can name whichever its realm actually spells.
     const cp = oidcCp({ ...SCOPED, roleClaim: "apps_with_role", adminRole: "PODP.admins" });
-    team(cp, "team_podp", "PODP", "PODP");
+    application(cp, "application_podp", "PODP", "PODP");
     scopedClaims({ admins: ["PODP"] }, []);
 
     const { session } = await signInThroughIdp(cp);
@@ -598,9 +598,9 @@ describe("a realm whose roles are scoped per application", () => {
     expect(me.user.adminFrom).toBe("idp");
   });
 
-  test("a group claim that carried nothing is reported as itself, not as a missing team", async () => {
+  test("a group claim that carried nothing is reported as itself, not as a missing application", async () => {
     const cp = oidcCp({ ...SCOPED, groupClaim: "groups" });
-    team(cp, "team_podp", "PODP", "PODP");
+    application(cp, "application_podp", "PODP", "PODP");
     scopedClaims({ "podp.admin": ["PODP"] }, ["PODP.ADMIN"]);
 
     // `groups` is the default and this realm does not issue it. The person signs in perfectly well
@@ -608,11 +608,11 @@ describe("a realm whose roles are scoped per application", () => {
     // says which of the two happened.
     const { session } = await signInThroughIdp(cp);
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
-      teams: unknown[];
+      applications: unknown[];
       unmappedGroups: string[];
       noGroupsInToken: boolean;
     };
-    expect(me.teams).toEqual([]);
+    expect(me.applications).toEqual([]);
     expect(me.unmappedGroups).toEqual([]);
     expect(me.noGroupsInToken).toBe(true);
   });

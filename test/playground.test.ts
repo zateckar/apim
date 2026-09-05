@@ -426,9 +426,9 @@ describe("the key never touches the browser", () => {
     expect(w.backend.requests.at(-1)!.headers["x-api-key"]).toBeUndefined();
   });
 
-  test("another team's subscription is 403, and an unknown one is indistinguishable from it", async () => {
+  test("another application's subscription is 403, and an unknown one is indistinguishable from it", async () => {
     const w = await world();
-    // pavel owns the API; the application belongs to clara's team. Owning an API is not being a
+    // pavel owns the API; the application belongs to clara's application. Owning an API is not being a
     // caller, and the two refusals must not let anyone probe for subscription ids.
     const foreign = await refused(w, w.api.pavel, call(w));
     const nonsense = await refused(w, w.api.pavel, call(w, { subscriptionId: "sub_nope" }));
@@ -859,7 +859,7 @@ describe("per variant", () => {
     const created = (await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "a2a", name: "greeter", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "a2a", name: "greeter", applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json()) as { id: string };
     await cp.call("POST", `/api/resources/${created.id}/revisions`, {

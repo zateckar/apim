@@ -140,7 +140,7 @@ describe("versions are resources", () => {
     const squatter = await (
       await cp.call("POST", "/api/resources", {
         cookie: v1.pavel,
-        body: { kind: "rest", name: "squatter", teamId: "team_platform" },
+        body: { kind: "rest", name: "squatter", applicationId: "application_platform" },
       })
     ).json();
     await cp.call("PUT", `/api/resources/${squatter.id}/routes`, {
@@ -189,7 +189,7 @@ describe("versions are resources", () => {
     });
 
     const list = await (
-      await cp.call("GET", "/api/resources?team=team_platform&name=family", { cookie: v1.pavel })
+      await cp.call("GET", "/api/resources?application=application_platform&name=family", { cookie: v1.pavel })
     ).json();
     expect(list.items.map((i: { apiVersion: string }) => i.apiVersion)).toEqual(["v1", "v2"]);
 
@@ -268,15 +268,10 @@ describe("lifecycle (design section 4.2)", () => {
       body: { lifecycle: "retired" },
     });
 
-    const second = await (
-      await cp.call("POST", "/api/applications", {
-        cookie: api.clara,
-        body: { name: "second-app", teamId: "team_orders" },
-      })
-    ).json();
+    const second = {id: "application_orders"};
     const refused = await cp.call("POST", "/api/subscriptions", {
       cookie: api.clara,
-      body: { productId: api.productId, applicationId: second.id, environment: "dev" },
+      body: { productId: api.productId, applicationId: second.id, environment: "dev", purpose: "Lifecycle test" },
     });
     expect(refused.status).toBe(409);
     expect((await refused.json()).detail).toContain("no active published API in dev");
@@ -294,7 +289,7 @@ describe("lifecycle (design section 4.2)", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "unpublished", teamId: "team_platform" },
+        body: { kind: "rest", name: "unpublished", applicationId: "application_platform" },
       })
     ).json();
     await cp.call("POST", `/api/resources/${resource.id}/revisions`, {
@@ -304,19 +299,14 @@ describe("lifecycle (design section 4.2)", () => {
     const product = await (
       await cp.call("POST", "/api/products", {
         cookie: pavel,
-        body: { name: "empty-product", teamId: "team_platform", resourceIds: [resource.id] },
+        body: { name: "empty-product", applicationId: "application_platform", resourceIds: [resource.id] },
       })
     ).json();
-    const application = await (
-      await cp.call("POST", "/api/applications", {
-        cookie: clara,
-        body: { name: "app-x", teamId: "team_orders" },
-      })
-    ).json();
+    const application = {id: "application_orders"};
 
     const response = await cp.call("POST", "/api/subscriptions", {
       cookie: clara,
-      body: { productId: product.id, applicationId: application.id, environment: "dev" },
+      body: { productId: product.id, applicationId: application.id, environment: "dev", purpose: "Lifecycle test" },
     });
     expect(response.status).toBe(409);
   });

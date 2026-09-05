@@ -28,7 +28,7 @@ import { assertCan, environmentOf, getResource, touch } from "./common.ts";
  * Trust, in the two directions it runs (design sections 4.3 and 5.4).
  *
  * **Certificates** are the identity this estate *presents* to a backend. They carry private keys,
- * so they are team-scoped, KEK-encrypted, and never returned in full over this API — the only
+ * so they are application-scoped, KEK-encrypted, and never returned in full over this API — the only
  * reader of the key is the instance channel in `api/gateway.ts`.
  *
  * **TLS exceptions** are the identity this estate is willing to *accept* from a backend, relaxed.
@@ -61,7 +61,7 @@ export function registerTrustRoutes(router: Router): void {
       .query<
         {
           id: string;
-          team_id: string;
+          application_id: string;
           name: string;
           thumbprint: string;
           subject: string;
@@ -74,7 +74,7 @@ export function registerTrustRoutes(router: Router): void {
         },
         [string]
       >(
-        `SELECT id, team_id, name, thumbprint, subject, issuer, not_before, not_after, usage,
+        `SELECT id, application_id, name, thumbprint, subject, issuer, not_before, not_after, usage,
                 created_by, created_at
            FROM certificate WHERE environment = ? ORDER BY name`,
       )
@@ -85,7 +85,7 @@ export function registerTrustRoutes(router: Router): void {
       environment,
       items: rows.map((row) => ({
         id: row.id,
-        teamId: row.team_id,
+        applicationId: row.application_id,
         name: row.name,
         thumbprint: row.thumbprint,
         subject: row.subject,
@@ -108,7 +108,7 @@ export function registerTrustRoutes(router: Router): void {
     const user = requireUser(ctx);
     const body = await readJson<{
       environment?: string;
-      teamId?: string;
+      applicationId?: string;
       name?: string;
       certPem?: string;
       chainPem?: string | null;
@@ -119,8 +119,8 @@ export function registerTrustRoutes(router: Router): void {
     if (!ctx.app.config.promotionChain.includes(environment)) {
       throw badRequest(`unknown environment "${environment}"`);
     }
-    const teamId = body.teamId ?? "";
-    assertCan(user, teamId, "upload a certificate for this team");
+    const applicationId = body.applicationId ?? "";
+    assertCan(user, applicationId, "upload a certificate for this application");
     const name = body.name ?? "";
     if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(name)) {
       throw badRequest("name: expected 2-61 lowercase letters, digits or hyphens");
@@ -143,12 +143,12 @@ export function registerTrustRoutes(router: Router): void {
     try {
       ctx.app.db.run(
         `INSERT INTO certificate
-           (id, team_id, environment, name, cert_pem, chain_pem, key_enc, thumbprint, subject,
+           (id, application_id, environment, name, cert_pem, chain_pem, key_enc, thumbprint, subject,
             issuer, not_before, not_after, usage, created_by, created_at)
          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'backend-mtls', ?, ?)`,
         [
           id,
-          teamId,
+          applicationId,
           environment,
           name,
           parsed.certPem,
@@ -165,7 +165,7 @@ export function registerTrustRoutes(router: Router): void {
       );
     } catch (err) {
       if (String(err).includes("UNIQUE")) {
-        throw conflict(`this team already has a certificate named ${name} in ${environment}`);
+        throw conflict(`this application already has a certificate named ${name} in ${environment}`);
       }
       throw err;
     }
@@ -176,14 +176,14 @@ export function registerTrustRoutes(router: Router): void {
       subject: `certificate:${id}`,
       outcome: "ok",
       // The thumbprint, never the key: an audit row is not a place to leak one.
-      detail: { environment, teamId, name, thumbprint: parsed.thumbprint, notAfter: parsed.notAfter },
+      detail: { environment, applicationId, name, thumbprint: parsed.thumbprint, notAfter: parsed.notAfter },
     });
     return json(
       {
         id,
         name,
         environment,
-        teamId,
+        applicationId,
         thumbprint: parsed.thumbprint,
         subject: parsed.subject,
         issuer: parsed.issuer,
@@ -198,12 +198,12 @@ export function registerTrustRoutes(router: Router): void {
   router.add("DELETE", "/api/certificates/:id", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = ctx.app.db
-      .query<{ id: string; team_id: string; name: string; environment: string }, [string]>(
-        "SELECT id, team_id, name, environment FROM certificate WHERE id = ?",
+      .query<{ id: string; application_id: string; name: string; environment: string }, [string]>(
+        "SELECT id, application_id, name, environment FROM certificate WHERE id = ?",
       )
       .get(ctx.params.id!);
     if (!row) throw notFound(`no certificate ${ctx.params.id}`);
-    assertCan(user, row.team_id, "delete this certificate");
+    assertCan(user, row.application_id, "delete this certificate");
 
     // Deleting one a binding still names would break that route's next handshake, with nothing on
     // the route to say why. The binding has to be changed first.

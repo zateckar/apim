@@ -17,7 +17,7 @@ import type { DB } from "./db.ts";
  *  - `liveAnchorsFor` — what travels in the config document, per environment;
  *  - `controlPlaneCaBundle` — the union across environments, for the control plane's own outbound
  *    fetches (§8.5). The union is a widening and is stated as one: a CA registered for PROD will
- *    also verify a DEV team's spec host, because the control plane has no environment of its own.
+ *    also verify a DEV application's spec host, because the control plane has no environment of its own.
  *
  * An anchor holds no secret — it is the public certificate of an issuer — which is what lets it
  * travel inline in the config document and sit in the fail-static cache unencrypted `[P2-10]`.

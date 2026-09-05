@@ -370,7 +370,7 @@ export function buildSubscriptions(db: DB, kek: Buffer, environment: string): Co
          FROM subscription s
          JOIN application a ON a.id = s.application_id
          JOIN product p     ON p.id = s.product_id
-        WHERE s.environment = ? AND s.state = 'active'
+        WHERE s.environment = ? AND s.state IN ('active','activating')
         ORDER BY s.id`,
     )
     .all(environment);

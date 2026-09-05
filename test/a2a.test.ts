@@ -1,3 +1,4 @@
+import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeCp, makeDp, serveCp, type TestCp } from "./helpers.ts";
 import { A2aAgent, startA2aAgent } from "../tools/a2a/agent.ts";
@@ -46,7 +47,7 @@ async function publishA2a(discoverUrl: string) {
   const created = await (
     await cp.call("POST", "/api/resources", {
       cookie: pavel,
-      body: { kind: "a2a", name: `a2a-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+      body: { kind: "a2a", name: `a2a-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
     })
   ).json();
   const response = await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -140,7 +141,7 @@ describe("discovery", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "a2a", name: `a2a-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "a2a", name: `a2a-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
 
@@ -255,7 +256,7 @@ async function world(
   const product = await (
     await cp.call("POST", "/api/products", {
       cookie: pavel,
-      body: { name: `a2a-product-${seq}`, teamId: "team_platform", resourceIds: [resourceId] },
+      body: { name: `a2a-product-${seq}`, applicationId: "application_platform", resourceIds: [resourceId] },
     })
   ).json();
   await cp.call("POST", `/api/resources/${resourceId}/releases`, {
@@ -264,19 +265,7 @@ async function world(
   });
 
   const clara = await cp.login("clara");
-  const application = await (
-    await cp.call("POST", "/api/applications", {
-      cookie: clara,
-      body: { name: `a2a-app-${seq}`, teamId: "team_orders" },
-    })
-  ).json();
-  const subscription = await (
-    await cp.call("POST", "/api/subscriptions", {
-      cookie: clara,
-      body: { productId: product.id, applicationId: application.id, environment: "dev" },
-    })
-  ).json();
-  if (!subscription.primaryKey) throw new Error(`subscribe failed: ${JSON.stringify(subscription)}`);
+  const subscription = await activeSubscription(cp, clara, product.id);
 
   const cpServer = serveCp(cp);
   const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: `a-${seq}` });

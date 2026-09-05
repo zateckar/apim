@@ -1,11 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { matchRoute, navigation, NOT_FOUND, ROUTES, SECTION_LABEL } from "../src/lib/routes.ts";
+import { matchRoute, navigable, NOT_FOUND, ROUTES } from "../src/lib/routes.ts";
 
 /**
  * Every screen has a title and a one-line purpose (plan §9.4).
  *
  * Enforced structurally rather than per component: the shell renders both from this table, so the
  * property can be asserted once over every route instead of hoped for in seventeen files.
+ *
+ * What this file does *not* assert is that the sidebar links any of it — the table describes the
+ * screens, and `portal.test.tsx` holds the shell that renders them to this description.
  */
 
 describe("the route table", () => {
@@ -49,28 +52,18 @@ describe("the route table", () => {
   });
 
   test("sections follow capability, not inventory", () => {
-    // `[P1-26]`: "Publish APIs" is in the navigation for a team that owns nothing, or nobody could
-    // ever publish a first API.
-    const consumer = navigation(false);
-    const sections = consumer.map((group) => group.section);
+    // `[P1-26]`: publishing is offered to a application that owns nothing, or nobody could ever
+    // publish a first API — so the sections a member is offered do not depend on what they own.
+    const sections = new Set(navigable(false).map((route) => route.section));
     expect(sections).toContain("use");
     expect(sections).toContain("publish");
     expect(sections).not.toContain("operate");
-    expect(navigation(true).map((group) => group.section)).toContain("operate");
+    expect(new Set(navigable(true).map((route) => route.section))).toContain("operate");
   });
 
-  test("every navigable route is reachable from the navigation", () => {
-    const listed = new Set(navigation(true).flatMap((group) => group.items.map((route) => route.id)));
-    for (const route of ROUTES) {
-      if (route.nav) expect(listed, route.id).toContain(route.id);
-    }
-  });
-
-  test("every navigation entry matches its own pattern", () => {
-    for (const group of navigation(true)) {
-      for (const route of group.items) {
-        expect(matchRoute(route.pattern).route.id, route.id).toBe(route.id);
-      }
+  test("every navigable route matches its own pattern", () => {
+    for (const route of navigable(true)) {
+      expect(matchRoute(route.pattern).route.id, route.id).toBe(route.id);
     }
   });
 
@@ -80,10 +73,12 @@ describe("the route table", () => {
     }
   });
 
-  test("a section that is labelled is labelled in words a user would use", () => {
-    for (const group of navigation(true)) {
-      const label = SECTION_LABEL[group.section as keyof typeof SECTION_LABEL];
-      expect(label, group.section).toBe(group.label);
+  test("gating is the only thing that narrows what a member is offered", () => {
+    const gated = new Set(navigable(true).map((route) => route.id));
+    for (const route of navigable(false)) expect(gated, route.id).toContain(route.id);
+    for (const route of ROUTES) {
+      if (route.nav && !route.adminOnly)
+        expect(navigable(false).map((entry) => entry.id), route.id).toContain(route.id);
     }
   });
 });

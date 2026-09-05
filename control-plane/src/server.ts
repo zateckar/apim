@@ -1,3 +1,5 @@
+import { registerKafkaRoutes } from "./kafka.ts";
+import { registerOperationRoutes } from "./operations.ts";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize, resolve, sep } from "node:path";
 import {
@@ -30,6 +32,8 @@ import { registerTelemetryRoutes } from "./api/telemetry.ts";
 import { registerTrustRoutes } from "./api/trust.ts";
 import { registerUserRoutes } from "./api/users.ts";
 
+import { registerIntegrationRoutes } from "./integrations.ts";
+
 export function createRouter(): Router {
   const router = new Router();
   registerGatewayRoutes(router);
@@ -46,6 +50,9 @@ export function createRouter(): Router {
   registerPlaygroundRoutes(router);
   registerDashboardRoutes(router);
   registerTrustRoutes(router);
+  registerIntegrationRoutes(router);
+  registerOperationRoutes(router);
+  registerKafkaRoutes(router);
   return router;
 }
 

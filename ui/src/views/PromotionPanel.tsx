@@ -56,7 +56,7 @@ export function PromotionPanel({
   const [reason, setReason] = useState("");
   const [breakGlass, setBreakGlass] = useState(false);
 
-  const canPublish = permit("publish", resource.capabilities, { team: resource.teamId });
+  const canPublish = permit("publish", resource.capabilities, { application: resource.applicationId });
   const latest = promotion.data?.latestRev ?? null;
   const chosen = revision === "" ? latest : revision;
 

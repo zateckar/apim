@@ -29,14 +29,16 @@ export function TrustView({
   meta,
   user,
   environment,
+  applicationId,
 }: {
+  applicationId?: string;
   meta: Meta;
   user: User;
   environment: string;
 }) {
   // Authorities first, and deliberately: it is the rung that removes the need for the other two
   // tabs, and putting exceptions first would teach the expensive habit (plan §8).
-  const [tab, setTab] = useState<"anchors" | "certificates" | "exceptions" | "report">("anchors");
+  const [tab, setTab] = useState<"anchors" | "certificates" | "exceptions" | "report">(applicationId ? "certificates" : "anchors");
 
   return (
     <>
@@ -60,7 +62,7 @@ export function TrustView({
       {tab === "anchors" && (
         <TrustAnchors meta={meta} environment={environment} isAdmin={user.isAdmin} />
       )}
-      {tab === "certificates" && <Certificates user={user} environment={environment} />}
+      {tab === "certificates" && <Certificates user={user} environment={environment} applicationId={applicationId} />}
       {tab === "exceptions" && <Exceptions user={user} environment={environment} />}
       {tab === "report" && user.isAdmin && <Report />}
     </>
@@ -69,7 +71,7 @@ export function TrustView({
 
 // ---------------------------------------------------------------- client certificates
 
-function Certificates({ user, environment }: { user: User; environment: string }) {
+function Certificates({ user, environment, applicationId }: { user: User; environment: string; applicationId?: string }) {
   const certificates = useAsync(
     () => api.get<{ environment: string; items: CertificateRow[] }>(`/api/certificates?environment=${environment}`),
     [environment],
@@ -78,7 +80,7 @@ function Certificates({ user, environment }: { user: User; environment: string }
 
   // Sorted by how soon they break something: an expired client certificate is an outage on every
   // request through its binding, and nothing else on this platform warns about it.
-  const items = [...(certificates.data?.items ?? [])].sort((a, b) => a.expiresInDays - b.expiresInDays);
+  const items = [...(certificates.data?.items ?? [])].filter(row => !applicationId || row.applicationId === applicationId).sort((a, b) => a.expiresInDays - b.expiresInDays);
   const expiring = items.filter((row) => !row.expired && row.expiresInDays <= 30);
   const expired = items.filter((row) => row.expired);
 
@@ -135,6 +137,7 @@ function Certificates({ user, environment }: { user: User; environment: string }
         </div>
         {uploading && (
           <UploadCertificate
+            owner={applicationId}
             user={user}
             environment={environment}
             onDone={() => {
@@ -158,13 +161,13 @@ function CertificateRowView({
   reload: () => void;
 }) {
   const action = useAction();
-  const mine = user.isAdmin || user.teams.includes(row.teamId);
+  const mine = user.isAdmin || user.applications.includes(row.applicationId);
 
   return (
     <tr className={row.expired ? "row-bad" : ""}>
       <td>
         <strong>{row.name}</strong>
-        <div className="muted">{row.teamId}</div>
+        <div className="muted">{row.applicationId}</div>
       </td>
       <td className="mono small">{row.subject}</td>
       <td className="mono small">{row.issuer}</td>
@@ -200,7 +203,7 @@ function CertificateRowView({
           consequence="The private key is destroyed with it. Any binding that later needs this identity has to have the certificate uploaded again."
           permission={
             !mine
-              ? { enabled: false, reason: "Only the owning team, or an administrator, can delete this certificate." }
+              ? { enabled: false, reason: "Only the owning application, or an administrator, can delete this certificate." }
               : row.usedBy.length > 0
                 ? {
                     enabled: false,
@@ -221,6 +224,7 @@ function CertificateRowView({
 }
 
 function UploadCertificate({
+  owner,
   user,
   environment,
   onDone,
@@ -228,8 +232,9 @@ function UploadCertificate({
   user: User;
   environment: string;
   onDone: () => void;
+  owner?: string;
 }) {
-  const [teamId, setTeamId] = useState(user.teams[0] ?? "");
+  const [applicationId, setApplicationId] = useState(owner ?? user.applications[0] ?? "");
   const [name, setName] = useState("");
   const [certPem, setCertPem] = useState("");
   const [chainPem, setChainPem] = useState("");
@@ -241,7 +246,7 @@ function UploadCertificate({
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
       <div className="row">
-        <Field label="Team" value={teamId} onChange={setTeamId} />
+        {owner ? <div className="field"><label>Application</label><input value={owner} readOnly/></div> : <Field label="Application" value={applicationId} onChange={setApplicationId} />}
         <Field label="Name" value={name} onChange={setName} placeholder="orders-backend" />
         <div className="field">
           <label>Environment</label>
@@ -279,7 +284,7 @@ function UploadCertificate({
             () =>
               api.post("/api/certificates", {
                 environment,
-                teamId,
+                applicationId,
                 name,
                 certPem,
                 chainPem: chainPem.trim() ? chainPem : null,

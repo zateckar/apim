@@ -31,6 +31,7 @@ const MIGRATIONS: Migration[] = [
   { version: 3, name: "v3", file: "schema-003.sql" },
   { version: 4, name: "v4", file: "schema-004.sql" },
   { version: 5, name: "v5", file: "schema-005.sql" },
+  { version: 6, name: "application ownership and workflows", file: "schema-006.sql", foreignKeysOff: true },
 ];
 
 /**

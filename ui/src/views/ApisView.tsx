@@ -16,7 +16,7 @@ import { lifecycleChip } from "../lib/status";
 /**
  * My APIs (plan §9.7).
  *
- * Grouped by **family** — team plus name — because two versions of one API are two rows that share
+ * Grouped by **family** — application plus name — because two versions of one API are two rows that share
  * a name, and a flat list of "petstore, petstore, petstore" tells a reader nothing about which one
  * their callers are on. Each row says where that version is live, which is the fact an owner is
  * usually looking for and which v3 made them open the API to find.
@@ -27,7 +27,7 @@ export function ApisView({ user, meta }: { user: User; meta: Meta }) {
   const list = useAsync(
     () =>
       api.get<{ items: Resource[] }>(
-        `/api/resources?q=${encodeURIComponent(query)}${mine ? "&team=mine" : ""}`,
+        `/api/resources?q=${encodeURIComponent(query)}${mine ? "&application=mine" : ""}`,
       ),
     [query, mine],
   );
@@ -47,7 +47,7 @@ export function ApisView({ user, meta }: { user: User; meta: Meta }) {
           <Field label="Search" value={query} onChange={setQuery} placeholder="name contains…" />
           <label className="check-inline" style={{ marginTop: 18 }}>
             <input type="checkbox" checked={mine} onChange={(event) => setMine(event.target.checked)} />
-            only my teams'
+            only my applications'
           </label>
         </div>
         <Link to="/apis/new" className="chip active">
@@ -57,17 +57,17 @@ export function ApisView({ user, meta }: { user: User; meta: Meta }) {
 
       {families.size === 0 ? (
         <EmptyState
-          title={query ? "Nothing matches that" : "Your teams have not published anything yet"}
+          title={query ? "Nothing matches that" : "Your applications have not published anything yet"}
           detail={
             query
-              ? "Try a shorter search, or untick “only my teams’”."
+              ? "Try a shorter search, or untick “only my applications’”."
               : "Publishing takes three steps: the definition, where it answers, and a release. Nothing is live until the last one."
           }
           action={<Link to="/apis/new">Publish your first API →</Link>}
         />
       ) : (
         [...families.entries()].map(([family, versions]) => (
-          <Card key={family} title={versions[0]!.name} hint={`Owned by ${versions[0]!.teamId}`}>
+          <Card key={family} title={versions[0]!.name} hint={`Owned by ${versions[0]!.applicationId}`}>
             <table>
               <thead>
                 <tr>
@@ -126,7 +126,7 @@ export function ApisView({ user, meta }: { user: User; meta: Meta }) {
         Implemented kinds: <span className="mono">{meta.kinds.join(", ")}</span>. Every one of them
         is an API with a <Term name="definition" />, a <Term name="route" /> and a{" "}
         <Term name="backend" />; what differs is where the contract came from.
-        {user.isAdmin && " You are an administrator, so this list can show every team's."}
+        {user.isAdmin && " You are an administrator, so this list can show every application's."}
       </p>
     </>
   );

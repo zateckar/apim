@@ -1,10 +1,10 @@
 import { hashToken, mintInstanceToken } from "./crypto.ts";
 import { newId, nowIso } from "./db.ts";
-import { DEV_TEAMS, ensureDevDirectory } from "./principals.ts";
+import { DEV_APPLICATIONS, ensureDevDirectory } from "./principals.ts";
 import type { App } from "./router.ts";
 
-/** The dev provider's two teams. They live with the directory; this is the name history used. */
-export const SEED_TEAMS = DEV_TEAMS;
+/** The dev provider's two applications. They live with the directory; this is the name history used. */
+export const SEED_APPLICATIONS = DEV_APPLICATIONS;
 
 /** The fleet the demo and the load harness expect: two in DEV, one each in TEST and PROD. */
 export const SEED_FLEET: Array<{ environment: string; name: string; port: number }> = [

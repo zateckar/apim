@@ -100,8 +100,8 @@ export function composeCall(app: App, user: User, request: PlaygroundRequest): C
   }
 
   const resource = app.db
-    .query<{ id: string; name: string; api_version: string; kind: string; team_id: string }, [string]>(
-      "SELECT id, name, api_version, kind, team_id FROM resource WHERE id = ?",
+    .query<{ id: string; name: string; api_version: string; kind: string; application_id: string }, [string]>(
+      "SELECT id, name, api_version, kind, application_id FROM resource WHERE id = ?",
     )
     .get(resourceId);
   if (!resource) throw notFound(`no API ${resourceId}`);
@@ -361,21 +361,21 @@ function resolveKey(
         product_id: string;
         primary_key_enc: string;
         secondary_key_enc: string | null;
-        team_id: string;
+        application_id: string;
         application_name: string;
       },
       [string]
     >(
       `SELECT s.id, s.state, s.environment, s.product_id, s.primary_key_enc, s.secondary_key_enc,
-              a.team_id, a.name AS application_name
+              a.id AS application_id, a.name AS application_name
          FROM subscription s JOIN application a ON a.id = s.application_id
         WHERE s.id = ?`,
     )
     .get(request.subscriptionId);
   // A subscription that is not the caller's is not distinguishable from one that does not exist,
-  // deliberately: `can()` unchanged, checked against the application's team.
-  if (!subscription || (!user.isAdmin && !user.teams.includes(subscription.team_id))) {
-    throw forbidden("this subscription belongs to another team");
+  // deliberately: `can()` unchanged, checked against the application's application.
+  if (!subscription || (!user.isAdmin && !user.applications.includes(subscription.application_id))) {
+    throw forbidden("this subscription belongs to another application");
   }
   if (subscription.state !== "active") {
     throw conflict(`this subscription is ${subscription.state}, so its key no longer works`);

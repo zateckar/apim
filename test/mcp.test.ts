@@ -1,3 +1,4 @@
+import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeCp, makeDp, serveCp, type TestCp } from "./helpers.ts";
 import { McpServer, startMcpServer } from "../tools/mcp/server.ts";
@@ -46,7 +47,7 @@ async function publishMcp(discoverUrl: string) {
   const created = await (
     await cp.call("POST", "/api/resources", {
       cookie: pavel,
-      body: { kind: "mcp", name: `mcp-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+      body: { kind: "mcp", name: `mcp-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
     })
   ).json();
   const response = await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -153,7 +154,7 @@ describe("discovery", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: `r-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "rest", name: `r-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     const response = await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -169,7 +170,7 @@ describe("discovery", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "mcp", name: `mcp-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "mcp", name: `mcp-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
 
@@ -267,7 +268,7 @@ describe("regenerate", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "mcp", name: `mcp-${++seq}`, teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "mcp", name: `mcp-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -332,7 +333,7 @@ async function world(policy: Record<string, unknown> = {}): Promise<McpWorld> {
   const product = await (
     await cp.call("POST", "/api/products", {
       cookie: pavel,
-      body: { name: `mcp-product-${seq}`, teamId: "team_platform", resourceIds: [resourceId] },
+      body: { name: `mcp-product-${seq}`, applicationId: "application_platform", resourceIds: [resourceId] },
     })
   ).json();
   await cp.call("POST", `/api/resources/${resourceId}/releases`, {
@@ -341,18 +342,7 @@ async function world(policy: Record<string, unknown> = {}): Promise<McpWorld> {
   });
 
   const clara = await cp.login("clara");
-  const application = await (
-    await cp.call("POST", "/api/applications", {
-      cookie: clara,
-      body: { name: `mcp-app-${seq}`, teamId: "team_orders" },
-    })
-  ).json();
-  const subscription = await (
-    await cp.call("POST", "/api/subscriptions", {
-      cookie: clara,
-      body: { productId: product.id, applicationId: application.id, environment: "dev" },
-    })
-  ).json();
+  const subscription = await activeSubscription(cp, clara, product.id);
 
   const cpServer = serveCp(cp);
   const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: `m-${seq}` });

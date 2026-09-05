@@ -136,7 +136,7 @@ export function registerPromotionRoutes(router: Router): void {
   router.add("POST", "/api/resources/:id/releases", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "publish this resource");
+    assertCan(user, row.application_id, "publish this resource");
 
     const body = await readJson<{
       revision?: number;
@@ -296,7 +296,7 @@ export function registerPromotionRoutes(router: Router): void {
   router.add("POST", "/api/resources/:id/policy/copy-from", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "edit policy for this resource");
+    assertCan(user, row.application_id, "edit policy for this resource");
 
     const body = await readJson<{ fromEnvironment?: string; environment?: string; units?: string[] }>(ctx);
     const from = environmentIn(ctx, body.fromEnvironment ?? "");

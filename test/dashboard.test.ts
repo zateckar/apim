@@ -21,7 +21,7 @@ import { makeCp, poll, publishApi, startBackend, type TestCp } from "./helpers.t
  *  - **every list is bounded**, with the truncation count beside it.
  *  - **one evaluator.** The API page's banner and the dashboard's list are the same rows, produced
  *    by the same SQL, so a user cannot be told two different things about one API.
- *  - **`start-here-*` never leaks into an `attention[]` block**: "publish your first API" on a team
+ *  - **`start-here-*` never leaks into an `attention[]` block**: "publish your first API" on a application
  *    that has fifty is nonsense.
  */
 
@@ -131,12 +131,12 @@ function iso(offsetMs: number): string {
 const DAY = 86_400_000;
 
 /** A resource with nothing attached, straight into the table: most rules need only its row. */
-function makeResource(name: string, teamId = "team_platform", lifecycle = "active"): string {
+function makeResource(name: string, applicationId = "application_platform", lifecycle = "active"): string {
   const id = `res_${name}`;
   cp.app.db.run(
-    `INSERT INTO resource (id, kind, name, team_id, api_version, lifecycle, created_at, updated_at)
+    `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
      VALUES (?, 'rest', ?, ?, 'v1', ?, ?, ?)`,
-    [id, name, teamId, lifecycle, iso(0), iso(0)],
+    [id, name, applicationId, lifecycle, iso(0), iso(0)],
   );
   return id;
 }
@@ -328,8 +328,8 @@ describe("two hats, and the data decides which", () => {
     expect(owner.owner.apis.total).toBe(1);
     expect(owner.owner.apis.byLifecycle).toEqual({ active: 1 });
     expect(owner.owner.apis.liveByEnvironment.dev).toBe(1);
-    // The application belongs to another team, so it is not this caller's data.
-    expect(owner.consumer.applications).toEqual([]);
+    // The application belongs to another application, so it is not this caller's data.
+    expect(owner.consumer.applications.map(a => a.id)).toEqual(["application_platform"]);
     expect(owner.consumer.subscriptions).toEqual([]);
 
     const consumer = await dashboard(api.clara);
@@ -581,9 +581,9 @@ describe("an API that serves traffic without a control somebody would expect", (
   test("a certificate and a trust anchor with a date on them", async () => {
     const alice = await cp.login("alice");
     cp.app.db.run(
-      `INSERT INTO certificate (id, team_id, environment, name, cert_pem, key_enc, thumbprint, subject,
+      `INSERT INTO certificate (id, application_id, environment, name, cert_pem, key_enc, thumbprint, subject,
                                 issuer, not_before, not_after, usage, created_by, created_at)
-       VALUES ('cert_1', 'team_platform', 'dev', 'orders-mtls', 'pem', 'enc', 'AA', 'CN=orders',
+       VALUES ('cert_1', 'application_platform', 'dev', 'orders-mtls', 'pem', 'enc', 'AA', 'CN=orders',
                'CN=issuer', ?, ?, 'backend-mtls', 'alice', ?)`,
       [iso(-DAY), iso(10 * DAY), iso(0)],
     );
@@ -608,7 +608,7 @@ describe("an API that serves traffic without a control somebody would expect", (
     expect(dash.platform.environments[0]!.trustAnchors).toBe(1);
     expect(dash.platform.environments[0]!.expiringAnchors).toBe(1);
 
-    // A team that does not own the certificate is not told about it.
+    // A application that does not own the certificate is not told about it.
     const clara = await cp.login("clara");
     expect(codes(await dashboard(clara, "?environment=dev"))).not.toContain("certificate-expiring");
   });
@@ -773,7 +773,7 @@ describe("one evaluator", () => {
     expect(resource.attention.length).toBeGreaterThan(0);
   });
 
-  test("another team's API page carries no rows for a caller who cannot act on them", async () => {
+  test("another application's API page carries no rows for a caller who cannot act on them", async () => {
     const api = await publishApi(cp, { backendUrl: backend.url, policy: {} });
     const resource = (await (
       await cp.call("GET", `/api/resources/${api.resourceId}`, { cookie: api.clara })

@@ -66,7 +66,7 @@ export function registerMarketRoutes(router: Router): void {
     const { rows: visible, ceilingHit } = visibleResources(ctx);
     const kinds: Record<string, number> = {};
     const tags: Record<string, number> = {};
-    const teams: Record<string, number> = {};
+    const applications: Record<string, number> = {};
     // Counted over the visible set rather than over `release`, so every facet answers the same
     // question the filter it drives does. A `GROUP BY` over the whole table would count an
     // unlisted resource's release for a caller who cannot see the resource — a count that is both
@@ -74,7 +74,7 @@ export function registerMarketRoutes(router: Router): void {
     const environments: Record<string, number> = {};
     for (const row of visible) {
       kinds[row.kind] = (kinds[row.kind] ?? 0) + 1;
-      teams[row.team_id] = (teams[row.team_id] ?? 0) + 1;
+      applications[row.application_id] = (applications[row.application_id] ?? 0) + 1;
       for (const tag of tagsFor(ctx, row.id)) tags[tag] = (tags[tag] ?? 0) + 1;
       for (const environment of liveEnvironments(ctx, row.id)) {
         environments[environment] = (environments[environment] ?? 0) + 1;
@@ -83,7 +83,7 @@ export function registerMarketRoutes(router: Router): void {
     return json({
       kinds: counted(kinds),
       tags: counted(tags).slice(0, 50),
-      teams: counted(teams),
+      applications: counted(applications),
       // In promotion-chain order, because dev → test → prod is how the estate is read.
       environments: ctx.app.config.promotionChain
         .filter((environment) => environments[environment])
@@ -125,9 +125,9 @@ export function registerMarketRoutes(router: Router): void {
       example: exampleFor(ctx, row, model, routes),
       versions: ctx.app.db
         .query<{ id: string; api_version: string; lifecycle: string }, [string, string]>(
-          "SELECT id, api_version, lifecycle FROM resource WHERE team_id = ? AND name = ? ORDER BY api_version",
+          "SELECT id, api_version, lifecycle FROM resource WHERE application_id = ? AND name = ? ORDER BY api_version",
         )
-        .all(row.team_id, row.name),
+        .all(row.application_id, row.name),
       traffic: trafficFor(ctx, row.id),
       ...(model?.mcp ? { mcp: { protocolVersion: model.mcp.protocolVersion, serverInfo: model.mcp.serverInfo } } : {}),
       ...(model?.a2a
@@ -149,10 +149,11 @@ export function registerMarketRoutes(router: Router): void {
    * looking at, and the application is what the consumer chose.
    */
   router.add("POST", "/api/catalog/:productId/subscribe", "session", async (ctx) => {
-    const body = await readJson<{ applicationId?: string; environment?: string }>(ctx);
+    const body = await readJson<{ applicationId?: string; environment?: string; purpose?: string }>(ctx);
     return createSubscription(ctx, {
       productId: ctx.params.productId,
       applicationId: body.applicationId,
+      purpose: body.purpose,
       environment: body.environment ?? environmentOf(ctx),
     });
   });
@@ -166,16 +167,16 @@ export function registerMarketRoutes(router: Router): void {
     const user = requireUser(ctx);
     const row = ctx.app.db
       .query<
-        { id: string; environment: string; state: string; app_team: string; product_id: string },
+        { id: string; environment: string; state: string; app_application: string; product_id: string },
         [string]
       >(
-        `SELECT s.id, s.environment, s.state, a.team_id AS app_team, s.product_id
+        `SELECT s.id, s.environment, s.state, a.id AS app_application, s.product_id
            FROM subscription s JOIN application a ON a.id = s.application_id
           WHERE s.id = ?`,
       )
       .get(ctx.params.id!);
     if (!row) throw notFound(`no subscription ${ctx.params.id}`);
-    if (!can(user, row.app_team)) throw notFound(`no subscription ${ctx.params.id}`);
+    if (!can(user, row.app_application)) throw notFound(`no subscription ${ctx.params.id}`);
 
     const counters = ctx.app.db
       .query<
@@ -233,7 +234,7 @@ interface Filters {
   q: string | null;
   kind: string | null;
   tag: string | null;
-  team: string | null;
+  application: string | null;
   environment: string | null;
   sort: Sort;
 }
@@ -255,7 +256,7 @@ function readFilters(ctx: Ctx): Filters {
     q: ctx.url.searchParams.get("q"),
     kind,
     tag: ctx.url.searchParams.get("tag"),
-    team: ctx.url.searchParams.get("team"),
+    application: ctx.url.searchParams.get("application"),
     environment,
     sort,
   };
@@ -297,7 +298,7 @@ function rank(ctx: Ctx, filters: Filters): Ranked {
 
   candidates = candidates.filter((candidate) => isVisible(ctx, candidate.row));
   if (filters.kind) candidates = candidates.filter((c) => c.row.kind === filters.kind);
-  if (filters.team) candidates = candidates.filter((c) => c.row.team_id === filters.team);
+  if (filters.application) candidates = candidates.filter((c) => c.row.application_id === filters.application);
   if (filters.environment) {
     candidates = candidates.filter((c) =>
       liveEnvironments(ctx, c.row.id).includes(filters.environment!),
@@ -323,8 +324,8 @@ function rank(ctx: Ctx, filters: Filters): Ranked {
         items: scored.sort((a, b) => {
           const left = popularity.get(a.row.id) ?? { subscribers: 0, requests: 0 };
           const right = popularity.get(b.row.id) ?? { subscribers: 0, requests: 0 };
-          // Subscribers first, requests as the tie-break: a product ten teams depend on is more
-          // popular than one team hammering an endpoint `[R2-39]`.
+          // Subscribers first, requests as the tie-break: a product ten applications depend on is more
+          // popular than one application hammering an endpoint `[R2-39]`.
           if (right.subscribers !== left.subscribers) return right.subscribers - left.subscribers;
           if (right.requests !== left.requests) return right.requests - left.requests;
           return a.row.name.localeCompare(b.row.name);
@@ -397,7 +398,7 @@ function popularityMap(ctx: Ctx): Map<string, { subscribers: number; requests: n
 // --------------------------------------------------------------------------- visibility
 
 function isVisible(ctx: Ctx, row: ResourceRow): boolean {
-  const mine = can(ctx.user, row.team_id);
+  const mine = can(ctx.user, row.application_id);
   if (row.visibility === "unlisted") return mine;
   return mine || liveEnvironments(ctx, row.id).length > 0;
 }
@@ -441,12 +442,12 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
         WHERE pm.resource_id = ? AND s.state = 'active'`,
     )
     .get(row.id);
-  // "Do I already have a key for this" — asked of the caller's own teams, so the answer is about
-  // them rather than about the estate. Placeholders are generated from the team count, never
+  // "Do I already have a key for this" — asked of the caller's own applications, so the answer is about
+  // them rather than about the estate. Placeholders are generated from the application count, never
   // interpolated values.
-  const mineTeams = ctx.user?.teams ?? [];
+  const mineApplications = ctx.user?.applications ?? [];
   const subscribed =
-    mineTeams.length === 0
+    mineApplications.length === 0
       ? 0
       : (ctx.app.db
           .query<{ n: number }, string[]>(
@@ -454,9 +455,9 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
                JOIN product_member pm ON pm.product_id = s.product_id
                JOIN application a ON a.id = s.application_id
               WHERE pm.resource_id = ? AND s.state = 'active'
-                AND a.team_id IN (${mineTeams.map(() => "?").join(", ")})`,
+                AND a.id IN (${mineApplications.map(() => "?").join(", ")})`,
           )
-          .get(row.id, ...mineTeams)?.n ?? 0);
+          .get(row.id, ...mineApplications)?.n ?? 0);
 
   return {
     id: row.id,
@@ -467,7 +468,7 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
     icon: row.icon,
     summary: row.summary ?? firstSentence(model?.description) ?? null,
     tags: tagsFor(ctx, row.id),
-    teamId: row.team_id,
+    applicationId: row.application_id,
     lifecycle: row.lifecycle,
     visibility: row.visibility,
     environments,

@@ -80,7 +80,7 @@ export const api = {
   getText: (path: string) => request<string>("GET", path, { raw: true }),
   post: <T,>(path: string, body?: unknown) => request<T>("POST", path, { body }),
   put: <T,>(path: string, body?: unknown) => request<T>("PUT", path, { body }),
-  patch: <T,>(path: string, body: unknown, ifMatch: string) =>
+  patch: <T,>(path: string, body: unknown, ifMatch?: string) =>
     request<T>("PATCH", path, { body, ifMatch }),
   del: <T,>(path: string) => request<T>("DELETE", path),
 };
@@ -91,7 +91,7 @@ export interface User {
   id: string;
   name: string;
   roles: string[];
-  teams: string[];
+  applications: string[];
   isAdmin: boolean;
   /** v5: which directory authenticated this person, and what they are called in it. */
   provider?: string;
@@ -130,13 +130,13 @@ export interface Meta {
 export interface AuthProviders {
   providers: string[];
   oidc: { label: string } | null;
-  devUsers: Array<{ id: string; name: string; role: string; teams: string[] }>;
+  devUsers: Array<{ id: string; name: string; role: string; applications: string[] }>;
   passwordMinLength: number;
 }
 
-export interface TeamMembership {
-  teamId: string;
-  teamName: string;
+export interface ApplicationMembership {
+  applicationId: string;
+  applicationName: string;
   /** `idp` came from a token's group claim; `local` was granted in this portal. */
   source: "idp" | "local";
   grantedBy: string | null;
@@ -148,13 +148,13 @@ export interface TeamMembership {
 /** `GET /api/me`. Answers for an anonymous caller too, with `user: null` and no 401. */
 export interface Me {
   user: User | null;
-  teams?: TeamMembership[];
+  applications?: ApplicationMembership[];
   mustChangePassword?: boolean;
   /** No refresh token, so the roles on screen are the ones from sign-in until the next one. */
   claimsStale?: boolean;
-  /** Groups the token carried that map to no team — the Teams screen offers to create them. */
+  /** Groups the token carried that map to no application — the Applications screen offers to create them. */
   unmappedGroups?: string[];
-  /** The token carried no groups at all: a claim-path problem, not a missing-team one. */
+  /** The token carried no groups at all: a claim-path problem, not a missing-application one. */
   noGroupsInToken?: boolean;
 }
 
@@ -186,29 +186,29 @@ export interface DirectoryUser {
   createdAt: string;
   createdBy: string;
   lastLoginAt: string | null;
-  teams: number;
+  applications: number;
 }
 
 export interface DirectoryUserDetail extends DirectoryUser {
-  memberships: TeamMembership[];
+  memberships: ApplicationMembership[];
   sessions: SessionView[];
   note?: string | null;
 }
 
-export interface TeamRow {
+export interface ApplicationRow {
   id: string;
   name: string;
   mine: boolean;
   members: number;
-  /** Admin-only: which identity provider group grants this team. */
+  /** Admin-only: which identity provider group grants this application. */
   sourceGroup?: string | null;
 }
 
-export interface TeamDetail {
+export interface ApplicationDetail {
   id: string;
   name: string;
   sourceGroup?: string | null;
-  owns: { resources: number; products: number; applications: number };
+  owns: { resources: number; products: number; subscriptions: number; certificates: number; processes: number };
   members: Array<{
     userId: string;
     displayName: string;
@@ -223,9 +223,9 @@ export interface Resource {
   id: string;
   kind: string;
   name: string;
-  teamId: string;
+  applicationId: string;
   apiVersion: string;
-  /** `<team>/<name>` — the version family this resource is a member of. */
+  /** `<application>/<name>` — the version family this resource is a member of. */
   family: string;
   lifecycle: string;
   sunsetAt: string | null;
@@ -428,7 +428,7 @@ export interface PolicyUnitRow {
 export interface Product {
   id: string;
   name: string;
-  teamId: string;
+  applicationId: string;
   members: Array<{ id: string; name: string }>;
   capabilities: string[];
 }
@@ -436,7 +436,7 @@ export interface Product {
 export interface Application {
   id: string;
   name: string;
-  teamId: string;
+  applicationId: string;
   capabilities: string[];
 }
 
@@ -451,7 +451,7 @@ export interface Subscription {
   keyRotatedAt: string | null;
   /**
    * Which side of it you are. A subscription has two, and the same row means "our application
-   * calls their product" to one team and the reverse to the other — so a list that did not say
+   * calls their product" to one application and the reverse to the other — so a list that did not say
    * which would be a list of rows nobody can read.
    */
   viewerIs?: "consumer" | "publisher" | "other";
@@ -470,7 +470,7 @@ export interface MarketCard {
   icon: string | null;
   summary: string | null;
   tags: string[];
-  teamId: string;
+  applicationId: string;
   lifecycle: string;
   visibility: string;
   environments: string[];
@@ -514,7 +514,7 @@ export interface MarketListingDetail extends MarketCard {
 export interface MarketFacets {
   kinds: Array<{ value: string; count: number }>;
   tags: Array<{ value: string; count: number }>;
-  teams: Array<{ value: string; count: number }>;
+  applications: Array<{ value: string; count: number }>;
   environments: Array<{ value: string; count: number }>;
   total: number;
   /** The facet counts are over a bounded scan, so they can be a floor rather than a total. */
@@ -568,7 +568,7 @@ export interface EffectivePolicyView {
 
 export interface CertificateRow {
   id: string;
-  teamId: string;
+  applicationId: string;
   name: string;
   thumbprint: string;
   subject: string;
@@ -743,7 +743,7 @@ export interface Dashboard {
     attentionTruncated: number;
   };
   consumer: {
-    applications: Array<{ id: string; name: string; teamId: string; subscriptions: number }>;
+    applications: Array<{ id: string; name: string; applicationId: string; subscriptions: number }>;
     subscriptions: Array<{
       id: string;
       name: string;
@@ -777,7 +777,7 @@ export interface Dashboard {
     /** Null for a non-admin: absent rather than empty, which would read as "nothing is wrong". */
     admin: { failedJobs: number; staleReleases: number; downgrades: number } | null;
   };
-  /** Present only on an estate this team has not started using yet. */
+  /** Present only on an estate this application has not started using yet. */
   startHere: AttentionRow[] | null;
 }
 
@@ -910,7 +910,7 @@ export interface PlaygroundForm {
     product: string;
     hasSecondary: boolean;
   }>;
-  /** A key is required and the caller's teams hold none: the one control is "subscribe". */
+  /** A key is required and the caller's applications hold none: the one control is "subscribe". */
   needsSubscription: boolean;
   operations: FormOperation[];
   agentCard: { path: string } | null;

@@ -7,12 +7,12 @@ import { DEV_USERS, userFor, type Provider } from "./principals.ts";
  * Sessions and the one authorization function (design §9).
  *
  * Who a person *is* lives in `principals.ts`; this module is about the cookie in front of them.
- * The split matters because of D35: a session no longer carries the roles and teams it was issued
+ * The split matters because of D35: a session no longer carries the roles and applications it was issued
  * with, it carries a pointer to the directory, and the directory is read on every request. So an
- * admin's edit to somebody's role or teams takes effect on that person's next request instead of
+ * admin's edit to somebody's role or applications takes effect on that person's next request instead of
  * on their next sign-in, and there is no re-issue-on-privilege-change machinery to get wrong.
  *
- * `roles_json` and `teams_json` are still written, and are still what they always were — but they
+ * `roles_json` and `applications_json` are still written, and are still what they always were — but they
  * are now the *login-time snapshot*, kept because "what was this person allowed to do when they
  * signed in" is an audit question, not an authorization one.
  */
@@ -20,7 +20,7 @@ export interface User {
   id: string;
   name: string;
   roles: string[];
-  teams: string[];
+  applications: string[];
   isAdmin: boolean;
 }
 
@@ -55,14 +55,14 @@ export function createSession(
   const now = new Date();
   db.run(
     `INSERT INTO session
-       (id, user_id, roles_json, teams_json, created_at, idle_until, expires_at,
+       (id, user_id, roles_json, applications_json, created_at, idle_until, expires_at,
         provider, refresh_token_enc, claims_refreshed_at, user_agent, last_seen_at)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       id,
       user.id,
       JSON.stringify(user.roles),
-      JSON.stringify(user.teams),
+      JSON.stringify(user.applications),
       now.toISOString(),
       new Date(now.getTime() + policy.idleMin * 60_000).toISOString(),
       new Date(now.getTime() + policy.lifetimeHours * 3_600_000).toISOString(),
@@ -192,17 +192,17 @@ export function devUser(id: string): { id: string; name: string } | null {
   return found ? { id: found.id, name: found.name } : null;
 }
 
-/** `can(user, action, subject) = user.isAdmin || subject.team_id ∈ user.teams` (design §9). */
-export function can(user: User | null, teamId: string | null | undefined): boolean {
+/** `can(user, action, subject) = user.isAdmin || subject.application_id ∈ user.applications` (design §9). */
+export function can(user: User | null, applicationId: string | null | undefined): boolean {
   if (!user) return false;
   if (user.isAdmin) return true;
-  if (!teamId) return false;
-  return user.teams.includes(teamId);
+  if (!applicationId) return false;
+  return user.applications.includes(applicationId);
 }
 
-export function capabilitiesFor(user: User | null, teamId: string | null | undefined): string[] {
+export function capabilitiesFor(user: User | null, applicationId: string | null | undefined): string[] {
   const caps = ["read"];
-  if (can(user, teamId)) caps.push("update", "delete", "publish", "policy");
+  if (can(user, applicationId)) caps.push("update", "delete", "publish", "policy");
   return caps;
 }
 

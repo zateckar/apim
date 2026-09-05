@@ -163,7 +163,7 @@ function DevUsers({
           <strong>{user.name}</strong>
           <span className="muted">
             {" "}
-            — {user.role} · {user.teams.join(", ") || "no teams"}
+            — {user.role} · {user.applications.join(", ") || "no applications"}
           </span>
         </button>
       ))}

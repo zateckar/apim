@@ -171,7 +171,7 @@ describe("what a caller can see", () => {
     const draft = await (
       await cp.call("POST", "/api/resources", {
         cookie: published.pavel,
-        body: { kind: "rest", name: "secret-draft", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "rest", name: "secret-draft", applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
 
@@ -383,16 +383,16 @@ describe("search, facets and sort", () => {
     const { pets } = await estate();
     expect((await catalog(pets.pavel, "?sort=name")).truncated).toBe(false);
 
-    // 2000 resources — `RANK_CEILING` exactly — owned by a team nobody is in and released
+    // 2000 resources — `RANK_CEILING` exactly — owned by a application nobody is in and released
     // nowhere, so every one of them is fetched as a candidate and then filtered out again. They
     // sort before the real estate, so they fill the window and push it out entirely.
     const now = new Date().toISOString();
     const fill = cp.app.db.transaction(() => {
-      cp.app.db.run("INSERT INTO team (id, name) VALUES ('team_nobody', 'nobody')");
+      cp.app.db.run("INSERT INTO application (id, name) VALUES ('application_nobody', 'nobody')");
       for (let i = 0; i < 2000; i++) {
         cp.app.db.run(
-          `INSERT INTO resource (id, kind, name, team_id, api_version, lifecycle, created_at, updated_at)
-           VALUES (?, 'rest', ?, 'team_nobody', 'v1', 'active', ?, ?)`,
+          `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
+           VALUES (?, 'rest', ?, 'application_nobody', 'v1', 'active', ?, ?)`,
           [`res_fill${i}`, `aaa-${String(i).padStart(4, "0")}`, now, now],
         );
       }
@@ -476,7 +476,7 @@ describe("the listing page", () => {
     const created = await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "mcp", name: "petstore-mcp", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "mcp", name: "petstore-mcp", applicationId: "application_platform", apiVersion: "v1" },
       })
     ).json();
     await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -517,7 +517,7 @@ describe("the listing page", () => {
     expect(ids(await catalog(pavel, "?q=getPet"))).toContain(created.id);
   });
 
-  test("subscribing from the catalog ends with a key", async () => {
+  test("subscribing from the catalog starts publisher approval without exposing a key", async () => {
     const api = await publishApi(cp, {
       backendUrl: backend.url,
       basePath: `/c-${++seq}`,
@@ -526,30 +526,17 @@ describe("the listing page", () => {
       subscribe: false,
     });
     const clara = await cp.login("clara");
-    const application = await (
-      await cp.call("POST", "/api/applications", {
-        cookie: clara,
-        body: { name: "shelter-app", teamId: "team_orders" },
-      })
-    ).json();
+    const application = {id: "application_orders"};
 
     const response = await cp.call("POST", `/api/catalog/${api.productId}/subscribe`, {
       cookie: clara,
-      body: { applicationId: application.id, environment: "dev" },
+      body: { applicationId: application.id, environment: "dev", purpose: "Catalogue test" },
     });
     expect(response.status).toBe(201);
     const subscription = await response.json();
-    expect(subscription.primaryKey).toMatch(/^sk_dev_/);
-    // Shown once, never again in a list.
-    expect(response.headers.get("cache-control")).toBe("no-store");
-
-    // And the card now says so, for this caller.
-    const payload = await catalog(clara, "?q=pet-inventory");
-    const card = (payload.items as Array<Record<string, unknown>>).find(
-      (item) => item.id === api.resourceId,
-    )!;
-    expect(card.subscribed).toBe(true);
-    expect(card.subscriberCount).toBe(1);
+    expect(subscription.primaryKey).toBeUndefined();
+    expect(subscription.state).toBe("pending");
+    expect(subscription.purpose).toBe("Catalogue test");
   });
 
   test("subscribing to somebody else's application is refused through this door too", async () => {
@@ -561,16 +548,11 @@ describe("the listing page", () => {
       subscribe: false,
     });
     const clara = await cp.login("clara");
-    const application = await (
-      await cp.call("POST", "/api/applications", {
-        cookie: clara,
-        body: { name: "shelter-app", teamId: "team_orders" },
-      })
-    ).json();
-    // Pavel is not in team_orders, so he may not subscribe Clara's application.
+    const application = {id: "application_orders"};
+    // Pavel is not in application_orders, so he may not subscribe Clara's application.
     const response = await cp.call("POST", `/api/catalog/${api.productId}/subscribe`, {
       cookie: api.pavel,
-      body: { applicationId: application.id, environment: "dev" },
+      body: { applicationId: application.id, environment: "dev", purpose: "Catalogue test" },
     });
     expect(response.status).toBe(403);
   });

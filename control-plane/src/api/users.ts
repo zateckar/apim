@@ -26,7 +26,7 @@ import { json, readJson, requireAdmin, requireUser, Router, type Ctx } from "../
 import { nextCursor, pageOf } from "./common.ts";
 
 /**
- * User and team management (v5 plan §7).
+ * User and application management (v5 plan §7).
  *
  * Two things this file deliberately does not do:
  *
@@ -58,10 +58,10 @@ interface UserView {
   createdAt: string;
   createdBy: string;
   lastLoginAt: string | null;
-  teams: number;
+  applications: number;
 }
 
-function viewOf(row: PrincipalRow, teamCount: number): UserView {
+function viewOf(row: PrincipalRow, applicationCount: number): UserView {
   return {
     id: row.id,
     provider: row.provider,
@@ -79,7 +79,7 @@ function viewOf(row: PrincipalRow, teamCount: number): UserView {
     createdAt: row.created_at,
     createdBy: row.created_by,
     lastLoginAt: row.last_login_at,
-    teams: teamCount,
+    applications: applicationCount,
   };
 }
 
@@ -126,7 +126,7 @@ export function registerUserRoutes(router: Router): void {
       )
       .all(...args, page.limit, page.offset);
 
-    const counts = teamCounts(ctx);
+    const counts = applicationCounts(ctx);
     return json({
       items: rows.map((row) => viewOf(row, counts.get(row.id) ?? 0)),
       nextCursor: nextCursor(page, rows.length),
@@ -310,33 +310,33 @@ export function registerUserRoutes(router: Router): void {
 
   // ---------------------------------------------------------------- membership
 
-  router.add("PUT", "/api/users/:id/teams/:teamId", "session", (ctx) => {
-    const actor = requireAdmin(ctx, "granting team membership is admin-only");
+  router.add("PUT", "/api/users/:id/applications/:applicationId", "session", (ctx) => {
+    const actor = requireAdmin(ctx, "granting application membership is admin-only");
     const row = principalOr404(ctx.app.db, ctx.params.id!);
-    const team = teamOr404(ctx, ctx.params.teamId!);
-    grantMembership(ctx.app.db, row.id, team.id, "local", actor.id);
+    const application = applicationOr404(ctx, ctx.params.applicationId!);
+    grantMembership(ctx.app.db, row.id, application.id, "local", actor.id);
     writeAudit(ctx.app.db, {
       actor: actor.id,
-      action: "user.team-grant",
+      action: "user.application-grant",
       subject: `user:${row.id}`,
       outcome: "ok",
-      detail: { teamId: team.id, teamName: team.name },
+      detail: { applicationId: application.id, applicationName: application.name },
     });
     return json({ memberships: membershipsOf(ctx.app.db, row.id) });
   });
 
-  router.add("DELETE", "/api/users/:id/teams/:teamId", "session", (ctx) => {
-    const actor = requireAdmin(ctx, "revoking team membership is admin-only");
+  router.add("DELETE", "/api/users/:id/applications/:applicationId", "session", (ctx) => {
+    const actor = requireAdmin(ctx, "revoking application membership is admin-only");
     const row = principalOr404(ctx.app.db, ctx.params.id!);
-    const team = teamOr404(ctx, ctx.params.teamId!);
-    const removed = revokeMembership(ctx.app.db, row.id, team.id);
-    if (!removed) throw notFound(`${row.display_name} is not a member of ${team.name}`);
+    const application = applicationOr404(ctx, ctx.params.applicationId!);
+    const removed = revokeMembership(ctx.app.db, row.id, application.id);
+    if (!removed) throw notFound(`${row.display_name} is not a member of ${application.name}`);
     writeAudit(ctx.app.db, {
       actor: actor.id,
-      action: "user.team-revoke",
+      action: "user.application-revoke",
       subject: `user:${row.id}`,
       outcome: "ok",
-      detail: { teamId: team.id, teamName: team.name },
+      detail: { applicationId: application.id, applicationName: application.name },
     });
     return json({
       memberships: membershipsOf(ctx.app.db, row.id),
@@ -346,63 +346,64 @@ export function registerUserRoutes(router: Router): void {
        * works and one that appears to.
        */
       note:
-        row.provider === "oidc" && team.source_group
-          ? `${team.name} is mapped from the identity provider group "${team.source_group}". If ` +
+        row.provider === "oidc" && application.source_group
+          ? `${application.name} is mapped from the identity provider group "${application.source_group}". If ` +
             `${row.display_name} is still in that group, the membership returns at their next ` +
             "claim refresh. Remove them from the group instead."
           : null,
     });
   });
 
-  // ---------------------------------------------------------------- teams
+  // ---------------------------------------------------------------- applications
 
-  router.add("GET", "/api/teams", "session", (ctx) => {
+  router.add("GET", "/api/applications", "session", (ctx) => {
     const user = requireUser(ctx);
     const rows = ctx.app.db
       .query<{ id: string; name: string; source_group: string | null }, []>(
-        "SELECT id, name, source_group FROM team ORDER BY name",
+        "SELECT id, name, source_group FROM application ORDER BY name",
       )
       .all();
     const counts = memberCounts(ctx);
     return json({
-      items: rows.map((team) => ({
-        id: team.id,
-        name: team.name,
-        mine: can(user, team.id),
-        members: counts.get(team.id) ?? 0,
+      items: rows.map((application) => ({
+        id: application.id,
+        name: application.name,
+        mine: can(user, application.id),
+        capabilities: can(user, application.id) ? ["read", "create", "update", "delete"] : ["read"],
+        members: counts.get(application.id) ?? 0,
         /**
-         * Admin-only `[P1-18]`. Team names are already a discovery surface, but which identity
-         * provider group grants a team tells any signed-in user exactly which group to get
-         * themselves added to in order to own another team's APIs. Absent, not blanked.
+         * Admin-only `[P1-18]`. Application names are already a discovery surface, but which identity
+         * provider group grants a application tells any signed-in user exactly which group to get
+         * themselves added to in order to own another application's APIs. Absent, not blanked.
          */
-        ...(user.isAdmin ? { sourceGroup: team.source_group } : {}),
+        ...(user.isAdmin ? { sourceGroup: application.source_group } : {}),
       })),
     });
   });
 
-  router.add("GET", "/api/teams/:id", "session", (ctx) => {
+  router.add("GET", "/api/applications/:id", "session", (ctx) => {
     const user = requireUser(ctx);
-    const team = teamOr404(ctx, ctx.params.id!);
-    // Your own team's member list is yours to see; anybody else's is an admin question.
-    if (!can(user, team.id)) requireAdmin(ctx, `${team.name} is not one of your teams`);
+    const application = applicationOr404(ctx, ctx.params.id!);
+    // Your own application's member list is yours to see; anybody else's is an admin question.
+    if (!can(user, application.id)) requireAdmin(ctx, `${application.name} is not one of your applications`);
     const members = ctx.app.db
       .query<
         { user_id: string; source: string; granted_by: string | null; granted_at: string | null },
         [string]
       >(
         `SELECT m.user_id, m.source, m.granted_by, m.granted_at
-           FROM membership m WHERE m.team_id = ?`,
+           FROM membership m WHERE m.application_id = ?`,
       )
-      .all(team.id);
+      .all(application.id);
     const names = displayNames(
       ctx.app.db,
       members.flatMap((m) => [m.user_id, m.granted_by ?? ""]),
     );
     return json({
-      id: team.id,
-      name: team.name,
-      ...(user.isAdmin ? { sourceGroup: team.source_group } : {}),
-      owns: ownedBy(ctx, team.id),
+      id: application.id,
+      name: application.name,
+      ...(user.isAdmin ? { sourceGroup: application.source_group } : {}),
+      owns: ownedBy(ctx, application.id),
       members: members.map((m) => ({
         userId: m.user_id,
         displayName: names.get(m.user_id) ?? m.user_id,
@@ -414,43 +415,43 @@ export function registerUserRoutes(router: Router): void {
     });
   });
 
-  router.add("POST", "/api/teams", "session", async (ctx) => {
-    const actor = requireAdmin(ctx, "creating a team is admin-only");
+  router.add("POST", "/api/applications", "session", async (ctx) => {
+    const actor = requireAdmin(ctx, "creating a application is admin-only");
     const body = await readJson<{ name?: string; sourceGroup?: string; id?: string }>(ctx);
     const name = (body.name ?? "").trim();
     if (name.length < 2 || name.length > 80) throw badRequest("name: 2–80 characters");
     const existing = ctx.app.db
-      .query<{ id: string }, [string]>("SELECT id FROM team WHERE lower(name) = lower(?)")
+      .query<{ id: string }, [string]>("SELECT id FROM application WHERE lower(name) = lower(?)")
       .get(name);
-    if (existing) throw conflict(`a team called "${name}" already exists`);
+    if (existing) throw conflict(`a application called "${name}" already exists`);
     const sourceGroup = (body.sourceGroup ?? "").trim() || null;
     if (sourceGroup) assertSourceGroupFree(ctx, sourceGroup, null);
 
-    const id = (body.id ?? "").trim() || newId("team");
+    const id = (body.id ?? "").trim() || newId("application");
     if (!/^[a-z0-9][a-z0-9_-]{1,47}$/.test(id)) {
       throw badRequest("id: lower-case letters, digits, hyphens and underscores, 2–48 characters");
     }
-    if (ctx.app.db.query("SELECT id FROM team WHERE id = ?").get(id)) {
-      throw conflict(`a team with id "${id}" already exists`);
+    if (ctx.app.db.query("SELECT id FROM application WHERE id = ?").get(id)) {
+      throw conflict(`a application with id "${id}" already exists`);
     }
-    ctx.app.db.run("INSERT INTO team (id, name, source_group) VALUES (?, ?, ?)", [
+    ctx.app.db.run("INSERT INTO application (id, name, source_group) VALUES (?, ?, ?)", [
       id,
       name,
       sourceGroup,
     ]);
     writeAudit(ctx.app.db, {
       actor: actor.id,
-      action: "team.create",
-      subject: `team:${id}`,
+      action: "application.create",
+      subject: `application:${id}`,
       outcome: "ok",
       detail: { name, sourceGroup },
     });
     return json({ id, name, sourceGroup, members: 0, mine: true }, { status: 201 });
   });
 
-  router.add("PATCH", "/api/teams/:id", "session", async (ctx) => {
-    const actor = requireAdmin(ctx, "changing a team is admin-only");
-    const team = teamOr404(ctx, ctx.params.id!);
+  router.add("PATCH", "/api/applications/:id", "session", async (ctx) => {
+    const actor = requireAdmin(ctx, "changing a application is admin-only");
+    const application = applicationOr404(ctx, ctx.params.id!);
     const body = await readJson<{ name?: string; sourceGroup?: string | null }>(ctx);
     const changed: Record<string, unknown> = {};
 
@@ -459,56 +460,56 @@ export function registerUserRoutes(router: Router): void {
       if (name.length < 2 || name.length > 80) throw badRequest("name: 2–80 characters");
       const clash = ctx.app.db
         .query<{ id: string }, [string, string]>(
-          "SELECT id FROM team WHERE lower(name) = lower(?) AND id <> ?",
+          "SELECT id FROM application WHERE lower(name) = lower(?) AND id <> ?",
         )
-        .get(name, team.id);
-      if (clash) throw conflict(`another team is called "${name}"`);
-      ctx.app.db.run("UPDATE team SET name = ? WHERE id = ?", [name, team.id]);
+        .get(name, application.id);
+      if (clash) throw conflict(`another application is called "${name}"`);
+      ctx.app.db.run("UPDATE application SET name = ? WHERE id = ?", [name, application.id]);
       changed.name = name;
     }
     if (body.sourceGroup !== undefined) {
       const value = (body.sourceGroup ?? "").trim() || null;
-      if (value) assertSourceGroupFree(ctx, value, team.id);
-      ctx.app.db.run("UPDATE team SET source_group = ? WHERE id = ?", [value, team.id]);
+      if (value) assertSourceGroupFree(ctx, value, application.id);
+      ctx.app.db.run("UPDATE application SET source_group = ? WHERE id = ?", [value, application.id]);
       changed.sourceGroup = value;
     }
     if (Object.keys(changed).length === 0) throw badRequest("nothing to change");
     writeAudit(ctx.app.db, {
       actor: actor.id,
-      action: "team.update",
-      subject: `team:${team.id}`,
+      action: "application.update",
+      subject: `application:${application.id}`,
       outcome: "ok",
       detail: changed,
     });
-    return json({ id: team.id, ...changed });
+    return json({ id: application.id, ...changed });
   });
 
-  router.add("DELETE", "/api/teams/:id", "session", (ctx) => {
-    const actor = requireAdmin(ctx, "deleting a team is admin-only");
-    const team = teamOr404(ctx, ctx.params.id!);
-    const owns = ownedBy(ctx, team.id);
-    const total = owns.resources + owns.products + owns.applications;
+  router.add("DELETE", "/api/applications/:id", "session", (ctx) => {
+    const actor = requireAdmin(ctx, "deleting a application is admin-only");
+    const application = applicationOr404(ctx, ctx.params.id!);
+    const owns = ownedBy(ctx, application.id);
+    const total = Object.values(owns).reduce((sum, n) => sum + n, 0);
     if (total > 0) {
-      // Cascading a team delete through the resource graph would delete published APIs from a
+      // Cascading a application delete through the resource graph would delete published APIs from a
       // screen about people. The refusal lists what is in the way, with counts.
       throw conflict(
-        `${team.name} still owns ${owns.resources} API(s), ${owns.products} product(s) and ` +
-          `${owns.applications} application(s). Move or withdraw those first — deleting a team ` +
+        `${application.name} still owns ${owns.resources} API(s), ${owns.products} product(s) and ` +
+          `${owns.subscriptions} subscription(s), ${owns.certificates} certificate(s) and ${owns.processes} process record(s). Move or withdraw those first — deleting a application ` +
           "must not be a way to delete published APIs.",
-        { fix: { screen: "teams" }, owns },
+        { fix: { screen: "applications" }, owns },
       );
     }
-    const members = memberCounts(ctx).get(team.id) ?? 0;
-    ctx.app.db.run("DELETE FROM membership WHERE team_id = ?", [team.id]);
-    ctx.app.db.run("DELETE FROM team WHERE id = ?", [team.id]);
+    const members = memberCounts(ctx).get(application.id) ?? 0;
+    ctx.app.db.run("DELETE FROM membership WHERE application_id = ?", [application.id]);
+    ctx.app.db.run("DELETE FROM application WHERE id = ?", [application.id]);
     writeAudit(ctx.app.db, {
       actor: actor.id,
-      action: "team.delete",
-      subject: `team:${team.id}`,
+      action: "application.delete",
+      subject: `application:${application.id}`,
       outcome: "ok",
-      detail: { name: team.name, membersRemoved: members },
+      detail: { name: application.name, membersRemoved: members },
     });
-    return json({ id: team.id, deleted: true, membersRemoved: members });
+    return json({ id: application.id, deleted: true, membersRemoved: members });
   });
 }
 
@@ -520,39 +521,39 @@ function roleFrom(raw: string | undefined): Role {
   throw badRequest('role: expected "member" or "admin" — design §9 has exactly two');
 }
 
-interface TeamRow {
+interface ApplicationRow {
   id: string;
   name: string;
   source_group: string | null;
 }
 
-function teamOr404(ctx: Ctx, id: string): TeamRow {
+function applicationOr404(ctx: Ctx, id: string): ApplicationRow {
   const row = ctx.app.db
-    .query<TeamRow, [string]>("SELECT id, name, source_group FROM team WHERE id = ?")
+    .query<ApplicationRow, [string]>("SELECT id, name, source_group FROM application WHERE id = ?")
     .get(id);
-  if (!row) throw notFound(`no team ${id}`);
+  if (!row) throw notFound(`no application ${id}`);
   return row;
 }
 
 /**
- * One group cannot map to two teams: the mapping is a function, and two teams claiming one group
- * would make a user's team set depend on which row a query happened to return first.
+ * One group cannot map to two applications: the mapping is a function, and two applications claiming one group
+ * would make a user's application set depend on which row a query happened to return first.
  */
-function assertSourceGroupFree(ctx: Ctx, sourceGroup: string, exceptTeamId: string | null): void {
+function assertSourceGroupFree(ctx: Ctx, sourceGroup: string, exceptApplicationId: string | null): void {
   const clash = ctx.app.db
     .query<{ id: string; name: string }, [string]>(
-      "SELECT id, name FROM team WHERE lower(source_group) = lower(?)",
+      "SELECT id, name FROM application WHERE lower(source_group) = lower(?)",
     )
     .get(sourceGroup);
-  if (clash && clash.id !== exceptTeamId) {
+  if (clash && clash.id !== exceptApplicationId) {
     throw conflict(
-      `the group "${sourceGroup}" already maps to the team "${clash.name}". One group maps to one ` +
-        "team, or a user's teams would depend on which row was read first.",
+      `the group "${sourceGroup}" already maps to the application "${clash.name}". One group maps to one ` +
+        "application, or a user's applications would depend on which row was read first.",
     );
   }
 }
 
-function teamCounts(ctx: Ctx): Map<string, number> {
+function applicationCounts(ctx: Ctx): Map<string, number> {
   const out = new Map<string, number>();
   for (const row of ctx.app.db
     .query<{ user_id: string; n: number }, []>(
@@ -567,24 +568,26 @@ function teamCounts(ctx: Ctx): Map<string, number> {
 function memberCounts(ctx: Ctx): Map<string, number> {
   const out = new Map<string, number>();
   for (const row of ctx.app.db
-    .query<{ team_id: string; n: number }, []>(
-      "SELECT team_id, COUNT(*) AS n FROM membership GROUP BY team_id",
+    .query<{ application_id: string; n: number }, []>(
+      "SELECT application_id, COUNT(*) AS n FROM membership GROUP BY application_id",
     )
     .all()) {
-    out.set(row.team_id, row.n);
+    out.set(row.application_id, row.n);
   }
   return out;
 }
 
-/** What stands in the way of deleting a team, and what a member's access actually covers. */
-function ownedBy(ctx: Ctx, teamId: string): { resources: number; products: number; applications: number } {
+/** What stands in the way of deleting a application, and what a member's access actually covers. */
+function ownedBy(ctx: Ctx, applicationId: string): { resources: number; products: number; subscriptions: number; certificates: number; processes: number } {
   const count = (table: string): number =>
     ctx.app.db
-      .query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM ${table} WHERE team_id = ?`)
-      .get(teamId)!.n;
+      .query<{ n: number }, [string]>(`SELECT COUNT(*) AS n FROM ${table} WHERE application_id = ?`)
+      .get(applicationId)!.n;
   return {
     resources: count("resource"),
     products: count("product"),
-    applications: count("application"),
+    subscriptions: count("subscription"),
+    certificates: count("certificate"),
+    processes: count("operation") + count("integration_event") + count("kafka_topic") + count("kafka_access") + count("kafka_message"),
   };
 }

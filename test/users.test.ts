@@ -4,7 +4,7 @@ import { localByUsername, principalById } from "../control-plane/src/principals.
 import { makeCp, type TestCp } from "./helpers.ts";
 
 /**
- * User and team management (v5 plan §7).
+ * User and application management (v5 plan §7).
  *
  * The world here has both `local` and `dev` enabled: `dev` because it is how the tests become
  * alice, pavel and clara without three password hashes, and `local` because creating an account is
@@ -32,7 +32,7 @@ interface UserView {
   mustChangePassword: boolean;
   hasPassword: boolean | null;
   provider: string;
-  teams: number;
+  applications: number;
 }
 
 beforeEach(() => resetLoginRate());
@@ -73,7 +73,7 @@ describe("the directory listing", () => {
       // false, which would read as "has none, set one".
       expect(admin.hasPassword).toBeNull();
       expect(admin.provider).toBe("dev");
-      expect(admin.teams).toBe(2);
+      expect(admin.applications).toBe(2);
     } finally {
       cp.close();
     }
@@ -453,31 +453,31 @@ describe("membership", () => {
     const cp = world();
     try {
       const alice = await cp.login("alice");
-      const granted = await cp.call("PUT", "/api/users/clara/teams/team_platform", { cookie: alice });
+      const granted = await cp.call("PUT", "/api/users/clara/applications/application_platform", { cookie: alice });
       expect(granted.status).toBe(200);
       const memberships = (
-        await body<{ memberships: Array<{ teamId: string; source: string; grantedBy: string }> }>(
+        await body<{ memberships: Array<{ applicationId: string; source: string; grantedBy: string }> }>(
           granted,
         )
       ).memberships;
-      const platform = memberships.find((m) => m.teamId === "team_platform")!;
+      const platform = memberships.find((m) => m.applicationId === "application_platform")!;
       expect(platform.source).toBe("local");
       expect(platform.grantedBy).toBe("alice");
 
       // And it is real authorization, not a label.
       const clara = await cp.login("clara");
-      const teams = await body<{ items: Array<{ id: string; mine: boolean }> }>(
-        await cp.call("GET", "/api/teams", { cookie: clara }),
+      const applications = await body<{ items: Array<{ id: string; mine: boolean }> }>(
+        await cp.call("GET", "/api/applications", { cookie: clara }),
       );
-      expect(teams.items.find((t) => t.id === "team_platform")!.mine).toBe(true);
+      expect(applications.items.find((t) => t.id === "application_platform")!.mine).toBe(true);
 
-      const revoked = await cp.call("DELETE", "/api/users/clara/teams/team_platform", {
+      const revoked = await cp.call("DELETE", "/api/users/clara/applications/application_platform", {
         cookie: alice,
       });
       expect(revoked.status).toBe(200);
       expect(
-        (await body<{ memberships: unknown[] }>(revoked)).memberships.map((m) => (m as { teamId: string }).teamId),
-      ).toEqual(["team_orders"]);
+        (await body<{ memberships: unknown[] }>(revoked)).memberships.map((m) => (m as { applicationId: string }).applicationId),
+      ).toEqual(["application_orders"]);
     } finally {
       cp.close();
     }
@@ -488,12 +488,12 @@ describe("membership", () => {
     try {
       const alice = await cp.login("alice");
       expect(
-        (await cp.call("DELETE", "/api/users/clara/teams/team_platform", { cookie: alice })).status,
+        (await cp.call("DELETE", "/api/users/clara/applications/application_platform", { cookie: alice })).status,
       ).toBe(404);
-      expect((await cp.call("PUT", "/api/users/clara/teams/team_nope", { cookie: alice })).status).toBe(
+      expect((await cp.call("PUT", "/api/users/clara/applications/application_nope", { cookie: alice })).status).toBe(
         404,
       );
-      expect((await cp.call("PUT", "/api/users/nobody/teams/team_orders", { cookie: alice })).status).toBe(
+      expect((await cp.call("PUT", "/api/users/nobody/applications/application_orders", { cookie: alice })).status).toBe(
         404,
       );
     } finally {
@@ -505,11 +505,11 @@ describe("membership", () => {
     const cp = world();
     try {
       const pavel = await cp.login("pavel");
-      expect((await cp.call("PUT", "/api/users/pavel/teams/team_orders", { cookie: pavel })).status).toBe(
+      expect((await cp.call("PUT", "/api/users/pavel/applications/application_orders", { cookie: pavel })).status).toBe(
         403,
       );
       expect(
-        (await cp.call("DELETE", "/api/users/pavel/teams/team_platform", { cookie: pavel })).status,
+        (await cp.call("DELETE", "/api/users/pavel/applications/application_platform", { cookie: pavel })).status,
       ).toBe(403);
     } finally {
       cp.close();
@@ -517,36 +517,36 @@ describe("membership", () => {
   });
 });
 
-describe("teams", () => {
+describe("applications", () => {
   test("everybody sees the list; only an admin sees which group grants each one", async () => {
     const cp = world();
     try {
       const pavel = await cp.login("pavel");
       const mine = await body<{ items: Array<Record<string, unknown>> }>(
-        await cp.call("GET", "/api/teams", { cookie: pavel }),
+        await cp.call("GET", "/api/applications", { cookie: pavel }),
       );
-      const platform = mine.items.find((t) => t.id === "team_platform")!;
+      const platform = mine.items.find((t) => t.id === "application_platform")!;
       expect(platform.mine).toBe(true);
       expect(platform.members).toBe(2);
-      // Absent, not blanked `[P1-18]`: which identity provider group grants a team tells any
+      // Absent, not blanked `[P1-18]`: which identity provider group grants a application tells any
       // signed-in user exactly which group to get themselves added to.
       expect("sourceGroup" in platform).toBe(false);
 
       const alice = await cp.login("alice");
       const asAdmin = await body<{ items: Array<Record<string, unknown>> }>(
-        await cp.call("GET", "/api/teams", { cookie: alice }),
+        await cp.call("GET", "/api/applications", { cookie: alice }),
       );
-      expect(asAdmin.items.find((t) => t.id === "team_platform")!.sourceGroup).toBe("SG-APIM-PLATFORM");
+      expect(asAdmin.items.find((t) => t.id === "application_platform")!.sourceGroup).toBe("SG-APIM-PLATFORM");
     } finally {
       cp.close();
     }
   });
 
-  test("a member may read their own team's roster and not another team's", async () => {
+  test("a member may read their own application's roster and not another application's", async () => {
     const cp = world();
     try {
       const clara = await cp.login("clara");
-      const own = await cp.call("GET", "/api/teams/team_orders", { cookie: clara });
+      const own = await cp.call("GET", "/api/applications/application_orders", { cookie: clara });
       expect(own.status).toBe(200);
       const roster = await body<{
         members: Array<{ userId: string; displayName: string; source: string }>;
@@ -556,45 +556,45 @@ describe("teams", () => {
       expect(roster.members.map((m) => m.displayName).sort()).toEqual(["Alice Admin", "Clara Consumer"]);
       expect(roster.owns.resources).toBe(0);
 
-      expect((await cp.call("GET", "/api/teams/team_platform", { cookie: clara })).status).toBe(403);
+      expect((await cp.call("GET", "/api/applications/application_platform", { cookie: clara })).status).toBe(403);
     } finally {
       cp.close();
     }
   });
 
-  test("creating one refuses a duplicate name and a group another team already claims", async () => {
+  test("creating one refuses a duplicate name and a group another application already claims", async () => {
     const cp = world();
     try {
       const alice = await cp.login("alice");
-      const created = await cp.call("POST", "/api/teams", {
+      const created = await cp.call("POST", "/api/applications", {
         cookie: alice,
-        body: { id: "team_billing", name: "Billing", sourceGroup: "SG-APIM-BILLING" },
+        body: { id: "application_billing", name: "Billing", sourceGroup: "SG-APIM-BILLING" },
       });
       expect(created.status).toBe(201);
 
       expect(
-        (await cp.call("POST", "/api/teams", { cookie: alice, body: { name: "billing" } })).status,
+        (await cp.call("POST", "/api/applications", { cookie: alice, body: { name: "billing" } })).status,
       ).toBe(409);
 
-      // One group maps to one team, or a user's team set would depend on which row a query
+      // One group maps to one application, or a user's application set would depend on which row a query
       // happened to return first.
-      const clash = await cp.call("POST", "/api/teams", {
+      const clash = await cp.call("POST", "/api/applications", {
         cookie: alice,
         body: { name: "Billing Ops", sourceGroup: "sg-apim-billing" },
       });
       expect(clash.status).toBe(409);
-      expect((await body<{ detail: string }>(clash)).detail).toContain("one team");
+      expect((await body<{ detail: string }>(clash)).detail).toContain("one application");
 
-      expect((await cp.call("POST", "/api/teams", { cookie: alice, body: { name: "x" } })).status).toBe(
+      expect((await cp.call("POST", "/api/applications", { cookie: alice, body: { name: "x" } })).status).toBe(
         400,
       );
       expect(
-        (await cp.call("POST", "/api/teams", { cookie: alice, body: { name: "Ok", id: "Bad Id" } }))
+        (await cp.call("POST", "/api/applications", { cookie: alice, body: { name: "Ok", id: "Bad Id" } }))
           .status,
       ).toBe(400);
 
       const pavel = await cp.login("pavel");
-      expect((await cp.call("POST", "/api/teams", { cookie: pavel, body: { name: "Sneaky" } })).status).toBe(
+      expect((await cp.call("POST", "/api/applications", { cookie: pavel, body: { name: "Sneaky" } })).status).toBe(
         403,
       );
     } finally {
@@ -602,13 +602,13 @@ describe("teams", () => {
     }
   });
 
-  test("renaming and remapping keep the one-group-one-team rule", async () => {
+  test("renaming and remapping keep the one-group-one-application rule", async () => {
     const cp = world();
     try {
       const alice = await cp.login("alice");
       expect(
         (
-          await cp.call("PATCH", "/api/teams/team_orders", {
+          await cp.call("PATCH", "/api/applications/application_orders", {
             cookie: alice,
             body: { name: "Orders and Fulfilment" },
           })
@@ -616,25 +616,25 @@ describe("teams", () => {
       ).toBe(200);
       expect(
         (
-          await cp.call("PATCH", "/api/teams/team_orders", {
+          await cp.call("PATCH", "/api/applications/application_orders", {
             cookie: alice,
             body: { sourceGroup: "SG-APIM-PLATFORM" },
           })
         ).status,
       ).toBe(409);
-      // Re-asserting a team's own group is not a clash with itself.
+      // Re-asserting a application's own group is not a clash with itself.
       expect(
         (
-          await cp.call("PATCH", "/api/teams/team_orders", {
+          await cp.call("PATCH", "/api/applications/application_orders", {
             cookie: alice,
             body: { sourceGroup: "SG-APIM-ORDERS" },
           })
         ).status,
       ).toBe(200);
-      // Unmapping is a legitimate end state: the team exists, the directory no longer grants it.
+      // Unmapping is a legitimate end state: the application exists, the directory no longer grants it.
       expect(
         (
-          await cp.call("PATCH", "/api/teams/team_orders", {
+          await cp.call("PATCH", "/api/applications/application_orders", {
             cookie: alice,
             body: { sourceGroup: null },
           })
@@ -651,22 +651,22 @@ describe("teams", () => {
       const pavel = await cp.login("pavel");
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "rest", name: "orders-api", teamId: "team_platform", apiVersion: "v1" },
+        body: { kind: "rest", name: "orders-api", applicationId: "application_platform", apiVersion: "v1" },
       });
 
       const alice = await cp.login("alice");
-      const refused = await cp.call("DELETE", "/api/teams/team_platform", { cookie: alice });
+      const refused = await cp.call("DELETE", "/api/applications/application_platform", { cookie: alice });
       expect(refused.status).toBe(409);
       const problem = await body<{ detail: string; owns: { resources: number } }>(refused);
-      // Cascading a team delete through the resource graph would delete published APIs from a
+      // Cascading a application delete through the resource graph would delete published APIs from a
       // screen about people.
       expect(problem.owns.resources).toBe(1);
       expect(problem.detail).toContain("must not be a way to delete published APIs");
 
-      const empty = await cp.call("DELETE", "/api/teams/team_orders", { cookie: alice });
+      const empty = await cp.call("DELETE", "/api/applications/application_orders", { cookie: alice });
       expect(empty.status).toBe(200);
       expect((await body<{ membersRemoved: number }>(empty)).membersRemoved).toBe(2);
-      expect(cp.app.db.query("SELECT COUNT(*) AS n FROM membership WHERE team_id = 'team_orders'").get()).toEqual(
+      expect(cp.app.db.query("SELECT COUNT(*) AS n FROM membership WHERE application_id = 'application_orders'").get()).toEqual(
         { n: 0 },
       );
     } finally {
@@ -676,7 +676,7 @@ describe("teams", () => {
 });
 
 describe("reading one account", () => {
-  test("carries the teams with their provenance and the live sessions", async () => {
+  test("carries the applications with their provenance and the live sessions", async () => {
     const cp = world();
     try {
       const alice = await cp.login("alice");
@@ -685,12 +685,12 @@ describe("reading one account", () => {
 
       const view = await body<{
         username: string;
-        memberships: Array<{ teamId: string; source: string; grantedByName: string | null }>;
+        memberships: Array<{ applicationId: string; source: string; grantedByName: string | null }>;
         sessions: Array<{ provider: string; current: boolean }>;
       }>(await cp.call("GET", "/api/users/clara", { cookie: alice }));
 
       expect(view.username).toBe("clara");
-      expect(view.memberships.map((m) => m.teamId)).toEqual(["team_orders"]);
+      expect(view.memberships.map((m) => m.applicationId)).toEqual(["application_orders"]);
       expect(view.sessions).toHaveLength(2);
       expect(view.sessions[0]!.provider).toBe("dev");
       // Nobody's session is "current" when an admin is looking at somebody else's list.
@@ -750,7 +750,7 @@ describe("what the audit log keeps", () => {
         cookie: alice,
         body: { displayName: "Dana D" },
       });
-      await cp.call("PUT", `/api/users/${created.id}/teams/team_orders`, { cookie: alice });
+      await cp.call("PUT", `/api/users/${created.id}/applications/application_orders`, { cookie: alice });
 
       const rows = cp.app.db
         .query<{ action: string; actor: string; subject: string; detail: string }, []>(
@@ -759,7 +759,7 @@ describe("what the audit log keeps", () => {
           "SELECT action, actor, subject, detail FROM audit WHERE actor = 'alice' AND action LIKE 'user.%' ORDER BY at",
         )
         .all();
-      expect(rows.map((r) => r.action)).toEqual(["user.create", "user.update", "user.team-grant"]);
+      expect(rows.map((r) => r.action)).toEqual(["user.create", "user.update", "user.application-grant"]);
       for (const row of rows) expect(row.subject).toBe(`user:${created.id}`);
       // The password never appears, in any of them.
       expect(JSON.stringify(rows)).not.toContain("an-adequately-long-one");

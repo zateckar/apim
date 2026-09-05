@@ -170,7 +170,7 @@ describe("the fleet view", () => {
     await poll(cp, { activeDigest: first.config!.digest });
     health = await (await cp.call("GET", "/api/targets/dev/health", { cookie: alice })).json();
     expect(health.inSync).toBe(true);
-    expect(health.liveInstances).toBe(1);
+    expect(health.liveInstances).toBe(2);
     expect(health.routes).toBe(1);
   });
 

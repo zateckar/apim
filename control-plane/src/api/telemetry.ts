@@ -11,7 +11,7 @@ import { badRequest, json, Router, requireUser, type Ctx } from "../router.ts";
  * Reading telemetry back (plan G4).
  *
  * Two rules that are policy, not implementation detail:
- *  - reads are team-scoped, because traffic volumes are a consumer relationship, not a discovery
+ *  - reads are application-scoped, because traffic volumes are a consumer relationship, not a discovery
  *    surface. The `''` (no-route) bucket is admin-only: it is the estate's 404 traffic and
  *    belongs to nobody.
  *  - every surface reports **three numbers**, never one "errors" figure. A 429 we produced and a
@@ -80,12 +80,12 @@ export function rowsFor(ctx: Ctx, environment: string, sinceIso: string, untilIs
 
   const visible = new Set(
     ctx.app.db
-      .query<{ id: string }, never[]>("SELECT id, team_id FROM resource")
+      .query<{ id: string }, never[]>("SELECT id, application_id FROM resource")
       .all()
-      .filter((r) => user.teams.includes((r as unknown as { team_id: string }).team_id))
+      .filter((r) => user.applications.includes((r as unknown as { application_id: string }).application_id))
       .map((r) => r.id),
   );
-  // The no-route bucket has no owning team, so it is admin-only rather than everyone's.
+  // The no-route bucket has no owning application, so it is admin-only rather than everyone's.
   return rows.filter((row) => row.resource_id !== "" && visible.has(row.resource_id));
 }
 
@@ -244,8 +244,8 @@ export function registerTelemetryRoutes(router: Router): void {
 
     const labels = new Map(
       ctx.app.db
-        .query<{ id: string; application: string; product: string; team_id: string }, never[]>(
-          `SELECT s.id, a.name AS application, p.name AS product, a.team_id
+        .query<{ id: string; application: string; product: string; application_id: string }, never[]>(
+          `SELECT s.id, a.name AS application, p.name AS product, a.id AS application_id
              FROM subscription s
              JOIN application a ON a.id = s.application_id
              JOIN product p     ON p.id = s.product_id`,
@@ -264,7 +264,7 @@ export function registerTelemetryRoutes(router: Router): void {
             subscriptionId,
             application: label?.application ?? "(deleted)",
             product: label?.product ?? "(deleted)",
-            teamId: label?.team_id ?? null,
+            applicationId: label?.application_id ?? null,
             ...summarise(totals),
           };
         })

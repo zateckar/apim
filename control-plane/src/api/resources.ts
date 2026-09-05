@@ -56,10 +56,10 @@ function resourceView(ctx: Ctx, row: ResourceRow) {
     id: row.id,
     kind: row.kind,
     name: row.name,
-    teamId: row.team_id,
+    applicationId: row.application_id,
     apiVersion: row.api_version,
-    // A family is (team, name); its members are the api_version values (plan section 8).
-    family: `${row.team_id}/${row.name}`,
+    // A family is (application, name); its members are the api_version values (plan section 8).
+    family: `${row.application_id}/${row.name}`,
     lifecycle: row.lifecycle,
     sunsetAt: row.sunset_at,
     createdAt: row.created_at,
@@ -74,7 +74,7 @@ function resourceView(ctx: Ctx, row: ResourceRow) {
     visibility: row.visibility,
     discoveryUrl: row.discovery_url,
     etag: etagOf(row),
-    capabilities: capabilitiesFor(ctx.user, row.team_id),
+    capabilities: capabilitiesFor(ctx.user, row.application_id),
   };
 }
 
@@ -83,9 +83,9 @@ function versionsOf(ctx: Ctx, row: ResourceRow) {
   return (
     ctx.app.db
       .query<ResourceRow, [string, string]>(
-        "SELECT * FROM resource WHERE team_id = ? AND name = ? ORDER BY api_version",
+        "SELECT * FROM resource WHERE application_id = ? AND name = ? ORDER BY api_version",
       )
-      .all(row.team_id, row.name)
+      .all(row.application_id, row.name)
       .map((sibling) => ({
         id: sibling.id,
         apiVersion: sibling.api_version,
@@ -194,9 +194,9 @@ export type RevisionProvenance = "upload" | "url" | "discovery" | "copied" | "co
  * frozen as `original` all the same, so the two paths converge here and everything downstream —
  * digest, dedupe, compile, promote — is one code path.
  */
-async function revisionSource(
+export async function revisionSource(
   ctx: Ctx,
-  row: ResourceRow,
+  row: Pick<ResourceRow, "kind">,
   body: { specUrl?: string; spec?: unknown; discoverUrl?: string },
 ): Promise<RevisionSource> {
   const maxBytes = ctx.app.config.maxSpecBytes;
@@ -416,7 +416,7 @@ function previousRevision(ctx: Ctx, to: DiffRevisionRow): DiffRevisionRow | null
 
 /**
  * `from` is a rev number of the same API, or the id of any revision in the same **version
- * family** — the same team and name at another `api_version`, which is what makes "what changed
+ * family** — the same application and name at another `api_version`, which is what makes "what changed
  * between v1 and v2" answerable. Anything else is refused rather than diffed, because two
  * unrelated contracts produce a diff in which everything is removed and everything is added.
  */
@@ -434,7 +434,7 @@ function resolveDiffFrom(ctx: Ctx, to: DiffRevisionRow, from: string): DiffRevis
   if (row.resource_id !== to.resource_id) {
     const left = getResource(ctx, row.resource_id);
     const right = getResource(ctx, to.resource_id);
-    if (left.team_id !== right.team_id || left.name !== right.name) {
+    if (left.application_id !== right.application_id || left.name !== right.name) {
       throw badRequest(
         `${left.name} ${left.api_version} and ${right.name} ${right.api_version} are different ` +
           "APIs, not two versions of one, so a diff between them would say that everything changed",
@@ -470,7 +470,7 @@ function assertRevisionMatch(ctx: Ctx, versionDigest: string): void {
 }
 
 /** The half of a revision that is the same whichever dialect it arrived in. */
-function writeRevision(
+export function writeRevision(
   ctx: Ctx,
   row: ResourceRow,
   source: RevisionSource,
@@ -582,7 +582,7 @@ export function registerResourceRoutes(router: Router): void {
     const page = pageOf(ctx);
     const q = ctx.url.searchParams.get("q");
     const kind = ctx.url.searchParams.get("kind");
-    const mine = ctx.url.searchParams.get("team") === "mine";
+    const mine = ctx.url.searchParams.get("application") === "mine";
 
     let sql = "SELECT * FROM resource WHERE 1 = 1";
     const args: unknown[] = [];
@@ -594,22 +594,22 @@ export function registerResourceRoutes(router: Router): void {
       sql += " AND kind = ?";
       args.push(kind);
     }
-    // Two parameters rather than one packed "team/name" (review V4-02): they compose with the
+    // Two parameters rather than one packed "application/name" (review V4-02): they compose with the
     // filters above instead of fighting them.
     const family = ctx.url.searchParams.get("name");
     if (family) {
       sql += " AND name = ?";
       args.push(family);
     }
-    const team = ctx.url.searchParams.get("team");
-    if (team && team !== "mine") {
-      sql += " AND team_id = ?";
-      args.push(team);
+    const application = ctx.url.searchParams.get("application");
+    if (application && application !== "mine") {
+      sql += " AND application_id = ?";
+      args.push(application);
     }
     if (mine && !user.isAdmin) {
-      const placeholders = user.teams.map(() => "?").join(",") || "''";
-      sql += ` AND team_id IN (${placeholders})`;
-      args.push(...user.teams);
+      const placeholders = user.applications.map(() => "?").join(",") || "''";
+      sql += ` AND application_id IN (${placeholders})`;
+      args.push(...user.applications);
     }
     sql += " ORDER BY name, api_version LIMIT ? OFFSET ?";
     args.push(page.limit, page.offset);
@@ -642,7 +642,7 @@ export function registerResourceRoutes(router: Router): void {
 
   router.add("POST", "/api/resources", "session", async (ctx) => {
     const user = requireUser(ctx);
-    const body = await readJson<{ kind?: string; name?: string; teamId?: string; apiVersion?: string }>(ctx);
+    const body = await readJson<{ kind?: string; name?: string; applicationId?: string; apiVersion?: string }>(ctx);
     const kind = body.kind ?? "rest";
     if (!RESOURCE_KINDS.includes(kind as never)) {
       throw badRequest(
@@ -652,9 +652,9 @@ export function registerResourceRoutes(router: Router): void {
     if (!body.name || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.name)) {
       throw badRequest("name: expected 2-61 lowercase letters, digits or hyphens");
     }
-    const teamId = body.teamId ?? user.teams[0];
-    if (!teamId) throw badRequest("teamId: required, you are not a member of any team");
-    assertCan(user, teamId, "create a resource for this team");
+    const applicationId = body.applicationId ?? user.applications[0];
+    if (!applicationId) throw badRequest("applicationId: required, you are not a member of any application");
+    assertCan(user, applicationId, "create a resource for this application");
     const apiVersion = body.apiVersion ?? "v1";
     assertApiVersion(apiVersion);
 
@@ -662,13 +662,13 @@ export function registerResourceRoutes(router: Router): void {
     const at = nowIso();
     try {
       ctx.app.db.run(
-        `INSERT INTO resource (id, kind, name, team_id, api_version, lifecycle, created_at, updated_at)
+        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [id, kind, body.name, teamId, apiVersion, at, at],
+        [id, kind, body.name, applicationId, apiVersion, at, at],
       );
     } catch (err) {
       if (String(err).includes("UNIQUE")) {
-        throw conflict(`this team already has an API named ${body.name} at version ${apiVersion}`);
+        throw conflict(`this application already has an API named ${body.name} at version ${apiVersion}`);
       }
       throw err;
     }
@@ -677,7 +677,7 @@ export function registerResourceRoutes(router: Router): void {
       action: "resource.create",
       subject: `resource:${id}`,
       outcome: "ok",
-      detail: { name: body.name, kind, teamId },
+      detail: { name: body.name, kind, applicationId },
     });
     // Searchable from the moment it exists — a publisher who cannot find their own draft in the
     // catalog assumes the create failed.
@@ -738,7 +738,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("PATCH", "/api/resources/:id", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "update this resource");
+    assertCan(user, row.application_id, "update this resource");
     assertIfMatch(ctx, row);
 
     const body = await readJson<{
@@ -826,7 +826,7 @@ export function registerResourceRoutes(router: Router): void {
       );
     } catch (err) {
       if (String(err).includes("UNIQUE")) {
-        throw conflict(`this team already has an API named ${name} at version ${apiVersion}`);
+        throw conflict(`this application already has an API named ${name} at version ${apiVersion}`);
       }
       throw err;
     }
@@ -845,7 +845,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("DELETE", "/api/resources/:id", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "delete this resource");
+    assertCan(user, row.application_id, "delete this resource");
 
     // Withdraw from every target first, through the same job the withdraw endpoint uses, so the
     // projection has one writer; then the row goes and the rest cascades.
@@ -881,7 +881,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("POST", "/api/resources/:id/versions", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "create a version of this resource");
+    assertCan(user, row.application_id, "create a version of this resource");
 
     const body = await readJson<{
       apiVersion?: string;
@@ -920,9 +920,9 @@ export function registerResourceRoutes(router: Router): void {
 
     const create = db.transaction(() => {
       db.run(
-        `INSERT INTO resource (id, kind, name, team_id, api_version, lifecycle, created_at, updated_at)
+        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
          VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [newResourceId, row.kind, row.name, row.team_id, apiVersion, at, at],
+        [newResourceId, row.kind, row.name, row.application_id, apiVersion, at, at],
       );
       db.run(
         `INSERT INTO revision (id, resource_id, rev, model, original, original_format, version_digest,
@@ -1017,7 +1017,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("POST", "/api/resources/:id/revisions", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "add a revision to this resource");
+    assertCan(user, row.application_id, "add a revision to this resource");
 
     const body = await readJson<{ specUrl?: string; spec?: unknown; discoverUrl?: string }>(
       ctx,
@@ -1038,7 +1038,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("POST", "/api/resources/:id/regenerate", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "regenerate this resource's contract");
+    assertCan(user, row.application_id, "regenerate this resource's contract");
     if (!row.discovery_url) {
       throw badRequest(
         `${row.name} was not published from a live endpoint, so there is nothing to re-discover. ` +
@@ -1149,8 +1149,8 @@ export function registerResourceRoutes(router: Router): void {
       .get(ctx.params.id!);
     if (!revision) throw notFound(`no revision ${ctx.params.id}`);
     const row = getResource(ctx, revision.resource_id);
-    // The owning team or an admin, like every other write on a resource (review `[P2-08]`).
-    assertCan(user, row.team_id, "correct this revision");
+    // The owning application or an admin, like every other write on a resource (review `[P2-08]`).
+    assertCan(user, row.application_id, "correct this revision");
 
     if (revision.pruned_at) {
       throw conflict(
@@ -1295,7 +1295,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("PUT", "/api/resources/:id/routes", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "set the route for this resource");
+    assertCan(user, row.application_id, "set the route for this resource");
     const body = await readJson<{ environment?: string; host?: string; basePath?: string }>(ctx);
     const environment = body.environment ?? environmentOf(ctx);
     if (!ctx.app.config.promotionChain.includes(environment)) {
@@ -1357,7 +1357,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("PUT", "/api/resources/:id/binding", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "set the backend for this resource");
+    assertCan(user, row.application_id, "set the backend for this resource");
     const body = await readJson<{
       environment?: string;
       urls?: unknown;
@@ -1424,15 +1424,15 @@ export function registerResourceRoutes(router: Router): void {
     if (body.clientCertRef !== undefined && body.clientCertRef !== null) {
       clientCertRef = String(body.clientCertRef);
       const certificate = ctx.app.db
-        .query<{ id: string; team_id: string }, [string, string]>(
-          "SELECT id, team_id FROM certificate WHERE id = ? AND environment = ?",
+        .query<{ id: string; application_id: string }, [string, string]>(
+          "SELECT id, application_id FROM certificate WHERE id = ? AND environment = ?",
         )
         .get(clientCertRef, environment);
       if (!certificate) {
         throw badRequest(`clientCertRef: no certificate "${clientCertRef}" in ${environment}`);
       }
-      // A client identity is key material: an owner may present their own team's, not another's.
-      assertCan(user, certificate.team_id, "use that certificate as this backend's client identity");
+      // A client identity is key material: an owner may present their own application's, not another's.
+      assertCan(user, certificate.application_id, "use that certificate as this backend's client identity");
     }
 
     const backend: BackendPool = {
@@ -1491,14 +1491,14 @@ export function registerResourceRoutes(router: Router): void {
         updatedBy: u.updated_by,
         updatedAt: u.updated_at,
       })),
-      capabilities: capabilitiesFor(ctx.user, row.team_id),
+      capabilities: capabilitiesFor(ctx.user, row.application_id),
     });
   });
 
   router.add("PUT", "/api/resources/:id/policy/units/:unitKey", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "edit policy for this resource");
+    assertCan(user, row.application_id, "edit policy for this resource");
     const environment = environmentOf(ctx);
     const unitKey = ctx.params.unitKey!;
     const scoped = parseOperationUnitKey(unitKey);
@@ -1566,7 +1566,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("DELETE", "/api/resources/:id/policy/units/:unitKey", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "edit policy for this resource");
+    assertCan(user, row.application_id, "edit policy for this resource");
     const environment = environmentOf(ctx);
     const unitKey = ctx.params.unitKey!;
 
@@ -1613,7 +1613,7 @@ export function registerResourceRoutes(router: Router): void {
   router.add("DELETE", "/api/resources/:id/releases", "session", (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
-    assertCan(user, row.team_id, "withdraw this resource");
+    assertCan(user, row.application_id, "withdraw this resource");
     const environment = environmentOf(ctx);
     const target = ctx.app.db
       .query<{ id: string }, [string]>(

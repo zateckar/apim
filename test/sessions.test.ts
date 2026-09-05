@@ -7,8 +7,8 @@ import { makeCp, ORIGIN, type TestCp } from "./helpers.ts";
  * Sessions: the two bounds, the live directory read, the caller's own device list, and the CSRF
  * check in front of every cookie-authenticated write (design §9, v5 plan §5.6).
  *
- * The property worth stating once: since v5 a session no longer *carries* roles and teams, it
- * carries a pointer to the directory (D35). `roles_json` and `teams_json` are still written and
+ * The property worth stating once: since v5 a session no longer *carries* roles and applications, it
+ * carries a pointer to the directory (D35). `roles_json` and `applications_json` are still written and
  * are still the login-time snapshot — an audit answer, not an authorization one — and several of
  * the tests below are about the difference.
  */
@@ -25,7 +25,7 @@ function sessionRowOf(cp: TestCp, cookie: string) {
         revoked_at: string | null;
         last_seen_at: string | null;
         roles_json: string;
-        teams_json: string;
+        applications_json: string;
       },
       [string]
     >("SELECT * FROM session WHERE id = ?")
@@ -99,20 +99,20 @@ describe("the directory is read live", () => {
       const clara = await cp.login("clara");
       const snapshot = sessionRowOf(cp, clara);
       expect(JSON.parse(snapshot.roles_json)).toEqual(["member"]);
-      expect(JSON.parse(snapshot.teams_json)).toEqual(["team_orders"]);
+      expect(JSON.parse(snapshot.applications_json)).toEqual(["application_orders"]);
 
-      // An admin grants a team while clara is signed in. Nothing invalidates her session and
+      // An admin grants a application while clara is signed in. Nothing invalidates her session and
       // nothing rewrites the snapshot.
       const alice = await cp.login("alice");
-      await cp.call("PUT", "/api/users/clara/teams/team_platform", { cookie: alice });
+      await cp.call("PUT", "/api/users/clara/applications/application_platform", { cookie: alice });
 
       const me = (await (await cp.call("GET", "/api/me", { cookie: clara })).json()) as {
-        user: { teams: string[] };
+        user: { applications: string[] };
       };
-      // The request sees the new team, on the session she already had.
-      expect(me.user.teams.sort()).toEqual(["team_orders", "team_platform"]);
+      // The request sees the new application, on the session she already had.
+      expect(me.user.applications.sort()).toEqual(["application_orders", "application_platform"]);
       // And the row still says what it said when she signed in, which is the audit answer.
-      expect(JSON.parse(sessionRowOf(cp, clara).teams_json)).toEqual(["team_orders"]);
+      expect(JSON.parse(sessionRowOf(cp, clara).applications_json)).toEqual(["application_orders"]);
     } finally {
       cp.close();
     }
@@ -216,7 +216,7 @@ describe("cross-site writes", () => {
     const cp = makeCp();
     try {
       const alice = await cp.login("alice");
-      const foreign = await cp.call("POST", "/api/teams", {
+      const foreign = await cp.call("POST", "/api/applications", {
         cookie: alice,
         body: { name: "Created By A Phishing Page" },
         headers: { origin: "https://phishing.example" },
@@ -225,7 +225,7 @@ describe("cross-site writes", () => {
 
       // Absent entirely is refused too: `SameSite=Lax` covers the browser cases, and this covers
       // the ones it does not.
-      const missing = await cp.call("POST", "/api/teams", {
+      const missing = await cp.call("POST", "/api/applications", {
         cookie: alice,
         body: { name: "No Origin At All" },
         origin: null,
@@ -252,7 +252,7 @@ describe("cross-site writes", () => {
     const cp = makeCp({ uiDevOrigin: "http://localhost:5173" });
     try {
       const alice = await cp.login("alice");
-      const response = await cp.call("POST", "/api/teams", {
+      const response = await cp.call("POST", "/api/applications", {
         cookie: alice,
         body: { name: "From The Dev Server" },
         headers: { origin: "http://localhost:5173" },
@@ -286,7 +286,7 @@ describe("retention", () => {
       // can still explain what happened this week.
       const ancient = new Date(Date.now() - 45 * 86_400_000).toISOString();
       cp.app.db.run(
-        `INSERT INTO session (id, user_id, roles_json, teams_json, created_at, idle_until, expires_at,
+        `INSERT INTO session (id, user_id, roles_json, applications_json, created_at, idle_until, expires_at,
                               provider, revoked_at)
          VALUES ('ses_ancient', 'clara', '[]', '[]', ?, ?, ?, 'dev', ?)`,
         [ancient, ancient, ancient, ancient],

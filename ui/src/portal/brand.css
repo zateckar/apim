@@ -1,0 +1,3667 @@
+/* Integration Portal — design tokens */
+
+:root {
+  /* Brand palette — three canonical colors that everything else derives from.
+     Dark green = primary buttons + chip text; light green = highlight surfaces
+     (Playground, chip backgrounds, hover ring); white = body background. */
+  --brand-dark: #0e3a2f;
+  --brand-light: #78faae;
+
+  --bg: #ffffff;
+  --bg-subtle: oklch(0.985 0.005 155);
+  --bg-muted: oklch(0.96 0.008 155);
+  --surface: #ffffff;
+  --surface-raised: #ffffff;
+  --border: oklch(0.9 0.012 155);
+  --border-strong: oklch(0.82 0.02 155);
+  --divider: oklch(0.94 0.008 155);
+
+  --fg: oklch(0.22 0.01 260);
+  --fg-muted: oklch(0.48 0.012 260);
+  --fg-subtle: oklch(0.62 0.012 260);
+  --fg-faint: oklch(0.78 0.01 260);
+
+  --accent: var(--brand-dark);
+  --accent-hover: var(--brand-light);
+  --accent-soft: var(--brand-light);
+  --accent-soft-2: oklch(0.88 0.1 155);
+  --accent-fg: #ffffff;
+  --accent-ring: rgb(14 58 47 / 0.25);
+
+  /* OK status unified with brand — a single green family for both "main
+     action" and "success" so the visual story stays simple. */
+  --ok: var(--brand-dark);
+  --ok-soft: var(--brand-light);
+  --warn: oklch(0.72 0.14 75);
+  --warn-soft: oklch(0.96 0.05 85);
+  --err: oklch(0.58 0.18 25);
+  --err-soft: oklch(0.96 0.04 25);
+  --info: oklch(0.58 0.11 240);
+  --info-soft: oklch(0.96 0.03 240);
+  --violet: oklch(0.58 0.12 295);
+  --violet-soft: oklch(0.96 0.03 295);
+
+  --font-sans: "Inter Tight", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --r-xs: 4px;
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 12px;
+  --r-xl: 16px;
+  --r-pill: 999px;
+
+  --shadow-xs: 0 1px 0 0 oklch(0.22 0.01 260 / 0.04);
+  --shadow-sm: 0 1px 2px 0 oklch(0.22 0.01 260 / 0.05), 0 1px 3px 0 oklch(0.22 0.01 260 / 0.04);
+  --shadow-md: 0 2px 4px -1px oklch(0.22 0.01 260 / 0.06), 0 4px 12px -2px oklch(0.22 0.01 260 / 0.08);
+  --shadow-lg: 0 8px 24px -6px oklch(0.22 0.01 260 / 0.12), 0 2px 6px -2px oklch(0.22 0.01 260 / 0.06);
+
+  --sidebar-w: 248px;
+  --topbar-h: 52px;
+  --subbar-h: 44px;
+  --content-max: 1400px;
+}
+
+:root[data-theme="dark"] {
+  --bg: oklch(0.17 0.008 260);
+  --bg-subtle: oklch(0.19 0.008 260);
+  --bg-muted: oklch(0.22 0.008 260);
+  --surface: oklch(0.2 0.008 260);
+  --surface-raised: oklch(0.23 0.009 260);
+  --border: oklch(0.28 0.008 260);
+  --border-strong: oklch(0.34 0.008 260);
+  --divider: oklch(0.26 0.008 260);
+
+  --fg: oklch(0.96 0.005 110);
+  --fg-muted: oklch(0.72 0.008 110);
+  --fg-subtle: oklch(0.58 0.008 110);
+  --fg-faint: oklch(0.42 0.008 110);
+
+  /* Brand swap for dark mode: light green is the readable accent on a
+     dark surface, dark green moves to the "soft" tint for chip backgrounds. */
+  --accent: var(--brand-light);
+  --accent-hover: oklch(0.84 0.16 155);
+  --accent-soft: oklch(0.3 0.06 155);
+  --accent-soft-2: oklch(0.38 0.09 155);
+  --accent-fg: var(--brand-dark);
+  --accent-ring: rgb(120 250 174 / 0.3);
+
+  --ok: var(--brand-light);
+  --ok-soft: oklch(0.3 0.06 155);
+  --warn: oklch(0.8 0.14 85);
+  --warn-soft: oklch(0.3 0.06 85);
+  --err: oklch(0.72 0.16 25);
+  --err-soft: oklch(0.3 0.07 25);
+  --info: oklch(0.76 0.12 240);
+  --info-soft: oklch(0.28 0.05 240);
+  --violet: oklch(0.76 0.13 295);
+  --violet-soft: oklch(0.3 0.05 295);
+
+  --shadow-xs: 0 1px 0 0 rgba(0,0,0,0.3);
+  --shadow-sm: 0 1px 2px 0 rgba(0,0,0,0.4), 0 1px 3px 0 rgba(0,0,0,0.3);
+  --shadow-md: 0 2px 4px -1px rgba(0,0,0,0.4), 0 4px 12px -2px rgba(0,0,0,0.5);
+  --shadow-lg: 0 8px 24px -6px rgba(0,0,0,0.6), 0 2px 6px -2px rgba(0,0,0,0.4);
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: var(--font-sans);
+  background: var(--bg);
+  color: var(--fg);
+  font-size: 14px;
+  line-height: 1.45;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+  letter-spacing: -0.005em;
+}
+button { font-family: inherit; cursor: pointer; border: 0; background: none; color: inherit; padding: 0; }
+input, select, textarea { font-family: inherit; color: inherit; }
+a { color: inherit; text-decoration: none; }
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border-strong); border-radius: 99px; border: 2px solid var(--bg); }
+::-webkit-scrollbar-thumb:hover { background: var(--fg-faint); }
+
+.mono { font-family: var(--font-mono); font-feature-settings: "ss01"; }
+.sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); border: 0; }
+
+/* App-level layout & components */
+
+.icon-btn {
+  width: 30px; height: 30px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md);
+  color: var(--fg-muted);
+  transition: background .15s ease, color .15s ease;
+}
+.icon-btn:hover { background: var(--bg-muted); color: var(--fg); }
+.icon-btn.danger:hover { background: var(--err-soft); color: var(--err); }
+/* Highlighted state used for "primary action you should click" — applied
+   to the Save button on subscription key cells when the row's draft has
+   diverged from the live key (manual edit or rotate). Filled accent +
+   white icon so it stands out even at icon-button size. */
+.icon-btn.attention {
+  background: var(--accent);
+  color: var(--accent-fg);
+}
+.icon-btn.attention:hover { background: var(--accent-hover, var(--accent)); color: var(--accent); }
+
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 7px 12px;
+  font-size: 13px; font-weight: 500;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--fg);
+  transition: all .15s ease;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--bg-muted); border-color: var(--fg-faint); }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* Three-tier button system.
+   - `.btn.primary` — LIGHT-GREEN fill, dark-green text. The dominant
+     call-to-action across the app: Publish API, Save, Subscribe,
+     Stage, Create, modal submits. Hover draws a dark-green border
+     around the existing fill (NO colour-scheme flip).
+   - `.btn.secondary` — DARK-GREEN fill, white text. Used for
+     supporting actions that still want a strong visual: the sign-in
+     entry, the Playground CTA, the active step in the publish wizard.
+     Hover inverts to the light-green fill with dark-green text.
+   - `.btn` (plain) — white with border, neutral hover (TERTIARY).
+     Cancel / Close / Back / Refresh / utilities all live here.
+   `.btn.accent-soft` is kept as a backwards-compat alias of
+   `.btn.primary` so any external code (or tests) that still names it
+   keeps working until the next refactor cleans the alias up. */
+.btn.primary,
+.btn.accent-soft {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: transparent;
+}
+.btn.primary:hover,
+.btn.accent-soft:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.btn.primary:disabled:hover,
+.btn.accent-soft:disabled:hover { border-color: transparent; }
+.btn.secondary {
+  background: var(--accent); color: var(--accent-soft);
+  border-color: transparent;
+  box-shadow: 0 1px 2px 0 var(--accent-ring);
+}
+.btn.secondary:hover { background: var(--accent-hover); color: var(--accent); }
+/* Cancel / Close affordance. Stays tertiary at rest (white surface +
+   neutral border) — the destructive intent shows up only on hover, so
+   the dismissive option doesn't visually compete with the primary
+   action it sits next to. Border + text shift to the err palette with
+   a soft red background fill. Apply this modifier ON TOP of `.btn` to
+   any Cancel/Close/dismiss button (NOT to Back / Refresh / generic
+   navigation, which should hover neutrally). */
+.btn.cancel:hover {
+  border-color: var(--err);
+  color: var(--err);
+  background: var(--err-soft);
+}
+.btn.ghost { border-color: transparent; background: transparent; }
+.btn.ghost:hover { background: var(--bg-muted); border-color: transparent; }
+.btn.ghost.cancel:hover { background: var(--err-soft); color: var(--err); border-color: var(--err); }
+.btn.sm { padding: 5px 9px; font-size: 12px; border-radius: var(--r-sm); }
+.btn.danger { color: var(--err); }
+.btn.danger:hover { background: var(--err-soft); border-color: var(--err); }
+.btn .ic { width: 14px; height: 14px; }
+
+/* Modern custom checkbox — replaces the browser default. Used wherever the
+   form needs a clean accent-filled tick rather than the OS-tinted square.
+   The element styling here is inert when JS isn't running; the input itself
+   still owns the checked state, so accessibility/keyboard behavior is the
+   native one. */
+.checkbox-modern {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 18px;
+  height: 18px;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 4px;
+  background: var(--surface);
+  cursor: pointer;
+  position: relative;
+  flex: 0 0 auto;
+  transition: background .15s ease, border-color .15s ease;
+  margin: 0;
+}
+.checkbox-modern:hover:not(:checked):not(:disabled) {
+  border-color: var(--fg-faint);
+}
+.checkbox-modern:checked {
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.checkbox-modern:checked::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 5px;
+  width: 4px;
+  height: 9px;
+  border: solid var(--accent-fg);
+  border-width: 0 2px 2px 0;
+  transform: rotate(45deg);
+}
+.checkbox-modern:focus-visible {
+  outline: 2px solid var(--accent-ring, var(--accent));
+  outline-offset: 2px;
+}
+.checkbox-modern:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Gateway toggle pair — single row split 50/50. Each half is a big tap
+   target whose colour broadcasts the on/off state at a glance. Bright
+   green when enabled, bright red when disabled, muted grey when the
+   category has no gateway in this environment. */
+.gateway-toggle-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.gateway-toggle {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: var(--r-md);
+  border: 1.5px solid;
+  font-family: inherit;
+  font-size: 13.5px;
+  font-weight: 500;
+  text-align: left;
+  cursor: pointer;
+  transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
+}
+.gateway-toggle .dot {
+  width: 22px; height: 22px;
+  border-radius: 99px;
+  display: inline-flex; align-items: center; justify-content: center;
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.65);
+}
+.gateway-toggle .lbl {
+  flex: 1; min-width: 0;
+  display: flex; flex-direction: column; gap: 2px;
+}
+.gateway-toggle .lbl-line { font-weight: 500; }
+.gateway-toggle .lbl-sub {
+  font-size: 11px;
+  font-weight: 400;
+  opacity: 0.78;
+  letter-spacing: 0;
+  word-break: break-all;
+}
+.gateway-toggle .state {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  opacity: 0.85;
+}
+.gateway-toggle.locked { cursor: not-allowed; }
+.gateway-toggle.locked .state { opacity: 1; }
+.gateway-toggle.on {
+  background: var(--ok-soft);
+  color: var(--ok);
+  border-color: var(--ok);
+}
+.gateway-toggle.on:hover {
+  background: var(--ok);
+  color: #fff;
+  border-color: var(--ok);
+}
+.gateway-toggle.on:hover .dot { background: rgba(255, 255, 255, 0.95); color: var(--ok); }
+/* OFF gateways are gray, not red. Red is reserved for "broken /
+   cancelling / dismiss" affordances (Cancel / Close hovers, danger
+   buttons). A category that's "off but you can flip it on" is just
+   disabled — same colour weight as the env-button "unavailable" slot
+   in the catalogs. Hover deepens the gray without changing the
+   colour family so the affordance reads as "click to toggle" not
+   "warning". */
+.gateway-toggle.off {
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  border-color: var(--border-strong);
+}
+.gateway-toggle.off:hover {
+  background: var(--fg-faint);
+  color: var(--fg);
+  border-color: var(--fg-muted);
+}
+.gateway-toggle.off:hover .dot { background: rgba(255, 255, 255, 0.95); color: var(--fg-muted); }
+/* Pin the subtitle + state to full white on hover so they don't fade into
+   the saturated background. The default 0.78 / 0.85 opacities are tuned
+   for the soft (resting) background and become unreadable once the toggle
+   inverts to its solid hover fill. */
+.gateway-toggle.on:hover .lbl-sub,
+.gateway-toggle.on:hover .state { color: #fff; opacity: 1; }
+.gateway-toggle.off:hover .lbl-sub,
+.gateway-toggle.off:hover .state { color: var(--fg); opacity: 1; }
+.gateway-toggle.unavailable {
+  background: var(--bg-muted);
+  color: var(--fg-subtle);
+  border-color: var(--border);
+  cursor: not-allowed;
+}
+.gateway-toggle:focus-visible {
+  outline: 2px solid var(--accent-ring, var(--accent));
+  outline-offset: 2px;
+}
+
+/* Fieldset-style bordered card with a floating legend on the top edge.
+   Used for the Backends section on the Properties tab so the runtime-
+   routing context (load-balanced, circuit-breaker on/off) reads at a
+   glance from the legend without the user having to re-read the field
+   helper text below the URL list. The legend overlaps the top border
+   via absolute positioning + a surface-coloured background "cut-out".
+   `.accent` paints both border and legend brand-green; without it the
+   container stays in the neutral border family. */
+.fieldset-card {
+  position: relative;
+  border: 2.5px solid var(--border-strong);
+  border-radius: var(--r-md);
+  padding: 18px 16px 22px;
+  margin-top: 14px;
+  transition: border-color .15s ease;
+}
+.fieldset-card.accent { border-color: var(--accent); }
+.fieldset-card.violet { border-color: var(--violet); }
+/* Inputs/selects/textareas inside a `.fieldset-card` get the same
+   chrome as `.field` inputs so URL rows visually match the Display
+   name / Wiki link / Description fields above. Without this rule the
+   inputs fall through to browser defaults (thinner, no rounded border). */
+.fieldset-card input,
+.fieldset-card select,
+.fieldset-card textarea {
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+  width: 100%;
+}
+.fieldset-card input:focus,
+.fieldset-card select:focus,
+.fieldset-card textarea:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+/* Checkboxes/radios must opt OUT of the full-width text-input chrome above —
+   otherwise a checkbox stretches to 100% and crushes its inline label (e.g.
+   the "Subscription required" line inside the MCP mode fieldset). */
+.fieldset-card input[type="checkbox"],
+.fieldset-card input[type="radio"] {
+  width: auto;
+  padding: 0;
+  flex: 0 0 auto;
+}
+/* Helper text inside a `.fieldset-card` mirrors the `.field .hint` rule
+   from the regular form rows so the subtle-gray prompt below the URL
+   list reads at the same weight as every other field's helper line. */
+.fieldset-card .hint { font-size: 11.5px; color: var(--fg-subtle); }
+.fieldset-card-legend {
+  position: absolute;
+  top: -9px;
+  left: 14px;
+  padding: 0 8px;
+  background: var(--surface);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--fg-muted);
+  white-space: nowrap;
+}
+.fieldset-card.accent > .fieldset-card-legend { color: var(--accent); }
+.fieldset-card.violet > .fieldset-card-legend { color: var(--violet); }
+/* TLS-validation legend on the bottom edge can carry an explicit state
+   modifier so OFF reads as a clear red warning. PARTIAL/MIXED stay in
+   the parent's neutral / accent / violet palette (the routing colour),
+   and ON inherits whatever colour the routing legend uses too — only
+   OFF specifically calls itself out as a red posture because admins
+   disabling validation is a security-noteworthy state. */
+.fieldset-card-legend.bottom.off { color: var(--err); }
+/* Bottom-edge variant — same caps + spacing styling as the top legend
+   but centered horizontally on the bottom border. Used for the TLS
+   validation indicator so it lives on the chrome rather than as inline
+   helper text. `.bottom` positions absolute and centers via translate;
+   `top` is unset to avoid inheriting the top-edge offset. */
+.fieldset-card-legend.bottom {
+  top: auto;
+  left: 50%;
+  bottom: -9px;
+  transform: translateX(-50%);
+}
+
+/* Bordered list container used for gateway choices and the resulting URL
+   list — single rounded box with internal divider lines, matching the
+   reference design. */
+.bordered-list {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  overflow: hidden;
+  background: var(--surface);
+}
+.bordered-list > .row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 13px;
+}
+.bordered-list > .row:last-child { border-bottom: 0; }
+.bordered-list > label.row { cursor: pointer; transition: background .12s ease; }
+.bordered-list > label.row:hover { background: var(--bg-subtle); }
+/* App-scoped Subscriptions table — whole `<tr>` is the click target
+   on active rows. The Details button hides by default and reveals on
+   row hover / focus-within so the resting state stays uncluttered.
+   Direct-hover on the button itself flips it to filled green so the
+   primary intent (open the subscription) reads clearly when the
+   cursor lands on the click target. */
+.tbl tr.sub-row.is-clickable { cursor: pointer; }
+.tbl tr.sub-row.is-clickable:hover,
+.tbl tr.sub-row.is-clickable:focus-within { background: var(--bg-subtle); }
+.sub-row-action {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease, background .12s ease, color .12s ease, border-color .12s ease;
+}
+.tbl tr.sub-row.is-clickable:hover .sub-row-action,
+.tbl tr.sub-row.is-clickable:focus-within .sub-row-action {
+  opacity: 1;
+  pointer-events: auto;
+}
+.sub-row-action:hover:not(:disabled) {
+  background: var(--ok);
+  color: #fff;
+  border-color: var(--ok);
+}
+.sub-row-action:hover:not(:disabled) .ic { color: #fff; }
+/* Delete action on a subscription row — revealed on row hover like the Details
+   action, but keeps the standard danger icon-button hover (red) rather than the
+   green "open" hover. Mirrors .workspace-row-delete. */
+.sub-row-delete {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .12s ease;
+}
+/* Reveal on ANY subscription-row hover/focus (not only clickable rows) so a
+   non-navigable subscription can still be deleted. */
+.tbl tr.sub-row:hover .sub-row-delete,
+.tbl tr.sub-row:focus-within .sub-row-delete {
+  opacity: 1;
+  pointer-events: auto;
+}
+.bordered-list > .row .lbl-text { flex: 1; min-width: 0; }
+.bordered-list > .row .lbl-name { font-weight: 500; }
+.bordered-list > .row .lbl-suffix { color: var(--fg-subtle); font-weight: 400; }
+.bordered-list .url-row-name {
+  flex: 0 0 auto;
+  font-size: 12.5px;
+  color: var(--fg);
+  font-weight: 500;
+  min-width: 150px;
+}
+.bordered-list .url-row-url {
+  flex: 1;
+  min-width: 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--fg-muted);
+  word-break: break-all;
+}
+.bordered-list .url-row-net {
+  flex: 0 0 auto;
+  font-size: 11.5px;
+  font-weight: 500;
+  padding: 1px 8px;
+  border-radius: var(--r-pill);
+  letter-spacing: 0.02em;
+}
+.bordered-list .url-row-net[data-net="internet"] { background: var(--accent-soft); color: var(--accent); }
+.bordered-list .url-row-net[data-net="intranet"] { background: var(--violet-soft); color: var(--violet); }
+
+/* Playground button — sits at the "secondary" tier (dark-green fill,
+   white text) so the entry point is highly visible without competing
+   with the page's primary CTA. Layered on top of `.btn.secondary` it
+   adds a soft pulsing ring + lift on hover for the "come try this"
+   affordance the feature is still earning. */
+.btn.playground {
+  position: relative;
+  animation: playground-pulse 2.4s ease-in-out infinite;
+}
+.btn.playground:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 3px 8px var(--accent-ring);
+}
+.btn.playground .ic {
+  color: inherit;
+}
+@keyframes playground-pulse {
+  0%, 100% { box-shadow: 0 0 0 0 var(--accent-ring); }
+  50% { box-shadow: 0 0 0 5px transparent; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .btn.playground { animation: none; }
+}
+
+/* Subscription "purpose" chip — the user's label recovered from the displayName,
+   shown next to the consumer app on subscription rows. */
+.sub-purpose {
+  display: inline-block; flex: 0 0 auto;
+  font-size: 11px; font-weight: 600; line-height: 1.6;
+  padding: 0 8px; border-radius: 999px;
+  background: var(--accent-ring); color: var(--accent);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 220px;
+}
+
+/* --- API testing playground (Edit › Playground tab) — APIM Test-console style --- */
+.pg { display: flex; flex-direction: column; gap: 12px; padding: 16px 0; }
+
+/* Two-pane: operations list (left) + request console (right) */
+.pg-console { display: flex; gap: 16px; align-items: flex-start; }
+.pg-ops {
+  flex: 0 0 280px; align-self: stretch; display: flex; flex-direction: column; gap: 8px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 10px; background: var(--bg);
+  max-height: 70vh;
+}
+.pg-ops-search { width: 100%; }
+.pg-ops-list { overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.pg-op {
+  display: flex; align-items: center; gap: 8px; width: 100%; text-align: left;
+  border: none; background: transparent; cursor: pointer; padding: 6px 8px; border-radius: 7px; min-width: 0;
+}
+.pg-op:hover { background: var(--bg-subtle, #f6f8fa); }
+.pg-op.active { background: var(--accent-ring); }
+.pg-op-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+
+.pg-main {
+  flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 14px;
+  border: 1px solid var(--border); border-radius: 10px; padding: 16px;
+}
+.pg-pick { padding: 48px 16px; text-align: center; }
+/* min-width:0 lets the path span actually shrink inside the flex row — without
+   it a long unbroken operation path pushed the head past .pg-main's box and
+   overlapped the adjacent section. */
+.pg-op-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.pg-op-path { font-size: 14px; overflow-wrap: anywhere; min-width: 0; flex: 1 1 auto; }
+.pg-op-summary { font-size: 13px; color: var(--fg-muted); margin-top: -6px; }
+
+.pg-body { width: 100%; resize: vertical; }
+.pg-keyhint { font-size: 11.5px; color: var(--fg-subtle); margin-top: 4px; }
+
+/* APIM-style key/value rows */
+.pg-kv { display: flex; flex-direction: column; gap: 6px; }
+.pg-kv-row { display: flex; align-items: center; gap: 8px; }
+.pg-kv-key { flex: 0 0 34%; }
+.pg-kv-val { flex: 1; }
+.pg-tpl-name { flex: 0 0 34%; font-size: 12px; color: var(--fg-muted); }
+.pg-kv-del { border: none; background: transparent; color: var(--fg-subtle); cursor: pointer; padding: 2px 6px; }
+.pg-kv-del:hover { color: var(--err); }
+.pg-kv-add { align-self: flex-start; border: none; background: transparent; color: var(--accent); cursor: pointer; font-size: 12px; padding: 4px 2px; }
+
+/* Request URL preview + send */
+.pg-requrl { display: flex; align-items: center; gap: 10px; }
+.pg-requrl code {
+  flex: 1; min-width: 0; overflow-wrap: anywhere; font-size: 12px; color: var(--fg-muted);
+  background: var(--bg-subtle, #f6f8fa); padding: 8px 10px; border-radius: 8px;
+}
+.pg-send { flex: 0 0 auto; white-space: nowrap; }
+
+/* Response panel */
+.pg-response { border-top: 1px solid var(--border); padding-top: 12px; }
+.pg-response-head { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; margin-bottom: 8px; }
+.pg-status { font-weight: 700; }
+.pg-time { font-size: 12px; color: var(--fg-subtle); }
+.pg-resp-headers { font-size: 12px; }
+.pg-resp-headers summary { cursor: pointer; color: var(--fg-muted); }
+.pg-resp-headers pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 11.5px; }
+.pg-response-body {
+  font-size: 12px; max-height: 380px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--bg-subtle, #f6f8fa); padding: 12px; border-radius: 8px; margin: 0;
+}
+
+@media (max-width: 880px) {
+  .pg-console { flex-direction: column; }
+  .pg-ops { flex-basis: auto; width: 100%; max-height: 240px; }
+}
+
+/* Request history — sits under the console. Expandable rows reuse the
+   log-detail-* section styles for a detail view identical to the Logs tab. */
+.pg-history {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+.pg-history-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px; flex-wrap: wrap; margin-bottom: 10px;
+}
+.pg-history-toggle { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.pg-history-toggle .pill {
+  background: var(--bg-muted); color: var(--fg-muted);
+  border-radius: 999px; padding: 0 8px; font-size: 11.5px; font-weight: 600; min-width: 20px; text-align: center;
+}
+.pg-history-actions { display: inline-flex; align-items: center; gap: 8px; }
+.pg-history-table { margin-top: 4px; }
+.pg-history-table tbody tr.pg-history-item:hover { background: var(--bg-subtle, #f6f8fa); }
+.pg-history-table td { vertical-align: middle; }
+.pg-history-path {
+  font-size: 12px; max-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.pg-history-status { font-weight: 700; font-size: 12.5px; }
+.pg-history-time, .pg-history-when { font-size: 11.5px; color: var(--fg-subtle); white-space: nowrap; }
+.pg-history-empty { padding: 20px; }
+.pg-history-detail-bar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+.pg-history-gone { font-size: 12px; color: var(--warn, #92400e); }
+.pg-history-body {
+  margin: 8px 0 0; font-size: 11.5px; max-height: 240px; overflow: auto;
+  white-space: pre-wrap; overflow-wrap: anywhere;
+  background: var(--bg-subtle, #f6f8fa); padding: 10px; border-radius: var(--r-sm, 6px);
+}
+
+/* Dropdown action button — matches .btn footprint, opens a menu below.
+   Used in API detail header for env + version switching. */
+.menu-btn {
+  position: relative;
+  display: inline-flex;
+}
+.menu-btn .btn .lbl-key {
+  color: var(--fg-subtle);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.menu-btn .btn .lbl-val { font-weight: 600; }
+.menu-btn .btn .caret { width: 12px; height: 12px; color: var(--fg-subtle); margin-left: 2px; }
+.menu-btn-pop {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  min-width: 220px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  padding: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.menu-btn-pop .opt {
+  width: 100%;
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+  font-size: 12.5px;
+  color: var(--fg);
+}
+.menu-btn-pop .opt:hover:not(.disabled) { background: var(--bg-muted); }
+.menu-btn-pop .opt.active { background: var(--bg-muted); font-weight: 600; }
+/* Keyboard-highlighted row in a combobox listbox. The menu recipe only had
+   :hover (mouse) and .active (selected); a combobox needs a third state for the
+   arrow-key cursor, and it should look identical to hover. */
+.menu-btn-pop .opt.hl:not(.disabled) { background: var(--bg-muted); }
+.menu-btn-pop .opt.disabled { opacity: 0.45; cursor: not-allowed; }
+.menu-btn-pop .opt .check { width: 14px; height: 14px; color: var(--accent); }
+.menu-btn-pop .opt .meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.menu-btn-pop .opt .meta .ttl { font-size: 12.5px; }
+.menu-btn-pop .opt .meta .sub { font-size: 11px; color: var(--fg-subtle); }
+.menu-btn-pop .opt .envs { display: inline-flex; gap: 4px; flex-wrap: wrap; justify-content: flex-end; }
+.menu-btn-pop .group-head {
+  padding: 6px 8px 4px;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 2px 8px;
+  font-size: 11.5px; font-weight: 500;
+  border-radius: var(--r-pill);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  border: 1px solid var(--border);
+  white-space: nowrap;
+  line-height: 1.5;
+}
+.chip.ok { background: var(--ok-soft); color: var(--ok); border-color: transparent; }
+.chip.warn { background: var(--warn-soft); color: var(--warn); border-color: transparent; }
+.chip.err { background: var(--err-soft); color: var(--err); border-color: transparent; }
+.chip.info { background: var(--info-soft); color: var(--info); border-color: transparent; }
+.chip.violet { background: var(--violet-soft); color: var(--violet); border-color: transparent; }
+.chip.accent { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+/* Solid dark-green pill. The format chip on the Definition tab uses
+   this so the kind label (`JSON · REST` / `WSDL · SOAP`) reads as a
+   strong attribute marker rather than a decorative tag. */
+.chip.accent-solid { background: var(--accent); color: var(--accent-soft); border-color: transparent; }
+.chip .dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+
+.api-name-cell {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.api-kind-badge {
+  width: 38px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border-radius: var(--r-md);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1;
+}
+.api-kind-badge.rest {
+  background: var(--accent);
+  color: var(--accent-soft);
+}
+/* Kafka HTTP-proxy badge in the EDIT header — a solid pink square, same shape as
+   the REST badge (centered, fixed size), just a different hue. */
+.api-kind-badge.proxy {
+  background: oklch(0.55 0.19 350);
+  color: oklch(0.97 0.03 350);
+}
+/* Kafka HTTP-proxy badge in the LIST — Kafka-topic-badge styling: light pink fill,
+   strong bold pink text, icon + inline label, auto-width and padded. */
+.api-kind-badge.kproxy {
+  width: auto;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+  white-space: nowrap;
+  background: oklch(0.95 0.05 350);
+  color: oklch(0.50 0.16 350);
+}
+/* Environment badge on the Subscriptions list — same solid look as the REST
+   API-type badge so it reads as a strong attribute marker, distinct from the
+   soft state pill next to it. */
+.api-kind-badge.env {
+  background: var(--accent);
+  color: var(--accent-soft);
+}
+/* AI-gateway API kinds: MCP servers (violet) and A2A agents (teal). */
+.api-kind-badge.mcp {
+  width: auto; padding: 0 8px;
+  background: oklch(0.55 0.16 300);
+  color: oklch(0.97 0.03 300);
+}
+.api-kind-badge.a2a {
+  width: auto; padding: 0 8px;
+  background: oklch(0.55 0.13 200);
+  color: oklch(0.97 0.03 200);
+}
+.api-kind-badge.soap {
+  /* Dark-on-light-text parity with the REST badge: deep saturated
+     purple fill, soft-lavender text. `--violet-soft` reads almost
+     white in the light theme so we hardcode a slightly stronger
+     lavender for the text — same hue as `--violet`, lifted to a
+     readable lightness against the deep fill. */
+  background: oklch(0.42 0.18 295);
+  color: oklch(0.90 0.09 295);
+}
+/* MCP operation→tool pickers (create wizard + editor Tools tab). The MCP
+   Servers list itself reuses the shared .tbl.workspace-tbl catalog table. */
+.mcp-ops { display: flex; flex-direction: column; gap: 2px; max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 8px; padding: 6px; }
+.mcp-op { display: flex; align-items: center; gap: 10px; padding: 6px 8px; border-radius: 6px; cursor: pointer; }
+.mcp-op:hover { background: var(--bg-subtle, #f6f8fa); }
+.mcp-op input { cursor: pointer; flex: 0 0 auto; }
+/* Kafka topics — keep the Kafka icon (the communication type) but add the
+   SCHEMA type as a label, each with its own colour so JSON / AVRO / PROTOBUF are
+   tellable apart at a glance and scannable-by-colour in the list + Discover.
+   Auto-width to fit "icon + LABEL"; `none` (no schema) is a neutral slate. */
+.api-kind-badge.kafka {
+  width: auto;
+  min-width: 38px;
+  justify-content: flex-start;
+  gap: 4px;
+  padding: 0 8px;
+  white-space: nowrap;
+}
+/* The three real schema types share one width so they line up; "no schema" (an
+   anomaly that shouldn't exist) is left to grow wider. */
+.api-kind-badge.kafka.json,
+.api-kind-badge.kafka.avro,
+.api-kind-badge.kafka.protobuf { width: 64px; }
+/* Discover pins kind badges to 38px (good for REST/SOAP); keep the same Kafka
+   sizing there — the three types uniform, "no schema" free to grow. */
+.discover-item .di-title .api-kind-badge.kafka { width: auto; }
+.discover-item .di-title .api-kind-badge.kafka.json,
+.discover-item .di-title .api-kind-badge.kafka.avro,
+.discover-item .di-title .api-kind-badge.kafka.protobuf { width: 64px; }
+.api-kind-badge.kafka .kt { font-size: 9px; font-weight: 700; letter-spacing: 0.02em; }
+/* Soft, light fills with a saturated same-hue text + icon (the "highlight"), so
+   each schema type reads clearly and pops without a heavy block of colour. */
+.api-kind-badge.kafka.json { background: oklch(0.95 0.06 88); color: oklch(0.52 0.13 70); }       /* amber */
+.api-kind-badge.kafka.avro { background: oklch(0.94 0.05 245); color: oklch(0.50 0.15 255); }     /* blue */
+.api-kind-badge.kafka.protobuf { background: oklch(0.95 0.05 22); color: oklch(0.53 0.19 25); }   /* crimson */
+.api-kind-badge.kafka.none { background: oklch(0.95 0.012 250); color: oklch(0.52 0.02 250); }    /* slate */
+/* Discover: uppercase owner app names (API + topic rows) for a unified look,
+   and keep a long topic name (the mono "path") from overflowing its row. */
+.discover-item .pill.owner { text-transform: uppercase; }
+.discover-item .di-meta .s .di-path {
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.api-type-chip {
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  border-color: var(--border);
+}
+
+.chip-select {
+  font: inherit;
+  padding: 0;
+  background: transparent;
+  color: var(--fg);
+  border: none;
+  cursor: pointer;
+}
+.chip-select:hover { color: var(--accent); }
+
+.kbd {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  padding: 1px 5px;
+  border: 1px solid var(--border-strong);
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  color: var(--fg-muted);
+  background: var(--surface);
+  line-height: 1.4;
+}
+
+.app {
+  display: grid;
+  min-height: 100vh;
+  background: var(--bg);
+  color: var(--fg);
+}
+.app.layout-sidebar {
+  grid-template-columns: var(--sidebar-w) 1fr;
+  grid-template-rows: 1fr;
+}
+
+.sidebar {
+  /* Divider between the sidebar and the main content lives in a
+     pseudo-element so it only spans the white portion of the sidebar
+     (everything below the dark-green brand band). The previous
+     `border-right` ran the full sidebar height and cut a visible
+     light line straight through the unified dark-green header
+     between the brand area and the topbar. */
+  background: var(--surface);
+  display: flex; flex-direction: column;
+  min-height: 100vh;
+  position: sticky; top: 0;
+  height: 100vh;
+}
+.sidebar::after {
+  content: "";
+  position: absolute;
+  top: var(--topbar-h);
+  right: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border);
+  pointer-events: none;
+}
+/* Brand area — dark-green banner with the Skoda logo + wordmark in
+   light green. Replaces the previous gradient "IP" tile + dark-on-light
+   wordmark. The 1px border separator is dropped because the dark band
+   itself reads as the divider against the white sidebar below. */
+.sidebar .brand {
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 16px;
+  height: var(--topbar-h);
+  background: var(--brand-dark);
+  color: var(--brand-light);
+}
+.sidebar .brand .logo {
+  width: 32px; height: 32px;
+  border-radius: 50%;
+  /* The PNG is square at 180×180 with transparent corners — round the
+     element so the green outline aligns with the dark-green banner. */
+  display: block;
+  object-fit: contain;
+}
+.sidebar .brand .name {
+  font-weight: 700; font-size: 14px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--brand-light);
+}
+.sidebar .brand .ver { font-size: 10.5px; color: var(--brand-light); opacity: 0.75; margin-left: 2px; }
+
+.sidebar .app-picker {
+  padding: 12px;
+  position: relative;
+}
+/* Label above the app-selector dropdown. */
+.sidebar .app-picker .app-picker-label {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.07em;
+  color: var(--fg-subtle); text-transform: uppercase;
+  padding: 0 2px 6px;
+}
+.app-picker-btn {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px;
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  transition: border-color .15s;
+}
+.app-picker-btn:hover { border-color: var(--border-strong); }
+.app-picker-btn .swatch {
+  width: 26px; height: 26px; border-radius: var(--r-sm);
+  background: var(--accent-soft-2);
+  color: var(--accent);
+  display: grid; place-items: center;
+  font-weight: 600; font-size: 11px;
+  font-family: var(--font-mono);
+}
+.app-picker-btn .meta { flex: 1; text-align: left; min-width: 0; }
+/* App display names are uppercased uniformly so the picker reads
+   the same regardless of how the backend stored each name (some
+   teams register `EAI`, others `Skoda Auto`, others `mvis`). The
+   underlying string isn't mutated — only the rendered form. */
+.app-picker-btn .meta .t { font-size: 13px; font-weight: 600; color: var(--fg); text-transform: uppercase; letter-spacing: 0.02em; }
+.app-picker-btn .meta .s { font-size: 11px; color: var(--fg-subtle); }
+.app-picker-btn .meta .app-leanix,
+.app-picker-menu .opt .app-leanix { font-size: 10.5px; color: var(--fg-subtle); font-family: var(--font-mono); margin-top: 1px; }
+.app-picker-btn .chev { color: var(--fg-subtle); }
+
+.app-picker-menu {
+  position: absolute;
+  top: calc(100% - 4px); left: 12px; right: 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: var(--shadow-lg);
+  z-index: 30;
+  padding: 4px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+.app-picker-menu .opt {
+  width: 100%;
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 8px;
+  border-radius: var(--r-sm);
+  text-align: left;
+}
+.app-picker-menu .opt.active { background: var(--bg-muted); }
+.app-picker-menu .opt .swatch {
+  width: 22px; height: 22px; border-radius: 4px;
+  background: var(--accent-soft-2); color: var(--accent);
+  display: grid; place-items: center;
+  font-size: 10px; font-family: var(--font-mono); font-weight: 600;
+}
+.app-picker-menu .opt .n { font-size: 12.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em; }
+.app-picker-menu .opt .s { font-size: 11px; color: var(--fg-subtle); }
+
+.nav-section { padding: 10px 12px 4px; }
+/* Each top-level nav group (Workspace | Global | Admin) is headed by a centered
+   label sitting ON a divider rule — the rule runs on both sides of the label
+   (pseudo-elements) so it passes through the vertical middle of the text and the
+   text is horizontally centered. The workspace section only renders when an app
+   is selected; when absent, Global becomes the first group and its rule doubles
+   as the separator from the app picker. */
+.sidebar .nav-section:has(> .nav-group-title) {
+  margin-top: 12px; padding-top: 6px;
+}
+.nav-section > .nav-group-title {
+  display: flex; align-items: center; gap: 8px;
+  margin: 0 6px 8px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.07em;
+  color: var(--fg-muted); text-transform: uppercase; white-space: nowrap;
+}
+.nav-section > .nav-group-title::before,
+.nav-section > .nav-group-title::after {
+  content: ""; flex: 1 1 auto; height: 1px; background: var(--border);
+}
+.nav-section .title {
+  font-size: 10.5px; font-weight: 600; letter-spacing: 0.06em;
+  color: var(--fg-subtle); text-transform: uppercase;
+  padding: 4px 10px;
+}
+.nav-item {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 10px;
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background .12s, color .12s;
+}
+.nav-item:hover { background: var(--bg-muted); color: var(--fg); }
+.nav-item.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 500;
+}
+.nav-item .ic { width: 15px; height: 15px; flex-shrink: 0; }
+.nav-item .count {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.nav-item.active .count { color: var(--accent); }
+
+.sidebar .user {
+  margin-top: auto;
+  border-top: 1px solid var(--border);
+  padding: 12px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.sidebar .user .info { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.sidebar .user .info .n { font-size: 12.5px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--fg); }
+.sidebar .user .info .u { font-size: 11.5px; font-weight: 500; color: var(--fg-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; letter-spacing: 0.2px; }
+/* Subtle ADMIN marker next to the user id — visible but understated. */
+.sidebar .user .info .u .user-admin { margin-left: 6px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; color: var(--err, #dc2626); opacity: 0.8; }
+.sidebar .user .info .e { font-size: 11px; color: var(--fg-subtle); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sidebar .user .btn.logout {
+  width: 100%; justify-content: center; gap: 6px;
+  font-size: 12px; padding: 7px 10px;
+}
+
+/* Topbar — same dark-green banner as the sidebar brand area so the
+   header reads as one continuous brand band across the top of the page.
+   IMPORTANT: we deliberately do NOT set `color: var(--brand-light)` on
+   the topbar element itself. The notifications popover and the
+   change-log modal are rendered as DOM children of the topbar (they're
+   anchored inside the bell / version chip), and any inherited color set
+   here would bleed into those white-background popovers and turn their
+   headings into low-contrast light-green-on-white. Each child element
+   that visually sits on the dark band sets its own light-green color
+   explicitly below. */
+.topbar {
+  height: var(--topbar-h);
+  display: flex; align-items: center;
+  padding: 0 20px;
+  background: var(--brand-dark);
+  gap: 12px;
+  position: sticky; top: 0; z-index: 20;
+}
+.topbar .crumbs {
+  display: flex; align-items: center; gap: 6px;
+  font-size: 13px;
+  /* Non-current, non-clickable crumbs sit at slightly muted opacity so
+     the "current" page reads as the focus. Light-green base, white on
+     hover for the clickable ones. */
+  color: oklch(.85 .12 155);
+  /* Long entity names (kafka topics, API ids) must give way to the env
+     health chips: the cluster shrinks and each crumb label ellipsizes
+     rather than flowing under its topbar neighbors. */
+  min-width: 0; overflow: hidden; white-space: nowrap;
+}
+.topbar .crumbs > span { min-width: 0; }
+.topbar .crumbs > span > span:last-child {
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.topbar .crumbs .sep { color: oklch(.7 .08 155); }
+.topbar .crumbs .clickable {
+  cursor: pointer;
+  transition: color 120ms ease;
+}
+.topbar .crumbs .clickable:hover { color: #ffffff; }
+.topbar .crumbs .current { color: var(--brand-light); font-weight: 600; }
+.topbar .spacer { flex: 1; }
+.topbar .topbar-version {
+  display: inline-flex; align-items: center;
+  padding: 4px 10px;
+  border: 1px solid var(--brand-light);
+  border-radius: var(--r-pill);
+  background: transparent;
+  color: var(--brand-light);
+  font-family: var(--font-mono);
+  font-size: 11.5px; font-weight: 600;
+  cursor: pointer;
+  flex: 0 0 auto;
+  transition: color 120ms ease, border-color 120ms ease, background 120ms ease;
+}
+.topbar .topbar-version:hover {
+  color: var(--brand-dark);
+  background: var(--brand-light);
+  border-color: var(--brand-light);
+}
+/* Notifications bell sits on the dark-green band — override the
+   default icon-btn palette so it reads as light-green-on-dark with a
+   subtle hover lift rather than the default light-on-light pair.
+   IMPORTANT: direct-child selector (`>`) only. The change-log modal
+   and notifications popover render as DOM children of the topbar
+   (anchored to the version chip / bell), and inside those popovers
+   live their OWN icon-btn close buttons. A descendant selector
+   (`.topbar .icon-btn`) here would turn those close buttons light-
+   green-on-white — invisible to read. The bell is the only icon-btn
+   that's a direct child of the topbar, so `.topbar > .icon-btn`
+   captures exactly what we want. */
+.topbar > .icon-btn,
+.topbar > .notif-btn {
+  color: var(--brand-light);
+}
+.topbar > .icon-btn:hover,
+.topbar > .notif-btn:hover {
+  background: rgba(120, 250, 174, 0.12);
+  color: #ffffff;
+}
+.topbar > .notif-btn .notif-badge {
+  /* Replace the white border (anchored to var(--surface)) with the
+     dark-green so the unread count pill blends into the topbar
+     background, not floats on top of an invisible white ring. The
+     same `>` discipline as the icon-btn rule above keeps this
+     override out of any nested popovers. */
+  border-color: var(--brand-dark);
+}
+
+.dialog.changelog-dialog {
+  width: 720px;
+  max-width: 92vw;
+  max-height: 80vh;
+}
+.dialog.changelog-dialog .dialog-body { padding: 0; }
+.changelog-entry {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+}
+.changelog-entry:last-child { border-bottom: none; }
+.changelog-entry-head {
+  display: flex; align-items: baseline; gap: 8px;
+  margin-bottom: 6px;
+}
+.changelog-version {
+  font-family: var(--font-mono);
+  font-size: 13.5px; font-weight: 700;
+  color: var(--fg);
+}
+.changelog-date {
+  font-size: 12px; color: var(--fg-muted);
+  letter-spacing: 0.02em;
+}
+.changelog-summary {
+  margin: 4px 0 12px;
+  font-size: 12.5px; line-height: 1.5;
+  color: var(--fg-muted);
+}
+.changelog-items {
+  list-style: none; padding: 0; margin: 0;
+  display: flex; flex-direction: column; gap: 8px;
+  margin-bottom: 12px;
+}
+.changelog-items:last-child { margin-bottom: 0; }
+.changelog-item {
+  display: grid;
+  grid-template-columns: 92px 1fr;
+  gap: 10px;
+  align-items: start;
+  font-size: 12.5px; line-height: 1.5;
+}
+.changelog-text { color: var(--fg); }
+.changelog-tag {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 2px 0;
+  border-radius: var(--r-pill);
+  border: 1px solid transparent;
+  font-size: 10.5px; font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.changelog-tag.tag-new { background: var(--accent-soft); color: var(--accent); }
+.changelog-tag.tag-changed { background: var(--bg-muted); color: var(--fg); }
+.changelog-tag.tag-fixed { background: #e6f3ff; color: #1d63b8; }
+.changelog-tag.tag-deprecated { background: #fff4e0; color: #a25c00; }
+.changelog-tag.tag-removed { background: #fdecec; color: #b81e1e; }
+.topbar .env-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border-radius: var(--r-pill);
+  background: var(--bg-muted);
+  font-size: 11.5px; font-weight: 500;
+  color: var(--fg-muted);
+}
+.topbar .search {
+  position: relative;
+  width: 320px;
+  max-width: 32vw;
+}
+.topbar .search input {
+  width: 100%;
+  padding: 6px 10px 6px 30px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+  outline: none;
+  transition: border-color .15s, background .15s;
+}
+.topbar .search input:focus {
+  border-color: var(--accent);
+  background: var(--surface);
+  box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.topbar .search .ic {
+  position: absolute; left: 9px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--fg-subtle);
+}
+.topbar .search .kbd { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); }
+
+/* HTTP method chip — Postman-style colour mapping for GET / POST / PUT /
+   PATCH / DELETE / HEAD / OPTIONS / TRACE. Same look in every place a
+   method is displayed (Definition operations list, Properties aside,
+   Logs table). Each method gets a soft tinted background + saturated
+   foreground, with a separate dark-theme palette so contrast doesn't
+   collapse on dark backgrounds. */
+.method-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 56px;
+  padding: 3px 10px;
+  border-radius: var(--r-sm);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  flex: 0 0 auto;
+  text-transform: uppercase;
+}
+.method-chip.get     { background: oklch(0.94 0.07 145); color: oklch(0.42 0.16 145); }
+.method-chip.post    { background: oklch(0.95 0.08 75);  color: oklch(0.5 0.17 70); }
+.method-chip.put     { background: oklch(0.93 0.06 250); color: oklch(0.45 0.2 250); }
+.method-chip.patch   { background: oklch(0.94 0.06 290); color: oklch(0.5 0.2 290); }
+.method-chip.delete  { background: oklch(0.93 0.06 25);  color: oklch(0.55 0.2 25); }
+.method-chip.head    { background: oklch(0.93 0.005 260); color: oklch(0.42 0.01 260); }
+.method-chip.options { background: oklch(0.94 0.07 340); color: oklch(0.55 0.2 340); }
+.method-chip.trace   { background: oklch(0.94 0.05 200); color: oklch(0.5 0.15 200); }
+:root[data-theme="dark"] .method-chip.get     { background: oklch(0.28 0.06 145); color: oklch(0.78 0.16 145); }
+:root[data-theme="dark"] .method-chip.post    { background: oklch(0.3 0.07 70);   color: oklch(0.8 0.16 70); }
+:root[data-theme="dark"] .method-chip.put     { background: oklch(0.28 0.06 250); color: oklch(0.78 0.16 250); }
+:root[data-theme="dark"] .method-chip.patch   { background: oklch(0.28 0.07 290); color: oklch(0.78 0.18 290); }
+:root[data-theme="dark"] .method-chip.delete  { background: oklch(0.3 0.07 25);   color: oklch(0.8 0.16 25); }
+:root[data-theme="dark"] .method-chip.head    { background: oklch(0.26 0.005 260); color: oklch(0.7 0.01 260); }
+:root[data-theme="dark"] .method-chip.options { background: oklch(0.3 0.07 340);  color: oklch(0.8 0.18 340); }
+:root[data-theme="dark"] .method-chip.trace   { background: oklch(0.28 0.06 200); color: oklch(0.78 0.16 200); }
+
+.content {
+  padding: 24px 28px 48px;
+  max-width: var(--content-max);
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* Notifications bell + popover. The badge is an absolute-positioned
+   pill anchored to the icon button's top-right corner. The popover
+   anchors to the topbar's right edge with a small gutter so it lines
+   up with the bell column on every viewport. */
+.notif-btn { position: relative; }
+.notif-badge {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 99px;
+  background: var(--err);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
+  border: 2px solid var(--surface);
+  box-sizing: content-box;
+}
+.notif-popover {
+  position: absolute;
+  top: calc(var(--topbar-h) - 4px);
+  right: 16px;
+  width: 380px;
+  max-height: 70vh;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+}
+.notif-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+}
+.notif-head h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.notif-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 6px 0;
+}
+.notif-item {
+  display: flex;
+  gap: 10px;
+  align-items: flex-start;
+  width: 100%;
+  padding: 10px 14px;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s ease;
+  font: inherit;
+  color: inherit;
+}
+.notif-item:hover { background: var(--bg-subtle); }
+.notif-item.is-unread { background: var(--accent-ring, var(--bg-subtle)); }
+.notif-item.is-unread:hover { background: var(--bg-subtle); }
+.notif-ic {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--bg-muted);
+  color: var(--fg-muted);
+  flex: 0 0 auto;
+}
+/* Severity tints for session-activity icons (publish ok, save ok,
+   delete err, etc.). Server-derived rows keep the neutral default. */
+.notif-ic.notif-ic-ok  { background: var(--ok-soft);  color: var(--ok); }
+.notif-ic.notif-ic-err { background: var(--err-soft); color: var(--err); }
+.notif-body-line { color: var(--fg-muted); }
+.notif-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
+.notif-title { font-size: 12.5px; line-height: 1.35; }
+.notif-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: var(--fg-subtle);
+}
+.notif-when { color: var(--fg-subtle); }
+
+/* App-scoped dashboard layout. Four KPI cards on top, then a
+   two-column band with Quick actions + Traffic-by-API. The grid
+   collapses to a single column on narrow viewports. */
+.kpi-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(196px, 1fr));
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+/* APIs vs Kafka KPI groups, separated by a divider so the metrics read as two
+   distinct surfaces. The APIs group flexes to fill; Kafka sizes to content. */
+.kpi-sections {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 18px;
+}
+.kpi-sections .kpi-row { margin-bottom: 0; flex: 1 1 auto; grid-auto-rows: 1fr; }
+.kpi-section { display: flex; flex-direction: column; min-width: 0; }
+.kpi-section-apis { flex: 1 1 auto; }
+.kpi-section-kafka {
+  flex: 0 0 auto;
+  padding-left: 18px;
+  border-left: 1px solid var(--border);
+}
+.kpi-section-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  margin-bottom: 8px;
+}
+@media (max-width: 820px) {
+  .kpi-sections { flex-direction: column; gap: 14px; }
+  .kpi-section-kafka {
+    border-left: none;
+    border-top: 1px solid var(--border);
+    padding-left: 0;
+    padding-top: 14px;
+  }
+}
+.kpi-card {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px 18px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  text-align: left;
+  font: inherit;
+  color: inherit;
+}
+.kpi-card.is-actionable {
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+.kpi-card.is-actionable:hover { background: var(--bg-subtle); border-color: var(--accent-ring, var(--border)); }
+.kpi-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-subtle);
+}
+.kpi-value-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+.kpi-value {
+  font-size: 28px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+  line-height: 1;
+}
+.kpi-unit {
+  font-size: 12.5px;
+  color: var(--fg-muted);
+}
+.kpi-card.tone-ok .kpi-value { color: var(--ok); }
+.kpi-card.tone-warn .kpi-value { color: var(--warn); }
+.kpi-card.tone-err .kpi-value { color: var(--err); }
+
+.dash-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+@media (max-width: 960px) {
+  .dash-cols { grid-template-columns: 1fr; }
+}
+
+.quick-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+@media (max-width: 600px) { .quick-actions { grid-template-columns: 1fr; } }
+.quick-action {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background .12s ease, border-color .12s ease;
+}
+.quick-action:hover { background: var(--bg-subtle); border-color: var(--accent-ring, var(--border)); }
+.quick-action .qa-ic {
+  width: 32px; height: 32px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm);
+  background: var(--bg-subtle);
+  color: var(--accent, var(--fg-muted));
+  flex: 0 0 auto;
+}
+.quick-action .qa-text { display: flex; flex-direction: column; min-width: 0; }
+.quick-action .qa-title { font-weight: 500; font-size: 13.5px; }
+.quick-action .qa-sub { font-size: 11.5px; color: var(--fg-subtle); margin-top: 2px; }
+
+/* Dashboard header extras: env filter + updated-ago label. */
+.dash-actions { display: flex; align-items: center; gap: 12px; }
+.dash-updated { font-size: 11.5px; color: var(--fg-subtle); font-variant-numeric: tabular-nums; }
+
+/* Full-width dashboard rows (quick actions, traffic). */
+.dash-row-full { margin-bottom: 14px; }
+
+/* KPI trend delta vs the previous 24h. Neutral by default (a traffic swing
+   is information, not a judgment); error-rate movement gets semantic tones. */
+.kpi-delta {
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  font-variant-numeric: tabular-nums;
+}
+.kpi-delta .kpi-delta-arrow { font-size: 9px; }
+.kpi-delta.tone-ok { color: var(--ok); }
+.kpi-delta.tone-err { color: var(--err); }
+.kpi-spark { margin-left: auto; flex: 0 0 auto; align-self: flex-end; }
+
+/* Skeleton loaders — shimmer blocks standing in for values while loading. */
+.skl {
+  display: inline-block;
+  border-radius: var(--r-sm);
+  background: linear-gradient(90deg, var(--bg-muted) 25%, var(--bg-subtle) 45%, var(--bg-muted) 65%);
+  background-size: 200% 100%;
+  animation: skl-shimmer 1.4s ease-in-out infinite;
+}
+@keyframes skl-shimmer { from { background-position: 180% 0; } to { background-position: -20% 0; } }
+@media (prefers-reduced-motion: reduce) { .skl { animation: none; } }
+.kpi-skel { display: flex; flex-direction: column; gap: 8px; }
+.skl-value { width: 72px; height: 26px; }
+.skl-sub { width: 110px; height: 11px; }
+.skl-name { width: 40%; height: 12px; }
+.skl-bar { width: 100%; height: 14px; }
+.skl-num { width: 42px; height: 12px; justify-self: end; }
+.skl-line { width: 100%; height: 14px; }
+.traffic-skel { display: flex; flex-direction: column; gap: 12px; }
+.traffic-skel .traffic-row { grid-template-columns: minmax(120px, 1fr) 2fr auto; }
+
+/* Quick actions, grouped by surface (Global / APIs / Kafka). */
+.qa-groups {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+}
+@media (max-width: 900px) { .qa-groups { grid-template-columns: 1fr; } }
+.qa-group { min-width: 0; }
+.qa-group + .qa-group { border-left: 1px solid var(--border); padding-left: 18px; }
+@media (max-width: 900px) {
+  .qa-group + .qa-group { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 14px; }
+}
+.qa-group-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-weight: 600;
+  color: var(--fg-subtle);
+  margin-bottom: 8px;
+}
+.qa-group-actions { display: flex; flex-direction: column; gap: 8px; }
+
+/* Traffic card: bar list + optional right detail panel (40%). */
+.traffic-wrap { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; }
+.traffic-wrap.has-detail { grid-template-columns: minmax(0, 1fr) 40%; }
+@media (max-width: 960px) { .traffic-wrap.has-detail { grid-template-columns: 1fr; } }
+
+.traffic-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px; min-width: 0; }
+.traffic-row {
+  display: grid;
+  grid-template-columns: minmax(120px, 1fr) 2fr auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 12.5px;
+}
+.traffic-row .t-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  border: none;
+  background: none;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.traffic-row .t-name:hover { color: var(--accent); }
+.traffic-row.is-active .t-name { color: var(--accent); font-weight: 500; }
+/* Status-stacked bar. Segments are buttons; 2px surface gaps between fills. */
+.traffic-row .t-bar-stack {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  min-width: 8px;
+}
+.t-seg {
+  border: none;
+  padding: 0;
+  min-width: 6px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: filter .12s ease, outline-color .12s ease;
+  outline: 2px solid transparent;
+  outline-offset: 1px;
+}
+.t-seg:hover { filter: brightness(1.12); }
+.t-seg.is-active { outline-color: var(--accent-ring, var(--accent)); }
+.t-seg.seg-ok { background: var(--ok); }
+.t-seg.seg-4xx { background: var(--warn); }
+.t-seg.seg-5xx { background: var(--err); }
+.traffic-row .t-count {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg-muted);
+  text-align: right;
+  min-width: 56px;
+}
+
+/* Legend in the card head — mirrors the segment colors. */
+.t-legend { display: flex; align-items: center; gap: 12px; margin-left: 12px; margin-right: auto; }
+.t-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--fg-muted); }
+.t-swatch { width: 10px; height: 10px; border-radius: 3px; }
+.t-swatch.sw-ok { background: var(--ok); }
+.t-swatch.sw-4xx { background: var(--warn); }
+.t-swatch.sw-5xx { background: var(--err); }
+
+/* Detail panel: recent log rows for the clicked API + status class. */
+.t-detail {
+  border-left: 1px solid var(--border);
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+@media (max-width: 960px) { .t-detail { border-left: none; padding-left: 0; border-top: 1px solid var(--border); padding-top: 12px; } }
+.t-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.t-detail-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.t-detail-name {
+  font-weight: 600;
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.t-detail-body { min-height: 80px; }
+.t-detail-skel { display: flex; flex-direction: column; gap: 8px; }
+.t-log-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 6px; }
+.t-log-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11.5px;
+  min-width: 0;
+}
+.t-log-time { font-family: var(--font-mono); color: var(--fg-muted); flex: 0 0 auto; }
+.t-log-method { font-family: var(--font-mono); font-weight: 600; flex: 0 0 auto; }
+.t-log-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--fg-muted);
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.t-log-latency { font-family: var(--font-mono); color: var(--fg-subtle); flex: 0 0 auto; }
+.t-detail-foot { margin-top: auto; padding-top: 4px; }
+/* Logs table — compact 4-column default (chevron + timestamp + method +
+   url + status) with an inline expandable row revealing every field
+   from the raw doc. URL truncates with ellipsis at default width;
+   users open the expander to see the full address + everything else.
+   Vertical-align top so the timestamp stays anchored to the first
+   line of any wrapped row inside the expander. */
+.logs-table tbody td { vertical-align: top; }
+/* Numbered pager (Start / ‹ / 1 2 3 … / › / End) under the logs table. */
+.logs-pager {
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  margin-top: 10px; flex-wrap: wrap;
+}
+.logs-pager-nums { display: flex; align-items: center; gap: 4px; }
+.logs-pager-num {
+  min-width: 28px; height: 28px; padding: 0 6px;
+  border: 1px solid var(--border); border-radius: var(--r-sm);
+  background: transparent; color: var(--fg-muted);
+  font-size: 12px; font-variant-numeric: tabular-nums; cursor: pointer;
+  transition: background .12s, color .12s, border-color .12s;
+}
+.logs-pager-num:hover:not(:disabled) { background: var(--bg-muted); color: var(--fg); }
+.logs-pager-num.active {
+  background: var(--accent-soft); color: var(--accent); border-color: var(--accent);
+  font-weight: 600;
+}
+.logs-pager-num:disabled { cursor: default; opacity: 0.6; }
+.logs-pager-gap { color: var(--fg-subtle); padding: 0 2px; user-select: none; }
+.logs-table .log-expand-btn {
+  width: 26px; height: 26px;
+  display: inline-flex; align-items: center; justify-content: center;
+  border-radius: var(--r-sm);
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.logs-table .log-expand-btn:hover { background: var(--bg-muted); color: var(--fg); }
+
+/* Logs tab — timeline histogram (Kibana-style brush-to-zoom). Same layered
+   layout as .synth-chart: stretched SVG plot, non-stretched HTML labels. */
+.logs-hist { margin-top: 10px; }
+.logs-hist.stale { opacity: 0.6; }
+.logs-hist-head { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.logs-hist-title { font-size: 12px; font-weight: 600; color: var(--fg-muted, #6b7280); }
+.logs-hist-legend { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--fg-muted, #6b7280); }
+.logs-hist-legend .sw { width: 10px; height: 10px; border-radius: 2px; display: inline-block; margin-left: 6px; }
+.logs-hist-legend .sw:first-child { margin-left: 0; }
+.logs-hist-legend .sw.ok { background: var(--accent-soft-2); }
+.logs-hist-legend .sw.warn { background: var(--warn); }
+.logs-hist-legend .sw.err { background: var(--err); }
+.logs-hist-hint { font-size: 11px; color: var(--fg-muted, #6b7280); margin-left: auto; }
+.logs-hist-main { display: flex; gap: 6px; }
+.logs-hist-yaxis { position: relative; width: 44px; flex: 0 0 44px; }
+.logs-hist-ylabel { position: absolute; right: 2px; transform: translateY(50%); font-size: 10.5px; color: var(--fg-muted, #6b7280); }
+.logs-hist-plot { position: relative; flex: 1; height: 90px; cursor: crosshair; user-select: none; touch-action: none; }
+.logs-hist-svg { width: 100%; height: 100%; display: block; }
+.logs-hist-gridline { stroke: var(--border, #e5e7eb); stroke-width: 0.5; }
+.logs-hist-bar-ok { fill: var(--accent-soft-2); }
+.logs-hist-bar-warn { fill: var(--warn); }
+.logs-hist-bar-err { fill: var(--err); }
+.logs-hist-hover { fill: transparent; }
+.logs-hist-hover:hover { fill: rgb(127 127 127 / 0.08); }
+.logs-hist-brush {
+  position: absolute; top: 0; bottom: 0; pointer-events: none;
+  background: var(--accent-ring); border-inline: 1px solid var(--accent);
+}
+.logs-hist-xaxis-row { display: flex; gap: 6px; }
+.logs-hist-yaxis-spacer { width: 44px; flex: 0 0 44px; }
+.logs-hist-xaxis { position: relative; flex: 1; height: 16px; }
+.logs-hist-xlabel { position: absolute; top: 2px; font-size: 10.5px; color: var(--fg-muted, #6b7280); white-space: nowrap; }
+.logs-hist-note { font-size: 12px; color: var(--fg-muted, #6b7280); margin-top: 10px; }
+.logs-hist-note.in-plot { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; }
+.logs-hist-skeleton { height: 120px; margin-top: 10px; border-radius: 6px; background: var(--accent-soft, #f3f4f6); opacity: 0.35; }
+.logs-range-inputs { display: inline-flex; align-items: center; gap: 4px; }
+.logs-range-inputs input { font-size: 12px; padding: 4px 6px; width: 168px; }
+.logs-range-inputs input.invalid { border-color: var(--err); outline-color: var(--err); }
+
+.log-detail-row > td {
+  background: var(--bg-subtle);
+  padding: 14px 18px;
+  border-top: 0;
+}
+/* Sectioned detail view. Cards auto-fit into the available width —
+   short sections sit side-by-side on wide rows, stack on narrow ones.
+   The Error section spans the full row regardless so long messages
+   aren't compressed into a single column. */
+.log-detail-sections {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.log-detail-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  padding: 10px 12px;
+}
+.log-detail-section .title {
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--fg-subtle);
+  margin-bottom: 8px;
+  font-weight: 600;
+}
+.log-detail-section .kv-list {
+  display: grid;
+  grid-template-columns: minmax(110px, max-content) 1fr;
+  gap: 4px 12px;
+  font-size: 12px;
+}
+.log-detail-section .kv-list .k {
+  color: var(--fg-subtle);
+  white-space: nowrap;
+}
+.log-detail-section .kv-list .v {
+  color: var(--fg);
+  font-family: var(--font-mono);
+  word-break: break-all;
+  overflow-wrap: anywhere;
+}
+.log-detail-section.error {
+  grid-column: 1 / -1;
+  border-color: var(--err);
+  background: var(--err-soft);
+}
+.log-detail-section.error .title { color: var(--err); }
+.page-head {
+  display: flex; align-items: flex-start; justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+}
+.page-head h1 { font-size: 22px; font-weight: 600; margin: 0; letter-spacing: -0.015em; }
+.page-head .sub { color: var(--fg-muted); font-size: 13px; margin-top: 4px; }
+.page-actions { display: flex; gap: 8px; align-items: center; }
+
+.section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  margin: 24px 0 12px;
+}
+.section-head h2 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: 0.02em; color: var(--fg-muted); text-transform: uppercase; }
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.card .card-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+}
+.card .card-head h3 { font-size: 13px; font-weight: 600; margin: 0; letter-spacing: -0.005em; }
+.card .card-head .sub { font-size: 12px; color: var(--fg-subtle); }
+.card .card-body { padding: 16px; }
+.card.flat { box-shadow: none; }
+
+.tabs {
+  display: flex; gap: 2px;
+  border-bottom: 1px solid var(--border);
+  padding: 0 28px;
+  background: var(--surface);
+  position: sticky; top: var(--topbar-h);
+  z-index: 10;
+}
+.tabs.flat { border-bottom: none; background: transparent; padding: 0; position: static; }
+.tab {
+  padding: 11px 14px;
+  font-size: 13px; font-weight: 500;
+  color: var(--fg-muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  cursor: pointer;
+  display: flex; align-items: center; gap: 8px;
+  transition: color .15s;
+}
+.tab:hover { color: var(--fg); }
+.tab.active { color: var(--fg); border-color: var(--accent); }
+.tab .count {
+  font-size: 11px;
+  background: var(--bg-muted);
+  color: var(--fg-subtle);
+  padding: 1px 6px;
+  border-radius: var(--r-pill);
+  font-variant-numeric: tabular-nums;
+}
+.tab.active .count { background: var(--accent-soft); color: var(--accent); }
+
+.tbl {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 13px;
+}
+.tbl thead th {
+  text-align: left;
+  font-weight: 500;
+  font-size: 11px;
+  color: var(--fg-subtle);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.tbl tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--divider);
+  vertical-align: middle;
+}
+.tbl tbody tr { transition: background .1s; }
+.tbl tbody tr:hover { background: var(--bg-subtle); }
+.tbl tbody tr:last-child td { border-bottom: 0; }
+.tbl tbody tr.clickable { cursor: pointer; }
+.tbl tbody tr.history-row.current { background: var(--bg-muted); }
+.tbl tbody tr.history-row.current:hover { background: var(--bg-muted); }
+
+/* Workspace catalog row delete button — hover-revealed via the
+   parent `<tr>`. Replaces the old multi-icon row-actions cluster
+   (edit / logs / policies / subs / history / playground / delete);
+   every other action is now reachable from the inline env-button
+   shortcut into the edit page, leaving Delete as the only on-row
+   action and a hover-only one at that. */
+.workspace-row-delete,
+.workspace-row-change-owner {
+  opacity: 0;
+  transition: opacity 0.12s ease;
+  margin-left: 6px;
+  align-self: center;
+}
+.workspace-row:hover .workspace-row-delete,
+.workspace-row:focus-within .workspace-row-delete,
+.workspace-row:hover .workspace-row-change-owner,
+.workspace-row:focus-within .workspace-row-change-owner {
+  opacity: 1;
+}
+.workspace-row-delete:disabled { opacity: 0.6; }
+.workspace-row-change-owner:hover { color: var(--accent); border-color: var(--accent); }
+.tbl .row-actions {
+  display: flex; gap: 2px; justify-content: flex-end;
+  opacity: 0; transition: opacity .1s;
+}
+.tbl tbody tr:hover .row-actions { opacity: 1; }
+.tbl td.num { font-variant-numeric: tabular-nums; color: var(--fg-muted); }
+
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 12px;
+  margin-bottom: 20px;
+}
+.metric {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 14px 16px;
+}
+.metric .label {
+  font-size: 11.5px; color: var(--fg-subtle);
+  text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500;
+}
+.metric .value {
+  font-size: 24px; font-weight: 600; margin-top: 6px;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  display: flex; align-items: baseline; gap: 6px;
+}
+.metric .value .unit { font-size: 12px; font-weight: 400; color: var(--fg-subtle); }
+.metric .delta {
+  font-size: 12px; margin-top: 4px;
+  display: flex; align-items: center; gap: 4px;
+  color: var(--fg-subtle);
+}
+.metric .delta.up { color: var(--ok); }
+.metric .delta.down { color: var(--err); }
+
+.gw-table {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  overflow: hidden;
+}
+.gw-row {
+  display: grid;
+  grid-template-columns: 220px repeat(3, 1fr);
+  border-bottom: 1px solid var(--divider);
+}
+.gw-row:last-child { border-bottom: 0; }
+.gw-head .gw-cell {
+  font-size: 11px; color: var(--fg-subtle);
+  text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500;
+  padding: 10px 14px;
+  background: var(--bg-subtle);
+  border-right: 1px solid var(--divider);
+}
+.gw-head .gw-cell:last-child { border-right: 0; }
+.gw-cell { padding: 14px 16px; border-right: 1px solid var(--divider); }
+.gw-cell:last-child { border-right: 0; }
+.gw-label { font-size: 13px; font-weight: 500; }
+.gw-label .sub { font-size: 11.5px; color: var(--fg-subtle); font-weight: 400; margin-top: 2px; }
+.gw-status { display: flex; align-items: center; gap: 10px; }
+.gw-status .pulse {
+  width: 8px; height: 8px; border-radius: 99px;
+  background: var(--ok);
+  box-shadow: 0 0 0 3px var(--ok-soft);
+  flex-shrink: 0;
+}
+.gw-status.err .pulse { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.gw-status.warn .pulse { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.gw-status.unknown .pulse { background: var(--fg-faint); box-shadow: 0 0 0 3px var(--bg-muted); }
+.gw-status .t { font-size: 13px; font-weight: 500; }
+.gw-status .t .s { font-size: 11.5px; color: var(--fg-subtle); font-weight: 400; margin-top: 2px; }
+.gw-meta { font-size: 11.5px; color: var(--fg-subtle); margin-top: 4px; font-family: var(--font-mono); }
+
+.filter-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0 16px;
+  flex-wrap: wrap;
+}
+.filter-bar .search {
+  position: relative;
+  flex: 1; min-width: 200px; max-width: 360px;
+}
+.filter-bar .search input {
+  width: 100%;
+  padding: 7px 10px 7px 32px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  outline: none;
+}
+.filter-bar .search input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.filter-bar .search .ic {
+  position: absolute; left: 10px; top: 50%; transform: translateY(-50%);
+  width: 14px; height: 14px; color: var(--fg-subtle);
+}
+.filter-bar .owner-filter {
+  padding: 7px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg);
+  outline: none;
+  max-width: 220px;
+}
+.filter-bar .owner-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+.segmented {
+  display: inline-flex;
+  background: var(--bg-muted);
+  border-radius: var(--r-md);
+  padding: 2px;
+  gap: 0;
+}
+.segmented button {
+  padding: 5px 12px;
+  font-size: 12.5px; font-weight: 500;
+  color: var(--fg-muted);
+  border-radius: var(--r-sm);
+  transition: all .12s;
+}
+.segmented button.active {
+  background: var(--surface);
+  color: var(--fg);
+  box-shadow: var(--shadow-xs);
+}
+.segmented .count { font-size: 10.5px; color: var(--fg-subtle); margin-left: 4px; font-variant-numeric: tabular-nums; }
+.segmented button.active .count { color: var(--fg-muted); }
+
+.empty {
+  padding: 40px 20px;
+  text-align: center;
+  color: var(--fg-subtle);
+  font-size: 13px;
+}
+.empty.subtle { padding: 16px 12px; text-align: left; }
+
+.discover-list { display: flex; flex-direction: column; gap: 10px; }
+.discover-card {
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  overflow: hidden;
+}
+.discover-card.open { border-color: var(--accent-ring); }
+.discover-card-head {
+  display: flex; align-items: center; gap: 10px;
+  width: 100%; padding: 12px;
+  background: transparent; border: 0; cursor: pointer;
+  text-align: left;
+}
+.discover-card-head:hover { background: var(--surface-hover, rgba(0,0,0,0.02)); }
+.discover-card-head .swatch {
+  width: 32px; height: 32px; border-radius: var(--r-md);
+  background: linear-gradient(135deg, var(--info), var(--violet));
+  color: white; display: grid; place-items: center;
+  font-size: 11px; font-weight: 700;
+}
+.discover-card-head .meta { flex: 1; min-width: 0; }
+/* Domain name in the card head — rendered uppercase via CSS rather
+   than transforming the data, so the underlying `domain.name`
+   ('IT' / 'Sales' / 'Business Support') stays canonical for
+   filtering, taxonomy lookups, and tests. The slight letter-spacing
+   gives ALL-CAPS room to breathe. */
+.discover-card-head .meta .n {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.discover-card-head .meta .s { font-size: 11px; color: var(--fg-subtle); letter-spacing: 0.04em; }
+.discover-card-head .chev { color: var(--fg-subtle); transition: transform 0.15s ease; }
+.discover-card-head .chev.rot { transform: rotate(180deg); }
+.discover-card-body { padding: 4px 12px 14px 12px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px; }
+
+.discover-section-title {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  color: var(--fg-subtle); font-weight: 600;
+  padding: 10px 2px 4px 2px;
+}
+.discover-items {
+  list-style: none; margin: 0;
+  display: flex; flex-direction: column; gap: 18px;
+  /* The floating legends poke 8px past the card edges — top/bottom padding
+     keeps the first card's type legend (and the last card's owner legend)
+     from overlapping the domain group's own border. */
+  padding: 12px 0;
+}
+.discover-item {
+  position: relative;
+  display: flex; align-items: center; gap: 10px;
+  padding: 14px 10px 16px;
+  border: 2px solid var(--border-strong);
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg);
+}
+/* Per-type card chrome — the Backends fieldset-card idiom scaled to list
+   items: the border color IS the type, with floating uppercase legends on
+   the border lines — `API · REST` / `KAFKA · JSON` top-center and
+   `Owner · APP` bottom-center. API hues follow the api-kind-badge palette;
+   Kafka borders carry the SCHEMA-type hue (JSON amber / AVRO blue / PROTO
+   crimson / no-schema slate), matching the schema badges. Legends mask the
+   border with the card's own background; the list gap leaves them room. */
+.discover-item .di-type-legend,
+.discover-item .di-owner-legend {
+  position: absolute;
+  /* Above any sibling background (group heads, neighbouring cards) so the
+     hanging halves of the legends can never be painted over. */
+  z-index: 1;
+  padding: 0 8px; background: var(--bg);
+  font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--fg-muted); white-space: nowrap;
+  line-height: 14px;
+}
+/* Type top-LEFT (11px), owner bottom-center (10px). */
+.discover-item .di-type-legend { top: -8px; left: 12px; font-size: 11px; }
+.discover-item .di-owner-legend { bottom: -8px; left: 50%; transform: translateX(-50%); font-size: 11px; }
+.discover-item.t-rest { border-color: var(--accent); }
+.discover-item.t-rest .di-type-legend { color: var(--accent); }
+.discover-item.t-soap { border-color: oklch(0.45 0.19 295); }
+.discover-item.t-soap .di-type-legend { color: oklch(0.45 0.19 295); }
+.discover-item.t-mcp { border-color: oklch(0.58 0.17 315); }
+.discover-item.t-mcp .di-type-legend { color: oklch(0.58 0.17 315); }
+.discover-item.t-a2a { border-color: oklch(0.55 0.13 200); }
+.discover-item.t-a2a .di-type-legend { color: oklch(0.55 0.13 200); }
+.discover-item.t-kafka-json { border-color: oklch(0.52 0.13 70); }
+.discover-item.t-kafka-json .di-type-legend { color: oklch(0.52 0.13 70); }
+.discover-item.t-kafka-avro { border-color: oklch(0.50 0.15 255); }
+.discover-item.t-kafka-avro .di-type-legend { color: oklch(0.50 0.15 255); }
+.discover-item.t-kafka-protobuf { border-color: oklch(0.53 0.19 25); }
+.discover-item.t-kafka-protobuf .di-type-legend { color: oklch(0.53 0.19 25); }
+.discover-item.t-kafka-none { border-color: oklch(0.52 0.02 250); }
+.discover-item.t-kafka-none .di-type-legend { color: oklch(0.52 0.02 250); }
+/* Muted tag chips — auxiliary labels inside card rows (kept for reuse). */
+.discover-item .di-tag {
+  flex: 0 0 auto;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 1px 7px; border: 1px solid var(--border);
+  border-radius: 999px; color: var(--fg-muted); background: var(--bg-subtle, transparent);
+  white-space: nowrap;
+}
+.discover-item .di-meta { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+.discover-item .di-meta .n { font-size: 12.5px; font-weight: 500; color: var(--fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.discover-item .di-title { display: flex; align-items: center; gap: 8px; min-width: 0; }
+/* The API/topic name leads the title row and absorbs the free space so
+   the kind badge can pin to the opposite (right) edge. It's the card's
+   dominant element — bolder + larger than the supporting metadata. */
+.discover-item .di-title .di-name {
+  flex: 1 1 auto; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
+}
+/* Kind badge (REST/SOAP or the Kafka schema badge, both `.api-kind-badge`)
+   sits hard against the right edge, never shrinks. */
+.discover-item .di-title .api-kind-badge { margin-left: auto; flex: 0 0 auto; }
+.discover-item .di-title .api-kind-badge { width: 38px; height: 22px; font-size: 10px; }
+.discover-item .di-meta .s { font-size: 11px; color: var(--fg-subtle); display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.discover-item .pill {
+  font-size: 10px; padding: 1px 6px; border-radius: 99px;
+  background: var(--bg); border: 1px solid var(--border); color: var(--fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+.discover-item .pill.env { background: var(--accent-ring); color: var(--accent); border-color: transparent; }
+/* Owner-app chip on every API row. Solid dark-green (matching the
+   accent palette) with white text — visually anchors "this is the
+   publisher" without competing with the API name beside it.
+   Class name MUST NOT be `.pill.app` even though "app" reads naturally —
+   the global root selector `.app { display: grid; min-height: 100vh; }`
+   at the top of this file would otherwise match the span (any element
+   with class `app` does) and stretch the pill to viewport height. The
+   `.owner` class name has no global collision. */
+.discover-item .pill.owner {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: 10.5px; padding: 1px 8px;
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: transparent;
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 600;
+}
+/* Description preview box. Sentence-clamped at the JS layer (see
+   `clampToSentences` in Discover.tsx), so the visible text is always
+   self-contained — earlier we relied on `-webkit-line-clamp: 2` which
+   could cut a markdown link URL mid-character and produced visibly
+   broken output. The CSS now just provides the muted "box" styling;
+   text flow inside is normal. The empty-description fallback uses a
+   `data-empty` attribute rather than nesting an inner `.empty.subtle`
+   span (which would inherit `padding: 40px 20px` from the global
+   `.empty` rule and balloon the box vertically). */
+.discover-item .discover-description {
+  margin-top: 6px;
+  padding: 6px 8px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-muted);
+  font-size: 12px; line-height: 1.45;
+  color: var(--fg-muted);
+  word-break: break-word;
+  white-space: pre-wrap;
+}
+.discover-item .discover-description[data-empty] {
+  color: var(--fg-subtle);
+  font-style: italic;
+}
+/* Markdown rendering inside a description box (`.md-desc`, used by the Discover
+   cards AND the API/Kafka detail modals). A description is usually a sentence
+   or two, so we collapse the default block margins to keep the card height
+   bounded and visually match the old plain-text look: the first child loses its
+   top margin, the last child its bottom margin, and inner paragraphs/lists get
+   a tight rhythm. */
+.md-desc > :first-child { margin-top: 0; }
+.md-desc > :last-child { margin-bottom: 0; }
+.md-desc p { margin: 0.35em 0; }
+.md-desc ul,
+.md-desc ol { margin: 0.35em 0; padding-left: 1.2em; }
+.md-desc li { margin: 0.1em 0; }
+.md-desc a { color: var(--accent, #1b7f5e); text-decoration: underline; }
+.md-desc code {
+  font-size: 0.92em;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg, rgba(0,0,0,0.06));
+}
+.md-desc pre {
+  margin: 0.35em 0;
+  padding: 6px 8px;
+  border-radius: var(--r-sm, 6px);
+  overflow-x: auto;
+  background: var(--bg, rgba(0,0,0,0.06));
+}
+.md-desc pre code { padding: 0; background: none; }
+
+/* Right-side action cluster on every Discover row: a version picker
+   sits horizontally to the LEFT of three env buttons (DEV / TEST /
+   PROD). Replaces the single Details button — each env button opens
+   the detail modal for that (version, env) pair directly.
+   `padding-left` pushes the picker away from the card's description
+   box on the left (the description is the visually heaviest element
+   in `.di-meta`, and without breathing room the underlined version
+   text reads as part of the description). */
+.version-env-picker {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 14px;
+  padding-left: 16px;
+  flex: 0 0 auto;
+  align-self: center;
+}
+
+/* Version picker — solid dark-green rounded rectangle. It advertises
+   the active version for the entire row, so it's intentionally the
+   heaviest visual on the action cluster. The dropdown chevron +
+   invisible native <select> only mount when there's more than one
+   version. When only one version exists we still render the chevron
+   slot (hidden via `visibility: hidden`) so the picker's width
+   matches multi-version cards exactly, keeping the env-button row
+   aligned across the page. */
+.version-picker {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  /* Height is pinned to match the env button (28 px) so the row
+     reads as one aligned strip. With box-sizing: border-box the
+     horizontal padding works inside that fixed height; the flex
+     `align-items: center` keeps the text vertically centred. */
+  height: 28px;
+  box-sizing: border-box;
+  padding: 0 14px;
+  /* Version picker reads as a tertiary surface — white fill with a
+     muted border — so the dark-green weight is reserved for true
+     primary/secondary actions. Earlier the picker filled with
+     `var(--accent)` (dark green); that put it at the same visual
+     weight as the env buttons and made the row feel "all heavy".
+     The bordered-white look reads as a control, not an action. */
+  background: var(--surface);
+  color: var(--fg);
+  border: 1px solid var(--border-strong);
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: default;
+  user-select: none;
+  white-space: nowrap;
+  border-radius: var(--r-sm, 4px);
+}
+.version-picker[data-multi='true'] { cursor: pointer; }
+.version-picker[data-multi='true']:hover { background: var(--bg-muted); border-color: var(--fg-faint); }
+/* Lock the value's printed width so `v1`, `v10`, and the chevron-slot
+   space line up across cards. Text-align left so the value reads
+   from the same x-coordinate regardless of length. */
+.version-picker .version-picker-value {
+  line-height: 1;
+  min-width: 26px;
+  text-align: left;
+}
+.version-picker .version-picker-chev {
+  display: inline-flex;
+  align-items: center;
+  color: var(--fg-muted);
+}
+.version-picker .version-picker-chev[data-hidden='true'] {
+  visibility: hidden;
+}
+.version-picker .version-picker-select {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  width: 100%;
+  height: 100%;
+  cursor: pointer;
+  font: inherit;
+}
+
+.env-buttons { display: flex; gap: 6px; }
+
+/* Env button cluster: every button is an HTML `<button>` containing
+   an SVG `<polygon>` for the chevron shape PLUS a `<span>` for the
+   label. The polygon's fill colour swaps by availability; its stroke
+   colour swaps on hover — that's the border. SVG strokes follow the
+   polygon's exact path at every scale, so the hover outline always
+   hugs the visible shape regardless of button width. Earlier
+   revisions tried `clip-path` + filter drop-shadows + cell-padding
+   tricks; none of them produced a uniform border because the inner +
+   outer polygons had different proportions when scaled by percent.
+   SVG `vector-effect: non-scaling-stroke` keeps stroke width in
+   screen pixels so the border thickness stays constant whether the
+   button is 60 px or 100 px wide. */
+.env-btn-cell {
+  flex: 1 1 0;
+  min-width: 60px;
+  display: inline-flex;
+  align-items: stretch;
+}
+
+.env-btn {
+  position: relative;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  width: 100%;
+  height: 28px;
+  font: inherit;
+  cursor: pointer;
+  /* Reset all the inherited button styling so the SVG inside is the
+     visible button. */
+}
+.env-btn.unavailable {
+  cursor: not-allowed;
+}
+
+.env-btn-shape {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  /* SVG defaults to clipping content at its bounding box. The
+     polygon's vertices sit AT the viewBox edges (0/100/28), so
+     without `overflow: visible` the outside half of the stroke
+     (1 px past each vertex) gets cut — that was the cause of the
+     ragged border on TEST when hovered. With `overflow: visible`
+     the stroke renders 1 px past the SVG bounds; the surrounding
+     gap (6 px between cells, plenty of card padding around the
+     cluster) absorbs the bleed. */
+  overflow: visible;
+  /* `geometricPrecision` is the SVG rendering hint that asks the
+     browser to prioritise accuracy over speed. `preserveAspectRatio:
+     none` stretches the viewBox to the button's pixel bounds and
+     produces non-integer x-coordinates along the tip's 45° diagonal,
+     which the default `auto` renderer can paint as a visibly wavy
+     line. Forcing `geometricPrecision` smooths the diagonal at the
+     cost of a tiny perf hit nobody will notice on a list page. */
+  shape-rendering: geometricPrecision;
+}
+.env-btn-shape path {
+  stroke: transparent;
+  stroke-width: 2;
+  /* `non-scaling-stroke` keeps stroke width in screen pixels
+     regardless of viewBox scaling, so the border is 2 px on every
+     button width.
+     `round` line joins curve the chevron's sharp vertices (the
+     45° forward tip, the deeper concave notch) — without this the
+     default `miter` join produces tall pointed spikes at acute
+     angles that visibly extend past the polygon edge. Stroke-cap
+     is irrelevant for a closed polygon. */
+  vector-effect: non-scaling-stroke;
+  stroke-linejoin: round;
+  transition: stroke 0.12s ease;
+}
+.env-btn.available .env-btn-shape path {
+  fill: var(--accent-soft);
+}
+.env-btn.unavailable .env-btn-shape path {
+  fill: var(--bg-muted);
+}
+.env-btn-cell[data-available='true']:hover .env-btn-shape path {
+  stroke: var(--accent);
+}
+
+.env-btn-label {
+  position: relative;
+  display: block;
+  width: 100%;
+  text-align: center;
+  font-size: 11.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  line-height: 28px;
+  pointer-events: none;
+  z-index: 1;
+}
+.env-btn.available .env-btn-label {
+  color: var(--accent);
+}
+.env-btn.unavailable .env-btn-label {
+  color: var(--fg-subtle);
+}
+
+/* Loading state — the catalog response for this env hasn't arrived
+   yet so we render neither "available" (green) nor "unavailable"
+   (grey-static). The same muted fill as unavailable, with a subtle
+   pulse animation, communicates "still resolving" without falsely
+   advertising availability. */
+.env-btn.loading .env-btn-shape path {
+  fill: var(--bg-muted);
+  opacity: 0.85;
+  animation: env-btn-loading-pulse 1.2s ease-in-out infinite;
+}
+.env-btn.loading .env-btn-label {
+  color: var(--fg-faint);
+}
+
+/* Failed state — the env's catalog fetch errored (APIM timeout / 429 / 5xx),
+   so availability is UNKNOWN, not "unavailable". Red fill + red label signals
+   a platform problem (not the user's fault); the button carries the error
+   detail in its title and is non-interactive. */
+.env-btn.failed { cursor: not-allowed; }
+.env-btn.failed .env-btn-shape path { fill: var(--err-soft); }
+.env-btn.failed .env-btn-label { color: var(--err); }
+@keyframes env-btn-loading-pulse {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+/* Multi-cell grid row of `.field`s. Each cell renders as its own `.field`
+   (label / input / hint stack) so inputs auto-stretch to fill the column;
+   set `grid-template-columns` inline per-row when the split isn't 1:1. */
+.form-row { display: grid; gap: 12px; margin-bottom: 14px; grid-template-columns: 1fr 1fr; }
+.form-row > .field { margin-bottom: 0; }
+/* Read-only preview of a derived value (e.g. a computed URL path). Styled
+   like a disabled input — same height/border — so it lines up visually
+   with the editable inputs around it but reads as non-editable. */
+.path-preview {
+  padding: 8px 10px;
+  font-size: 12.5px;
+  color: var(--fg-muted);
+  border: 1px dashed var(--border);
+  border-radius: var(--r-md);
+  background: var(--bg-subtle);
+}
+/* Single-line input + button row (e.g. "Add backend URL"). Input
+   stretches to fill the row, button hugs the right edge. */
+.inline-add { display: flex; gap: 8px; align-items: stretch; }
+.inline-add > input { flex: 1; min-width: 0; }
+.inline-add > .btn { flex: 0 0 auto; }
+.field .lbl { font-size: 11.5px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; }
+.field input, .field select, .field textarea {
+  padding: 8px 10px;
+  font-size: 13px;
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  background: var(--surface);
+  color: var(--fg);
+  outline: none;
+  transition: border-color .15s, box-shadow .15s;
+}
+/* Reset native select chrome (OS chevron, default font, intrinsic
+   height) so dropdowns visually line up with sibling text inputs.
+   Custom chevron is a base64-inlined SVG (kept gray to read on both
+   themes) anchored to the right edge with padding to keep the value
+   text from running underneath. */
+.field select {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  padding-right: 30px;
+  cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  background-size: 12px 12px;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring);
+}
+/* Read-only / disabled form fields must be visually distinct from editable
+   ones (muted surface, muted text, no focus ring) — previously a readOnly
+   input looked fully editable. readonly stays selectable/copyable; disabled
+   is the browser's non-interactive state — both get the same muted look. */
+.field input:disabled, .field select:disabled, .field textarea:disabled,
+.field input[readonly], .field textarea[readonly] {
+  background: var(--bg-subtle, #f6f8fa);
+  color: var(--fg-muted);
+  border-color: var(--divider);
+  cursor: default;
+}
+.field input[readonly]:focus, .field textarea[readonly]:focus {
+  border-color: var(--divider); box-shadow: none;
+}
+.field textarea { font-family: var(--font-mono); font-size: 12px; min-height: 120px; resize: vertical; }
+.field .hint { font-size: 11.5px; color: var(--fg-subtle); }
+/* A read-only value rendered as plain text (no input chrome) — used for
+   auto-generated / computed values like the Agent ID and the APIM endpoint
+   URLs, so they read as facts rather than editable fields. */
+.ro-value { font-family: var(--font-mono); font-size: 12.5px; color: var(--fg); word-break: break-all; padding: 2px 0; user-select: text; }
+/* A labelled read-only endpoint (agent call vs agent card) inside the APIM
+   endpoint section — a small caption over the URL so the two are clearly
+   distinct rather than two bare lines. */
+.endpoint-row .lbl { font-size: 11px; color: var(--fg-subtle); text-transform: uppercase; letter-spacing: 0.04em; font-weight: 500; display: block; margin-bottom: 4px; }
+.field .err { font-size: 11.5px; color: var(--err); }
+
+.banner {
+  padding: 10px 14px;
+  border-radius: var(--r-md);
+  font-size: 13px;
+  margin-bottom: 14px;
+  border: 1px solid transparent;
+}
+.banner.err { background: var(--err-soft); color: var(--err); border-color: transparent; }
+.banner.warn { background: var(--warn-soft); color: var(--warn); }
+.banner.info { background: var(--info-soft); color: var(--info); }
+.banner.ok { background: var(--ok-soft); color: var(--ok); }
+
+.dialog-mask {
+  position: fixed; inset: 0;
+  background: rgba(0,0,0,0.35);
+  display: grid; place-items: center;
+  z-index: 50;
+}
+.dialog {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lg);
+  /* Wide default: narrow dialogs put the backdrop one slipped click away
+     from the inputs, and users kept dismissing modals mid-typing. */
+  width: 760px; max-width: 94vw;
+  max-height: 86vh;
+  display: flex; flex-direction: column;
+}
+.dialog .dialog-head {
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center; justify-content: space-between;
+  flex-shrink: 0;
+}
+.dialog .dialog-head h3 { font-size: 14px; font-weight: 600; margin: 0; }
+/* Roomier horizontal padding — inputs shouldn't hug the dialog border. */
+.dialog .dialog-body { padding: 18px 24px; overflow-y: auto; flex: 1 1 auto; min-height: 0; }
+.dialog .dialog-foot {
+  padding: 12px 24px;
+  border-top: 1px solid var(--border);
+  display: flex; gap: 8px; justify-content: flex-end;
+  flex-shrink: 0;
+}
+
+/* Read-only API browser opened from Discover. Wider + taller than the
+   default dialog so the OpenAPI / WSDL definition is actually readable
+   without horizontal scrolling, and so the Properties tab has room for
+   the kv-list at full width.
+
+   The Definition tab uses `flex: 1 1 auto; min-height: 0` on its
+   wrapper so the embedded CodeMirror (height="100%") fills the
+   remaining vertical space — without `min-height: 0` flex would refuse
+   to shrink the editor below its default size and the modal would grow
+   off-screen on shorter viewports. */
+.dialog.api-detail-dialog {
+  width: 1080px;
+  max-width: 96vw;
+  height: 86vh;
+  max-height: 86vh;
+}
+.dialog.api-detail-dialog .dialog-head h3 { font-size: 16px; }
+.api-detail-properties { padding: 18px 22px; display: flex; flex-direction: column; gap: 18px; }
+/* Each section in the Properties tab (Description, Operations).
+   Wraps `OperationsCard` / `WsdlServicesCard` so consecutive sections
+   sit on a consistent vertical rhythm without each being a separate
+   bordered card. */
+.api-detail-section { display: flex; flex-direction: column; gap: 10px; }
+.api-detail-section-head {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 12px;
+}
+.api-detail-section-head h4 {
+  margin: 0; font-size: 13px; font-weight: 600; color: var(--fg-muted);
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+/* Same muted-bg "description box" treatment used on the Discover
+   catalog card so the description reads as a distinct block instead
+   of blending into surrounding sections. Slightly bigger font /
+   line-height than the card preview since this is the full modal
+   rather than a compact list row. */
+.api-detail-description {
+  padding: 10px 12px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-muted);
+  font-size: 13px; line-height: 1.5; color: var(--fg);
+  white-space: pre-wrap; word-break: break-word;
+}
+.api-detail-definition {
+  display: flex; flex-direction: column;
+  flex: 1 1 auto; min-height: 0;
+  height: 100%;
+}
+.api-detail-definition-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.api-detail-definition .policy-editor.definition-editor {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+  border: none; border-radius: 0;
+}
+.api-detail-definition .policy-editor.definition-editor > .cm-theme,
+.api-detail-definition .policy-editor.definition-editor .cm-editor {
+  flex: 1 1 auto; min-height: 0;
+}
+
+.policy-section { margin-bottom: 18px; }
+.policy-section:last-child { margin-bottom: 0; }
+.policy-section-label {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+  color: var(--fg-muted); margin-bottom: 8px; font-weight: 600;
+}
+.policy-list { display: flex; flex-direction: column; gap: 8px; }
+.policy-card {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+}
+.policy-card.base { opacity: 0.7; background: var(--bg-subtle); }
+.policy-card.raw { border-style: dashed; }
+.policy-card.off {
+  /* Disabled blocks keep their full layout so the user can edit / re-enable
+     them; we just dim everything except the action cluster (which still
+     needs to read clearly) and stripe the background so the off state is
+     unmistakable. */
+  background:
+    repeating-linear-gradient(135deg, var(--bg-subtle) 0 6px, transparent 6px 12px),
+    var(--surface);
+  border-style: dashed;
+}
+.policy-card.off .policy-card-icon,
+.policy-card.off .policy-card-body { opacity: 0.55; }
+.policy-card.off .policy-card-title { text-decoration: line-through; text-decoration-color: var(--fg-faint); }
+.policy-card.off .policy-card-actions { opacity: 1; }
+.icon-btn.inactive { color: var(--fg-faint); }
+.icon-btn.inactive:hover { color: var(--fg); background: var(--bg-muted); }
+.policy-card-icon {
+  width: 28px; height: 28px; border-radius: 6px;
+  display: grid; place-items: center; flex-shrink: 0;
+  background: var(--bg-muted); color: var(--fg-muted);
+}
+.policy-card-icon.green { background: #dcfce7; color: #166534; }
+.policy-card-icon.blue { background: #dbeafe; color: #1e40af; }
+.policy-card-icon.purple { background: #ede9fe; color: #6d28d9; }
+.policy-card-icon.amber { background: #fef3c7; color: #92400e; }
+.policy-card-icon.teal { background: #ccfbf1; color: #115e59; }
+.policy-card-icon.slate { background: #e2e8f0; color: #475569; }
+.policy-card-icon.base { background: transparent; color: var(--fg-muted); }
+.policy-card-body { flex: 1; min-width: 0; }
+.policy-card-title { font-weight: 600; font-size: 13px; }
+.policy-card-summary { font-size: 11.5px; color: var(--fg-muted); margin-top: 2px; }
+.policy-card-summary.mono { font-family: var(--font-mono); }
+.policy-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+
+.policy-pick {
+  display: flex; align-items: center; gap: 12px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
+  cursor: pointer; text-align: left;
+  transition: background 0.1s;
+}
+.policy-pick:hover { background: var(--bg-subtle); }
+
+.stepper { display: flex; align-items: center; gap: 8px; margin-bottom: 18px; }
+.stepper .step {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 10px; border-radius: var(--r-pill);
+  font-size: 12px; color: var(--fg-muted);
+  background: var(--bg-muted);
+  /* Steps were `<div>`s before, now they're `<button>`s for clickable
+     navigation between phases of the wizard. Reset the browser button
+     defaults so the existing pill styling stays visually identical. */
+  border: 0; font-family: inherit; cursor: pointer;
+  transition: background .12s ease, color .12s ease;
+}
+.stepper .step:hover:not(:disabled):not(.active) { background: var(--bg-subtle); color: var(--fg); }
+.stepper .step:disabled { cursor: not-allowed; opacity: 0.55; }
+/* Active step reads light-green (primary tier — same weight as the
+   main CTAs across the app); done steps invert to dark-green so the
+   completed-vs-current contrast is the colour pair itself, not a
+   subtle badge-shape difference. Both stay in the brand family. */
+.stepper .step.active {
+  background: var(--accent-soft); color: var(--accent); font-weight: 600;
+  box-shadow: 0 1px 2px 0 var(--accent-ring);
+}
+.stepper .step.done {
+  background: var(--accent); color: var(--accent-soft);
+}
+.stepper .step .n {
+  width: 18px; height: 18px; border-radius: 99px;
+  background: var(--surface);
+  color: var(--fg);
+  display: grid; place-items: center;
+  font-size: 10.5px; font-weight: 600;
+}
+/* Badges follow the inverted pattern: each step gets a circle in
+   the OTHER family-shade so the digit reads against it.
+   - active (light pill) → dark-green badge with light digit
+   - done   (dark pill)  → light-green badge with dark digit
+   Without these explicit colours the digit inherits the step's
+   text colour and renders e.g. light-green on white, unreadable. */
+.stepper .step.active .n {
+  background: var(--accent);
+  color: var(--accent-soft);
+}
+.stepper .step.done .n {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.stepper .sep { width: 14px; height: 1px; background: var(--border-strong); }
+
+.hr { height: 1px; background: var(--border); margin: 16px 0; }
+
+.split-cols { display: grid; grid-template-columns: 1fr 320px; gap: 20px; }
+@media (max-width: 960px) { .split-cols { grid-template-columns: 1fr; } }
+
+.api-detail-content {
+  padding-top: 24px;
+}
+.api-detail-head {
+  /* Override .page-head's flex layout: the API detail header uses a 2fr/1fr
+     grid that mirrors the body grid below (.api-overview-grid). That keeps
+     the title cluster's right edge aligned with the Properties card's right
+     edge, and the action cluster aligned to the Details column's right edge,
+     instead of stretching all the way to the page padding.
+     `align-items: center` is intentional — the title cluster is taller than
+     the action cluster (multi-line h1+path), and centering both cells along
+     the row keeps the dropdowns and the right-side buttons on the same
+     visual baseline. The narrow-viewport breakpoint reverts to `flex-start`
+     so the wrapped layout reads top-to-bottom. */
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  align-items: center;
+  justify-content: initial;
+  margin-bottom: 20px;
+}
+.api-detail-head > .page-actions {
+  justify-self: end;
+}
+.api-detail-title-cluster {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+/* Env + Version dropdowns sit at the right edge of the title cluster — `auto`
+   left margin pushes them past any flex-grow gap so they end roughly where
+   the Definition / Properties card right-edge sits below. */
+.api-detail-pivots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-left: auto;
+}
+@media (max-width: 960px) {
+  /* On narrow viewports the cluster wraps. Drop the auto-margin so the
+     pivots sit on the next line flush-left rather than orphaned far-right. */
+  .api-detail-pivots { margin-left: 0; }
+}
+/* A2A edit — inline checkbox row (env switcher reuses the shared .menu-btn chrome). */
+.checkline { cursor: pointer; color: var(--fg); user-select: none; }
+.checkline input { cursor: pointer; }
+.api-detail-title-cluster h1 {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+}
+.api-detail-url {
+  margin-top: 2px;
+  font-size: 12px;
+  color: var(--fg-subtle);
+  word-break: break-all;
+}
+/* `Published` status pill in the Edit header — promoted to the dark-
+   green "secondary" weight so it reads as an authoritative state
+   label rather than a decorative tag. Text uses the light-green tint
+   so it sits in the same colour family as the rest of the dark-green
+   surfaces (sign-in button, Playground, format chip). */
+.status-chip {
+  background: var(--accent);
+  color: var(--accent-soft);
+  border-color: transparent;
+}
+.api-overview-grid {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 16px;
+  align-items: start;
+}
+
+/* Operations panel — collapsed row + expanded detail block. The row is
+   a `<button>` so keyboard focus + space/enter toggle out of the box. */
+.op-row-toggle {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  padding: 11px 14px;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  color: inherit;
+  transition: background .12s ease;
+}
+.op-row-toggle:hover { background: var(--bg-subtle); }
+.op-row-chev {
+  flex: 0 0 auto;
+  color: var(--fg-subtle);
+  transition: transform .15s ease;
+}
+.op-row-chev.rot { transform: rotate(180deg); }
+
+.op-detail {
+  background: var(--bg-subtle);
+  border-top: 1px solid var(--divider);
+  padding: 12px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.op-detail-section { display: flex; flex-direction: column; gap: 6px; }
+.op-detail-label {
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--fg-subtle);
+}
+.op-detail-text {
+  font-size: 12px;
+  color: var(--fg);
+  line-height: 1.5;
+}
+.op-detail-mono {
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  color: var(--fg);
+}
+.op-detail-chips { display: flex; gap: 4px; flex-wrap: wrap; }
+.op-detail-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.op-param-row,
+.op-response-row {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-sm);
+  padding: 8px 10px;
+}
+.op-response-row { display: flex; gap: 10px; align-items: flex-start; }
+.api-overview-main,
+.api-overview-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+.api-form-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.definition-editor {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+.kv-list.compact { gap: 0; }
+.kv-list.compact .kv {
+  grid-template-columns: 96px minmax(0, 1fr);
+  gap: 12px;
+  padding: 8px 0;
+  border-bottom: 0;
+}
+.kv-list.compact .kv .v {
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  color: var(--fg);
+}
+@media (max-width: 960px) {
+  .api-detail-head {
+    grid-template-columns: 1fr;
+    align-items: flex-start;
+  }
+  .api-detail-head > .page-actions {
+    justify-self: start;
+  }
+  .api-detail-title-cluster {
+    align-items: flex-start;
+  }
+  .api-overview-grid,
+  .api-form-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.policy-editor { border: 1px solid var(--border); border-radius: var(--r-md); overflow: hidden; }
+.policy-editor .cm-editor { font-size: 12.5px; }
+.policy-editor .cm-scroller { font-family: var(--font-mono); }
+.policy-editor.definition-editor {
+  border: 0;
+  border-top: 1px solid var(--border);
+  border-radius: 0;
+}
+
+.kv-list { display: flex; flex-direction: column; gap: 8px; }
+.kv-list .kv { display: grid; grid-template-columns: 180px 1fr; gap: 10px; padding: 6px 0; border-bottom: 1px dashed var(--divider); font-size: 13px; }
+.kv-list .kv:last-child { border-bottom: 0; }
+.kv-list .kv .k { color: var(--fg-subtle); font-size: 12px; }
+.kv-list .kv .v { font-family: var(--font-mono); font-size: 12px; word-break: break-all; }
+
+.toast-stack { position: fixed; top: calc(var(--topbar-h) + 16px); right: 16px; display: flex; flex-direction: column; gap: 8px; z-index: 200; max-height: calc(100vh - var(--topbar-h) - 32px); overflow-y: auto; }
+.toast {
+  display: flex; align-items: flex-start; gap: 10px;
+  padding: 10px 12px 10px 14px;
+  border-radius: var(--r-md);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-lg);
+  font-size: 13px;
+  min-width: 220px; max-width: 360px;
+}
+.toast.err { border-color: var(--err); color: var(--err); }
+.toast.ok { border-color: var(--accent); color: var(--accent); }
+.toast-close {
+  background: transparent; border: 0; cursor: pointer;
+  color: inherit; opacity: 0.6; padding: 0 2px;
+  font-size: 16px; line-height: 1; flex-shrink: 0;
+  margin-top: -1px;
+}
+.toast-close:hover { opacity: 1; }
+.toast-clear-all {
+  align-self: flex-end;
+  background: var(--surface); border: 1px solid var(--border);
+  border-radius: var(--r-sm); padding: 4px 8px; font-size: 11px;
+  color: var(--fg-muted); cursor: pointer;
+  box-shadow: var(--shadow-sm);
+}
+.toast-clear-all:hover { color: var(--fg); border-color: var(--border-strong); }
+
+.spinner {
+  width: 14px; height: 14px; border-radius: 99px;
+  border: 2px solid var(--border-strong);
+  border-top-color: var(--accent);
+  animation: spin .7s linear infinite;
+  display: inline-block;
+  vertical-align: middle;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Sign-in screen — brand-coloured backdrop with a white card floating
+   on top. The dark-green mask matches the topbar / sidebar brand band
+   so the sign-in is unambiguously "this is the ŠKODA portal" before
+   the user has authenticated. The card itself stays white for
+   maximum contrast on the heading + button.
+   Two soft light-green blobs drift behind the card on a long loop —
+   "lava-lamp" effect that brings the screen to life without competing
+   with the foreground. Implemented as ::before / ::after pseudo-
+   elements (no DOM cost, no JS). Honours `prefers-reduced-motion`. */
+.signin-mask {
+  position: fixed; inset: 0;
+  display: grid; place-items: center;
+  background: var(--brand-dark);
+  overflow: hidden;
+  isolation: isolate;
+}
+.signin-mask::before,
+.signin-mask::after {
+  content: "";
+  position: absolute;
+  width: 65vmax;
+  height: 65vmax;
+  border-radius: 50%;
+  filter: blur(70px);
+  z-index: -1;
+  pointer-events: none;
+  will-change: transform;
+}
+.signin-mask::before {
+  /* Softer halo so the light-green tint reads as ambient atmosphere on
+     a dark-green base, not as a competing field. Inner alpha ≈ 12 %
+     and a tighter 50 % falloff keeps the dark base dominant. */
+  background: radial-gradient(circle, rgba(120, 250, 174, 0.12) 0%, rgba(120, 250, 174, 0) 50%);
+  top: -22vmax;
+  left: -14vmax;
+  animation: signin-blob-a 16s ease-in-out infinite alternate;
+}
+.signin-mask::after {
+  background: radial-gradient(circle, rgba(120, 250, 174, 0.09) 0%, rgba(120, 250, 174, 0) 50%);
+  bottom: -28vmax;
+  right: -18vmax;
+  animation: signin-blob-b 20s ease-in-out infinite alternate;
+}
+@keyframes signin-blob-a {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(12vmax, 8vmax) scale(1.10); }
+  100% { transform: translate(18vmax, 14vmax) scale(1.18); }
+}
+@keyframes signin-blob-b {
+  0%   { transform: translate(0, 0) scale(1); }
+  50%  { transform: translate(-8vmax, -6vmax) scale(0.95); }
+  100% { transform: translate(-14vmax, -10vmax) scale(0.88); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .signin-mask::before,
+  .signin-mask::after {
+    animation: none;
+  }
+}
+.signin-card {
+  background: var(--surface);
+  /* Same fieldset-card chrome the load-balancer / circuit-breaker
+     panels use on the Properties tab — 2.5px branded border so the
+     card reads as a deliberately framed panel rather than a thin-line
+     dialog. Light-green ties to the wordmark colour above and to the
+     light-green hover state on the primary button. */
+  border: 2.5px solid var(--brand-light);
+  border-radius: var(--r-lg);
+  /* Larger soft shadow lifts the card off the dark backdrop. */
+  box-shadow: 0 24px 56px -12px rgba(0, 0, 0, 0.50), 0 6px 14px -3px rgba(0, 0, 0, 0.22);
+  /* Card aims for ~50 % of the viewport width on typical displays,
+     clamped between 440px (so it doesn't shrink on phones) and 760px
+     (so it doesn't sprawl on ultra-wide monitors). */
+  width: clamp(440px, 50vw, 760px);
+  max-width: 92vw;
+  text-align: center;
+  /* Banner extends edge-to-edge inside the card; clip to the card's
+     rounded corners so the dark-green strip and white body share one
+     continuous outline. */
+  overflow: hidden;
+}
+/* Top banner — dark-green strip carrying the Škoda wordmark. The SVG
+   itself is light green (#78FAAE) and would be unreadable on white,
+   which is why it lives on a dark band rather than directly on the
+   card body. */
+.signin-card .signin-banner {
+  background: var(--brand-dark);
+  padding: 44px 32px;
+  display: grid; place-items: center;
+}
+.signin-card .signin-banner img {
+  /* Scale roughly to 60 % of the card width so the wordmark grows
+     proportionally with the responsive card sizing above. The
+     pixel ceiling keeps it readable on huge screens. */
+  width: 60%;
+  max-width: 380px;
+  height: auto;
+  display: block;
+}
+.signin-card .signin-body {
+  padding: 40px 48px 44px;
+}
+.signin-card h1 {
+  font-size: 26px; font-weight: 700; margin: 0 0 10px;
+  color: var(--brand-dark);
+  letter-spacing: 0.01em;
+}
+.signin-card p { font-size: 15px; color: var(--fg-muted); margin: 0 0 30px; line-height: 1.5; }
+
+/* ── Health Status page ─────────────────────────────────────────────── */
+/* Standalone status dot (the hero + component rows reuse it; the gw-status
+   variant scopes its own). Tone via `.pulse.ok|warn|err|unknown`. */
+.pulse { width: 8px; height: 8px; border-radius: 99px; flex-shrink: 0;
+  background: var(--fg-faint); box-shadow: 0 0 0 3px var(--bg-muted); }
+.pulse.ok { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.pulse.warn { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-soft); }
+.pulse.err { background: var(--err); box-shadow: 0 0 0 3px var(--err-soft); }
+.pulse.unknown { background: var(--fg-faint); box-shadow: 0 0 0 3px var(--bg-muted); }
+
+/* Env badge (DEV/TEST/PROD). */
+.env-tag { display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 8px; border-radius: 6px; background: var(--bg-muted); color: var(--fg-muted);
+  border: 1px solid var(--border); }
+.env-shape-dev { color: var(--fg-muted); }
+.env-shape-test { color: var(--warn); border-color: var(--warn-soft); }
+.env-shape-prod { color: var(--ok); border-color: var(--ok-soft); }
+
+/* Hero: one verdict card per environment. The WHOLE card is colored by status —
+   dark green = healthy, amber = partially down, red = down — with a brighter
+   border of the same hue and light text. */
+.health-hero { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.health-env-card { border: 1.5px solid var(--brand-light); border-radius: 12px; padding: 18px 20px;
+  color: #f3f7f5; display: flex; flex-direction: column; gap: 12px; }
+.health-env-card.ok { background: var(--brand-dark); border-color: var(--brand-light); }
+.health-env-card.warn { background: oklch(0.46 0.115 78); border-color: oklch(0.82 0.15 85); }
+.health-env-card.err { background: oklch(0.43 0.16 25); border-color: oklch(0.72 0.18 25); }
+.health-env-card.unknown { background: var(--bg-muted); border-color: var(--border-strong); color: var(--fg); }
+.health-env-card .env-tag { background: rgba(255, 255, 255, 0.12); color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.22); font-size: 14px; font-weight: 700;
+  padding: 4px 12px; letter-spacing: 0.07em; }
+.health-env-card.unknown .env-tag { background: var(--bg-subtle); color: var(--fg-muted); border-color: var(--border); }
+.health-env-verdict { display: flex; align-items: center; gap: 10px; }
+.health-env-verdict .v { font-size: 18px; font-weight: 650; letter-spacing: -0.01em; color: #ffffff; }
+.health-env-card.ok .health-env-verdict .v { color: var(--brand-light); }
+.health-env-card.unknown .health-env-verdict .v { color: var(--fg); }
+/* Verdict pulses sit on a colored surface — brighten so they stay visible. */
+.health-env-card .pulse.ok { background: var(--brand-light); box-shadow: 0 0 0 3px rgba(120, 250, 174, 0.22); }
+.health-env-card .pulse.warn { background: #ffe6a3; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); }
+.health-env-card .pulse.err { background: #ffd0ca; box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.18); }
+.health-env-meta { font-size: 12.5px; color: rgba(255, 255, 255, 0.78); }
+.health-env-card.unknown .health-env-meta { color: var(--fg-subtle); }
+
+/* Synthetics availability + response-time section (Health page). A dedicated
+   full-width card below the hero, one environment shown at a time — see
+   docs/superpowers/specs/2026-07-23-synthetics-uptime-design.md "V2"/"V2.1".
+   V2.1 restyled this to an Uptime-Kuma look: clear separation from the hero,
+   underline tabs for the env switcher, a dark per-monitor surface, and a
+   real SVG response-time chart in place of the old grey mini-bars. */
+.synthetics-panel { margin-top: 20px; }
+.synthetics-panel .card-head { flex-wrap: wrap; row-gap: 10px; }
+.synthetics-panel .card-body { padding: 20px 24px 24px; }
+.synthetics-controls { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+/* Env switcher = the exact tab look used by the page's Health/FixMe switch
+   (`.tabs.flat` + `.tab` + `.active`), just embedded in this card's header
+   row instead of above the page title. */
+.synthetics-env-tabs.tabs { gap: 4px; }
+.synthetics-env-tabs .tab { padding: 6px 12px; font-size: 12.5px; }
+.uptime-range { display: flex; align-items: center; gap: 4px; }
+.uptime-range-btn { border: 1px solid var(--border); background: var(--bg-subtle); color: var(--fg-muted);
+  border-radius: 6px; padding: 3px 10px; font-size: 12px; cursor: pointer; }
+.uptime-range-btn.active { background: var(--brand-dark); border-color: var(--brand-light); color: #ffffff; }
+
+/* Generous gaps between monitor blocks — this section owns the full page
+   width, so blocks read as distinct Uptime-Kuma-style cards, not a cramped
+   list. */
+.uptime-bars { display: flex; flex-direction: column; gap: 28px; }
+.uptime-row { display: flex; flex-direction: column; gap: 8px; }
+.uptime-row-head { display: flex; align-items: baseline; gap: 10px; font-size: 12.5px; }
+.uptime-name { font-weight: 600; color: var(--fg); white-space: nowrap; overflow: hidden;
+  text-overflow: ellipsis; max-width: 320px; }
+.uptime-stats { margin-left: auto; color: var(--fg-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+
+/* The dark green surface each monitor's dots + chart sit on (matches the
+   healthy hero card's tone/radius family). Status colors are scoped here as
+   custom properties so the marks and the chart's down-dot share one source
+   of truth. Equal top/bottom padding — same pattern as `.health-env-card`
+   (18px 20px) above; a smaller bottom value here used to leave the LAST
+   monitor block's chart sitting visibly closer to the synthetics card's
+   bottom edge than its top/left/right rhythm. */
+.uptime-surface {
+  background: var(--brand-dark);
+  border-radius: 12px;
+  padding: 14px 16px;
+  --uptime-up: var(--brand-light);
+  --uptime-down: #ff8a7a;
+  --uptime-empty: rgba(255, 255, 255, 0.16);
+}
+
+/* Marks: bigger than the old in-card strip (18px vs 14px) now that the
+   section owns the full page width. */
+.uptime-strip { display: flex; gap: 3px; }
+.uptime-mark { flex: 1; height: 18px; border-radius: 4px; min-width: 3px; }
+.uptime-surface .uptime-mark.up { background: var(--uptime-up); }
+.uptime-surface .uptime-mark.down { background: var(--uptime-down); }
+/* `padding: 0` overrides the unrelated global `.empty` placeholder rule
+   (40px/20px padding for "no items" panels) — its bare `.empty` selector
+   also matches this span's `empty` class token and was ballooning every
+   no-data mark (and the row height with it) to that padding's size. */
+.uptime-surface .uptime-mark.empty { background: var(--uptime-empty); padding: 0; }
+
+/* Real SVG response-time chart, below the dots on the same dark surface
+   (design V2.1). One series, no legend, one y-scale, muted axis text —
+   never the accent green for text (chart discipline). */
+.synth-chart { margin-top: 10px; }
+.synth-chart-main { display: flex; align-items: stretch; gap: 8px; height: 110px; }
+.synth-chart-yaxis, .synth-chart-yaxis-spacer { flex: 0 0 34px; position: relative; }
+.synth-chart-ylabel {
+  position: absolute; left: 0; right: 0;
+  transform: translateY(50%);
+  font-size: 10px; line-height: 1; color: rgba(255, 255, 255, 0.55);
+  font-variant-numeric: tabular-nums; white-space: nowrap;
+}
+.synth-chart-plot { flex: 1; min-width: 0; position: relative; }
+.synth-chart-svg { display: block; width: 100%; height: 100%; overflow: visible; }
+.synth-gridline { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.synth-area { fill: color-mix(in oklab, var(--brand-light) 28%, transparent); stroke: none; }
+.synth-line { fill: none; stroke: var(--brand-light); stroke-width: 2; vector-effect: non-scaling-stroke; }
+/* Plain (non-stretched) HTML overlay for down markers — sits over the
+   svg at the same position/size, but is never itself distorted by the
+   svg's unequal preserveAspectRatio="none" x/y scale, so the dots inside
+   it stay perfectly round at any panel width. */
+.synth-marker-layer { position: absolute; inset: 0; pointer-events: none; }
+.synth-down-dot {
+  position: absolute;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #ff8a7a;
+  transform: translate(-50%, -50%);
+}
+.synth-hover-rect { fill: transparent; cursor: pointer; }
+.synth-hover-rect:hover { fill: rgba(255, 255, 255, 0.08); }
+
+.synth-chart-xaxis-row { display: flex; gap: 8px; margin-top: 4px; }
+.synth-chart-xaxis { flex: 1; min-width: 0; position: relative; height: 12px; }
+.synth-chart-xlabel {
+  position: absolute; top: 0;
+  font-size: 10px; line-height: 1; color: rgba(255, 255, 255, 0.5);
+  white-space: nowrap;
+}
+
+.health-impact { margin: 2px 0 0; padding-left: 16px; list-style: disc; font-size: 12px; color: rgba(255, 255, 255, 0.92); }
+.health-impact li { margin: 2px 0; }
+
+/* Admin detail: per-env component groups. */
+.health-detail { margin-top: 4px; }
+.health-group { margin-bottom: 16px; }
+.health-rows { display: flex; flex-direction: column; }
+.health-row { display: grid; grid-template-columns: 96px 1fr auto; align-items: center; gap: 12px;
+  padding: 9px 2px; border-bottom: 1px solid var(--border); }
+.health-row:last-child { border-bottom: none; }
+.health-status { display: flex; align-items: center; gap: 8px; }
+.health-status .s { font-size: 12px; font-weight: 600; }
+.health-status.ok .s { color: var(--ok); }
+.health-status.err .s { color: var(--err); }
+.health-status.unknown .s { color: var(--fg-subtle); }
+.health-label { font-size: 13px; font-weight: 500; }
+.health-row-meta { font-size: 11.5px; color: var(--fg-subtle); font-family: var(--font-mono); text-align: right; }
+.health-row-meta .t { color: var(--fg-faint); }
+.health-row-meta .err-msg { color: var(--err); font-family: var(--font-sans); }
+/* Colored response time: <1s green, <5s amber, ≥5s red. */
+.health-row-meta .lat.ok { color: var(--ok); }
+.health-row-meta .lat.warn { color: var(--warn); }
+.health-row-meta .lat.err { color: var(--err); }
+
+/* Capability tag chip on each component row. */
+.health-tag { display: inline-block; font-size: 10px; font-weight: 700; letter-spacing: 0.04em;
+  text-transform: uppercase; padding: 1px 6px; border-radius: 5px; margin-right: 8px;
+  vertical-align: middle; border: 1px solid transparent; }
+.health-tag.azure { background: rgba(0, 120, 212, 0.12); color: #0a78d0; border-color: rgba(0, 120, 212, 0.25); }
+.health-tag.mtls { background: var(--ok-soft); color: var(--ok); border-color: rgba(14, 58, 47, 0.18); }
+.health-tag.nocert { background: var(--warn-soft); color: var(--warn); border-color: rgba(0, 0, 0, 0.06); }
+.health-tag.local { background: var(--bg-muted); color: var(--fg-subtle); border-color: var(--border); }
+
+@media (max-width: 760px) { .health-hero { grid-template-columns: 1fr; } }
+
+/* Global "Syncing…" pill — shown while a just-made change is still settling
+   (its background cache self-heals + re-fetches are in flight), so an
+   as-yet-unchanged screen looks busy rather than stuck. Fixed + non-blocking. */
+.sync-indicator {
+  position: fixed;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 1200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+  animation: sync-in 0.15s ease;
+}
+@keyframes sync-in {
+  from { opacity: 0; transform: translate(-50%, -6px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+
+/* Markdown description editor */
+.md-editor { border: 1px solid var(--border); border-radius: var(--r-md, 8px); background: var(--surface); }
+.md-editor-toolbar { display: flex; align-items: center; gap: 3px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.md-tb { min-width: 26px; height: 26px; padding: 0 6px; border: 1px solid transparent; border-radius: var(--r-sm, 5px); background: transparent; color: var(--fg-muted); cursor: pointer; font-size: 12.5px; }
+.md-tb:hover { background: var(--bg-muted); color: var(--fg); }
+.md-tb.on { background: var(--accent-ring); color: var(--accent); }
+.md-tb:disabled { opacity: .5; cursor: not-allowed; }
+.md-tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+.md-editor-body { padding: 10px 12px; min-height: 96px; font-size: 13.5px; }
+.md-editor-body .ProseMirror { outline: none; }
+.md-editor-body .ProseMirror:focus { outline: none; }
+.md-editor-source { width: 100%; border: none; padding: 10px 12px; resize: vertical; font-size: 12.5px; background: transparent; color: var(--fg); }
+.md-editor-source:focus { outline: none; }
+
+/* FixMe tab (Health Status page). Reuses .card/.tabs.flat/.health-row/.pulse/
+   .banner/.empty/.btn/.spinner — only what genuinely has no existing
+   equivalent lives here (the contact card, host group header, run-progress
+   line). Colors are all CSS vars so dark mode falls out for free. */
+.fixme-actions { margin-bottom: 14px; }
+.fixme-actions .btn .spinner { margin-right: 6px; }
+
+/* Card-head cluster holding the env tabs (see FixMePanel.tsx). The card-head
+   no longer carries a title — FixMe is its own page now (src/views/FixMe.tsx)
+   and the page-head owns the `h1` + admin-view pill — so this is the card's
+   only child. */
+.fixme-head-controls { display: flex; align-items: center; gap: 14px; }
+/* Env tabs left + "Run FixMe" right in the SAME card-head row. */
+.fixme-head-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; width: 100%; }
+.fixme-head-row .btn .spinner { margin-right: 6px; }
+
+/* Console-like live feed for the active run (session-only; empty after a
+   reload — finished runs move to the history list below). */
+.fixme-console {
+  font-family: var(--mono, ui-monospace, monospace);
+  font-size: 12px;
+  line-height: 1.55;
+  background: var(--code-bg, #0d1117);
+  color: var(--code-fg, #d0d7de);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  min-height: 72px;
+  max-height: 260px;
+  overflow-y: auto;
+  margin: 12px 0;
+}
+/* Brighter than fg-muted — the previous grey sank into the dark background. */
+.fixme-console-ts { color: rgba(208, 215, 222, 0.72); margin-right: 6px; }
+
+/* The working line: animated trailing dots ("…" typing effect) — this IS the
+   run-in-progress indicator; the separate spinner block above is gone. */
+.fixme-console-working { color: #e6edf3; }
+.fixme-console-dots::after {
+  display: inline-block;
+  content: '';
+  width: 3ch;
+  text-align: left;
+  animation: fixme-dots 1.2s steps(1, end) infinite;
+}
+@keyframes fixme-dots {
+  0%   { content: ''; }
+  25%  { content: '.'; }
+  50%  { content: '..'; }
+  75%  { content: '...'; }
+  100% { content: ''; }
+}
+.fixme-elapsed-inline { color: rgba(208, 215, 222, 0.72); }
+.fixme-console-degraded { color: var(--warn, #d29922); }
+
+/* Errors-first list — every unhealthy check directly under the verdict
+   banner so nothing requires scrolling to discover. */
+.fixme-errors-first {
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: 8px;
+  padding: 10px 14px;
+  margin-bottom: 12px;
+}
+.fixme-errors-first ul { margin: 0; padding-left: 18px; }
+.fixme-errors-first li { margin: 3px 0; }
+.fixme-errors-first-host { font-size: 11px; color: var(--fg-muted); }
+
+/* Runs history (Azure DevOps build history — see FixMeHistory). */
+.fixme-history { margin-top: 18px; border-top: 1px solid var(--border); padding-top: 12px; }
+.fixme-history-head { font-weight: 600; margin-bottom: 8px; }
+.fixme-history-hint { font-weight: 400; font-size: 12px; color: var(--fg-muted); }
+.fixme-history-item { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 6px; overflow: hidden; }
+.fixme-history-row {
+  display: flex; align-items: center; gap: 12px; width: 100%;
+  background: none; border: 0; padding: 8px 12px; cursor: pointer;
+  font: inherit; color: inherit; text-align: left;
+}
+.fixme-history-row:hover { background: var(--bg-subtle, rgba(128,128,128,.06)); }
+.fixme-history-time { min-width: 170px; }
+.fixme-history-dur { font-size: 11.5px; color: var(--fg-muted); }
+.fixme-history-caret { margin-left: auto; color: var(--fg-muted); }
+.fixme-history-detail { border-top: 1px solid var(--border); padding: 12px; }
+/* Title cluster used in the FixMe page-head: the `h1` + the admin-view pill
+   sit together on the left (see FixMe.tsx), mirroring how the synthetics
+   card pairs its title with controls. */
+.fixme-title { display: flex; align-items: center; gap: 10px; min-width: 0; }
+/* Simple state pill (user request): green with a check when on, red with a
+   cross when off — the same ok/err tone pair the chips and badges use. */
+.fixme-admin-pill {
+  display: inline-flex; align-items: center; gap: 6px;
+  border: 1px solid transparent; border-radius: 999px; padding: 3px 10px;
+  font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap;
+}
+.fixme-admin-pill .mark { font-size: 11px; line-height: 1; }
+.fixme-admin-pill.on { background: var(--ok-soft); color: var(--ok); }
+.fixme-admin-pill.off { background: var(--err-soft); color: var(--err); }
+
+.fixme-running { padding: 6px 2px 2px; }
+.fixme-running-head { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; }
+.fixme-running-head .spinner { margin-right: 2px; }
+.fixme-run-id { color: var(--fg-subtle); font-weight: 400; }
+.fixme-current-step { margin-top: 8px; font-size: 12.5px; color: var(--fg-muted); }
+.fixme-elapsed { margin-top: 4px; font-size: 11.5px; color: var(--fg-subtle); font-family: var(--font-mono); }
+
+/* Transient poll-failure note (network blip / 429 / 502 mid-run) — never
+   blocks the view, just flags that live updates are momentarily stalled.
+   Clears on the next successful poll. */
+.fixme-poll-degraded { margin-top: 8px; font-size: 11.5px; color: var(--warn); }
+
+.fixme-report-meta { color: inherit; opacity: 0.8; font-size: 12px; }
+
+.fixme-host-group { margin-top: 16px; }
+.fixme-host-group:first-of-type { margin-top: 18px; }
+.fixme-host-head {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase;
+  color: var(--fg-subtle); margin-bottom: 4px;
+}
+
+.fixme-check { border-bottom: 1px solid var(--border); }
+.fixme-check:last-child { border-bottom: none; }
+.fixme-check .health-row { border-bottom: none; padding: 9px 2px; }
+.fixme-check-name { font-size: 13px; font-weight: 500; }
+.fixme-check-detail { font-size: 12px; color: var(--fg-subtle); margin-top: 1px; }
+
+/* Status badge glyph — ✓ ⟳ ✕ – ? — reuses the ok/warn/err/unknown palette
+   the rest of the health UI already uses (.pulse, .health-status). */
+.fixme-badge { font-size: 13px; font-weight: 700; line-height: 1; width: 16px; text-align: center; }
+.fixme-badge.ok { color: var(--ok); }
+.fixme-badge.err { color: var(--err); }
+.fixme-badge.unknown { color: var(--fg-faint); }
+
+/* Contact card under an unhealthy check: what's wrong, what FixMe tried,
+   who to contact, and incident-report guidance. */
+.fixme-contact {
+  margin: 6px 2px 12px;
+  padding: 10px 12px;
+  background: var(--err-soft);
+  border: 1px solid var(--err);
+  border-radius: var(--r-md);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+.fixme-contact-row { color: var(--fg); }
+.fixme-contact-row + .fixme-contact-row { margin-top: 4px; }
+.fixme-contact-label { font-weight: 700; letter-spacing: 0.02em; margin-right: 4px; }
+.fixme-contact-guidance { color: var(--fg-muted); font-style: italic; }
+
+/* v2.1 scope disclaimer — subdued, always visible regardless of tab state
+   (disabled/idle/running/completed). Same muted note treatment as
+   `.fixme-current-step`, just without the top margin that assumes a running
+   block above it. */
+.fixme-scope-note { font-size: 12px; color: var(--fg-subtle); margin-bottom: 12px; }
+
+/* v2.1 "FixMe found & fixed it" story: repair-summary banner above the host
+   groups (same muted-bg "description box" treatment as
+   `.api-detail-description`), plus the per-host note for a host whose
+   `-verify` report superseded the original (healthy checks, but repairs did
+   happen). */
+.fixme-repair-summary {
+  margin: 4px 2px 16px;
+  padding: 10px 12px;
+  border-radius: var(--r-sm, 6px);
+  background: var(--bg-muted);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.fixme-repair-summary-text { color: var(--fg); font-weight: 500; }
+.fixme-repair-actions { margin: 6px 0 0; padding-left: 18px; color: var(--fg-muted); }
+.fixme-repair-actions li { margin-top: 2px; }
+.fixme-repair-summary-failed { margin-top: 6px; color: var(--warn); }
+
+.fixme-performed-note {
+  margin: 2px 2px 10px;
+  font-size: 12px;
+  color: var(--fg-muted);
+  font-style: italic;
+}
+.md-editor-hint { padding: 4px 12px 8px; font-size: 11px; color: var(--fg-subtle); }
+
+/* ---- Portal 101 guided tour ------------------------------------------- */
+/* The spotlight div's giant box-shadow IS the dim layer; its interior
+   stays clear over the anchored element. Pointer events pass nowhere —
+   the tour is watch-only, driven by the card's controls. */
+.p101-root { position: fixed; inset: 0; z-index: 300; }
+.p101-dim { position: fixed; inset: 0; background: rgba(9, 18, 13, 0.55); }
+.p101-spot {
+  position: fixed;
+  border-radius: 10px;
+  box-shadow: 0 0 0 200vmax rgba(9, 18, 13, 0.55);
+  outline: 2px solid var(--accent, #157a4c);
+  outline-offset: 2px;
+  animation: p101-pulse 1.6s ease-in-out infinite;
+  transition: top 0.25s ease, left 0.25s ease, width 0.25s ease, height 0.25s ease;
+}
+@keyframes p101-pulse {
+  0%, 100% { outline-offset: 2px; outline-color: var(--accent, #157a4c); }
+  50% { outline-offset: 6px; outline-color: color-mix(in srgb, var(--accent, #157a4c) 55%, transparent); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .p101-spot { animation: none; transition: none; }
+}
+.p101-card {
+  overflow-y: auto;
+  background: var(--surface, var(--bg, #fff));
+  border: 1px solid var(--divider, #d9dfda);
+  border-radius: 12px;
+  box-shadow: 0 18px 48px rgba(9, 18, 13, 0.35);
+  padding: 16px 18px 14px;
+  display: flex; flex-direction: column; gap: 8px;
+}
+.p101-card:focus { outline: none; }
+.p101-head { display: flex; align-items: center; justify-content: space-between; }
+.p101-eyebrow {
+  font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em;
+  text-transform: uppercase; color: var(--accent, #157a4c);
+}
+.p101-title { margin: 0; font-size: 21px; font-weight: 700; letter-spacing: -0.015em; }
+.p101-body { margin: 0; font-size: 14.5px; line-height: 1.6; color: var(--fg); white-space: pre-line; }
+.p101-body strong { color: var(--accent, #157a4c); font-weight: 650; }
+.p101-clip {
+  flex: 1 1 auto; min-height: 0; width: 100%;
+  object-fit: contain; border-radius: 8px;
+  border: 1px solid var(--divider, #d9dfda);
+  background: #0d1210; display: block;
+}
+/* Clip steps: a naturally large centered dialog (subscribe-modal scale) so
+   the demo is readable without covering the whole screen. */
+.p101-card.large {
+  position: fixed; left: 50%; top: 50%; transform: translate(-50%, -50%);
+  width: min(980px, calc(100vw - 48px));
+  max-height: min(860px, calc(100vh - 48px));
+}
+/* Text-only steps: the compact card sits next to the spotlighted function
+   (inline-positioned by the component). */
+.p101-card.compact {
+  width: 560px; max-width: calc(100vw - 32px);
+  max-height: min(460px, calc(100vh - 32px));
+}
+.p101-foot { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 2px; }
+.p101-dots { display: flex; gap: 4px; flex-wrap: wrap; }
+.p101-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--divider, #cfd6d0);
+}
+.p101-dot.on { background: var(--accent, #157a4c); }
+.p101-nav { display: flex; gap: 6px; }
+/* Sidebar row suffix — marks Portal 101 as a presentation, not a page. */
+.nav-item .ic-trailing { margin-left: auto; opacity: 0.55; }
+
+/* Discover advanced filters — a second filter row under the search: type
+   chips (toggle, accent when active) + app/domain selects. */
+.discover-filters { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: -6px; }
+.discover-filters .chip { cursor: pointer; }
+.discover-filters select { max-width: 220px; }
+
+/* Topbar env-degraded indicator — centered between the breadcrumb cluster
+   and the right controls; quiet yellow TEXT (no filled background — the
+   topbar is dark and a solid amber block fought the brand bar) with the
+   catalog-loading dot idiom (small currentColor dot). Thresholds:
+   DEV/TEST 5s, PROD 3s. */
+.topbar .env-health {
+  /* A normal flex item between two .spacer elements — visually centered
+     when there's room, but in-flow so a long breadcrumb can NEVER run
+     underneath it (the old absolute left-50% centering overlapped long
+     API/topic names; the crumbs truncate instead). */
+  display: flex; align-items: center; gap: 16px;
+  flex: none;
+}
+.env-degraded-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  color: var(--warn);
+  font-weight: 600; font-size: 11.5px;
+  letter-spacing: 0.03em;
+  cursor: help; white-space: nowrap;
+}
+.env-degraded-chip .dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+/* Sortable table headers — a bare button inheriting the th's type styles, so
+   sortable and static headers read identically until hovered; the active
+   column shows a small ▲/▼ arrow. */
+.th-sort {
+  background: none; border: 0; padding: 0; margin: 0;
+  font: inherit; color: inherit; letter-spacing: inherit;
+  text-transform: inherit; cursor: pointer;
+  display: inline-flex; align-items: center; gap: 4px;
+}
+.th-sort:hover { color: var(--fg); }
+.th-sort-arrow { font-size: 8px; line-height: 1; }
+
+
+/* Health env card degraded line — same warn-text + dot idiom as the topbar
+   chip; the card also gets a warn border tint while degraded. */
+.health-env-card.degraded { border-color: var(--warn); }
+.health-env-degraded {
+  display: inline-flex; align-items: center; gap: 6px;
+  margin-top: 6px;
+  color: var(--warn);
+  font-weight: 600; font-size: 11.5px; letter-spacing: 0.03em;
+  cursor: help;
+}
+.health-env-degraded .dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
+
+/* Kafka HTTP proxy rows in the Catalog — the kproxy badge hue as border. */
+.discover-item.t-kproxy { border-color: oklch(0.55 0.19 350); }
+.discover-item.t-kproxy .di-type-legend { color: oklch(0.55 0.19 350); }

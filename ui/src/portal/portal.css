@@ -1,0 +1,432 @@
+.native-portal {
+  min-height: 100vh;
+  color: var(--fg);
+  background: var(--bg-subtle);
+  font-family: var(--font-sans);
+}
+.native-portal .sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  width: 248px;
+  display: flex;
+  flex-direction: column;
+  overflow: auto;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  z-index: 30;
+}
+.native-portal .brand {
+  padding: 22px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.native-portal .logo {
+  background: var(--brand-dark);
+  color: var(--brand-light);
+  padding: 8px;
+  border-radius: 8px;
+}
+.native-portal .brand .name {
+  font-size: 17px;
+  font-weight: 700;
+}
+.native-portal .app-picker {
+  margin: 0 14px 16px;
+  padding: 12px;
+  background: var(--bg-muted);
+  border-radius: 8px;
+}
+.native-portal .app-picker-label {
+  display: block;
+  font-size: 10px;
+  letter-spacing: 1px;
+  margin-bottom: 6px;
+  color: var(--fg-muted);
+}
+.native-portal nav {
+  padding: 0 12px 16px;
+  flex: 1;
+}
+.native-portal .nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 6px;
+  margin: 2px 0;
+  color: var(--fg-muted);
+  text-decoration: none;
+  font-size: 13px;
+}
+.native-portal .nav-item.active {
+  background: var(--accent-soft);
+  color: var(--brand-dark);
+  font-weight: 600;
+}
+.native-portal .nav-item:hover {
+  background: var(--bg-muted);
+  color: var(--fg);
+}
+.native-portal .nav-group-title {
+  margin: 17px 12px 6px;
+  color: var(--fg-subtle);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  font-size: 10px;
+}
+.native-portal .user {
+  padding: 16px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.native-portal .user .info {
+  flex: 1;
+}
+.native-portal small {
+  display: block;
+  color: var(--fg-muted);
+  margin-top: 4px;
+}
+.native-main {
+  margin-left: 248px;
+  min-width: 0;
+}
+.native-portal .topbar {
+  height: 60px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 30px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  gap: 12px;
+}
+.native-portal .breadcrumbs {
+  display: flex;
+  gap: 12px;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.native-content {
+  padding: 30px;
+  max-width: 1460px;
+  margin: auto;
+}
+.native-page-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 28px;
+}
+.native-page-head h1 {
+  font-size: 28px;
+  letter-spacing: -0.7px;
+  margin: 4px 0;
+}
+.eyebrow {
+  font-size: 12px;
+  color: var(--fg-muted);
+}
+.native-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.native-portal .card {
+  margin-bottom: 22px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  overflow: hidden;
+  box-shadow: var(--shadow-xs);
+}
+.native-portal .card-head,
+.native-modal .card-head {
+  padding: 18px 22px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.native-portal .card-head h3 {
+  margin: 0;
+  font-size: 16px;
+}
+.native-portal .card-body,
+.native-modal .card-body {
+  padding: 22px;
+}
+.native-portal p,
+.native-modal p {
+  line-height: 1.6;
+  color: var(--fg-muted);
+}
+.native-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 20px;
+}
+.native-field {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  margin-bottom: 20px;
+}
+.native-field .lbl {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg-muted);
+}
+.native-portal input:not([type="checkbox"]),
+.native-portal select,
+.native-portal textarea,
+.native-modal input,
+.native-modal select,
+.native-modal textarea {
+  min-width: 0;
+  max-width: 100%;
+  border: 1px solid var(--border-strong);
+  border-radius: 6px;
+  padding: 9px 11px;
+  color: var(--fg);
+  background: var(--surface);
+  font: inherit;
+}
+.native-field textarea {
+  min-height: 95px;
+  resize: vertical;
+}
+.native-portal .cm-editor {
+  border: 1px solid var(--border);
+  margin: 16px 0;
+  font-family: var(--font-mono);
+}
+.native-portal .seg {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+  margin-bottom: 12px;
+}
+.native-portal .seg button {
+  padding: 7px 13px;
+  background: var(--bg-muted);
+  border: 0;
+  border-radius: 5px;
+  color: var(--fg-muted);
+  cursor: pointer;
+}
+.native-portal .seg button.active {
+  background: var(--accent-soft);
+  color: var(--brand-dark);
+}
+.native-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  padding: 17px 0;
+  border-bottom: 1px solid var(--divider);
+}
+.native-row:first-child {
+  padding-top: 0;
+}
+.native-row:last-child {
+  border: 0;
+}
+.native-row p {
+  margin: 7px 0;
+}
+.native-row a {
+  color: var(--accent);
+}
+.native-stats {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 20px;
+}
+.native-stat {
+  padding: 23px;
+}
+.native-stat span {
+  display: block;
+  color: var(--fg-muted);
+  font-size: 13px;
+}
+.native-stat strong {
+  display: block;
+  margin-top: 12px;
+  font-size: 32px;
+}
+.native-event {
+  border-bottom: 1px solid var(--divider);
+  padding: 16px 0;
+}
+.native-event summary {
+  cursor: pointer;
+}
+.native-portal pre,
+.native-modal pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  max-height: 400px;
+  overflow: auto;
+  background: var(--bg-muted);
+  padding: 15px;
+  border-radius: 6px;
+  font-size: 12px;
+}
+.native-modal {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  color: var(--fg);
+  padding: 0;
+  width: min(680px, 94vw);
+  max-height: 90vh;
+  overflow: auto;
+  box-shadow: var(--shadow-lg);
+}
+.native-modal::backdrop {
+  background: rgb(10 25 20 / 0.45);
+}
+.native-modal h2 {
+  font-size: 20px;
+  margin: 0;
+}
+.native-notifications {
+  position: fixed;
+  right: 20px;
+  top: 66px;
+  width: min(500px, 90vw);
+  z-index: 40;
+  box-shadow: var(--shadow-lg);
+}
+.native-portal .mobile-menu {
+  display: none;
+}
+.native-portal .native-legacy {
+  --text: var(--fg);
+  --muted: var(--fg-muted);
+  --panel: var(--surface);
+}
+.native-legacy table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.native-legacy td,
+.native-legacy th {
+  padding: 12px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.native-legacy button {
+  cursor: pointer;
+}
+.native-portal .banner.err {
+  padding: 12px;
+  margin: 12px 0;
+  color: var(--err);
+  background: var(--err-soft);
+  border-radius: 6px;
+}
+.native-portal .empty {
+  padding: 35px 20px;
+  color: var(--fg-muted);
+  text-align: center;
+}
+@media (max-width: 1000px) {
+  .native-portal .sidebar {
+    width: 220px;
+  }
+  .native-main {
+    margin-left: 220px;
+  }
+  .native-content {
+    padding: 20px;
+  }
+  .native-page-head {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .native-portal .topbar {
+    padding: 0 20px;
+  }
+  .native-portal .breadcrumbs {
+    display: none;
+  }
+}
+@media (max-width: 700px) {
+  .native-portal .sidebar {
+    transform: translateX(-100%);
+  }
+  .native-portal.nav-open .sidebar {
+    transform: translateX(0);
+    box-shadow: var(--shadow-lg);
+    top: 60px;
+  }
+  .native-main {
+    margin-left: 0;
+  }
+  .native-portal .mobile-menu {
+    display: block;
+  }
+  .native-stats,
+  .native-form-grid {
+    grid-template-columns: 1fr;
+  }
+  .native-row {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .native-content {
+    padding: 16px;
+  }
+  .native-portal .card-body {
+    padding: 16px;
+  }
+  .native-portal .topbar {
+    padding: 0 12px;
+  }
+  .native-portal .topbar .chip {
+    display: none;
+  }
+}
+.native-portal .nav-section {
+  padding: 0;
+  border: 0;
+}
+.native-portal .nav-item {
+  text-transform: none;
+  letter-spacing: 0;
+}
+.native-portal .brand {
+  background: transparent;
+  margin: 0;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--fg);
+}
+.native-portal .user {
+  flex-direction: row;
+  text-align: left;
+}
+.native-portal .user strong {
+  color: var(--fg);
+}
+.native-portal .btn.primary,
+.native-modal .btn.primary {
+  background: var(--accent);
+  color: var(--accent-fg);
+  border-color: var(--accent);
+}
+.native-portal fieldset {
+  border: 0;
+  padding: 0;
+  margin: 18px 0;
+}

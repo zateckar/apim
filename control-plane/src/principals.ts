@@ -41,9 +41,9 @@ export interface PrincipalRow {
   last_login_at: string | null;
 }
 
-export interface TeamMembership {
-  teamId: string;
-  teamName: string;
+export interface ApplicationMembership {
+  applicationId: string;
+  applicationName: string;
   /** `idp` came from a token's group claim; `local` was granted here (D33). */
   source: "idp" | "local";
   grantedBy: string | null;
@@ -99,18 +99,18 @@ export function adminFrom(row: PrincipalRow): "local" | "idp" | "both" | null {
   return null;
 }
 
-export function teamIdsOf(db: DB, userId: string): string[] {
+export function applicationIdsOf(db: DB, userId: string): string[] {
   return db
-    .query<{ team_id: string }, [string]>("SELECT team_id FROM membership WHERE user_id = ?")
+    .query<{ application_id: string }, [string]>("SELECT application_id FROM membership WHERE user_id = ?")
     .all(userId)
-    .map((row) => row.team_id);
+    .map((row) => row.application_id);
 }
 
-export function membershipsOf(db: DB, userId: string): TeamMembership[] {
+export function membershipsOf(db: DB, userId: string): ApplicationMembership[] {
   return db
     .query<
       {
-        team_id: string;
+        application_id: string;
         name: string;
         source: "idp" | "local";
         granted_by: string | null;
@@ -119,14 +119,14 @@ export function membershipsOf(db: DB, userId: string): TeamMembership[] {
       },
       [string]
     >(
-      `SELECT m.team_id, t.name, m.source, m.granted_by, m.granted_at, t.source_group
-         FROM membership m JOIN team t ON t.id = m.team_id
+      `SELECT m.application_id, t.name, m.source, m.granted_by, m.granted_at, t.source_group
+         FROM membership m JOIN application t ON t.id = m.application_id
         WHERE m.user_id = ? ORDER BY t.name`,
     )
     .all(userId)
     .map((row) => ({
-      teamId: row.team_id,
-      teamName: row.name,
+      applicationId: row.application_id,
+      applicationName: row.name,
       source: row.source,
       grantedBy: row.granted_by,
       grantedAt: row.granted_at,
@@ -136,7 +136,7 @@ export function membershipsOf(db: DB, userId: string): TeamMembership[] {
 
 /**
  * The directory's answer to "who is this", resolved **live** rather than from the session's
- * snapshot (D35). It is why an admin's edit to somebody's role or teams takes effect on that
+ * snapshot (D35). It is why an admin's edit to somebody's role or applications takes effect on that
  * person's next request instead of on their next sign-in, with no invalidation machinery to get
  * wrong. Two indexed reads on tables with tens of rows.
  */
@@ -152,7 +152,7 @@ export function userOf(db: DB, row: PrincipalRow): User {
     id: row.id,
     name: row.display_name,
     roles: admin ? ["admin"] : ["member"],
-    teams: teamIdsOf(db, row.id),
+    applications: applicationIdsOf(db, row.id),
     isAdmin: admin,
   };
 }
@@ -284,31 +284,31 @@ export function assertStillReachable(
 export function grantMembership(
   db: DB,
   userId: string,
-  teamId: string,
+  applicationId: string,
   source: "idp" | "local",
   grantedBy: string,
 ): void {
   db.run(
-    `INSERT INTO membership (team_id, user_id, source, granted_by, granted_at)
+    `INSERT INTO membership (application_id, user_id, source, granted_by, granted_at)
      VALUES (?, ?, ?, ?, ?)
-     ON CONFLICT (team_id, user_id) DO UPDATE SET
+     ON CONFLICT (application_id, user_id) DO UPDATE SET
        -- A local grant outranks an IdP one: it is a decision somebody made here, and letting the
        -- next claim sync silently downgrade its provenance would lose that (D33).
        source     = CASE WHEN membership.source = 'local' OR excluded.source = 'local'
                          THEN 'local' ELSE 'idp' END,
        granted_by = COALESCE(membership.granted_by, excluded.granted_by),
        granted_at = COALESCE(membership.granted_at, excluded.granted_at)`,
-    [teamId, userId, source, grantedBy, nowIso()],
+    [applicationId, userId, source, grantedBy, nowIso()],
   );
 }
 
-export function revokeMembership(db: DB, userId: string, teamId: string): boolean {
+export function revokeMembership(db: DB, userId: string, applicationId: string): boolean {
   const before = db
     .query<{ n: number }, [string, string]>(
-      "SELECT COUNT(*) AS n FROM membership WHERE user_id = ? AND team_id = ?",
+      "SELECT COUNT(*) AS n FROM membership WHERE user_id = ? AND application_id = ?",
     )
-    .get(userId, teamId)!.n;
-  db.run("DELETE FROM membership WHERE user_id = ? AND team_id = ?", [userId, teamId]);
+    .get(userId, applicationId)!.n;
+  db.run("DELETE FROM membership WHERE user_id = ? AND application_id = ?", [userId, applicationId]);
   return before > 0;
 }
 
@@ -317,29 +317,29 @@ export function revokeMembership(db: DB, userId: string, teamId: string): boolea
  * granted ones alone (D33). Called on every OIDC sign-in and every claim re-read, which is how
  * design §9's "a group removal in the IdP takes effect at the next refresh" happens.
  */
-export function syncIdpMemberships(db: DB, userId: string, teamIds: string[]): void {
-  const wanted = new Set(teamIds);
+export function syncIdpMemberships(db: DB, userId: string, applicationIds: string[]): void {
+  const wanted = new Set(applicationIds);
   const current = db
-    .query<{ team_id: string; source: string }, [string]>(
-      "SELECT team_id, source FROM membership WHERE user_id = ?",
+    .query<{ application_id: string; source: string }, [string]>(
+      "SELECT application_id, source FROM membership WHERE user_id = ?",
     )
     .all(userId);
   for (const row of current) {
-    if (row.source === "idp" && !wanted.has(row.team_id)) {
-      db.run("DELETE FROM membership WHERE user_id = ? AND team_id = ?", [userId, row.team_id]);
+    if (row.source === "idp" && !wanted.has(row.application_id)) {
+      db.run("DELETE FROM membership WHERE user_id = ? AND application_id = ?", [userId, row.application_id]);
     }
   }
-  for (const teamId of wanted) grantMembership(db, userId, teamId, "idp", "idp-sync");
+  for (const applicationId of wanted) grantMembership(db, userId, applicationId, "idp", "idp-sync");
 }
 
 // --------------------------------------------------------------------------- the dev directory
 
-export const TEAM_PLATFORM = "team_platform";
-export const TEAM_ORDERS = "team_orders";
+export const APPLICATION_PLATFORM = "application_platform";
+export const APPLICATION_ORDERS = "application_orders";
 
-export const DEV_TEAMS = [
-  { id: TEAM_PLATFORM, name: "Platform APIs", source_group: "SG-APIM-PLATFORM" },
-  { id: TEAM_ORDERS, name: "Orders", source_group: "SG-APIM-ORDERS" },
+export const DEV_APPLICATIONS = [
+  { id: APPLICATION_PLATFORM, name: "Platform APIs", source_group: "SG-APIM-PLATFORM" },
+  { id: APPLICATION_ORDERS, name: "Orders", source_group: "SG-APIM-ORDERS" },
 ];
 
 /**
@@ -347,25 +347,25 @@ export const DEV_TEAMS = [
  * they predate the directory: every v1–v4 database records `alice`, `pavel` and `clara` as the
  * authors of its revisions and releases, and renaming them would rewrite history `[P1-04]`.
  */
-export const DEV_USERS: Array<{ id: string; name: string; role: Role; teams: string[] }> = [
-  { id: "alice", name: "Alice Admin", role: "admin", teams: [TEAM_PLATFORM, TEAM_ORDERS] },
-  { id: "pavel", name: "Pavel Publisher", role: "member", teams: [TEAM_PLATFORM] },
-  { id: "clara", name: "Clara Consumer", role: "member", teams: [TEAM_ORDERS] },
+export const DEV_USERS: Array<{ id: string; name: string; role: Role; applications: string[] }> = [
+  { id: "alice", name: "Alice Admin", role: "admin", applications: [APPLICATION_PLATFORM, APPLICATION_ORDERS] },
+  { id: "pavel", name: "Pavel Publisher", role: "member", applications: [APPLICATION_PLATFORM] },
+  { id: "clara", name: "Clara Consumer", role: "member", applications: [APPLICATION_ORDERS] },
 ];
 
 /**
- * The three development principals, their two teams and their memberships — idempotent, and a
+ * The three development principals, their two applications and their memberships — idempotent, and a
  * no-op unless the `dev` provider is enabled. Called from `createApp`, so `AUTH_PROVIDERS=dev` on
  * an empty database is self-sufficient and does not need the seed script to have run first.
  */
 export function ensureDevDirectory(app: App): void {
   if (!app.config.authProviders.includes("dev")) return;
   const { db } = app;
-  for (const team of DEV_TEAMS) {
+  for (const application of DEV_APPLICATIONS) {
     db.run(
-      `INSERT INTO team (id, name, source_group) VALUES (?, ?, ?)
+      `INSERT INTO application (id, name, source_group) VALUES (?, ?, ?)
        ON CONFLICT (id) DO UPDATE SET name = excluded.name, source_group = excluded.source_group`,
-      [team.id, team.name, team.source_group],
+      [application.id, application.name, application.source_group],
     );
   }
   for (const user of DEV_USERS) {
@@ -379,6 +379,6 @@ export function ensureDevDirectory(app: App): void {
          disabled_at  = NULL`,
       [user.id, user.id, user.id, user.name, user.role, nowIso()],
     );
-    for (const teamId of user.teams) grantMembership(db, user.id, teamId, "local", "dev-provider");
+    for (const applicationId of user.applications) grantMembership(db, user.id, applicationId, "local", "dev-provider");
   }
 }

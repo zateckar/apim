@@ -9,7 +9,7 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { loadConfig } from "../control-plane/src/config.ts";
 import { DEV_USERS } from "../control-plane/src/principals.ts";
-import { seedBaseline, SEED_TEAMS } from "../control-plane/src/seed.ts";
+import { seedBaseline, SEED_APPLICATIONS } from "../control-plane/src/seed.ts";
 import { createApp } from "../control-plane/src/server.ts";
 
 const config = loadConfig({ authProviders: ["dev"] });
@@ -99,7 +99,7 @@ for (const instance of instances) {
 }
 
 console.log(
-  `seeded ${SEED_TEAMS.length} teams, ${DEV_USERS.length} dev users, ` +
+  `seeded ${SEED_APPLICATIONS.length} applications, ${DEV_USERS.length} dev users, ` +
     `${config.promotionChain.length} environments (${config.promotionChain.join(" -> ")})`,
 );
 console.log("");

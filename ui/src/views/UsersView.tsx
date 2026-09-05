@@ -3,7 +3,7 @@ import {
   api,
   type DirectoryUser,
   type DirectoryUserDetail,
-  type TeamRow,
+  type ApplicationRow,
   type User,
 } from "../api";
 import {
@@ -107,7 +107,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
                 <th>Name</th>
                 <th>Signs in with</th>
                 <th>Can act as</th>
-                <th>Teams</th>
+                <th>Applications</th>
                 <th>Last signed in</th>
               </tr>
             </thead>
@@ -135,7 +135,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
                     )}
                     {row.adminFrom === "idp" && <span className="muted small"> (from the directory)</span>}
                   </td>
-                  <td>{row.teams}</td>
+                  <td>{row.applications}</td>
                   <td className="muted">
                     {row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleDateString() : "never"}
                   </td>
@@ -193,7 +193,7 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
 /** One account, with everything an administrator can do to it. */
 export function UserView({ userId, me }: { userId: string; me: User }) {
   const detail = useAsync(() => api.get<DirectoryUserDetail>(`/api/users/${userId}`), [userId]);
-  const teams = useAsync(() => api.get<{ items: TeamRow[] }>("/api/teams"), []);
+  const applications = useAsync(() => api.get<{ items: ApplicationRow[] }>("/api/applications"), []);
   const action = useAction();
 
   if (detail.loading) return <Skeleton rows={6} />;
@@ -252,7 +252,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
 
       <Card
         title="What they can do"
-        hint="Administrator means every team, plus gateways, global policy, the trust store, the audit log and this directory."
+        hint="Administrator means every application, plus gateways, global policy, the trust store, the audit log and this directory."
       >
         <p>
           Currently{" "}
@@ -295,29 +295,29 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
       </Card>
 
       <Card
-        title="Teams"
-        hint="A team granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
+        title="Applications"
+        hint="A application granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
       >
         {row.memberships.length === 0 ? (
           <EmptyState
-            title="Not in any team"
+            title="Not in any application"
             detail="They can read the catalog and subscribe, but cannot publish or change anything."
-            action={<Link to="/teams">See the teams →</Link>}
+            action={<Link to="/applications">See the applications →</Link>}
           />
         ) : (
           <table>
             <thead>
               <tr>
-                <th>Team</th>
+                <th>Application</th>
                 <th>How</th>
                 <th />
               </tr>
             </thead>
             <tbody>
               {row.memberships.map((membership) => (
-                <tr key={membership.teamId}>
+                <tr key={membership.applicationId}>
                   <td>
-                    <Link to={`/teams/${membership.teamId}`}>{membership.teamName}</Link>
+                    <Link to={`/applications/${membership.applicationId}`}>{membership.applicationName}</Link>
                   </td>
                   <td className="muted">
                     {membership.source === "idp" ? (
@@ -338,7 +338,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
                       onClick={async () => {
                         const ok = await action.run(() =>
                           api.del<{ note: string | null }>(
-                            `/api/users/${row.id}/teams/${membership.teamId}`,
+                            `/api/users/${row.id}/applications/${membership.applicationId}`,
                           ),
                         );
                         if (ok) reload();
@@ -352,13 +352,13 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             </tbody>
           </table>
         )}
-        <GrantTeam
+        <GrantApplication
           userId={row.id}
-          already={row.memberships.map((m) => m.teamId)}
-          teams={teams.data?.items ?? []}
+          already={row.memberships.map((m) => m.applicationId)}
+          applications={applications.data?.items ?? []}
           onGranted={reload}
         />
-        <Notice kind="error">{teams.error}</Notice>
+        <Notice kind="error">{applications.error}</Notice>
       </Card>
 
       <Card title="Where they are signed in">
@@ -455,19 +455,19 @@ function EditLocal({
   );
 }
 
-function GrantTeam({
+function GrantApplication({
   userId,
   already,
-  teams,
+  applications,
   onGranted,
 }: {
   userId: string;
   already: string[];
-  teams: TeamRow[];
+  applications: ApplicationRow[];
   onGranted: () => void;
 }) {
-  const available = teams.filter((team) => !already.includes(team.id));
-  const [teamId, setTeamId] = useState("");
+  const available = applications.filter((application) => !already.includes(application.id));
+  const [applicationId, setApplicationId] = useState("");
   const action = useAction();
   if (available.length === 0) return null;
 
@@ -475,23 +475,23 @@ function GrantTeam({
     <div className="row">
       <Notice kind="error">{action.error}</Notice>
       <div className="field">
-        <label htmlFor="grant-team">Add to a team</label>
-        <select id="grant-team" value={teamId} onChange={(event) => setTeamId(event.target.value)}>
+        <label htmlFor="grant-application">Add to a application</label>
+        <select id="grant-application" value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
           <option value="">Choose one…</option>
-          {available.map((team) => (
-            <option key={team.id} value={team.id}>
-              {team.name}
+          {available.map((application) => (
+            <option key={application.id} value={application.id}>
+              {application.name}
             </option>
           ))}
         </select>
       </div>
       <button
         className="ghost"
-        disabled={!teamId || action.busy}
+        disabled={!applicationId || action.busy}
         onClick={async () => {
-          const ok = await action.run(() => api.put(`/api/users/${userId}/teams/${teamId}`));
+          const ok = await action.run(() => api.put(`/api/users/${userId}/applications/${applicationId}`));
           if (ok) {
-            setTeamId("");
+            setApplicationId("");
             onGranted();
           }
         }}

@@ -34,18 +34,18 @@ export const ACTIONS = {
 export type Action = keyof typeof ACTIONS;
 
 /**
- * `owner` is what the sentence names. Passing the team's display name rather than its id is
- * deliberate: "the Orders team" is a group somebody can go and find, `team_orders` is not.
+ * `owner` is what the sentence names. Passing the application's display name rather than its id is
+ * deliberate: "the Orders application" is a group somebody can go and find, `application_orders` is not.
  */
 export function permit(
   action: Action,
   capabilities: string[] | undefined,
-  owner?: { team?: string | null },
+  owner?: { application?: string | null },
 ): Permission {
   const { capability, verb } = ACTIONS[action];
   if (capabilities?.includes(capability)) return ALLOWED;
-  const team = owner?.team ? `the ${owner.team} team` : "the owning team";
-  return { enabled: false, reason: `Only a member of ${team}, or an administrator, can ${verb}.` };
+  const application = owner?.application ? `the ${owner.application} application` : "the owning application";
+  return { enabled: false, reason: `Only a member of ${application}, or an administrator, can ${verb}.` };
 }
 
 /**

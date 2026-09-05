@@ -79,7 +79,7 @@ export function ApiDetailView({
   if (detail.error) return <Notice kind="error">{detail.error}</Notice>;
   if (!detail.data) return <Skeleton rows={6} />;
   const resource = detail.data;
-  const owner = { team: resource.teamId };
+  const owner = { application: resource.applicationId };
   const canEdit = permit("edit", resource.capabilities, owner);
   const canPublish = permit("publish", resource.capabilities, owner);
   const canPolicy = permit("policy", resource.capabilities, owner);
@@ -119,7 +119,7 @@ export function ApiDetailView({
             ) : (
               <>Not published anywhere yet.</>
             )}{" "}
-            · Team <strong>{resource.teamId}</strong> ·{" "}
+            · Application <strong>{resource.applicationId}</strong> ·{" "}
             <Link to={`/catalog/${resource.id}`}>See it as a consumer does</Link>
           </p>
         </div>
@@ -698,7 +698,7 @@ function Definition({
           what={`Delete ${resource.name} ${resource.apiVersion}`}
           name={resource.name}
           consequence="Every gateway stops serving it at its next poll, every subscription to it stops working, and its revisions and release history go with it."
-          permission={canEdit ? ALLOWED : { enabled: false, reason: "Only the owning team, or an administrator, can delete this." }}
+          permission={canEdit ? ALLOWED : { enabled: false, reason: "Only the owning application, or an administrator, can delete this." }}
           busy={editAction.busy}
           error={editAction.error}
           onConfirm={async () => {
@@ -798,7 +798,7 @@ function Listing({
             <label>Visibility</label>
             <select value={visibility} onChange={(event) => setVisibility(event.target.value)}>
               <option value="listed">listed — anyone can find it</option>
-              <option value="unlisted">unlisted — only the owning team sees it</option>
+              <option value="unlisted">unlisted — only the owning application sees it</option>
             </select>
           </div>
         </div>
@@ -1053,7 +1053,7 @@ function Publish({
           consequence={`The ${environment} gateways stop serving it on their next poll and every caller there starts getting 404s. Publishing again brings it back.`}
           permission={
             !canEdit
-              ? { enabled: false, reason: "Only the owning team can withdraw this API." }
+              ? { enabled: false, reason: "Only the owning application can withdraw this API." }
               : !live
                 ? { enabled: false, reason: `Nothing of this API is live in ${environment}.` }
                 : ALLOWED

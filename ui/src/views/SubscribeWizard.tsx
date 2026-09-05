@@ -95,7 +95,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
             <ChooseApplication
               applications={applications.data.items}
               value={applicationId}
-              teamId={session.team}
+              applicationId={session.application}
               onChange={setApplicationId}
               onCreated={applications.reload}
               onNext={() => setStep(1)}
@@ -183,14 +183,14 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
 function ChooseApplication({
   applications,
   value,
-  teamId,
+  applicationId,
   onChange,
   onCreated,
   onNext,
 }: {
   applications: Application[];
   value: string;
-  teamId: string;
+  applicationId: string;
   onChange: (next: string) => void;
   onCreated: () => void;
   onNext: () => void;
@@ -223,7 +223,7 @@ function ChooseApplication({
                   onChange={() => onChange(application.id)}
                 />
                 <strong>{application.name}</strong>
-                <span className="muted small">{application.teamId}</span>
+                <span className="muted small">{application.applicationId}</span>
               </label>
             </li>
           ))}
@@ -238,7 +238,7 @@ function ChooseApplication({
           disabled={action.busy || name.trim().length === 0}
           onClick={async () => {
             const ok = await action.run(async () => {
-              const created = await api.post<Application>("/api/applications", { name, teamId });
+              const created = await api.post<Application>("/api/applications", { name, applicationId });
               onChange(created.id);
               setName("");
             });

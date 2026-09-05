@@ -11,6 +11,7 @@
     "seed": "bun run scripts/seed.ts",
     "test": "bun test ./test && cd ui && bun test ./test",
     "test:ui": "cd ui && bun test ./test",
+    "test:e2e": "playwright test",
     "typecheck": "tsc --noEmit && cd ui && bun run typecheck",
     "perf": "bun run tools/loadgen/index.ts",
     "capacity": "bun run tools/capacity/index.ts",
@@ -20,6 +21,7 @@
     "demo": "pwsh -File scripts/demo.ps1"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/bun": "^1.4.0",
     "typescript": "^7.0.2"
   }

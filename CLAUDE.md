@@ -51,6 +51,7 @@ tools/          the local upstreams (REST/SOAP/SSE/WebSocket, MCP, A2A) and the 
 scripts/        seed · stack · demo · mint-instance · schedule-perf
 test/           bun test — control plane, data plane, shared
 ui/test/        bun test — the parts of the interface that are decisions rather than markup
+e2e/            Playwright — read-only smoke tests against a running stack
 openspec/       the behavioural source of truth (see above)
 docs/           design · deployment · walkthrough · plans and reviews · generated reports
 ```
@@ -92,6 +93,12 @@ bun run test      # both, in that order
 bun run typecheck # both projects
 bun run test:e2e  # Playwright smoke tests against a running stack
 ```
+
+The smoke suite needs a browser once (`bunx playwright install chromium`) and a stack already up. It
+signs in through `dev` or `local` — never OIDC — and is **read-only**: it navigates and asserts,
+and nothing in it publishes, promotes, subscribes or deletes, because the stack it runs against is
+usually shared. Behaviour that has to change something belongs in `test/`, against a control plane
+the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSWORD`.
 
 ## House rules
 

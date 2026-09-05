@@ -13,6 +13,7 @@ import { can } from "./auth.ts";
 import { newId, nowIso } from "./db.ts";
 import { emitIntegration, requestApproval } from "./integrations.ts";
 import { writeAudit } from "./audit.ts";
+import { domainError } from "../../shared/domains.ts";
 interface Topic {
   id: string;
   application_id: string;
@@ -22,6 +23,8 @@ interface Topic {
   description: string;
   state: string;
   proxy_enabled: number;
+  domain: string | null;
+  subdomain: string | null;
 }
 function topic(ctx: Ctx): Topic {
   const t = ctx.app.db
@@ -52,6 +55,8 @@ export function registerKafkaRoutes(router: Router) {
         name?: string;
         partitions?: number;
         description?: string;
+        domain?: string;
+        subdomain?: string;
       }>(ctx);
     assertCan(u, body.applicationId, "create a topic");
     if (
@@ -66,6 +71,14 @@ export function registerKafkaRoutes(router: Router) {
     const partitions = body.partitions ?? 3;
     if (!Number.isInteger(partitions) || partitions < 1 || partitions > 100)
       throw badRequest("partitions: 1–100");
+    // A topic is a catalog item like any other, so it is classified like any other. There is no
+    // path to prefix here — a topic is addressed by name on a broker — but the domain is how it is
+    // found, and an unclassified topic is one nobody browsing by domain will ever see.
+    const domain = body.domain?.trim() || null;
+    const subdomain = body.subdomain?.trim() || null;
+    if (!domain) throw badRequest("domain: required — every catalog item belongs to a domain");
+    const problem = domainError(domain, subdomain);
+    if (problem) throw badRequest(problem);
     if (
       ctx.app.db
         .query("SELECT id FROM kafka_topic WHERE environment=? AND name=?")
@@ -75,7 +88,7 @@ export function registerKafkaRoutes(router: Router) {
     const id = newId("topic");
     ctx.app.db.transaction(() => {
       ctx.app.db.run(
-        "INSERT INTO kafka_topic(id,application_id,environment,name,partitions,description,created_at) VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO kafka_topic(id,application_id,environment,name,partitions,description,domain,subdomain,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
         [
           id,
           body.applicationId!,
@@ -83,6 +96,8 @@ export function registerKafkaRoutes(router: Router) {
           body.name!,
           partitions,
           body.description ?? "",
+          domain,
+          subdomain,
           nowIso(),
         ],
       );
@@ -114,6 +129,8 @@ export function registerKafkaRoutes(router: Router) {
       description?: string;
       partitions?: number;
       proxyEnabled?: boolean;
+      domain?: string;
+      subdomain?: string | null;
     }>(ctx);
     if (t.state === "deleted") throw conflict("topic was deleted");
     if (
@@ -123,8 +140,16 @@ export function registerKafkaRoutes(router: Router) {
         body.partitions > 100)
     )
       throw badRequest("partitions may only increase, up to 100");
+    // Reclassifying is free here: a topic is addressed by its name on the broker, so moving it
+    // between domains moves where it is *found*, not where it answers.
+    const domain = body.domain === undefined ? t.domain : body.domain.trim() || null;
+    const subdomain =
+      body.subdomain === undefined ? t.subdomain : body.subdomain?.trim() || null;
+    if (!domain) throw badRequest("domain: required — every catalog item belongs to a domain");
+    const problem = domainError(domain, subdomain);
+    if (problem) throw badRequest(problem);
     ctx.app.db.run(
-      "UPDATE kafka_topic SET description=?,partitions=?,proxy_enabled=? WHERE id=?",
+      "UPDATE kafka_topic SET description=?,partitions=?,proxy_enabled=?,domain=?,subdomain=? WHERE id=?",
       [
         body.description ?? t.description,
         body.partitions ?? t.partitions,
@@ -133,6 +158,8 @@ export function registerKafkaRoutes(router: Router) {
           : body.proxyEnabled
             ? 1
             : 0,
+        domain,
+        subdomain,
         t.id,
       ],
     );

@@ -17,6 +17,7 @@ import { Subscriptions, Approvals, Integrations, Kafka } from "./processes";
 import { ProductsView } from "../views/ProductsView";
 import { TrustView } from "../views/TrustView";
 import { GatewayView } from "../views/GatewayView";
+import { GatewayAdminView } from "../views/GatewayAdminView";
 
 /**
  * The sidebar, in three parts: the tabs that belong to the selected application, and the two
@@ -47,19 +48,23 @@ export const APPLICATION_NAV = [
     label: "Other",
     items: [
       ["certificates", "Certificates"],
-      ["integrations", "Integrations"],
+      // Not "Integrations", which read as a development slug for the thing this portal *is*.
+      // This screen is the console for the surrounding systems — LeanIX, the directory, FixMe —
+      // every one of which is simulated in this phase, which the chrome already says.
+      ["integrations", "External systems"],
       ["activity", "Activity"],
     ],
   },
 ] as const;
 export const GLOBAL_NAV = [
   ["discover", "Catalog"],
-  ["health", "Health Status"],
-  ["fixme", "FixMe"],
+  ["fixme", "FixMe diagnostics"],
   ["how", "How this works"],
   ["account", "Your account"],
 ] as const;
 export const ADMIN_NAV = [
+  ["fleet", "Health Status"],
+  ["gateways", "Gateways"],
   ["applications", "Applications"],
   ["users", "People"],
   ["telemetry", "Telemetry"],
@@ -115,12 +120,16 @@ const titles: Record<string, string> = {
   "kafka-proxy": "Kafka REST Proxy",
   certificates: "Certificates",
   approvals: "Approvals",
-  integrations: "Integrations",
+  integrations: "External systems",
   activity: "Activity",
   publish: "Publish an API",
   discover: "Catalog",
+  // `/fleet` is the address in the route table and in every attention row; `/health` is what the
+  // shell used to link. Both resolve here, because a bookmark is not a reason to lose a screen.
+  fleet: "Health Status",
   health: "Health Status",
-  fixme: "FixMe",
+  gateways: "Gateways",
+  fixme: "FixMe diagnostics",
 };
 export function Portal({
   session: s,
@@ -351,6 +360,10 @@ export function Portal({
               id={resourceId}
               session={effective}
               operations={operations.data?.items ?? []}
+              // The live ticker, not the operation *count*: a subscription moving from `revoking`
+              // to `revoked` adds no operation, so the workspace's subscriptions tab sat on a
+              // transient state until a full reload (finding 6).
+              tick={tick}
             />
           ) : section === "publish" || parts[2] === "publish" ? (
             <Publish session={effective} />
@@ -396,9 +409,34 @@ export function Portal({
             <Panel title="Changes and deployment progress">
               <OperationList items={operations.data?.items ?? []} />
             </Panel>
-          ) : section === "health" ? (
+          ) : section === "health" || section === "fleet" ? (
             <div className="native-legacy">
-              <GatewayView user={s.user} meta={s.meta} />
+              {s.user.isAdmin ? (
+                <GatewayView user={s.user} meta={s.meta} />
+              ) : (
+                <Panel title="Health Status">
+                  <p>
+                    What each gateway's replicas are running is an
+                    administrator's view. Whether <em>your</em> API is live, and
+                    where, is on its own page and on the dashboard.
+                  </p>
+                </Panel>
+              )}
+            </div>
+          ) : section === "gateways" ? (
+            <div className="native-legacy">
+              {s.user.isAdmin ? (
+                <GatewayAdminView />
+              ) : (
+                <Panel title="Gateways">
+                  <p>
+                    Adding a gateway, publishing its hostname and minting a
+                    replica's token are administrator actions. What each gateway
+                    is currently serving is on Health Status, which is open to
+                    everybody.
+                  </p>
+                </Panel>
+              )}
             </div>
           ) : (
             <div className="native-legacy">

@@ -167,7 +167,7 @@ async function poolWorld(
   return {
     dp,
     key: api.key!,
-    basePath,
+    basePath: api.basePath,
     stop: () => {
       dp.stop();
       cpServer.stop();

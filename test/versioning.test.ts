@@ -44,7 +44,7 @@ describe("versions are resources", () => {
       const v2 = await created.json();
       expect(v2.name).toBe("petstore");
       expect(v2.apiVersion).toBe("v2");
-      expect(v2.proposedBasePath).toBe("/petstore/v2");
+      expect(v2.proposedBasePath).toBe("/it/solution/petstore/v2");
 
       // A new contract line: rev 1 of its own, copied from v1's newest revision.
       await cp.call("PUT", `/api/resources/${v2.id}/binding`, {
@@ -64,8 +64,8 @@ describe("versions are resources", () => {
       const dp = makeDp(cpServer.url, cp.token, cp.dir);
       try {
         await dp.start();
-        const one = await dp.fetchHttp(new Request("http://gw/petstore/v1/store/inventory"), "127.0.0.1");
-        const two = await dp.fetchHttp(new Request("http://gw/petstore/v2/store/inventory"), "127.0.0.1");
+        const one = await dp.fetchHttp(new Request("http://gw/it/solution/petstore/v1/store/inventory"), "127.0.0.1");
+        const two = await dp.fetchHttp(new Request("http://gw/it/solution/petstore/v2/store/inventory"), "127.0.0.1");
         expect(one.status).toBe(200);
         expect(two.status).toBe(200);
 
@@ -73,8 +73,8 @@ describe("versions are resources", () => {
         expect(backend.requests).toHaveLength(2);
         expect(backend.requests[0]!.path).toBe("/store/inventory");
         expect(dp.client.table!.routes.map((r) => r.basePath).sort()).toEqual([
-          "/petstore/v1",
-          "/petstore/v2",
+          "/it/solution/petstore/v1",
+          "/it/solution/petstore/v2",
         ]);
         expect(dp.client.table!.routes.map((r) => r.apiVersion).sort()).toEqual(["v1", "v2"]);
       } finally {
@@ -102,7 +102,7 @@ describe("versions are resources", () => {
     ).json();
     await cp.call("PUT", `/api/resources/${v2.id}/routes`, {
       cookie: v1.pavel,
-      body: { environment: "dev", host: "*", basePath: "/orders/v2" },
+      body: { environment: "dev", host: "*", basePath: "/it/solution/orders/v2" },
     });
     await cp.call("PUT", `/api/resources/${v2.id}/binding`, {
       cookie: v1.pavel,
@@ -140,12 +140,18 @@ describe("versions are resources", () => {
     const squatter = await (
       await cp.call("POST", "/api/resources", {
         cookie: v1.pavel,
-        body: { kind: "rest", name: "squatter", applicationId: "application_platform" },
+        body: {
+          kind: "rest",
+          name: "squatter",
+          applicationId: "application_platform",
+          domain: "IT",
+          subdomain: "Solution",
+        },
       })
     ).json();
     await cp.call("PUT", `/api/resources/${squatter.id}/routes`, {
       cookie: v1.pavel,
-      body: { environment: "dev", host: "*", basePath: "/widgets/v2" },
+      body: { environment: "dev", host: "*", basePath: "/it/solution/widgets/v2" },
     });
 
     const created = await (
@@ -229,7 +235,7 @@ describe("lifecycle (design section 4.2)", () => {
       try {
         await dp.start();
         const ok = await dp.fetchHttp(
-          new Request("http://gw/sunsetting/pet", { headers: { "x-api-key": api.key! } }),
+          new Request("http://gw/it/solution/sunsetting/pet", { headers: { "x-api-key": api.key! } }),
           "127.0.0.1",
         );
         expect(ok.status).toBe(200);
@@ -237,7 +243,7 @@ describe("lifecycle (design section 4.2)", () => {
         expect(ok.headers.get("sunset")).toBe("Fri, 01 Jan 2027 00:00:00 GMT");
 
         // A consumer being rejected still needs to know the version is going away.
-        const denied = await dp.fetchHttp(new Request("http://gw/sunsetting/pet"), "127.0.0.1");
+        const denied = await dp.fetchHttp(new Request("http://gw/it/solution/sunsetting/pet"), "127.0.0.1");
         expect(denied.status).toBe(401);
         expect(denied.headers.get("deprecation")).toBe("true");
         expect(denied.headers.get("sunset")).toBe("Fri, 01 Jan 2027 00:00:00 GMT");

@@ -360,7 +360,7 @@ describe("the gateway verifies through the anchor (G4)", () => {
     const dp = makeDp(served.url, cp.token, cp.dir);
     const call = () =>
       dp.fetchHttp(
-        new Request(`http://gw/${api.name}/store/inventory`, { headers: { "x-api-key": api.key! } }),
+        new Request(`http://gw${api.basePath}/store/inventory`, { headers: { "x-api-key": api.key! } }),
         "127.0.0.1",
       );
 
@@ -435,7 +435,7 @@ describe("the gateway verifies through the anchor (G4)", () => {
     const dp = makeDp(served.url, cp.token, cp.dir);
     const call = () =>
       dp.fetchHttp(
-        new Request(`http://gw/${api.name}/store/inventory`, { headers: { "x-api-key": api.key! } }),
+        new Request(`http://gw${api.basePath}/store/inventory`, { headers: { "x-api-key": api.key! } }),
         "127.0.0.1",
       );
 
@@ -531,7 +531,7 @@ describe("the gateway verifies through the anchor (G4)", () => {
     const dp = makeDp(served.url, cp.token, cp.dir);
     const call = () =>
       dp.fetchHttp(
-        new Request(`http://gw/${api.name}/store/inventory`, { headers: { "x-api-key": api.key! } }),
+        new Request(`http://gw${api.basePath}/store/inventory`, { headers: { "x-api-key": api.key! } }),
         "127.0.0.1",
       );
     try {
@@ -581,7 +581,7 @@ describe("the gateway verifies through the anchor (G4)", () => {
       await dp.start();
       expect(dp.client.table!.trust.liveCount()).toBe(1);
       const response = await dp.fetchHttp(
-        new Request(`http://gw/${api.name}/store/inventory`, { headers: { "x-api-key": api.key! } }),
+        new Request(`http://gw${api.basePath}/store/inventory`, { headers: { "x-api-key": api.key! } }),
         "127.0.0.1",
       );
       // A pin compares one certificate and does not consult the chain, so the anchor neither helps

@@ -115,20 +115,20 @@ describe("instance tokens", () => {
       try {
         await one.start();
         await two.start();
-        expect((await one.fetchHttp(new Request("http://gw/fleet/pet"), "127.0.0.1")).status).toBe(200);
-        expect((await two.fetchHttp(new Request("http://gw/fleet/pet"), "127.0.0.1")).status).toBe(200);
+        expect((await one.fetchHttp(new Request("http://gw/it/solution/fleet/pet"), "127.0.0.1")).status).toBe(200);
+        expect((await two.fetchHttp(new Request("http://gw/it/solution/fleet/pet"), "127.0.0.1")).status).toBe(200);
 
         await cp.call("DELETE", `/api/instances/${second.id}`, { cookie: alice });
         await two.client.pollOnce();
         await one.client.pollOnce();
 
         // Design section 8.5: revocation always fails closed; staleness never does.
-        const stopped = await two.fetchHttp(new Request("http://gw/fleet/pet"), "127.0.0.1");
+        const stopped = await two.fetchHttp(new Request("http://gw/it/solution/fleet/pet"), "127.0.0.1");
         expect(stopped.status).toBe(503);
         expect((await stopped.json()).detail).toContain("revoked");
         expect(two.health().decommissioned).toBe(true);
 
-        expect((await one.fetchHttp(new Request("http://gw/fleet/pet"), "127.0.0.1")).status).toBe(200);
+        expect((await one.fetchHttp(new Request("http://gw/it/solution/fleet/pet"), "127.0.0.1")).status).toBe(200);
       } finally {
         one.stop();
         two.stop();

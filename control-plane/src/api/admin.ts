@@ -3,7 +3,7 @@ import { RESOURCE_KINDS } from "../../../shared/types.ts";
 import { gatewayUrlsFor } from "../config.ts";
 import { displayNames } from "../principals.ts";
 import { badRequest, json, requireAdmin, notFound, Router } from "../router.ts";
-import { instancesFor } from "./fleet.ts";
+import { instancesFor, publicGatewayUrl } from "./fleet.ts";
 
 export function registerAdminRoutes(router: Router): void {
   /**
@@ -16,17 +16,31 @@ export function registerAdminRoutes(router: Router): void {
     const all = instancesFor(ctx);
     const environments = ctx.app.config.promotionChain.map((environment) => {
       const instances = all.filter((i) => i.environment === environment);
+      // Where a consumer calls this environment: the reverse proxy in front of the replicas. It
+      // is one address however many replicas there are, and it is the one every URL in the portal
+      // is built from.
+      const publicUrl = publicGatewayUrl(ctx.app.db, environment);
+      const replicas = gatewayUrlsFor(ctx.app.config, environment);
       return {
         environment,
         instances: instances.length,
         // What the UI multiplies a rate limit by: "calls x instances" (design section 5.7).
         liveInstances: instances.filter((i) => !i.stale && !i.revoked).length,
+        publicUrl,
         /**
          * Where the playground may send a request here, and what a copyable `curl` addresses
-         * (plan §11, review `[P2-07]`). Admin configuration, not a secret. An empty list means the
-         * console says the playground is unavailable in this environment and names `TARGETS_FILE`.
+         * (plan §11, review `[P2-07]`). An empty list means the console says the playground is
+         * unavailable in this environment and names `TARGETS_FILE`.
+         *
+         * Individual replica addresses are administration, not documentation: a consumer given one
+         * is holding a URL that stops working the next time the fleet is resized, and the proxy
+         * exists precisely so nobody has to. So a member is offered the published address only.
          */
-        gateways: gatewayUrlsFor(ctx.app.config, environment),
+        gateways: ctx.user?.isAdmin
+          ? replicas
+          : publicUrl
+            ? [{ label: environment, url: publicUrl }]
+            : replicas,
       };
     });
     return json({

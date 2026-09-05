@@ -30,6 +30,10 @@ async function publish(name = "sample") {
       name,
       productName: `${name}-product`,
       backendUrl: "http://127.0.0.1:9999",
+      // Every published thing is classified, and the domain is the first segment of its path, so
+      // this API answers on `/it/<name>` rather than `/<name>`.
+      domain: "IT",
+      subdomain: "Solution",
       spec: MINI_SPEC,
     },
     { "idempotency-key": name },
@@ -385,6 +389,8 @@ describe("native application workflows", () => {
       applicationId: "application_platform",
       environment: "dev",
       name: "orders.events",
+      domain: "Sales",
+      subdomain: "Orders",
     });
     expect(response.status).toBe(202);
     const topic = await response.json();
@@ -590,7 +596,9 @@ describe("native application workflows", () => {
         name: "sample",
         apiVersion: "v2",
         productName: "sample-v2-product",
-        basePath: "/sample/v2",
+        domain: "IT",
+        subdomain: "Solution",
+        basePath: "/it/solution/sample/v2",
         pool: editor.settings.backend.pool,
         rule: editor.settings.backend.rule,
         policy: editor.settings.policy,
@@ -615,7 +623,7 @@ describe("native application workflows", () => {
         .filter((r) => [first.resourceId, v2.resourceId].includes(r.resourceId))
         .map((r) => r.basePath)
         .sort(),
-    ).toEqual(["/sample", "/sample/v2"]);
+    ).toEqual(["/it/solution/sample", "/it/solution/sample/v2"]);
     // And each knows about the other, which is what the version switcher reads.
     const after = await (
       await call(
@@ -637,7 +645,9 @@ describe("native application workflows", () => {
             name: "sample",
             apiVersion: "v2",
             productName: "sample-v2-again",
-            basePath: "/sample/v2-again",
+            domain: "IT",
+            subdomain: "Solution",
+            basePath: "/it/solution/sample/v2-again",
             backendUrl: "http://127.0.0.1:9999",
             spec: MINI_SPEC,
           },

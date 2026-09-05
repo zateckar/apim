@@ -130,7 +130,8 @@ async function world(
   return {
     dp,
     key: api.key!,
-    basePath,
+    // The published path, which carries the fixture's domain in front of what was asked for.
+    basePath: api.basePath,
     backend,
     stop: () => {
       dp.stop();
@@ -507,7 +508,7 @@ describe("SOAP bodies validate against the WSDL's inline schema", () => {
     if (!dp.client.table) throw new Error(`did not activate: ${dp.client.activationBlocked}`);
     const call = (body: string) =>
       dp.fetchHttp(
-        new Request("http://gw/petstore", {
+        new Request(`http://gw${api.basePath}`, {
           method: "POST",
           headers: {
             "content-type": "text/xml; charset=utf-8",

@@ -8,6 +8,7 @@ import {
   validateUnit,
 } from "../../../shared/policy.ts";
 import { normalizeBasePath, normalizeHost } from "../../../shared/routing.ts";
+import { domainError, domainPrefix, publishedPath } from "../../../shared/domains.ts";
 import { diffModels } from "../../../shared/diff.ts";
 import { API_VERSION_PATTERN, REACHED_FLEET_STATES, RESOURCE_KINDS } from "../../../shared/types.ts";
 import type { ApiModel, OriginalFormat } from "../../../shared/types.ts";
@@ -74,6 +75,9 @@ function resourceView(ctx: Ctx, row: ResourceRow) {
     icon: row.icon,
     visibility: row.visibility,
     discoveryUrl: row.discovery_url,
+    // The taxonomy, which is also the first segment of the published path (schema-007).
+    domain: row.domain,
+    subdomain: row.subdomain,
     etag: etagOf(row),
     capabilities: capabilitiesFor(ctx.user, row.application_id),
   };
@@ -643,7 +647,14 @@ export function registerResourceRoutes(router: Router): void {
 
   router.add("POST", "/api/resources", "session", async (ctx) => {
     const user = requireUser(ctx);
-    const body = await readJson<{ kind?: string; name?: string; applicationId?: string; apiVersion?: string }>(ctx);
+    const body = await readJson<{
+      kind?: string;
+      name?: string;
+      applicationId?: string;
+      apiVersion?: string;
+      domain?: string;
+      subdomain?: string;
+    }>(ctx);
     const kind = body.kind ?? "rest";
     if (!RESOURCE_KINDS.includes(kind as never)) {
       throw badRequest(
@@ -658,14 +669,24 @@ export function registerResourceRoutes(router: Router): void {
     assertCan(user, applicationId, "create a resource for this application");
     const apiVersion = body.apiVersion ?? "v1";
     assertApiVersion(apiVersion);
+    // Optional here and required at `PUT routes`: a draft nobody can call yet does not need a place
+    // in the taxonomy, but nothing gets an address without one.
+    const domain = body.domain?.trim() || null;
+    const subdomain = body.subdomain?.trim() || null;
+    if (domain) {
+      const problem = domainError(domain, subdomain);
+      if (problem) throw badRequest(problem);
+    } else if (subdomain) {
+      throw badRequest("subdomain: a subdomain without a domain has nothing to sit under");
+    }
 
     const id = newId("res");
     const at = nowIso();
     try {
       ctx.app.db.run(
-        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [id, kind, body.name, applicationId, apiVersion, at, at],
+        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, domain, subdomain, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+        [id, kind, body.name, applicationId, apiVersion, domain, subdomain, at, at],
       );
     } catch (err) {
       if (String(err).includes("UNIQUE")) {
@@ -678,7 +699,7 @@ export function registerResourceRoutes(router: Router): void {
       action: "resource.create",
       subject: `resource:${id}`,
       outcome: "ok",
-      detail: { name: body.name, kind, applicationId },
+      detail: { name: body.name, kind, applicationId, domain, subdomain },
     });
     // Searchable from the moment it exists — a publisher who cannot find their own draft in the
     // catalog assumes the create failed.
@@ -753,6 +774,8 @@ export function registerResourceRoutes(router: Router): void {
       docsUrl?: string | null;
       icon?: string | null;
       visibility?: string;
+      domain?: string | null;
+      subdomain?: string | null;
     }>(ctx);
     const name = body.name ?? row.name;
     if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(name)) {
@@ -804,11 +827,37 @@ export function registerResourceRoutes(router: Router): void {
       throw badRequest('visibility: expected "listed" or "unlisted"');
     }
 
+    /*
+     * Reclassifying moves the address, and the two have to move together — so a domain change is
+     * only accepted while the API has no route yet. Once it is published the portal's configure
+     * flow is the way: it rewrites the base path in the same save, in front of the publisher.
+     */
+    const domain = body.domain === undefined ? row.domain : body.domain?.trim() || null;
+    const subdomain = body.subdomain === undefined ? row.subdomain : body.subdomain?.trim() || null;
+    if (domain !== row.domain || subdomain !== row.subdomain) {
+      if (domain) {
+        const problem = domainError(domain, subdomain);
+        if (problem) throw badRequest(problem);
+      } else if (subdomain) {
+        throw badRequest("subdomain: a subdomain without a domain has nothing to sit under");
+      }
+      const routed = ctx.app.db
+        .query<{ environment: string }, [string]>("SELECT environment FROM route WHERE resource_id = ?")
+        .all(row.id);
+      if (routed.length > 0) {
+        throw conflict(
+          `the domain is the first segment of this API's address, and it already answers in ` +
+            `${routed.map((r) => r.environment).join(", ")} — change it where the address is set, ` +
+            "so the route moves with it",
+        );
+      }
+    }
+
     try {
       ctx.app.db.run(
         `UPDATE resource SET name = ?, api_version = ?, lifecycle = ?, sunset_at = ?,
                 summary = ?, description = ?, tags_json = ?, docs_url = ?, icon = ?, visibility = ?,
-                updated_at = ?
+                domain = ?, subdomain = ?, updated_at = ?
           WHERE id = ?`,
         [
           name,
@@ -821,6 +870,8 @@ export function registerResourceRoutes(router: Router): void {
           docsUrl ?? null,
           icon ?? null,
           visibility,
+          domain,
+          subdomain,
           nowIso(),
           row.id,
         ],
@@ -836,7 +887,7 @@ export function registerResourceRoutes(router: Router): void {
       action: "resource.update",
       subject: `resource:${row.id}`,
       outcome: "ok",
-      detail: { name, apiVersion, lifecycle, sunsetAt, visibility },
+      detail: { name, apiVersion, lifecycle, sunsetAt, visibility, domain, subdomain },
     });
     reindexResource(ctx.app.db, row.id);
     const updated = getResource(ctx, row.id);
@@ -879,6 +930,22 @@ export function registerResourceRoutes(router: Router): void {
    * A consumer-visible version is a resource (plan section 8). The sibling starts from the
    * source's newest revision as its own rev 1 — unfrozen, because it is a new contract line.
    */
+  /**
+   * Where the new version answers. Never a copy of the source's base path — that would violate
+   * UNIQUE(environment, host, base_path) on arrival (review V4-03) — and never `/name/version`
+   * either once the API has a domain, because the domain is the first segment of the address and a
+   * version that dropped it would be the one route in the estate you could not find by domain.
+   */
+  const versionBasePath = (row: ResourceRow, apiVersion: string) =>
+    row.domain
+      ? publishedPath({
+          domain: row.domain,
+          subdomain: row.subdomain,
+          name: row.name,
+          apiVersion,
+        })
+      : `/${row.name}/${apiVersion}`;
+
   router.add("POST", "/api/resources/:id/versions", "session", async (ctx) => {
     const user = requireUser(ctx);
     const row = getResource(ctx, ctx.params.id!);
@@ -921,9 +988,21 @@ export function registerResourceRoutes(router: Router): void {
 
     const create = db.transaction(() => {
       db.run(
-        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?, ?)`,
-        [newResourceId, row.kind, row.name, row.application_id, apiVersion, at, at],
+        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, domain, subdomain, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+        [
+          newResourceId,
+          row.kind,
+          row.name,
+          row.application_id,
+          apiVersion,
+          // A version is the same API in the same domain. Asking again here would let two versions
+          // of one thing sit in different parts of the catalog.
+          row.domain,
+          row.subdomain,
+          at,
+          at,
+        ],
       );
       db.run(
         `INSERT INTO revision (id, resource_id, rev, model, original, original_format, version_digest,
@@ -964,7 +1043,7 @@ export function registerResourceRoutes(router: Router): void {
       if (body.createRoutes) {
         // Never a copy of the source's base path — that would violate
         // UNIQUE(environment, host, base_path) on arrival (review V4-03).
-        const proposed = `/${row.name}/${apiVersion}`;
+        const proposed = versionBasePath(row, apiVersion);
         const sourceRoutes = db
           .query<{ environment: string; host: string }, [string]>(
             "SELECT environment, host FROM route WHERE resource_id = ?",
@@ -1006,7 +1085,7 @@ export function registerResourceRoutes(router: Router): void {
     return json(
       {
         ...resourceView(ctx, getResource(ctx, newResourceId)),
-        proposedBasePath: `/${row.name}/${apiVersion}`,
+        proposedBasePath: versionBasePath(row, apiVersion),
         skippedRouteEnvironments: skipped,
       },
       { status: 201 },
@@ -1307,6 +1386,25 @@ export function registerResourceRoutes(router: Router): void {
     const basePath = normalizeBasePath(body.basePath);
     const errors = [...host.errors, ...basePath.errors];
     if (errors.length > 0) throw badRequest(errors.join("; "));
+
+    /*
+     * An address is where the taxonomy stops being paperwork: the domain is the first segment of
+     * every published path, so a route is the last moment at which an unclassified API can still be
+     * caught, and a classified one cannot be given an address that contradicts its classification.
+     */
+    if (!row.domain) {
+      throw badRequest(
+        "domain: assign this API to a domain before giving it an address — the domain is the first " +
+          "segment of the path, so every consumer of the catalog finds it by domain first",
+      );
+    }
+    const prefix = domainPrefix(row.domain, row.subdomain);
+    if (basePath.basePath !== prefix && !basePath.basePath.startsWith(`${prefix}/`)) {
+      throw badRequest(
+        `basePath: "${basePath.basePath}" is outside ${row.domain}` +
+          `${row.subdomain ? ` / ${row.subdomain}` : ""} — it has to start with "${prefix}"`,
+      );
+    }
 
     try {
       ctx.app.db.run(

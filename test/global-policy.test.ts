@@ -429,7 +429,7 @@ describe("what the global screen reports", () => {
       await dp.start();
       try {
         const response = await dp.fetchHttp(
-          new Request("http://gw/merged/store/inventory", { headers: { "x-api-key": api.key! } }),
+          new Request("http://gw/it/solution/merged/store/inventory", { headers: { "x-api-key": api.key! } }),
           "127.0.0.1",
         );
         expect(response.status).toBe(200);

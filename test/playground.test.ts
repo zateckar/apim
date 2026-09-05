@@ -292,7 +292,7 @@ describe("the caller names an operation and the platform names the host", () => 
 
     expect(sent.response.status).toBe(200);
     expect(sent.request.method).toBe("GET");
-    expect(sent.request.path).toBe(`/${w.api.name}/echo`);
+    expect(sent.request.path).toBe(`${w.api.basePath}/echo`);
     expect(sent.request.query).toBe("verbose=1");
     expect(sent.request.gateway).toEqual({ label: "dev-1", url: w.gatewayUrl });
     // Through the whole pipeline rather than to the backend: base path stripped, query carried.
@@ -331,7 +331,7 @@ describe("the caller names an operation and the platform names the host", () => 
       call(w, { operationId: "getPetById", pathParams: { petId: "a b/c" } }),
     );
     // Encoded, so a path parameter cannot introduce a path segment of its own.
-    expect(sent.request.path).toBe(`/${w.api.name}/pets/a%20b%2Fc`);
+    expect(sent.request.path).toBe(`${w.api.basePath}/pets/a%20b%2Fc`);
     expect(w.backend.requests.at(-1)!.path).toBe("/v2/pets/a%20b%2Fc");
 
     const problem = await refused(w, w.api.clara, call(w, { operationId: "getPetById" }));
@@ -788,7 +788,7 @@ describe("per variant", () => {
     // Holding a stream open through the control plane and back into a browser is a second
     // streaming implementation on the wrong tier (§2), so the console hands over a curl line.
     expect(problem.command).toContain("curl -N");
-    expect(problem.command).toContain(`${w.gatewayUrl}/${w.api.name}`);
+    expect(problem.command).toContain(`${w.gatewayUrl}${w.api.basePath}`);
     expect(problem.command).toContain("$KEY");
   });
 
@@ -839,7 +839,7 @@ describe("per variant", () => {
     // Every SOAP operation is a POST to the one endpoint, so the path is the base path itself —
     // not the base path with the template's slash appended to it.
     expect(sent.request.method).toBe("POST");
-    expect(sent.request.path).toBe("/petstore-soap");
+    expect(sent.request.path).toBe(api.basePath);
     // The content type comes from the variant, so a caller cannot get it wrong by omission.
     expect(sent.request.headers["content-type"]).toBe("text/xml; charset=utf-8");
     expect(sent.response.status).toBe(200);
@@ -859,7 +859,14 @@ describe("per variant", () => {
     const created = (await (
       await cp.call("POST", "/api/resources", {
         cookie: pavel,
-        body: { kind: "a2a", name: "greeter", applicationId: "application_platform", apiVersion: "v1" },
+        body: {
+          kind: "a2a",
+          name: "greeter",
+          applicationId: "application_platform",
+          apiVersion: "v1",
+          domain: "IT",
+          subdomain: "Solution",
+        },
       })
     ).json()) as { id: string };
     await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -877,7 +884,7 @@ describe("per variant", () => {
     });
     await cp.call("PUT", `/api/resources/${created.id}/routes`, {
       cookie: pavel,
-      body: { environment: "dev", host: "*", basePath: "/greeter" },
+      body: { environment: "dev", host: "*", basePath: "/it/solution/greeter" },
     });
     await cp.call("PUT", `/api/resources/${created.id}/binding`, {
       cookie: pavel,
@@ -898,7 +905,7 @@ describe("per variant", () => {
     expect(response.status).toBe(200);
     // The card path in the config document already contains the base path, so composing it must
     // not add a second one.
-    expect(sent.request.path).toBe("/greeter/.well-known/agent-card.json");
+    expect(sent.request.path).toBe("/it/solution/greeter/.well-known/agent-card.json");
     expect(sent.request.method).toBe("GET");
     expect(sent.response.status).toBe(200);
     // The card the gateway serves is the gateway's own — the point of publishing an agent.
@@ -967,7 +974,7 @@ describe("the form the console draws", () => {
       "getPetById",
     ]);
     expect(drawn.rev).toBe(1);
-    expect(drawn.basePath).toBe(`/${w.api.name}`);
+    expect(drawn.basePath).toBe(w.api.basePath);
 
     // The property that makes one endpoint worth having: what is offered is what is accepted.
     for (const operation of drawn.operations) {

@@ -254,7 +254,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   member: {
     term: "member",
     definition:
-      "Somebody in a application. A member can publish, change and withdraw anything their applications own, and can read everything else.",
+      "Somebody in an application. A member can publish, change and withdraw anything their applications own, and can read everything else.",
     see: ["application", "administrator"],
     group: "identity",
   },

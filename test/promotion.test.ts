@@ -62,7 +62,7 @@ describe("the promotion gate (design section 6.2)", () => {
         })
       ).json();
       expect(config.routes).toHaveLength(1);
-      expect(config.routes[0].basePath).toBe("/promo");
+      expect(config.routes[0].basePath).toBe("/it/solution/promo");
     }
   });
 

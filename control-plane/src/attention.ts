@@ -19,8 +19,8 @@ import type { App } from "./router.ts";
  * one API depending on which screen they are looking at.
  *
  * **It is a fixed set of SQL queries returning candidates, never a load-everything loop**
- * `[P2-03]`. Every query is anti-joined, environment-scoped, application-scoped and `LIMIT`ed, so a application
- * with five hundred APIs costs the same shape of work as a application with five. The one place that
+ * `[P2-03]`. Every query is anti-joined, environment-scoped, application-scoped and `LIMIT`ed, so an application
+ * with five hundred APIs costs the same shape of work as an application with five. The one place that
  * leaves SQL is `config-error`, which asks the config builder — the same function the poll uses —
  * because "is this route being served" has exactly one correct answer and it lives there.
  */
@@ -463,7 +463,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
             scope.applications.length === 0 ? " AND 0 = 1" : ` AND c.application_id IN (${placeholders(scope.applications)})`,
           args: scope.applications,
         };
-  // Not on one API's page: a certificate belongs to a application and an environment, and several APIs
+  // Not on one API's page: a certificate belongs to an application and an environment, and several APIs
   // may present it, so it is the application's row rather than any single API's.
   const certificates = scope.resourceId
     ? []

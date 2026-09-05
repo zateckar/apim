@@ -11,6 +11,7 @@ import {
   ErrorNotice,
   useWork,
 } from "./common";
+import { DomainPicker } from "./apis";
 
 export function SubscribeDialog({
   session: s,
@@ -117,8 +118,11 @@ export function Subscriptions({
   resourceId?: string;
 }) {
   const data = useAsync(
-      () => api.get<{ items: any[] }>("/api/subscriptions"),
-      [s.application, tick],
+      () =>
+        api.get<{ items: any[] }>(
+          `/api/subscriptions?environment=${encodeURIComponent(s.environment)}`,
+        ),
+      [s.application, s.environment, tick],
     ),
     products = useAsync(
       () => api.get<{ items: any[] }>("/api/products"),
@@ -440,6 +444,7 @@ export function Kafka({
   // The owner's fields, held apart from `selected` so an edit in progress is not overwritten by
   // the three-second refresh underneath it.
   const [draft, setDraft] = useState({ partitions: 3, description: "" });
+  const [taxonomy, setTaxonomy] = useState({ domain: "", subdomain: "" });
   const rows =
     topics.data?.items.filter(
       (t) =>
@@ -469,7 +474,10 @@ export function Kafka({
                 <strong>{t.name}</strong>
                 <small>
                   {s.applicationName(t.applicationId)} · {t.partitions}{" "}
-                  partitions
+                  partitions ·{" "}
+                  {t.domain
+                    ? `${t.domain}${t.subdomain ? ` / ${t.subdomain}` : ""}`
+                    : "no domain yet"}
                 </small>
                 <Status value={t.state} />
               </div>
@@ -483,6 +491,10 @@ export function Kafka({
                     partitions: t.partitions,
                     description: t.description ?? "",
                   });
+                  setTaxonomy({
+                    domain: t.domain ?? "",
+                    subdomain: t.subdomain ?? "",
+                  });
                 }}
               >
                 Open topic
@@ -493,25 +505,40 @@ export function Kafka({
           <Empty>No topics in this environment.</Empty>
         )}
       </Panel>
-      <Panel title="Topic subscriptions">
-        {access.data?.items
-          .filter(
+      {/* Both sides of the relationship, because both are entitled to see it and a topic cannot be
+          deleted until every grant is withdrawn. Showing only this application's own grants left a
+          topic's owner told to "revoke topic subscriptions first" with no way to find, let alone
+          revoke, the one holding it up (finding 5). The server already returned both. */}
+      <Panel title="Topic access">
+        {(() => {
+          const granted = (access.data?.items ?? []).filter(
+            (a) => a.environment === s.environment,
+          );
+          const held = granted.filter((a) => a.application_id === s.application);
+          const against = granted.filter(
             (a) =>
-              a.environment === s.environment &&
-              a.application_id === s.application,
-          )
-          .map((a) => (
+              a.publisher === s.application && a.application_id !== s.application,
+          );
+          const row = (a: any, mine: boolean) => (
             <div className="native-row" key={a.id}>
               <div>
                 <strong>{a.topicName}</strong>
-                <small>{a.purpose}</small>
+                <small>
+                  {mine
+                    ? a.purpose
+                    : `${s.applicationName(a.application_id)} · ${a.purpose}`}
+                </small>
                 <Status value={a.state} />
               </div>
               {["active", "pending", "activating"].includes(a.state) && (
                 <DangerZone
-                  what="Withdraw topic access"
+                  what={mine ? "Withdraw topic access" : "Revoke this access"}
                   name={a.topicName}
-                  consequence="This application will lose access to the topic."
+                  consequence={
+                    mine
+                      ? "This application will lose access to the topic."
+                      : `${s.applicationName(a.application_id)} will lose access to your topic at the next convergence.`
+                  }
                   permission={{ enabled: true, reason: "" }}
                   busy={w.busy}
                   error={w.error}
@@ -524,7 +551,24 @@ export function Kafka({
                 />
               )}
             </div>
-          ))}
+          );
+          return (
+            <>
+              <h4>What this application consumes</h4>
+              {held.length ? (
+                held.map((a) => row(a, true))
+              ) : (
+                <Empty>No topic access in this environment.</Empty>
+              )}
+              <h4>Who consumes this application's topics</h4>
+              {against.length ? (
+                against.map((a) => row(a, false))
+              ) : (
+                <Empty>Nobody else holds access to your topics here.</Empty>
+              )}
+            </>
+          );
+        })()}
       </Panel>
       {create && (
         <Modal title="Create Kafka topic" close={() => setCreate(false)}>
@@ -538,10 +582,13 @@ export function Kafka({
                   name,
                   partitions: draft.partitions,
                   description: draft.description,
+                  domain: taxonomy.domain,
+                  subdomain: taxonomy.subdomain || null,
                 });
                 setCreate(false);
                 setName("");
                 setDraft({ partitions: 3, description: "" });
+                setTaxonomy({ domain: "", subdomain: "" });
                 topics.reload();
               });
             }}
@@ -553,6 +600,13 @@ export function Kafka({
                 onChange={(e) => setName(e.target.value)}
               />
             </Field>
+            {/* A topic is a catalog item, so it is classified like every other one: this is how
+                somebody browsing the estate by domain finds it. */}
+            <DomainPicker
+              domain={taxonomy.domain}
+              subdomain={taxonomy.subdomain}
+              onChange={setTaxonomy}
+            />
             <Field label="Partitions">
               <input
                 type="number"
@@ -605,17 +659,30 @@ export function Kafka({
                   }
                 />
               </Field>
+              {/* A topic has no path, so moving it between domains moves only where it is found. */}
+              <DomainPicker
+                domain={taxonomy.domain}
+                subdomain={taxonomy.subdomain}
+                onChange={setTaxonomy}
+              />
               <div className="native-actions">
                 <button
                   className="btn primary"
-                  disabled={w.busy}
+                  disabled={w.busy || !taxonomy.domain}
                   onClick={() =>
                     void w.run(async () => {
                       await api.patch(`/api/kafka/topics/${selected.id}`, {
                         description: draft.description,
                         partitions: draft.partitions,
+                        domain: taxonomy.domain,
+                        subdomain: taxonomy.subdomain || null,
                       });
-                      setSelected({ ...selected, ...draft });
+                      setSelected({
+                        ...selected,
+                        ...draft,
+                        domain: taxonomy.domain,
+                        subdomain: taxonomy.subdomain || null,
+                      });
                       topics.reload();
                     })
                   }

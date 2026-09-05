@@ -159,7 +159,8 @@ async function sseWorld(
   return {
     dp,
     key: api.key!,
-    basePath,
+    // The published path, which carries the fixture's domain in front of what was asked for.
+    basePath: api.basePath,
     backend,
     subscriptionId: api.subscriptionId!,
     clara: api.clara,
@@ -260,9 +261,9 @@ async function wsWorld(
   const server = startDataPlane(dp);
   return {
     dp,
-    url: `ws://127.0.0.1:${server.port}${basePath}`,
+    url: `ws://127.0.0.1:${server.port}${api.basePath}`,
     key: api.key!,
-    basePath,
+    basePath: api.basePath,
     backend,
     subscriptionId: api.subscriptionId!,
     clara: api.clara,
@@ -927,8 +928,8 @@ describe("the demo backend's own streams", () => {
       petstore,
       dp,
       key: api.key!,
-      http: `http://127.0.0.1:${gateway.port}${basePath}`,
-      ws: `ws://127.0.0.1:${gateway.port}${basePath}`,
+      http: `http://127.0.0.1:${gateway.port}${api.basePath}`,
+      ws: `ws://127.0.0.1:${gateway.port}${api.basePath}`,
       stop: () => {
         gateway.stop(true);
         dp.stop();

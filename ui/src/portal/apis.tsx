@@ -21,10 +21,73 @@ import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
 import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
+import { DOMAINS, findDomain, publishedPath } from "../../../shared/domains";
 
 interface PoolEntry {
   url: string;
   weight?: number;
+}
+
+/**
+ * Domain and sub-domain, which is where this thing sits in the catalogue **and** the first segment
+ * of its address. A closed list rather than a text box: a free-text domain is a domain nobody can
+ * browse by, and the same string typed two ways splits one part of the estate into two.
+ */
+export function DomainPicker({
+  domain,
+  subdomain,
+  onChange,
+  disabled,
+}: {
+  domain: string;
+  subdomain: string;
+  onChange: (next: { domain: string; subdomain: string }) => void;
+  disabled?: boolean;
+}) {
+  const found = findDomain(domain);
+  return (
+    <>
+      <Field label="Domain">
+        <select
+          required
+          disabled={disabled}
+          value={domain}
+          // Choosing a domain clears the sub-domain: keeping it would leave a pair the taxonomy
+          // does not contain, which the control plane refuses at save time rather than here.
+          onChange={(e) => onChange({ domain: e.target.value, subdomain: "" })}
+        >
+          <option value="">— Select domain —</option>
+          {DOMAINS.map((d) => (
+            <option key={d.name} value={d.name}>
+              {d.name}
+            </option>
+          ))}
+        </select>
+      </Field>
+      <Field label="Sub-domain">
+        <select
+          disabled={disabled || !found || found.subdomains.length === 0}
+          value={subdomain}
+          onChange={(e) => onChange({ domain, subdomain: e.target.value })}
+        >
+          {!found ? (
+            <option value="">Select a domain first</option>
+          ) : found.subdomains.length === 0 ? (
+            <option value="">No sub-domains available for {found.name}</option>
+          ) : (
+            <>
+              <option value="">— None —</option>
+              {found.subdomains.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </>
+          )}
+        </select>
+      </Field>
+    </>
+  );
 }
 
 /**
@@ -60,15 +123,18 @@ export function Workspace({
   const [search, setSearch] = useState(""),
     [subscribe, setSubscribe] = useState<any>(null);
   const data = useAsync(() => listAll("/api/resources"), [tick]);
+  // `apis` means REST and SOAP, not "everything": MCP servers and A2A agents have their own
+  // sidebar entries, and listing them here too put the same API under two headings and made the
+  // count on each one wrong (finding 9).
+  const inSection = (kind: string) =>
+    section === "mcp" ? kind === "mcp" : section === "a2a" ? kind === "a2a" : section === "apis" ? kind === "rest" || kind === "soap" : true;
   const rows = (data.data?.items ?? []).filter(
     (r) =>
       (section === "discover" || r.applicationId === s.application) &&
-      (section === "mcp"
-        ? r.kind === "mcp"
-        : section === "a2a"
-          ? r.kind === "a2a"
-          : true) &&
-      `${r.name} ${r.description}`.toLowerCase().includes(search.toLowerCase()),
+      inSection(r.kind) &&
+      `${r.name} ${r.description} ${r.domain ?? ""} ${r.subdomain ?? ""}`
+        .toLowerCase()
+        .includes(search.toLowerCase()),
   );
   return (
     <Panel
@@ -101,7 +167,10 @@ export function Workspace({
                 </a>
                 <small>
                   {r.kind.toUpperCase()} · {s.applicationName(r.applicationId)}{" "}
-                  · {r.apiVersion}
+                  · {r.apiVersion} ·{" "}
+                  {r.domain
+                    ? `${r.domain}${r.subdomain ? ` / ${r.subdomain}` : ""}`
+                    : "no domain yet"}
                 </small>
                 <p>{r.description}</p>
               </div>
@@ -139,7 +208,8 @@ export function Publish({ session: s }: { session: Session }) {
     [productId, setProduct] = useState(""),
     [productName, setProductName] = useState(""),
     [backendUrl, setBackend] = useState(""),
-    [basePath, setPath] = useState(""),
+    [domain, setDomain] = useState(""),
+    [subdomain, setSubdomain] = useState(""),
     [source, setSource] = useState("text"),
     [url, setUrl] = useState(""),
     [spec, setSpec] = useState("");
@@ -156,7 +226,11 @@ export function Publish({ session: s }: { session: Session }) {
               apiVersion,
               description,
               backendUrl,
-              basePath: basePath || `/${name}`,
+              domain,
+              subdomain: subdomain || null,
+              // Derived, never typed: the same function the control plane validates against, so
+              // what the preview above the button says is what the gateway will answer on.
+              basePath: publishedPath({ domain, subdomain, name }),
               ...(productId ? { productId } : { productName }),
             };
             if (source === "url")
@@ -233,14 +307,25 @@ export function Publish({ session: s }: { session: Session }) {
               onChange={(e) => setBackend(e.target.value)}
             />
           </Field>
-          <Field label="Public path">
-            <input
-              placeholder={`/${name || "api"}`}
-              value={basePath}
-              onChange={(e) => setPath(e.target.value)}
-            />
-          </Field>
+          <DomainPicker
+            domain={domain}
+            subdomain={subdomain}
+            onChange={(next) => {
+              setDomain(next.domain);
+              setSubdomain(next.subdomain);
+            }}
+          />
         </div>
+        <p className="muted">
+          This API will answer at{" "}
+          <span className="mono">
+            {(s.meta.environments.find((e) => e.environment === s.meta.chain[0])?.publicUrl ??
+              "https://<gateway>") +
+              (domain ? publishedPath({ domain, subdomain, name: name || "api" }) : "/…")}
+          </span>
+          . The domain is the first segment of the address, which is what makes the catalog
+          browsable by domain rather than only searchable by name.
+        </p>
         <Field label="Description">
           <textarea
             value={description}
@@ -298,10 +383,12 @@ export function Editor({
   id,
   session: s,
   operations,
+  tick,
 }: {
   id: string;
   session: Session;
   operations: any[];
+  tick: number;
 }) {
   const data = useAsync(
     () =>
@@ -318,6 +405,7 @@ export function Editor({
           session={s}
           refresh={data.reload}
           operations={operations.filter((o) => o.resourceId === id)}
+          tick={tick}
         />
       ) : (
         <Empty>Loading API…</Empty>
@@ -330,11 +418,13 @@ function EditorForm({
   session: s,
   refresh,
   operations,
+  tick,
 }: {
   data: any;
   session: Session;
   refresh: () => void;
   operations: any[];
+  tick: number;
 }) {
   const w = useWork(),
     [tab, setTab] = useState("definition"),
@@ -345,7 +435,8 @@ function EditorForm({
         : [{ url: "" }],
     ),
     [rule, setRule] = useState<string>(d.settings?.backend?.rule ?? "failover"),
-    [path, setPath] = useState(d.settings?.basePath ?? ""),
+    [domain, setDomain] = useState<string>(d.resource.domain ?? ""),
+    [subdomain, setSubdomain] = useState<string>(d.resource.subdomain ?? ""),
     [spec, setSpec] = useState(d.definition ?? ""),
     [policy, setPolicy] = useState(
       JSON.stringify(d.settings?.policy ?? {}, null, 2),
@@ -359,15 +450,39 @@ function EditorForm({
     [subscribe, setSubscribe] = useState(false);
   const certificates = useAsync(
     () =>
-      api.get<{ items: any[] }>(
-        `/api/certificates?environment=${s.environment}`,
-      ),
-    [s.environment],
+      d.resource.canEdit
+        ? api.get<{ items: any[] }>(
+            `/api/certificates?environment=${s.environment}`,
+          )
+        : Promise.resolve({ items: [] }),
+    [s.environment, d.resource.canEdit],
   );
   const next = s.meta.chain[s.meta.chain.indexOf(s.environment) + 1];
   const first = s.meta.chain[0]!;
   const versions: Array<{ id: string; apiVersion: string; lifecycle: string }> =
     d.versions ?? [];
+  const environmentMeta = s.meta.environments.find(
+    (e) => e.environment === s.environment,
+  );
+  /**
+   * The address, derived from the taxonomy rather than typed. The version segment appears only on
+   * a version that is not the family's first, which is the rule `versionedPath` already follows —
+   * v1 keeps the short URL it was published on.
+   */
+  const basePath = domain
+    ? publishedPath({
+        domain,
+        subdomain,
+        name: d.resource.name,
+        apiVersion:
+          versions.length > 1 && versions[0]?.id !== d.resource.id
+            ? d.resource.apiVersion
+            : null,
+      })
+    : (d.settings?.basePath ?? "");
+  /** Load balancing and the breaker need somewhere to fail over to. */
+  const members = pool.filter((entry) => entry.url.trim()).length;
+  const canBalance = members >= 2;
   let doc: unknown = null;
   try {
     doc = parse(spec);
@@ -378,27 +493,29 @@ function EditorForm({
         title={d.resource.name}
         actions={
           <div className="native-actions">
-            {d.resource.canEdit &&
-              // A new version is published where publishing starts, so it is offered there and the
-              // reason is on the screen rather than in a tooltip nobody hovers.
-              (s.environment === first ? (
-                <button
-                  className="btn"
-                  disabled={w.busy || !d.settings}
-                  onClick={() => setVersion(true)}
-                >
-                  New version
-                </button>
-              ) : (
-                <span className="muted">
-                  A new version starts in {first.toUpperCase()} — switch
-                  environment to publish one.
-                </span>
-              ))}
-            {d.resource.canEdit && next && (
+            {/* Present and disabled rather than absent, with the reason on the screen: a control
+                that vanishes leaves somebody wondering whether the feature exists at all, and on a
+                foreign API that was the only answer this workspace gave (finding 8). */}
+            {s.environment === first ? (
+              <button
+                className="btn"
+                disabled={w.busy || !d.resource.canEdit || !d.published}
+                title={d.resource.editReason ?? undefined}
+                onClick={() => setVersion(true)}
+              >
+                New version
+              </button>
+            ) : (
+              <span className="muted">
+                A new version starts in {first.toUpperCase()} — switch
+                environment to publish one.
+              </span>
+            )}
+            {next && (
               <button
                 className="btn primary"
-                disabled={w.busy || !d.settings}
+                disabled={w.busy || !d.resource.canEdit || !d.published}
+                title={d.resource.editReason ?? undefined}
                 onClick={() => setPromote(true)}
               >
                 Promote to {next.toUpperCase()}
@@ -407,10 +524,16 @@ function EditorForm({
           </div>
         }
       >
+        {d.resource.editReason && (
+          <div className="banner warn">{d.resource.editReason}</div>
+        )}
         <p>
           {s.applicationName(d.resource.applicationId)} ·{" "}
-          {d.resource.kind.toUpperCase()} · {d.resource.apiVersion} · Products:{" "}
-          {d.products.map((p: any) => p.name).join(", ") || "None"}
+          {d.resource.kind.toUpperCase()} · {d.resource.apiVersion} ·{" "}
+          {d.resource.domain
+            ? `${d.resource.domain}${d.resource.subdomain ? ` / ${d.resource.subdomain}` : ""}`
+            : "no domain yet"}{" "}
+          · Products: {d.products.map((p: any) => p.name).join(", ") || "None"}
         </p>
         {versions.length > 1 && (
           <Field label="Version">
@@ -448,10 +571,17 @@ function EditorForm({
           ))}
         </div>
         <ErrorNotice error={w.error} />
-        {!d.settings && (
+        {!d.published && (
           <Empty>
             This API has not been published to {s.environment.toUpperCase()}.
             Switch to the preceding environment and promote it.
+          </Empty>
+        )}
+        {d.published && d.settings?.redacted && (
+          <Empty>
+            It answers on <span className="mono">{d.settings.basePath}</span> in{" "}
+            {s.environment.toUpperCase()}. Its backends and its policy belong to{" "}
+            {d.resource.applicationName} and are not shown outside it.
           </Empty>
         )}
         {tab === "definition" && (
@@ -540,10 +670,13 @@ function EditorForm({
                 Add backend
               </button>
             </div>
-            <Field label="When there is more than one backend">
+            {/* Load balancing is a choice between backends, so it only exists once there are two.
+                Shown disabled with the reason rather than hidden, so "where did the setting go"
+                has an answer on the screen. */}
+            <Field label="How calls are spread across the backends">
               <select
-                disabled={!d.resource.canEdit}
-                value={rule}
+                disabled={!d.resource.canEdit || !canBalance}
+                value={canBalance ? rule : "failover"}
                 onChange={(e) => setRule(e.target.value)}
               >
                 <option value="failover">
@@ -554,39 +687,46 @@ function EditorForm({
                 </option>
               </select>
             </Field>
-            {rule === "round-robin" && (
+            {!canBalance ? (
+              <p className="muted">
+                Add a second backend to choose between failover and round-robin.
+                With one backend every call goes to it, and a circuit breaker
+                has nothing to fail over to — so that policy is unavailable too.
+              </p>
+            ) : rule === "round-robin" ? (
               <p className="muted">
                 Each gateway keeps its own place in the rotation, so calls are
                 spread per instance rather than across the fleet.
               </p>
-            )}
+            ) : null}
+            <DomainPicker
+              domain={domain}
+              subdomain={subdomain}
+              disabled={!d.resource.canEdit}
+              onChange={(nextTaxonomy) => {
+                setDomain(nextTaxonomy.domain);
+                setSubdomain(nextTaxonomy.subdomain);
+              }}
+            />
             <Field label="Public path">
-              <input
-                disabled={!d.resource.canEdit}
-                value={path}
-                onChange={(e) => setPath(e.target.value)}
-              />
+              {/* Derived, not typed: the domain is the first segment of the address, so a path
+                  somebody could edit freely is a path that could contradict the catalog. */}
+              <input readOnly value={basePath} aria-label="Public path" />
             </Field>
-            <Field label="Client certificate">
-              <select
-                disabled={!d.resource.canEdit}
-                value={certificate}
-                onChange={(e) => setCertificate(e.target.value)}
-              >
-                <option value="">No client certificate</option>
-                {certificates.data?.items
-                  .filter(
-                    (c) =>
-                      c.applicationId === d.resource.applicationId &&
-                      !c.expired,
-                  )
-                  .map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name}
-                    </option>
-                  ))}
-              </select>
-            </Field>
+            {!d.resource.domain && (
+              <p className="banner warn">
+                This API was published before the catalog had domains. Choosing
+                one moves it from <span className="mono">{d.settings?.basePath}</span>{" "}
+                to <span className="mono">{basePath}</span> when you save, so
+                anybody calling the old address has to be told.
+              </p>
+            )}
+            <p className="muted">
+              {(environmentMeta?.publicUrl ?? "https://<gateway>") + basePath} —
+              the address consumers are given in {s.environment.toUpperCase()}.
+              It is the gateway's published hostname; its replicas are behind it
+              and are never addressed directly.
+            </p>
             <ErrorNotice error={certificates.error} />
           </div>
         )}
@@ -595,13 +735,23 @@ function EditorForm({
             <PolicyForm
               value={policy}
               onChange={setPolicy}
-              disabled={!d.resource.canEdit || !d.settings}
+              disabled={!d.resource.canEdit || !d.published}
+              units={s.meta.policyUnits as any}
+              kind={d.resource.kind}
+              isAdmin={s.user.isAdmin}
+              instances={environmentMeta?.liveInstances ?? 1}
+              poolSize={members}
+              certificates={(certificates.data?.items ?? []).filter(
+                (c) => c.applicationId === d.resource.applicationId && !c.expired,
+              )}
+              certificate={certificate}
+              onCertificate={setCertificate}
             />
             <details>
               <summary>Advanced settings</summary>
               <CodeMirror
                 value={policy}
-                editable={d.resource.canEdit && !!d.settings}
+                editable={d.resource.canEdit && !!d.published}
                 minHeight="280px"
                 onChange={setPolicy}
               />
@@ -609,11 +759,7 @@ function EditorForm({
           </>
         )}
         {tab === "subscriptions" && (
-          <Subscriptions
-            session={s}
-            tick={operations.length}
-            resourceId={d.resource.id}
-          />
+          <Subscriptions session={s} tick={tick} resourceId={d.resource.id} />
         )}{" "}
         {tab === "playground" && (
           <div className="native-legacy">
@@ -632,18 +778,20 @@ function EditorForm({
           />
         )}{" "}
         {tab === "history" && <OperationList items={operations} />}{" "}
-        {d.resource.canEdit &&
-          d.settings &&
-          ["definition", "properties", "policies"].includes(tab) && (
+        {["definition", "properties", "policies"].includes(tab) && (
+          <div className="native-actions">
             <button
               className="btn primary"
-              disabled={w.busy}
+              disabled={w.busy || !d.resource.canEdit || !d.published || !domain}
+              title={d.resource.editReason ?? undefined}
               onClick={() =>
                 void w.run(async () => {
                   const body: any = {
                     environment: s.environment,
                     description,
-                    basePath: path,
+                    domain,
+                    subdomain: subdomain || null,
+                    basePath,
                   };
                   if (certificate !== (d.settings.backend.clientCertRef ?? ""))
                     body.clientCertRef = certificate || null;
@@ -678,11 +826,29 @@ function EditorForm({
             >
               {w.busy ? "Saving…" : "Save changes"}
             </button>
-          )}
+            {/* The reason a disabled Save is disabled, in the order it becomes true. */}
+            {!d.resource.canEdit ? (
+              <span className="muted">{d.resource.editReason}</span>
+            ) : !d.published ? (
+              <span className="muted">
+                Nothing to save: this API is not in {s.environment.toUpperCase()}.
+              </span>
+            ) : !domain ? (
+              <span className="muted">
+                Choose a domain on the properties tab first — it is the first
+                segment of the address.
+              </span>
+            ) : null}
+          </div>
+        )}
       </Panel>
-      <Panel title="Deployment progress">
-        <OperationList items={operations.slice(0, 5)} />
-      </Panel>
+      {/* Only where there is progress to report. On somebody else's long-published API this used
+          to read "No changes yet. Publish an API to get started." (finding 8). */}
+      {operations.length > 0 && (
+        <Panel title="Deployment progress">
+          <OperationList items={operations.slice(0, 5)} />
+        </Panel>
+      )}
       {version && (
         <NewVersion
           data={d}
@@ -756,15 +922,27 @@ function NewVersion({
     [d.resource.id],
   );
   const existing: string[] = (d.versions ?? []).map((v: any) => v.apiVersion);
+  // Both versions answer at once, so the new one needs its own path. With a domain that is the
+  // taxonomy plus the version; without one (an API published before domains) it is the old rule.
+  const pathFor = (version: string) =>
+    d.resource.domain
+      ? publishedPath({
+          domain: d.resource.domain,
+          subdomain: d.resource.subdomain,
+          name: d.resource.name,
+          apiVersion: version,
+        })
+      : versionedPath(d.settings?.basePath ?? "", d.resource.apiVersion, version);
   const [identifier, setIdentifier] = useState(() => nextVersion(existing));
-  const [path, setPath] = useState(() =>
-    versionedPath(d.settings?.basePath ?? "", d.resource.apiVersion, nextVersion(existing)),
-  );
+  const [path, setPath] = useState(() => pathFor(nextVersion(existing)));
   const [productId, setProduct] = useState<string>(d.products?.[0]?.id ?? "");
   const owned =
     products.data?.items.filter(
       (p) => p.applicationId === d.resource.applicationId && p.lifecycle === "active",
     ) ?? [];
+  /** The name of the product both versions would share, or `null` when they would not. */
+  const sameProduct: string | null =
+    (d.products ?? []).find((p: any) => p.id === productId)?.name ?? null;
   return (
     <Modal title={`New version of ${d.resource.name}`} close={close}>
       <form
@@ -779,6 +957,9 @@ function NewVersion({
               productId,
               description: d.resource.description ?? "",
               host: d.settings.host,
+              // A version is the same API in the same part of the catalog.
+              domain: d.resource.domain,
+              subdomain: d.resource.subdomain ?? null,
               basePath: path,
               pool: d.settings.backend.pool,
               rule: d.settings.backend.rule ?? "failover",
@@ -796,8 +977,15 @@ function NewVersion({
       >
         <p>
           This publishes a separate API to {first.toUpperCase()}.{" "}
-          <strong>{d.resource.apiVersion}</strong> keeps serving on its own path
-          and keeps its own subscriptions — a key for one does not open the other.
+          <strong>{d.resource.apiVersion}</strong> keeps serving on its own path.
+        </p>
+        {/* Conditional on the product chosen below, because that is what actually decides it: a
+            subscription is held against a product, not against an API, so putting both versions in
+            one product means one key opens both (finding 7). */}
+        <p className={sameProduct ? "banner warn" : "muted"}>
+          {sameProduct
+            ? `Both versions will be in ${sameProduct}, so an existing key for ${d.resource.apiVersion} will open ${identifier} too. Choose a different product below if the versions should be subscribed to separately.`
+            : `${identifier} goes into a different product, so it has its own subscriptions and an existing key for ${d.resource.apiVersion} will not open it.`}
         </p>
         <ErrorNotice error={products.error ?? w.error} />
         <Field label="Version identifier">
@@ -807,13 +995,7 @@ function NewVersion({
             value={identifier}
             onChange={(e) => {
               setIdentifier(e.target.value);
-              setPath(
-                versionedPath(
-                  d.settings?.basePath ?? "",
-                  d.resource.apiVersion,
-                  e.target.value,
-                ),
-              );
+              setPath(pathFor(e.target.value));
             }}
           />
         </Field>

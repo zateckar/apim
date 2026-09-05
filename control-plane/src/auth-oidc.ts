@@ -404,7 +404,7 @@ export function claimsToIdentity(claims: Record<string, unknown>, oidc: OidcConf
   // Two readers, not one, because a role → subjects map has to be read in opposite directions for
   // the two questions. Its keys answer "which roles does this person hold"; its values answer
   // "which things may they act on". A single reader would get one of the two backwards, and the
-  // symptom would be either nobody is an administrator or everybody is in a application named `api.admin`.
+  // symptom would be either nobody is an administrator or everybody is in an application named `api.admin`.
   const roles = roleNamesAt(claims, oidc.roleClaim);
   return {
     username,

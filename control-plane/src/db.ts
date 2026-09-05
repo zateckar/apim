@@ -32,6 +32,14 @@ const MIGRATIONS: Migration[] = [
   { version: 4, name: "v4", file: "schema-004.sql" },
   { version: 5, name: "v5", file: "schema-005.sql" },
   { version: 6, name: "application ownership and workflows", file: "schema-006.sql", foreignKeysOff: true },
+  {
+    version: 7,
+    name: "dev application ids, domains, gateway hostnames",
+    file: "schema-007.sql",
+    // It rewrites primary keys and every column that references them, so the constraint is off
+    // while it runs and `foreign_key_check` decides afterwards whether it succeeded.
+    foreignKeysOff: true,
+  },
 ];
 
 /**

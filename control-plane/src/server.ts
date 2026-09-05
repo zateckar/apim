@@ -70,7 +70,13 @@ export function createApp(config: CpConfig): App {
   return app;
 }
 
-/** TARGETS_FILE is the source of truth for which targets exist (design section 11). */
+/**
+ * TARGETS_FILE is the source of truth for which targets exist (design section 11).
+ *
+ * `public_url` and `label` are the exception, and deliberately: they are what an administrator
+ * sets on the Gateways screen, and a file that reasserted them at every boot would undo that
+ * without saying so. They are seeded on insert and left alone afterwards.
+ */
 function syncTargets(app: App): void {
   for (const target of app.config.targets) {
     const existing = app.db
@@ -87,7 +93,8 @@ function syncTargets(app: App): void {
       ]);
     } else {
       app.db.run(
-        "INSERT INTO target (id, environment, adapter, config_json, enforce, paused) VALUES (?, ?, ?, ?, ?, ?)",
+        `INSERT INTO target (id, environment, adapter, config_json, enforce, paused, public_url, label)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           `tgt_${target.environment}_${target.adapter}`,
           target.environment,
@@ -95,6 +102,8 @@ function syncTargets(app: App): void {
           JSON.stringify(target.config ?? {}),
           target.enforce ? 1 : 0,
           target.paused ? 1 : 0,
+          target.publicUrl ?? null,
+          target.label ?? null,
         ],
       );
     }

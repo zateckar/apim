@@ -437,7 +437,7 @@ describe("TLS exceptions", () => {
         // held through an outage looks like once the date passes.
         (live as { expiresAt?: string }).expiresAt = new Date(Date.now() - 1000).toISOString();
         const response = await dp.fetchHttp(
-          new Request("http://gw" + `/${api.name}/store/inventory`, {
+          new Request(`http://gw${api.basePath}/store/inventory`, {
             headers: { "x-api-key": api.key! },
           }),
           "127.0.0.1",

@@ -373,7 +373,7 @@ export function registerUserRoutes(router: Router): void {
         members: counts.get(application.id) ?? 0,
         /**
          * Admin-only `[P1-18]`. Application names are already a discovery surface, but which identity
-         * provider group grants a application tells any signed-in user exactly which group to get
+         * provider group grants an application tells any signed-in user exactly which group to get
          * themselves added to in order to own another application's APIs. Absent, not blanked.
          */
         ...(user.isAdmin ? { sourceGroup: application.source_group } : {}),
@@ -416,14 +416,14 @@ export function registerUserRoutes(router: Router): void {
   });
 
   router.add("POST", "/api/applications", "session", async (ctx) => {
-    const actor = requireAdmin(ctx, "creating a application is admin-only");
+    const actor = requireAdmin(ctx, "creating an application is admin-only");
     const body = await readJson<{ name?: string; sourceGroup?: string; id?: string }>(ctx);
     const name = (body.name ?? "").trim();
     if (name.length < 2 || name.length > 80) throw badRequest("name: 2–80 characters");
     const existing = ctx.app.db
       .query<{ id: string }, [string]>("SELECT id FROM application WHERE lower(name) = lower(?)")
       .get(name);
-    if (existing) throw conflict(`a application called "${name}" already exists`);
+    if (existing) throw conflict(`an application called "${name}" already exists`);
     const sourceGroup = (body.sourceGroup ?? "").trim() || null;
     if (sourceGroup) assertSourceGroupFree(ctx, sourceGroup, null);
 
@@ -432,7 +432,7 @@ export function registerUserRoutes(router: Router): void {
       throw badRequest("id: lower-case letters, digits, hyphens and underscores, 2–48 characters");
     }
     if (ctx.app.db.query("SELECT id FROM application WHERE id = ?").get(id)) {
-      throw conflict(`a application with id "${id}" already exists`);
+      throw conflict(`an application with id "${id}" already exists`);
     }
     ctx.app.db.run("INSERT INTO application (id, name, source_group) VALUES (?, ?, ?)", [
       id,
@@ -450,7 +450,7 @@ export function registerUserRoutes(router: Router): void {
   });
 
   router.add("PATCH", "/api/applications/:id", "session", async (ctx) => {
-    const actor = requireAdmin(ctx, "changing a application is admin-only");
+    const actor = requireAdmin(ctx, "changing an application is admin-only");
     const application = applicationOr404(ctx, ctx.params.id!);
     const body = await readJson<{ name?: string; sourceGroup?: string | null }>(ctx);
     const changed: Record<string, unknown> = {};
@@ -485,16 +485,16 @@ export function registerUserRoutes(router: Router): void {
   });
 
   router.add("DELETE", "/api/applications/:id", "session", (ctx) => {
-    const actor = requireAdmin(ctx, "deleting a application is admin-only");
+    const actor = requireAdmin(ctx, "deleting an application is admin-only");
     const application = applicationOr404(ctx, ctx.params.id!);
     const owns = ownedBy(ctx, application.id);
     const total = Object.values(owns).reduce((sum, n) => sum + n, 0);
     if (total > 0) {
-      // Cascading a application delete through the resource graph would delete published APIs from a
+      // Cascading an application delete through the resource graph would delete published APIs from a
       // screen about people. The refusal lists what is in the way, with counts.
       throw conflict(
         `${application.name} still owns ${owns.resources} API(s), ${owns.products} product(s) and ` +
-          `${owns.subscriptions} subscription(s), ${owns.certificates} certificate(s) and ${owns.processes} process record(s). Move or withdraw those first — deleting a application ` +
+          `${owns.subscriptions} subscription(s), ${owns.certificates} certificate(s) and ${owns.processes} process record(s). Move or withdraw those first — deleting an application ` +
           "must not be a way to delete published APIs.",
         { fix: { screen: "applications" }, owns },
       );
@@ -577,7 +577,7 @@ function memberCounts(ctx: Ctx): Map<string, number> {
   return out;
 }
 
-/** What stands in the way of deleting a application, and what a member's access actually covers. */
+/** What stands in the way of deleting an application, and what a member's access actually covers. */
 function ownedBy(ctx: Ctx, applicationId: string): { resources: number; products: number; subscriptions: number; certificates: number; processes: number } {
   const count = (table: string): number =>
     ctx.app.db

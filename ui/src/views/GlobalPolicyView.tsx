@@ -182,7 +182,9 @@ export function GlobalPolicyView({
             <p className="muted">
               Not a downgrade anybody chose: the contract uses a schema keyword or a WSDL construct
               outside the implemented subset, so no state validates these. They are listed separately
-              because the fix is to the definition, not to the policy.
+              because the fix is to the definition, not to the policy — and for the same reason each
+              appears once, from the definition currently in force, rather than once per environment
+              it happens to be live in.
             </p>
             <ul className="units">
               {(downgrades.data?.unvalidatable ?? []).map((row) => (

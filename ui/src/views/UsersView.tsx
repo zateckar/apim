@@ -296,7 +296,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
 
       <Card
         title="Applications"
-        hint="A application granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
+        hint="An application granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
       >
         {row.memberships.length === 0 ? (
           <EmptyState
@@ -475,7 +475,7 @@ function GrantApplication({
     <div className="row">
       <Notice kind="error">{action.error}</Notice>
       <div className="field">
-        <label htmlFor="grant-application">Add to a application</label>
+        <label htmlFor="grant-application">Add to an application</label>
         <select id="grant-application" value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
           <option value="">Choose one…</option>
           {available.map((application) => (

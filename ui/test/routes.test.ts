@@ -52,7 +52,7 @@ describe("the route table", () => {
   });
 
   test("sections follow capability, not inventory", () => {
-    // `[P1-26]`: publishing is offered to a application that owns nothing, or nobody could ever
+    // `[P1-26]`: publishing is offered to an application that owns nothing, or nobody could ever
     // publish a first API — so the sections a member is offered do not depend on what they own.
     const sections = new Set(navigable(false).map((route) => route.section));
     expect(sections).toContain("use");

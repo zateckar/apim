@@ -42,7 +42,8 @@ describe("publishing an API reaches the config document", () => {
     const { body } = await gatewayConfig();
     expect(body!.routes).toHaveLength(1);
     const route = body!.routes[0]!;
-    expect(route.basePath).toBe("/petstore");
+    // The published address carries the domain the API was classified under, in front of the name.
+    expect(route.basePath).toBe("/it/solution/petstore");
     expect(route.rev).toBe(1);
     // v3: a pool. One backend is a pool of one, and `failover` is the rule that reads the same
     // whether the pool has one member or several — so it is what a v2-shaped binding becomes.
@@ -183,12 +184,18 @@ describe("what is and is not visible to the fleet", () => {
     const resource = await (
       await cp.call("POST", "/api/resources", {
         cookie: first.pavel,
-        body: { kind: "rest", name: "second", applicationId: "application_platform" },
+        body: {
+          kind: "rest",
+          name: "second",
+          applicationId: "application_platform",
+          domain: "IT",
+          subdomain: "Solution",
+        },
       })
     ).json();
     const response = await cp.call("PUT", `/api/resources/${resource.id}/routes`, {
       cookie: first.pavel,
-      body: { environment: "dev", host: "*", basePath: "/shared" },
+      body: { environment: "dev", host: "*", basePath: first.basePath },
     });
     expect(response.status).toBe(409);
     expect((await response.json()).detail).toContain("already serves");

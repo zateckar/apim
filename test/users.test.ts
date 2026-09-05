@@ -528,7 +528,7 @@ describe("applications", () => {
       const platform = mine.items.find((t) => t.id === "application_platform")!;
       expect(platform.mine).toBe(true);
       expect(platform.members).toBe(2);
-      // Absent, not blanked `[P1-18]`: which identity provider group grants a application tells any
+      // Absent, not blanked `[P1-18]`: which identity provider group grants an application tells any
       // signed-in user exactly which group to get themselves added to.
       expect("sourceGroup" in platform).toBe(false);
 
@@ -622,7 +622,7 @@ describe("applications", () => {
           })
         ).status,
       ).toBe(409);
-      // Re-asserting a application's own group is not a clash with itself.
+      // Re-asserting an application's own group is not a clash with itself.
       expect(
         (
           await cp.call("PATCH", "/api/applications/application_orders", {
@@ -658,7 +658,7 @@ describe("applications", () => {
       const refused = await cp.call("DELETE", "/api/applications/application_platform", { cookie: alice });
       expect(refused.status).toBe(409);
       const problem = await body<{ detail: string; owns: { resources: number } }>(refused);
-      // Cascading a application delete through the resource graph would delete published APIs from a
+      // Cascading an application delete through the resource graph would delete published APIs from a
       // screen about people.
       expect(problem.owns.resources).toBe(1);
       expect(problem.detail).toContain("must not be a way to delete published APIs");

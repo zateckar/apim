@@ -123,8 +123,22 @@ export const ROUTES: RouteDef[] = [
   {
     id: "fleet",
     pattern: "/fleet",
+    title: "Health Status",
+    purpose:
+      "Each environment's gateway: what configuration its replicas are running, and anything one has refused.",
+    section: "operate",
+    nav: "Health Status",
+    // Replicas are an operational fact, not an address. A consumer is given the proxy's hostname
+    // and nothing else, so the screen that lists what is behind it is gated with the rest of the
+    // estate's screens.
+    adminOnly: true,
+  },
+  {
+    id: "gateways",
+    pattern: "/gateways",
     title: "Gateways",
-    purpose: "Every gateway instance, what configuration it is running, and anything it has refused.",
+    purpose:
+      "Add a gateway, publish the hostname consumers call it on, and mint or revoke the replicas behind it.",
     section: "operate",
     nav: "Gateways",
     adminOnly: true,

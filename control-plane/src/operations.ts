@@ -13,6 +13,7 @@ import { assertCan, getResource, etagOf, assertIfMatch } from "./api/common.ts";
 import { revisionSource, writeRevision } from "./api/resources.ts";
 import { newId, nowIso } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
+import { domainError, domainPrefix, publishedPath } from "../../shared/domains.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
 import { checkEgress } from "./egress.ts";
 import { readPool, type PoolInput } from "./backend-pool.ts";
@@ -72,6 +73,42 @@ export interface PublishInput extends PoolInput {
   clientCertRef?: string | null;
   policy?: Record<string, unknown>;
   environment?: string;
+  /** The taxonomy. Required on publish; on configure, absent means "leave it as it is". */
+  domain?: string;
+  subdomain?: string | null;
+}
+
+/** Where a resource sits in the catalogue's taxonomy, as stored on the resource row. */
+interface Taxonomy {
+  domain: string | null;
+  subdomain: string | null;
+}
+
+/**
+ * What an API starts with when nobody has said otherwise: a subscription key is required.
+ *
+ * Named rather than written inline, because it is now two facts in one place — the default *and*
+ * the value a non-admin's save is held to.
+ */
+export const DEFAULT_POLICY: Record<string, unknown> = {
+  "auth.subscriptionKey": { in: "header", name: "X-Api-Key" },
+};
+
+/**
+ * The taxonomy a write is asking for, refusing anything the closed list does not offer.
+ *
+ * `current` is what the resource already has, so a form that does not send the fields (the policy
+ * tab, the definition tab) does not silently un-classify an API. A resource published before
+ * domains existed has `domain: null`; that is tolerated on read and refused here, so the next save
+ * is where it gets classified rather than the next deploy being where it breaks.
+ */
+function readTaxonomy(body: PublishInput, current: Taxonomy, required: boolean): Taxonomy {
+  const domain = body.domain !== undefined ? body.domain : current.domain;
+  const subdomain = body.subdomain !== undefined ? body.subdomain : current.subdomain;
+  if (!domain && !required) return { domain: null, subdomain: null };
+  const error = domainError(domain, subdomain);
+  if (error) throw badRequest(error);
+  return { domain: domain!, subdomain: subdomain || null };
 }
 function env(ctx: Ctx, value?: string): string {
   const e = value ?? ctx.app.config.promotionChain[0]!;
@@ -157,14 +194,31 @@ async function settings(
   body: PublishInput,
   kind: string,
   environment: string,
+  taxonomy: Taxonomy,
   defaults?: Snapshot,
 ): Promise<Omit<Snapshot, "revisionId">> {
   const h = normalizeHost(body.host ?? defaults?.host ?? "*");
-  const p = normalizeBasePath(
-    body.basePath ?? defaults?.basePath ?? `/${body.name}`,
-  );
+  // The domain is the first segment of the address, not a label filed beside it, so the default
+  // path is derived from the taxonomy and an explicit one has to live underneath it. Anything
+  // else and two APIs in different domains could answer on the same URL, and the catalog's
+  // grouping would stop being a fact about the estate.
+  const prefix = taxonomy.domain ? domainPrefix(taxonomy.domain, taxonomy.subdomain) : null;
+  const fallback = taxonomy.domain
+    ? publishedPath({
+        domain: taxonomy.domain,
+        subdomain: taxonomy.subdomain,
+        name: body.name ?? "",
+      })
+    : `/${body.name}`;
+  const p = normalizeBasePath(body.basePath ?? defaults?.basePath ?? fallback);
   if (h.errors.length || p.errors.length)
     throw badRequest([...h.errors, ...p.errors].join("; "));
+  if (prefix && p.basePath !== prefix && !p.basePath.startsWith(`${prefix}/`)) {
+    throw badRequest(
+      `basePath: "${p.basePath}" is not under "${prefix}", which is where ${taxonomy.domain}` +
+        `${taxonomy.subdomain ? ` / ${taxonomy.subdomain}` : ""} publishes`,
+    );
+  }
   let backend = defaults?.backend;
   // A pool and a single URL are the same field said two ways: `backendUrl` is the one-member
   // shorthand the publish and promotion forms send, `pool`/`rule` is what the properties form
@@ -223,10 +277,22 @@ async function settings(
         "the client certificate must belong to the API application",
       );
   }
-  const policy = body.policy ??
-    defaults?.policy ?? {
-      "auth.subscriptionKey": { in: "header", name: "X-Api-Key" },
-    };
+  const policy = { ...(body.policy ?? defaults?.policy ?? DEFAULT_POLICY) };
+  // "Requires a subscription key" is the default, and whether an API may stop requiring one is an
+  // administrator's decision rather than its owner's: an open route is the one policy change whose
+  // blast radius is the whole internet, and the owner is exactly the person with a reason to want
+  // it. So a non-admin's document keeps whatever the unit was — including the default — and the
+  // control says so rather than the save failing later.
+  if (!ctx.user?.isAdmin) {
+    const before = defaults?.policy?.["auth.subscriptionKey"] ?? DEFAULT_POLICY["auth.subscriptionKey"];
+    if (JSON.stringify(policy["auth.subscriptionKey"] ?? null) !== JSON.stringify(before)) {
+      throw badRequest(
+        "auth.subscriptionKey: only an administrator can change whether this API requires a " +
+          "subscription key",
+      );
+    }
+    policy["auth.subscriptionKey"] = before;
+  }
   const errors = validateDocument(policy, { kind });
   if (errors.length) throw badRequest(errors.join("; "));
   return { host: h.host, basePath: p.basePath, backend, policy };
@@ -358,8 +424,11 @@ export function registerOperationRoutes(router: Router) {
       (!body.productName || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.productName))
     )
       throw badRequest("choose a product or enter a valid product name");
+    // Required on a new API, with no "unclassified" escape: a catalog you cannot browse by domain
+    // is a list, and one API without a domain is enough to make the grouping incomplete.
+    const taxonomy = readTaxonomy(body, { domain: null, subdomain: null }, true);
     const source = await revisionSource(ctx, { kind }, body);
-    const config = await settings(ctx, body, kind, environment);
+    const config = await settings(ctx, body, kind, environment, taxonomy);
     return ctx.app.db.transaction(() => {
       const duplicate = repeated(ctx, requestDigest);
       if (duplicate) return duplicate;
@@ -403,8 +472,8 @@ export function registerOperationRoutes(router: Router) {
         );
       }
       ctx.app.db.run(
-        `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,created_at,updated_at)
-    VALUES (?,?,?,?,?,'active',?,?,?)`,
+        `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,domain,subdomain,created_at,updated_at)
+    VALUES (?,?,?,?,?,'active',?,?,?,?,?)`,
         [
           id,
           kind,
@@ -412,6 +481,8 @@ export function registerOperationRoutes(router: Router) {
           applicationId,
           version,
           body.description ?? "",
+          taxonomy.domain,
+          taxonomy.subdomain,
           at,
           at,
         ],
@@ -440,6 +511,7 @@ export function registerOperationRoutes(router: Router) {
         ctx.url.searchParams.get("environment") ?? undefined,
       );
     const snapshot = currentSnapshot(ctx, row.id, environment);
+    const canEdit = can(ctx.user, row.application_id);
     const definition = snapshot
       ? ctx.app.db
           .query<{ original: string }, [string]>(
@@ -447,26 +519,45 @@ export function registerOperationRoutes(router: Router) {
           )
           .get(snapshot.revisionId)?.original
       : null;
+    const owner = ctx.app.db
+      .query<{ name: string }, [string]>("SELECT name FROM application WHERE id=?")
+      .get(row.application_id);
     return json({
       resource: {
         id: row.id,
         name: row.name,
         kind: row.kind,
         applicationId: row.application_id,
+        applicationName: owner?.name ?? row.application_id,
         apiVersion: row.api_version,
         description: row.description,
+        domain: row.domain ?? null,
+        subdomain: row.subdomain ?? null,
         etag: etagOf(row),
-        canEdit: can(ctx.user, row.application_id),
+        canEdit,
+        // One sentence saying why, rather than controls that vanish (finding 8). Present for
+        // everybody so the screen never has to decide whether to render a reason it does not have.
+        editReason: canEdit
+          ? null
+          : `This API belongs to ${owner?.name ?? row.application_id}. You can read it here; ` +
+            "only somebody in that application can change it.",
       },
       environment,
+      // A non-owner sees what the API *is*, never how it is wired: backend addresses are internal
+      // topology and the policy document names credentials, certificates and header rules
+      // (finding 3). `published` keeps the one bit the workspace actually needs from `settings` —
+      // whether this environment has it at all — without the rest.
       settings: snapshot
-        ? {
-            host: snapshot.host,
-            basePath: snapshot.basePath,
-            backend: snapshot.backend,
-            policy: snapshot.policy,
-          }
+        ? canEdit
+          ? {
+              host: snapshot.host,
+              basePath: snapshot.basePath,
+              backend: snapshot.backend,
+              policy: snapshot.policy,
+            }
+          : { host: snapshot.host, basePath: snapshot.basePath, redacted: true }
         : null,
+      published: Boolean(snapshot),
       definition,
       products: ctx.app.db
         .query(
@@ -497,11 +588,19 @@ export function registerOperationRoutes(router: Router) {
     const previous = currentSnapshot(ctx, row.id, environment);
     if (!previous)
       throw conflict("publish or promote to this environment first");
+    // Required from here on, including for a row published before domains existed: the save that
+    // classifies it is also the save that moves its path, so both happen at once or neither does.
+    const taxonomy = readTaxonomy(
+      body,
+      { domain: row.domain, subdomain: row.subdomain },
+      true,
+    );
     const config = await settings(
       ctx,
-      { ...body, applicationId: row.application_id },
+      { ...body, applicationId: row.application_id, name: row.name },
       row.kind,
       environment,
+      taxonomy,
       previous,
     );
     const source =
@@ -521,8 +620,8 @@ export function registerOperationRoutes(router: Router) {
           .get(row.id)!.id;
       }
       ctx.app.db.run(
-        "UPDATE resource SET updated_at=?,description=COALESCE(?,description) WHERE id=?",
-        [nowIso(), body.description ?? null, row.id],
+        "UPDATE resource SET updated_at=?,description=COALESCE(?,description),domain=?,subdomain=? WHERE id=?",
+        [nowIso(), body.description ?? null, taxonomy.domain, taxonomy.subdomain, row.id],
       );
       if (body.policy && environment !== ctx.app.config.promotionChain[0])
         ctx.app.db.run(
@@ -573,11 +672,16 @@ export function registerOperationRoutes(router: Router) {
       throw badRequest(
         `backendUrl is required for the first promotion to ${environment.toUpperCase()}`,
       );
+    // A promotion carries the taxonomy the resource already has: the domain belongs to the API,
+    // not to one environment's route, so it is never re-asked here and never differs across the
+    // chain. A row published before domains existed promotes unchanged rather than being blocked
+    // — it gets classified on its next edit, which is where the path can move safely.
     const config = await settings(
       ctx,
-      { ...body, applicationId: row.application_id },
+      { ...body, applicationId: row.application_id, name: row.name },
       row.kind,
       environment,
+      { domain: row.domain, subdomain: row.subdomain },
       defaults,
     );
     return ctx.app.db.transaction(() => {

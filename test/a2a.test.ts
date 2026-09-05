@@ -1,6 +1,14 @@
 import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeCp, makeDp, serveCp, type TestCp } from "./helpers.ts";
+import {
+  FIXTURE_DOMAIN,
+  FIXTURE_SUBDOMAIN,
+  makeCp,
+  makeDp,
+  serveCp,
+  underDomain,
+  type TestCp,
+} from "./helpers.ts";
 import { A2aAgent, startA2aAgent } from "../tools/a2a/agent.ts";
 import { AGENT_CARD_PATH, A2A_PROTOCOL_VERSION } from "../shared/a2a.ts";
 import type { DataPlane } from "../data-plane/src/server.ts";
@@ -47,7 +55,14 @@ async function publishA2a(discoverUrl: string) {
   const created = await (
     await cp.call("POST", "/api/resources", {
       cookie: pavel,
-      body: { kind: "a2a", name: `a2a-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
+      body: {
+        kind: "a2a",
+        name: `a2a-${++seq}`,
+        applicationId: "application_platform",
+        apiVersion: "v1",
+        domain: FIXTURE_DOMAIN,
+        subdomain: FIXTURE_SUBDOMAIN,
+      },
     })
   ).json();
   const response = await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -217,7 +232,7 @@ async function world(
   options: { policy?: Record<string, unknown>; visibility?: "listed" | "unlisted" } = {},
 ): Promise<A2aWorld> {
   const origin = startAgent();
-  const basePath = `/a-${++seq}`;
+  const basePath = underDomain(`/a-${++seq}`, FIXTURE_DOMAIN, FIXTURE_SUBDOMAIN);
   const { pavel, resourceId, response } = await publishA2a(origin.url);
   if (response.status !== 201) throw new Error(`publish failed: ${await response.text()}`);
 

@@ -361,6 +361,12 @@ export function registerPolicyRoutes(router: Router): void {
     // Operations that cannot be validated at all, whatever the state — an unsupported schema
     // keyword or a WSDL construct outside the implemented subset. Different from a downgrade
     // somebody chose, and listed separately for that reason (plan `[R1-14]`, `[R1-15]`).
+    //
+    // One row per (API, operation), from that API's **newest** revision. It used to join every
+    // revision, so an API edited three times listed the same unvalidatable operation three times
+    // with nothing on the row to tell the copies apart (finding 12) — and the older copies were
+    // stale anyway: whether an operation can be validated is a fact about the definition in force,
+    // and a fixed contract should leave this list rather than sit in it beside its own fix.
     const unvalidatable = ctx.app.db
       .query<
         { resource_id: string; resource_name: string; api_version: string; index_json: string },
@@ -369,7 +375,8 @@ export function registerPolicyRoutes(router: Router): void {
         `SELECT v.resource_id, r.name AS resource_name, r.api_version, v.index_json
            FROM revision v JOIN resource r ON r.id = v.resource_id
           WHERE v.index_json IS NOT NULL
-          ORDER BY r.name`,
+            AND v.rev = (SELECT MAX(rev) FROM revision WHERE resource_id = v.resource_id)
+          ORDER BY r.name, r.api_version`,
       )
       .all()
       .flatMap((row) => {

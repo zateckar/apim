@@ -113,7 +113,7 @@ describe("the artifact channel", () => {
       expect(dp.artifacts.stats().artifacts).toBeGreaterThan(0);
 
       const conforming = await dp.fetchHttp(
-        new Request("http://gw/pets/pets", {
+        new Request("http://gw/it/solution/pets/pets", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": api.key! },
           body: JSON.stringify({ name: "rex", age: 3 }),
@@ -123,7 +123,7 @@ describe("the artifact channel", () => {
       expect(conforming.status).toBe(200);
 
       const violating = await dp.fetchHttp(
-        new Request("http://gw/pets/pets", {
+        new Request("http://gw/it/solution/pets/pets", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": api.key! },
           body: JSON.stringify({ age: 3 }),
@@ -189,7 +189,7 @@ describe("the artifact channel", () => {
       expect(dp.client.activationBlocked).toContain("could not be fetched");
 
       const response = await dp.fetchHttp(
-        new Request("http://gw/pets/pets", {
+        new Request("http://gw/it/solution/pets/pets", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": api.key! },
           body: JSON.stringify({ name: "rex" }),
@@ -368,7 +368,7 @@ describe("the instance-side cache", () => {
       expect(cold.client.fromCache).toBe(true);
 
       const violating = await cold.fetchHttp(
-        new Request("http://gw/pets/pets", {
+        new Request("http://gw/it/solution/pets/pets", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": api.key! },
           body: JSON.stringify({ age: 3 }),

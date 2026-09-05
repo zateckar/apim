@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DataPlane, loadDpConfig, type DpConfig } from "../data-plane/src/server.ts";
 import { CONFIG_VERSION, type GatewayConfig } from "../shared/config-doc.ts";
+import { domainPrefix } from "../shared/domains.ts";
 import {
   TELEMETRY_DEFAULTS,
   type PollResponse,
@@ -220,6 +221,23 @@ export interface PublishOptions {
   kind?: "rest" | "soap";
   apiVersion?: string;
   name?: string;
+  domain?: string;
+  subdomain?: string | null;
+}
+
+/** The taxonomy every fixture lands in unless it says otherwise. */
+export const FIXTURE_DOMAIN = "IT";
+export const FIXTURE_SUBDOMAIN = "Solution";
+
+/**
+ * Every published path starts with its domain, so a fixture that asks for `/orders` means
+ * `/it/solution/orders`. Spelling the prefix out at 150 call sites would test the test suite's
+ * ability to concatenate strings; a fixture that already carries the prefix is left alone.
+ */
+export function underDomain(basePath: string, domain: string, subdomain?: string | null): string {
+  const prefix = domainPrefix(domain, subdomain);
+  if (basePath === prefix || basePath.startsWith(`${prefix}/`)) return basePath;
+  return `${prefix}${basePath.startsWith("/") ? "" : "/"}${basePath}`;
 }
 
 export const MINI_SPEC = {
@@ -240,6 +258,9 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
   const clara = await cp.login("clara");
   const name = options.name ?? `api-${Math.random().toString(36).slice(2, 8)}`;
 
+  const domain = options.domain ?? FIXTURE_DOMAIN;
+  const subdomain = options.subdomain === undefined ? FIXTURE_SUBDOMAIN : options.subdomain;
+
   const resource = await (
     await cp.call("POST", "/api/resources", {
       cookie: pavel,
@@ -248,10 +269,13 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
         name,
         applicationId: "application_platform",
         apiVersion: options.apiVersion ?? "v1",
+        domain,
+        subdomain,
       },
     })
   ).json();
   const resourceId = resource.id as string;
+  const basePath = underDomain(options.basePath ?? `/${name}`, domain, subdomain);
 
   await cp.call("POST", `/api/resources/${resourceId}/revisions`, {
     cookie: pavel,
@@ -259,7 +283,7 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
   });
   await cp.call("PUT", `/api/resources/${resourceId}/routes`, {
     cookie: pavel,
-    body: { environment: "dev", host: options.host ?? "*", basePath: options.basePath ?? `/${name}` },
+    body: { environment: "dev", host: options.host ?? "*", basePath },
   });
   await cp.call("PUT", `/api/resources/${resourceId}/binding`, {
     cookie: pavel,
@@ -297,7 +321,19 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
     subscriptionId = subscription.id;
   }
 
-  return { resourceId, name, productId: product.id as string, release, key, subscriptionId, pavel, clara };
+  return {
+    resourceId,
+    name,
+    basePath,
+    domain,
+    subdomain,
+    productId: product.id as string,
+    release,
+    key,
+    subscriptionId,
+    pavel,
+    clara,
+  };
 }
 
 /**
@@ -332,9 +368,18 @@ export async function prepareEnvironment(
   basePath: string,
   backendUrl: string,
 ) {
+  const row = cp.app.db
+    .query<{ domain: string | null; subdomain: string | null }, [string]>(
+      "SELECT domain, subdomain FROM resource WHERE id = ?",
+    )
+    .get(resourceId);
   await cp.call("PUT", `/api/resources/${resourceId}/routes`, {
     cookie,
-    body: { environment, host: "*", basePath },
+    body: {
+      environment,
+      host: "*",
+      basePath: row?.domain ? underDomain(basePath, row.domain, row.subdomain) : basePath,
+    },
   });
   await cp.call("PUT", `/api/resources/${resourceId}/binding`, {
     cookie,

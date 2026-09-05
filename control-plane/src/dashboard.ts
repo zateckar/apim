@@ -39,7 +39,7 @@ import { requireUser, type Ctx } from "./router.ts";
  *  - **`previous` is null rather than wrong.** A trend needs twice the window inside retention;
  *    when it is not there the field is null, `trendAvailable` says so, and the UI omits the delta.
  *  - **every list is bounded** with a truncation count beside it `[P1-13]`.
- *  - **`hats` describes data, not navigation** `[P1-26]`: a application that owns nothing still has the
+ *  - **`hats` describes data, not navigation** `[P1-26]`: an application that owns nothing still has the
  *    "publish an API" screen, or it could never publish its first one.
  */
 
@@ -55,7 +55,7 @@ export interface DashboardQuery {
 
 function bounded(rows: AttentionRow[]): { attention: AttentionRow[]; attentionTruncated: number } {
   // The three start-here codes are produced only into `startHere`. Asserted here rather than
-  // trusted, because a rule that leaked one would put "publish your first API" on a application with
+  // trusted, because a rule that leaked one would put "publish your first API" on an application with
   // fifty `[P2-09]`.
   const usable = rows.filter((row) => !START_HERE_CODES.includes(row.code));
   return {

@@ -1,6 +1,14 @@
 import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { makeCp, makeDp, serveCp, type TestCp } from "./helpers.ts";
+import {
+  FIXTURE_DOMAIN,
+  FIXTURE_SUBDOMAIN,
+  makeCp,
+  makeDp,
+  serveCp,
+  underDomain,
+  type TestCp,
+} from "./helpers.ts";
 import { McpServer, startMcpServer } from "../tools/mcp/server.ts";
 import type { DataPlane } from "../data-plane/src/server.ts";
 import type { Integrations } from "../control-plane/src/egress.ts";
@@ -47,7 +55,14 @@ async function publishMcp(discoverUrl: string) {
   const created = await (
     await cp.call("POST", "/api/resources", {
       cookie: pavel,
-      body: { kind: "mcp", name: `mcp-${++seq}`, applicationId: "application_platform", apiVersion: "v1" },
+      body: {
+        kind: "mcp",
+        name: `mcp-${++seq}`,
+        applicationId: "application_platform",
+        apiVersion: "v1",
+        domain: FIXTURE_DOMAIN,
+        subdomain: FIXTURE_SUBDOMAIN,
+      },
     })
   ).json();
   const response = await cp.call("POST", `/api/resources/${created.id}/revisions`, {
@@ -302,7 +317,7 @@ interface McpWorld {
 
 async function world(policy: Record<string, unknown> = {}): Promise<McpWorld> {
   const origin = startServer();
-  const basePath = `/m-${++seq}`;
+  const basePath = underDomain(`/m-${++seq}`, FIXTURE_DOMAIN, FIXTURE_SUBDOMAIN);
   const { pavel, resourceId, response } = await publishMcp(origin.url);
   if (response.status !== 201) throw new Error(`publish failed: ${await response.text()}`);
 

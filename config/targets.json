@@ -1,13 +1,15 @@
 {
-  "_comment": "TARGETS_FILE (design section 11). One entry per (environment, adapter); UNIQUE(environment, adapter) means an environment may hold several adapters but only one of each. v2 ships the 'standalone' adapter across the whole promotion chain; 'apim' and 'kafka' are out of scope. v4 adds config.gatewayUrls: where the playground may send a request in that environment (plan section 11). In a real deployment this is the F5 vhost, not an instance; two entries exist for dev so calls x instances is demonstrable by hand. An environment without it has no playground, and the portal says so.",
+  "_comment": "TARGETS_FILE (design section 11). One entry per (environment, adapter); UNIQUE(environment, adapter) means an environment may hold several adapters but only one of each. v2 ships the 'standalone' adapter across the whole promotion chain; 'apim' and 'kafka' are out of scope. v4 adds config.gatewayUrls: where the playground may send a request in that environment (plan section 11) — those are the individual replicas and are admin-only. `publicUrl` is the reverse proxy in front of them and is the ONLY gateway address a consumer is ever shown; it seeds the target row on insert and is editable afterwards on the admin Gateways screen. Locally there is no proxy, so dev's publicUrl points at one replica and dev keeps two gatewayUrls so calls x instances stays demonstrable by hand.",
   "targets": [
     {
       "environment": "dev",
       "adapter": "standalone",
       "enforce": true,
       "paused": false,
+      "publicUrl": "http://127.0.0.1:8081",
+      "label": "local",
       "config": {
-        "note": "two instances, so calls x instances is visible (design section 5.7)",
+        "note": "two replicas, so calls x instances is visible (design section 5.7)",
         "gatewayUrls": [
           { "label": "dev-1", "url": "http://127.0.0.1:8081" },
           { "label": "dev-2", "url": "http://127.0.0.1:8082" }
@@ -19,6 +21,8 @@
       "adapter": "standalone",
       "enforce": true,
       "paused": false,
+      "publicUrl": "http://127.0.0.1:8083",
+      "label": "local",
       "config": {
         "gatewayUrls": [{ "label": "test-1", "url": "http://127.0.0.1:8083" }]
       }
@@ -28,6 +32,8 @@
       "adapter": "standalone",
       "enforce": true,
       "paused": false,
+      "publicUrl": "http://127.0.0.1:8084",
+      "label": "local",
       "config": {
         "gatewayUrls": [{ "label": "prod-1", "url": "http://127.0.0.1:8084" }]
       }

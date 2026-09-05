@@ -11,6 +11,7 @@ import { dispatch, type App, type Router } from "../../control-plane/src/router.
 import { DataPlane, loadDpConfig, startDataPlane } from "../../data-plane/src/server.ts";
 import { PetstoreBackend, startBackend } from "../backend/server.ts";
 import { generateCertificate } from "../../test/x509.ts";
+import { publishedPath } from "../../shared/domains.ts";
 
 /**
  * The load harness builds its **own** world rather than measuring whatever happens to be running:
@@ -376,12 +377,16 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
   const apis = new Map<string, { basePath: string; key: string | null }>();
 
   for (const spec of PERF_APIS) {
-    const basePath = `/${spec.name}`;
+    // The harness publishes through the same taxonomy every other API goes through, so the paths
+    // it measures are the paths the estate actually serves.
+    const basePath = publishedPath({ domain: "IT", subdomain: "Solution", name: spec.name });
     const resource = await (
       await call(app, router, pavel, "POST", "/api/resources", {
         kind: spec.kind ?? "rest",
         name: spec.name,
         applicationId: "application_platform",
+        domain: "IT",
+        subdomain: "Solution",
       })
     ).json();
     await call(app, router, pavel, "POST", `/api/resources/${resource.id}/revisions`, {

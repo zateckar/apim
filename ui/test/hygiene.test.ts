@@ -178,7 +178,7 @@ describe("interaction hygiene", () => {
     {
       file: "views/UsersView.tsx",
       endpoint: "/applications/",
-      why: "revoking a application membership, which the button beside it grants back — and which the response itself explains when the directory will simply re-add it",
+      why: "revoking an application membership, which the button beside it grants back — and which the response itself explains when the directory will simply re-add it",
     },
   ];
 

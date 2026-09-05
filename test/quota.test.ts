@@ -246,7 +246,7 @@ async function world(policy: Record<string, unknown>, name = `q-${++seq}`): Prom
   return {
     dp,
     key: api.key!,
-    basePath,
+    basePath: api.basePath,
     stop: () => {
       dp.stop();
       cpServer.stop();
@@ -302,7 +302,7 @@ describe("quota through the gateway", () => {
       await two.start();
       const call = (dp: DataPlane) =>
         dp.fetchHttp(
-          new Request(`http://gw${basePath}/tick`, { headers: { "x-api-key": api.key! } }),
+          new Request(`http://gw${api.basePath}/tick`, { headers: { "x-api-key": api.key! } }),
           "127.0.0.1",
         );
 
@@ -350,7 +350,7 @@ describe("quota through the gateway", () => {
       try {
         const call = () =>
           dp.fetchHttp(
-            new Request("http://gw/prod-a/tick", { headers: { "x-api-key": api.key! } }),
+            new Request(`http://gw${api.basePath}/tick`, { headers: { "x-api-key": api.key! } }),
             "127.0.0.1",
           );
         expect((await call()).status).toBe(200);

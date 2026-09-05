@@ -5,7 +5,7 @@ import {
   percentile,
   SERVED_OUTCOMES,
 } from "../../../shared/telemetry.ts";
-import { badRequest, json, Router, requireUser, type Ctx } from "../router.ts";
+import { badRequest, json, Router, requireAdmin, requireUser, type Ctx } from "../router.ts";
 
 /**
  * Reading telemetry back (plan G4).
@@ -164,8 +164,22 @@ export function groupBy(rows: Row[], key: (row: Row) => string): Map<string, Tot
   return groups;
 }
 
+/**
+ * The estate view is admin-only, and said here rather than only in the sidebar.
+ *
+ * `rowsFor` scopes rows to the caller's applications, so a member reading these endpoints was
+ * never seeing somebody else's *traffic* — but the screen they are for is the estate's, "By
+ * gateway" names every replica behind the proxy, and a nav that gates a screen while its API
+ * answers anyone is a gate that is not there (finding 2). The member-facing use of this data is
+ * the dashboard, which calls `rowsFor` directly and is unaffected.
+ */
+function requireEstateReader(ctx: Ctx): void {
+  requireAdmin(ctx, "estate-wide telemetry is admin-only; your own traffic is on the dashboard");
+}
+
 export function registerTelemetryRoutes(router: Router): void {
   router.add("GET", "/api/telemetry/summary", "session", (ctx) => {
+    requireEstateReader(ctx);
     const environment = environmentOf(ctx);
     const { sinceIso, sinceMin } = sinceOf(ctx);
     const rows = rowsFor(ctx, environment, sinceIso);
@@ -204,6 +218,7 @@ export function registerTelemetryRoutes(router: Router): void {
   });
 
   router.add("GET", "/api/telemetry/resources", "session", (ctx) => {
+    requireEstateReader(ctx);
     const environment = environmentOf(ctx);
     const { sinceIso, sinceMin } = sinceOf(ctx);
     const rows = rowsFor(ctx, environment, sinceIso);
@@ -237,6 +252,7 @@ export function registerTelemetryRoutes(router: Router): void {
   });
 
   router.add("GET", "/api/telemetry/consumers", "session", (ctx) => {
+    requireEstateReader(ctx);
     const environment = environmentOf(ctx);
     const { sinceIso, sinceMin } = sinceOf(ctx);
     const rows = rowsFor(ctx, environment, sinceIso).filter((row) => row.subscription_id !== "");
@@ -273,6 +289,7 @@ export function registerTelemetryRoutes(router: Router): void {
   });
 
   router.add("GET", "/api/telemetry/instances", "session", (ctx) => {
+    requireEstateReader(ctx);
     const environment = environmentOf(ctx);
     const { sinceIso, sinceMin } = sinceOf(ctx);
     const rows = rowsFor(ctx, environment, sinceIso);

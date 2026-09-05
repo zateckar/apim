@@ -81,13 +81,20 @@ Sign in as **Pavel**.
       activity and a card about the application.
 - [ ] The environment segmented control reads **DEV / TEST / PROD**, DEV selected.
 - [ ] **No Administration group.** Pavel is not an admin.
-- [ ] Type `/telemetry` into the address bar. It is refused or empty — but reachable, not a blank page.
+- [ ] Type `/telemetry` into the address bar → refused, in a sentence. Then check the server itself
+      agrees: `curl.exe -i http://localhost:8080/api/telemetry/summary?environment=dev` with Pavel's
+      session cookie must be **403**, not a 200 carrying the whole estate's traffic. The nav hiding
+      a screen is not the same as the server refusing it.
+- [ ] Same for `/fleet` and `/gateways`: refused. Replica addresses are administrator-only, and a
+      consumer is only ever given the proxy.
 - [ ] Toggle the theme button (**Dark** / **Light**). Reload — the choice survives.
 - [ ] Narrow the window to phone width. The sidebar collapses behind **☰** and the toggle opens it.
 
 Sign out, sign in as **Alice**.
 
-- [ ] An **Administration** group appears: Applications, People, Telemetry, Global policy, Trust, Audit.
+- [ ] An **Administration** group appears: Health Status, Gateways, Applications, People, Telemetry,
+      Global policy, Trust, Audit. **Health Status** and **Gateways** are two screens, not one —
+      health reports, Gateways adds and removes.
 - [ ] The application picker offers **both** Platform APIs and Orders.
 - [ ] Every link in **Global** and **Administration** opens a screen with a title and a one-line
       purpose under it. None 404s, none is blank.
@@ -102,7 +109,12 @@ As **Pavel**, application **Platform APIs**. Sidebar → **APIs** → **Publish 
 - [ ] **Type** `REST`. **Version** is pre-filled `v1`; leave it (§9 uses the other path to a version).
 - [ ] **Product** → *Create a product*, **New product name** `checkout-product`.
 - [ ] **DEV backend URL** `http://127.0.0.1:9080/v2`.
-- [ ] **Public path** — leave blank and watch the placeholder read `/checkout`.
+- [ ] **Domain** — the form will not submit without one. Pick `IT`, then **Sub-domain** `Solution`.
+      Change the domain and watch the sub-domain reset: the pair has to be one the estate actually
+      has, and the server refuses any other.
+- [ ] **Public path** is not yours to type. It reads `/it/solution/checkout` and follows the domain,
+      the sub-domain and the name as you change them. The domain is the first segment of the
+      address, which is what makes the estate browsable by domain.
 - [ ] **Definition source** → *Upload or paste definition*, and paste:
 
 ```yaml
@@ -130,7 +142,8 @@ paths:
 ```
 
 - [ ] **Publish to DEV**. The browser lands on the API workspace.
-- [ ] The **Operations** card under the definition lists `getInventory` and `addPet`.
+- [ ] The **Operations** card under the definition lists the method and path of each operation —
+      `GET /store/inventory` and `POST /pet`, not the operation ids.
 - [ ] **Deployment progress** shows one operation. Within a few seconds it reads **complete** — not
       before both DEV gateways have polled.
 - [ ] **Activity** in the sidebar lists the same operation. So does the bell.
@@ -139,17 +152,32 @@ paths:
 ### Call it
 
 ```bash
-curl.exe -i http://localhost:8081/checkout/store/inventory
+curl.exe -i http://localhost:8081/it/solution/checkout/store/inventory
 ```
 
 - [ ] **401** — a subscription key is required. The default policy attaches `auth.subscriptionKey`.
-- [ ] `curl.exe -i http://localhost:8082/checkout/store/inventory` — the *other* DEV gateway answers
+- [ ] `curl.exe -i http://localhost:8082/it/solution/checkout/store/inventory` — the *other* DEV gateway answers
       the same. Both are serving; the fleet is not one process.
 
 ### The failure that is not a failure
 
-- [ ] `curl.exe -i http://localhost:8083/checkout/store/inventory` → **404**. TEST has never had this
+- [ ] `curl.exe -i http://localhost:8083/it/solution/checkout/store/inventory` → **404**. TEST has never had this
       API. Editing DEV did not touch TEST. Keep this in mind for §6.
+
+### The domain is not decoration
+
+The domain is the first segment of the address, so classification and addressing cannot drift apart.
+That claim is worth two minutes.
+
+- [ ] `curl.exe -i http://localhost:8081/checkout/store/inventory` — without the domain → **404**.
+      There is exactly one address, and it is the one the portal showed you.
+- [ ] API workspace → **properties**. The **Public path** is read-only and the domain is fixed:
+      changing it here is refused, because the route is already serving and the two have to move
+      together. The screen says where to do it instead.
+- [ ] **Publish API** again, name `checkout-2`, and leave **Domain** unset → the form will not
+      submit. Every catalog item belongs to a domain.
+- [ ] Pick a domain, then note the sub-domain list only offers that domain's own. A sub-domain
+      containing a slash (`Sales` → `Crm/leads`) becomes two path segments: `/sales/crm/leads/…`.
 
 ---
 
@@ -170,7 +198,7 @@ $key = "<paste the primary key>"
 ```
 
 ```bash
-curl.exe -i -H "X-Api-Key: $key" http://localhost:8081/checkout/store/inventory
+curl.exe -i -H "X-Api-Key: $key" http://localhost:8081/it/solution/checkout/store/inventory
 ```
 
 - [ ] **404 from the backend**, not 401. The key worked; the *path* did not — the gateway forwarded
@@ -184,11 +212,32 @@ The API workspace → **policies** tab.
 
 ### The form
 
-- [ ] **API access** → *Public access*. **Save changes**. Wait for complete.
-- [ ] `curl.exe -i http://localhost:8081/checkout/store/inventory` → no longer 401.
-- [ ] Set it back to **Require subscription key**, save, and confirm 401 returns.
+The policy document is edited as blocks, grouped the way a request travels: **Inbound — who may
+call**, **Traffic — how much they may call**, **Shape — what goes through**, **Backend — how it is
+forwarded**, **Protocol**.
+
+- [ ] **Add a policy** offers every unit the platform has, each with a one-line description, and
+      each already-attached unit is absent from the picker. Nothing that exists on the server is
+      missing from this list.
+- [ ] **Require subscription key** is already attached — it is the default for a new API — and as
+      Pavel it is **locked**, with the reason stated: only an administrator changes it, per API.
+      There is no control that would remove it.
+- [ ] Sign in as **Alice**, open the same API, and the same block is editable. Set it to public,
+      save, and `curl.exe -i http://localhost:8081/it/solution/checkout/store/inventory` no longer
+      returns 401. Put it back and confirm 401 returns. Back to Pavel for the rest of §4.
+- [ ] **Circuit breaker** and **Retries** are offered but refuse to attach while the API has one
+      backend, saying so — they are meaningless without a pool. §8 adds one and they become
+      available.
 - [ ] **Rate limit** → *Limit each subscription*. Set **Calls per gateway** `3`, **Period** `10`. Save.
-- [ ] **Backend timeout** — set `1`, save, call with the key, and see the gateway give up. Set it back
+- [ ] **Backend timeout** — set `1` and save. The local petstore answers in well under a
+      millisecond, so an ordinary call still succeeds; force the timeout with a backend that is
+      deliberately slow:
+
+```bash
+curl.exe -i -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" -H "x-sim-delay-ms: 2000" http://localhost:8081/it/solution/checkout/store/inventory
+```
+
+- [ ] A clean **504 Gateway Timeout** from the gateway, not a hung request. Set the timeout back
       to `30000`.
 
 ### Advanced settings
@@ -217,17 +266,17 @@ Expand **Advanced settings** and edit the JSON directly. Replace it with:
 ### Call it at each rung
 
 ```bash
-curl.exe -i http://localhost:8081/checkout/store/inventory
+curl.exe -i http://localhost:8081/it/solution/checkout/store/inventory
 ```
 - [ ] **401**, no key.
 
 ```bash
-curl.exe -i -H "X-Api-Key: $key" http://localhost:8081/checkout/store/inventory
+curl.exe -i -H "X-Api-Key: $key" http://localhost:8081/it/solution/checkout/store/inventory
 ```
 - [ ] **403**, and the body carries the reason the policy configured — not a generic refusal.
 
 ```bash
-curl.exe -i -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/checkout/store/inventory
+curl.exe -i -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/it/solution/checkout/store/inventory
 ```
 - [ ] **200**, proxied. `rewrite` stripped the base path, so the backend saw `/v2/store/inventory`.
 - [ ] Run it four times inside ten seconds → the fourth is **429** with `Retry-After`.
@@ -237,7 +286,7 @@ curl.exe -i -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://loca
 ### Validation is on by default
 
 ```bash
-curl.exe -i -X POST http://localhost:8081/checkout/pet -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" -H "Content-Type: application/json" --data '{"name":42}'
+curl.exe -i -X POST http://localhost:8081/it/solution/checkout/pet -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" -H "Content-Type: application/json" --data '{"name":42}'
 ```
 
 - [ ] **400** before the backend is called, naming the failing pointers: `/photoUrls` is required and
@@ -263,7 +312,7 @@ Sign in as **Clara** (Orders). Sidebar → **Catalog**.
 - [ ] **Subscriptions** shows the row as **pending** with no **Show keys** button.
 
 ```bash
-curl.exe -i -H "X-Api-Key: <a key that does not exist>" http://localhost:8081/checkout/store/inventory
+curl.exe -i -H "X-Api-Key: <a key that does not exist>" http://localhost:8081/it/solution/checkout/store/inventory
 ```
 
 - [ ] **401.** A pending request has produced no usable credential. Confirm in the portal that no key
@@ -296,7 +345,7 @@ As **Pavel**, on the `checkout` workspace with **DEV** selected.
 - [ ] Wait for **complete**, then call TEST:
 
 ```bash
-curl.exe -i -H "X-Request-Origin: skoda-portal" http://localhost:8083/checkout/store/inventory
+curl.exe -i -H "X-Request-Origin: skoda-portal" http://localhost:8083/it/solution/checkout/store/inventory
 ```
 
 - [ ] **401** — the policy travelled with the API. TEST keys are different from DEV keys.
@@ -314,10 +363,13 @@ curl.exe -i -H "X-Request-Origin: skoda-portal" http://localhost:8083/checkout/s
 
 ### Promotion captures its source
 
-- [ ] On DEV, edit the definition (add a path), and **immediately** — before it completes — switch to
-      TEST and promote.
-- [ ] What lands in TEST is what DEV had **when you pressed promote**, not the edit still in flight.
-      Check the definition on TEST after both operations complete.
+Promotion captures DEV's **accepted** state at the moment you submit the promote, so submission
+order is what decides — not whether the earlier operation has finished converging.
+
+- [ ] From the **DEV** workspace, press **Promote to TEST**. Note that pressing it moves you to TEST.
+- [ ] Now edit the definition on DEV — navigate back to DEV first, or the edit lands on TEST — and
+      submit it. Once both operations complete, TEST holds what DEV had when you pressed promote:
+      the later edit did not leak into the promotion.
 
 ---
 
@@ -341,14 +393,19 @@ bun -e "const {generateCertificate}=await import('./test/x509.ts');const c=gener
 
 ### Attach it
 
-- [ ] API workspace → **properties** → **Client certificate** offers `checkout-client`. Select it, save.
+Backend mTLS is a **policy**, so it is attached where every other policy is.
+
+- [ ] API workspace → **policies** → **Add a policy** → **Backend authentication**, type `mTLS`.
+      The block carries a **Client certificate** picker offering `checkout-client`. Select it, save.
+      One save writes both halves: the policy unit and the environment's certificate binding.
 - [ ] Back on **Certificates**, the row's **Used by** now names `checkout` and its environment.
 - [ ] Try to delete it → the danger zone refuses and says how many bindings name it.
 - [ ] Switch the environment control to **TEST**. The certificate list is empty — certificates are
       environment-scoped material and DEV's does not exist in TEST.
-- [ ] On the TEST workspace → properties, the certificate is **not** offered. Promotion did not copy it.
-- [ ] Detach it on DEV (select *No client certificate*), save, then delete it. The danger zone wants
-      the name typed back.
+- [ ] On the TEST workspace's `backendAuth` block, the certificate is **not** offered. Promotion
+      copied the policy, not the material.
+- [ ] Remove the `backendAuth` block on DEV, save, then delete the certificate. The danger zone
+      wants the name typed back.
 
 ### The handshake, against a backend that actually demands one
 
@@ -378,7 +435,8 @@ Now do it through the gateway.
 - [ ] Call it → **502**. The gateway verifies the backend fine; the backend will not accept *us*.
 - [ ] **Certificates** → upload `.data/backend-client.crt` and `.data/backend-client.key` as
       `gateway-client`.
-- [ ] **properties** → **Client certificate** → `gateway-client`. Save, wait for complete.
+- [ ] **policies** → **Backend authentication** (`mTLS`) → **Client certificate** →
+      `gateway-client`. Save, wait for complete.
 - [ ] Call it → **200**, with `x-backend-mtls: verified` in the response. Mutual TLS, with **no TLS
       exception anywhere** — verification in both directions, not a hole in it.
 - [ ] Detach the certificate again, save, and confirm the **502** comes back. That is the assertion:
@@ -397,13 +455,17 @@ On the `checkout` workspace in **DEV** → **properties**. Put the backend back 
 
 - [ ] The backend field is a **list** headed *DEV backends*, with one row and an **Add backend**
       button — one member reads as one field, and the second appears only when asked for.
+- [ ] With one member there is **no** routing-rule control at all: there is nothing to balance
+      between. It appears when the second backend does.
 - [ ] **Add backend** → `http://127.0.0.1:9081/v2`.
 - [ ] **When there is more than one backend** → *Round-robin — spread calls across them*. A weight box
       appears on each row, and a line explains that each gateway keeps its own place in the rotation.
 - [ ] Save. Wait for complete.
+- [ ] Back on **policies**, **Circuit breaker** and **Retries** are now offered — they were refused
+      in §4 while there was one backend.
 
 ```bash
-1..6 | ForEach-Object { curl.exe -s -o NUL -D - -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/checkout/store/inventory | Select-String x-backend-instance }
+1..6 | ForEach-Object { curl.exe -s -o NUL -D - -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/it/solution/checkout/store/inventory | Select-String x-backend-instance }
 ```
 
 - [ ] `x-backend-instance` alternates between `petstore-9080` and `petstore-9081`. Use **one** gateway
@@ -450,11 +512,15 @@ On the `checkout` workspace, in **DEV** — a new version is published where pub
       starts in DEV and to switch environment. The reason is on the screen, not in a tooltip.
 - [ ] Switch back to **DEV**. **New version** is there, beside Promote.
 - [ ] Open it. The identifier is pre-filled **v2** — the next in the series, not a blank box.
-- [ ] The public path is pre-filled `/checkout/v2`, and it **changes with the identifier** as you
-      type. Both versions serve at once, so they cannot share a path.
+- [ ] The public path is pre-filled `/it/solution/checkout/v2`, and it **changes with the
+      identifier** as you type. The version goes after the name and stays inside the family's
+      domain — a version that dropped it would be the one route you could not find by domain.
 - [ ] The dialog says what carries over (the definition on screen, the DEV backends, the policies)
       and what does not (subscriptions, anything set in a later environment).
-- [ ] **Product** offers the application's active products, defaulting to `checkout-product`.
+- [ ] **Product** offers the application's active products, defaulting to `checkout-product`. Watch
+      the sentence about keys change with it: with the family's existing product selected it says
+      the v1 key **will** open v2, because subscriptions are per product; pick *a new product* and
+      it says the two are separate. The dialog must not claim separation the default does not give.
 - [ ] Publish. You land on the new API's workspace, and it is a **different** API — its own id in the
       address bar.
 - [ ] A **Version** switcher appears on both workspaces now, listing v1 and v2. Use it to jump between
@@ -464,7 +530,7 @@ On the `checkout` workspace, in **DEV** — a new version is published where pub
 ### Both serve at once
 
 ```bash
-curl.exe -s -o NUL -w "v1=%{http_code} " -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/checkout/store/inventory; curl.exe -s -o NUL -w "v2=%{http_code}" http://localhost:8081/checkout/v2/store/inventory
+curl.exe -s -o NUL -w "v1=%{http_code} " -H "X-Api-Key: $key" -H "X-Request-Origin: skoda-portal" http://localhost:8081/it/solution/checkout/store/inventory; curl.exe -s -o NUL -w "v2=%{http_code}" http://localhost:8081/it/solution/checkout/v2/store/inventory
 ```
 
 - [ ] v1 answers on its path and v2 on its own. Neither replaced the other.
@@ -489,15 +555,16 @@ curl.exe -s "http://127.0.0.1:9080/soap/petstore?wsdl" | Set-Content .data/petst
 ```
 
 - [ ] Name `petstore-soap`, **Type** `SOAP`, new product `soap-product`, backend
-      `http://127.0.0.1:9080/soap/petstore`, public path `/petstore-soap`.
+      `http://127.0.0.1:9080/soap/petstore`, domain `IT` / `Solution` — the path is derived,
+      `/it/solution/petstore-soap`.
 - [ ] Paste the WSDL (or use the file picker — it accepts `.wsdl` and `.xml`).
-- [ ] Publish. The **Services** card under the definition lists the WSDL's services and operations —
-      the SOAP equivalent of the operations table, not an empty panel.
+- [ ] Publish. The **Operations** card under the definition lists the WSDL's two operations. It is
+      titled *Operations*, like every other kind, and does not name the WSDL's service.
 - [ ] Add `"rewrite": {"stripBasePath": true}` in Advanced settings and save.
 - [ ] Subscribe and reveal a key.
 
 ```bash
-curl.exe -i -X POST http://localhost:8081/petstore-soap -H "Content-Type: text/xml" -H "SOAPAction: `"urn:apim:petstore:GetPet`"" -H "X-Api-Key: $key" --data-binary '<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><tns:GetPetRequest xmlns:tns="urn:apim:petstore"><tns:petId>1</tns:petId></tns:GetPetRequest></soap:Body></soap:Envelope>'
+curl.exe -i -X POST http://localhost:8081/it/solution/petstore-soap -H "Content-Type: text/xml" -H "SOAPAction: `"urn:apim:petstore:GetPet`"" -H "X-Api-Key: $key" --data-binary '<?xml version="1.0"?><soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/"><soap:Body><tns:GetPetRequest xmlns:tns="urn:apim:petstore"><tns:petId>1</tns:petId></tns:GetPetRequest></soap:Body></soap:Envelope>'
 ```
 
 - [ ] **200** with a `GetPetResponse`.
@@ -515,16 +582,16 @@ curl.exe -i -X POST http://localhost:8081/petstore-soap -H "Content-Type: text/x
 As **Pavel** → **Publish API**.
 
 - [ ] Name `petstore-mcp`, **Type** `MCP`, new product `mcp-product`, backend
-      `http://127.0.0.1:9085/mcp`, public path `/petstore-mcp`.
+      `http://127.0.0.1:9085/mcp`, domain `IT` / `Solution` → `/it/solution/petstore-mcp`.
 - [ ] **Definition source** → *Import from URL*, and give `http://127.0.0.1:9085/mcp`. For MCP this is
       a **discovery** URL — the portal connects and reads the server's own tool list.
 - [ ] Publish. The definition that comes back is the discovered tool set, not something you typed.
 - [ ] Add `rewrite` in Advanced settings, save, subscribe, reveal a key.
-- [ ] Sidebar → **MCP Servers** lists it, and the row is absent from the plain **APIs** view's SOAP/REST
-      framing — the kind filter works.
+- [ ] Sidebar → **MCP Servers** lists it, and the row is **absent** from the plain **APIs** view —
+      that view is REST and SOAP only, so nothing appears under two sidebar entries.
 
 ```bash
-curl.exe -i -X POST http://localhost:8081/petstore-mcp -H "X-Api-Key: $key" -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+curl.exe -i -X POST http://localhost:8081/it/solution/petstore-mcp -H "X-Api-Key: $key" -H "Content-Type: application/json" --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
 ```
 
 - [ ] **200**, and the response carries an `Mcp-Session-Id` header. Keep it.
@@ -542,13 +609,13 @@ curl.exe -i -X POST http://localhost:8081/petstore-mcp -H "X-Api-Key: $key" -H "
 As **Pavel** → **Publish API**.
 
 - [ ] Name `shelter`, **Type** `A2A`, new product `a2a-product`, backend `http://127.0.0.1:9086`,
-      public path `/shelter`.
+      domain `IT` / `Solution` → `/it/solution/shelter`.
 - [ ] **Import from URL** `http://127.0.0.1:9086` — the portal fetches the agent's own card.
 - [ ] Publish, add `rewrite`, subscribe, reveal a key.
 - [ ] Sidebar → **A2A Agents** lists it.
 
 ```bash
-curl.exe -s http://localhost:8081/shelter/.well-known/agent-card.json
+curl.exe -s http://localhost:8081/it/solution/shelter/.well-known/agent-card.json
 ```
 
 - [ ] **200 without a key** — discovery has to be open.
@@ -570,7 +637,11 @@ On any published API's workspace → **playground** tab.
 - [ ] The call appears in *Your calls* below, and survives a reload.
 - [ ] On an API you have no subscription to, the panel offers **Subscribe** rather than failing.
 - [ ] Sign in as **Clara** and open an API owned by Platform APIs: the editing controls are present but
-      **disabled, with the reason beside them** — not hidden, not throwing.
+      **disabled, with the reason beside them** — not hidden, not throwing. **Save changes**, **New
+      version** and **Promote** are all there, all disabled, each saying why. *Deployment progress*
+      is absent rather than telling somebody else's published API to get started.
+- [ ] On that same screen, the backend URLs and the policy document are **not** shown. What an API
+      does is public; where it forwards to is the owning application's topology.
 
 ---
 
@@ -578,10 +649,17 @@ On any published API's workspace → **playground** tab.
 
 As **Pavel** → sidebar → **Kafka Topics**.
 
-- [ ] **Create topic**: name `orders.events`, partitions `3`, a description. Create.
+- [ ] **Create topic**: name `orders.events`, **Domain** `Sales` / `Orders`, partitions `3`, a
+      description. Create. The form will not submit without a domain — a topic is a catalog item
+      like an API and is classified like one.
+- [ ] The row shows its domain beside the partition count.
 - [ ] The row appears as **provisioning**, then **ready**. The panel title says **· simulated**.
 - [ ] **Open topic** → change the description, raise partitions to `6`, **Save topic**. Reopen — it kept
       both.
+- [ ] Move it to `IT` / `Solution` and save. A topic is addressed by name on a broker, not by a
+      path, so reclassifying it is free — unlike an API, which refuses once it has a route.
+- [ ] Toggle **Enable REST proxy** and reopen: the domain is still there. An unrelated change does
+      not quietly drop the classification.
 - [ ] Try to *lower* partitions → refused; a topic may only gain them.
 - [ ] **Enable REST proxy**, then check sidebar → **Kafka REST Proxy** lists it and did not before.
 - [ ] Request access with a purpose. As the owner it goes **activating** → **active** without approval.
@@ -590,13 +668,17 @@ As **Pavel** → sidebar → **Kafka Topics**.
 - [ ] As **Clara** (Orders), request access to the same topic → **pending**, and it appears in Pavel's
       **Approvals** beside the API request. Approve it and watch it activate.
 - [ ] Try to delete the topic while access exists → refused, saying to withdraw access first.
+- [ ] As Pavel, the **Topic access** panel has two halves: *What this application consumes* and
+      *Who consumes this application's topics*. Clara's access is in the second, with a **Revoke**
+      on it — the topic's owner can revoke a consumer without asking the consumer, exactly as a
+      product publisher can.
 - [ ] Withdraw both, then delete. The danger zone wants the topic name typed back.
 
 ---
 
 ## 15. The six mocked integrations
 
-As **Pavel** → sidebar → **Integrations**.
+As **Pavel** → sidebar → **External systems**.
 
 - [ ] Three buttons: **Refresh LeanIX metadata**, **Look up application contacts**, **Run FixMe
       diagnostics**.
@@ -625,9 +707,12 @@ The claims worth attacking, since the whole design rests on them.
 - [ ] Make any change — a policy edit, save.
 - [ ] The operation sits at **waiting for gateways** and does **not** report complete. `dev-1` is
       serving the change; the operation is honest that the fleet is not.
-- [ ] As **Alice** → **Health Status**: `dev-2` is visibly stale or absent.
+- [ ] As **Alice** → **Health Status**: `dev-2` is visibly stale or absent — and every statement on
+      the screen agrees. The environment header must **not** say *in sync* while a replica is
+      behind; the pills read *n behind* and *m of n replicas answering*, and the rate-limit
+      arithmetic below counts the same live replicas, not a stale number from the session.
 - [ ] Restart the stack's `dev-2`. Within a poll or two the operation flips to **complete** **without
-      anybody clicking retry**.
+      anybody clicking retry**, and the header returns to *in sync*.
 
 ### A restart
 
@@ -637,11 +722,18 @@ The claims worth attacking, since the whole design rests on them.
 
 ### A blocked operation
 
-- [ ] Publish an API with a backend URL that no allowlist permits, or one that cannot resolve.
-- [ ] The refusal lands **before** the operation is accepted where the value is knowably wrong, and as
-      a **Blocked** operation with an explanation where it is not.
-- [ ] A blocked operation keeps its desired state — it does not vanish and does not ask you to redo
-      technical steps.
+Two different refusals, and the distinction is the point. A backend the allowlist does not permit is
+knowably wrong at submit time and never becomes an operation at all; a backend that is merely down
+is not knowably wrong, so it publishes.
+
+- [ ] Publish with a backend of `http://no-such-host.invalid:1234` → refused **synchronously**, in
+      the server's words (*"…is not in the egress allowlist"*), with no operation created.
+- [ ] Publish with an allowlisted backend that is simply not running (`http://127.0.0.1:9099/v2`
+      with nothing on `:9099`) → this **succeeds**. The gateway answers `502` at call time. Correct:
+      a backend being down is not a reason to refuse a configuration change.
+- [ ] To see a **Blocked** operation, kill one DEV gateway (§16's *offline gateway*) — the operation
+      sits at *waiting for gateways* keeping its desired state, and converges when it returns. It
+      does not vanish and does not ask you to redo technical steps.
 
 ### Idempotency
 
@@ -657,19 +749,36 @@ As **Alice**.
 
 - [ ] **Applications** — both applications, who is in each, and how they got there (granted here, or
       from an identity-provider group), with who granted it and when.
-- [ ] **People** — every account, its provider, and what it can do. Create a local account.
-- [ ] Sign in as the new account: it must **choose a password before it can do anything else**.
-- [ ] It is in no application. The owner screens say so and name who can fix it — rather than being
-      empty, absent, or throwing. The catalog is still readable.
+- [ ] **People** — every account, its provider, and what it can do. On the dev seed there is **no
+      create button**, and the screen says why: *"An account arrives here the first time somebody
+      signs in through the identity provider. You do not create those."* Creating a local account
+      needs `AUTH_PROVIDERS=local` in `.env.local` and a full `-Down` / `-Up`; if you take that
+      detour, the new account must **choose a password before it can do anything else**.
+- [ ] Pick an account in no application — the owner screens say so and name who can fix it, rather
+      than being empty, absent, or throwing. The catalog is still readable.
 - [ ] As Alice, add it to Orders. Sign in again — what it can do changed with the membership.
 - [ ] Remove the membership. Server-side, the ability goes with it — not just the menu item.
 - [ ] Try to remove your **own** administrator role as the only administrator → refused, saying you are
       the last one and that the way forward is to make somebody else an administrator first.
-- [ ] **Gateways / Health Status** — every instance, the digest it is running, and the fleet's.
+- [ ] **Health Status** — every instance, the digest it is running, and the fleet's. This screen is
+      health only: it adds and removes nothing.
+- [ ] **Gateways** — a separate admin screen, and the one that owns the fleet's shape. Each
+      environment shows its **public URL** (the reverse proxy consumers are given) and its **label**
+      (the locality — `local`, `cloud`, `on-prem`). Change the label and save.
+- [ ] The replicas are listed here and **only** here: mint an instance token, then revoke it. Sign
+      in as Pavel and confirm no screen anywhere shows a replica address — a consumer sees the proxy
+      and nothing behind it.
+- [ ] Try to remove a gateway that still has replicas or routes → refused, naming what holds it.
 - [ ] **Telemetry** — calls per minute: served, refused by the gateway, failed upstream. The calls you
       made above are in it.
 - [ ] **Global policy** — attach a `cors` unit to the whole DEV environment. An API that sets its own
       `cors` **wins**; one that does not **inherits**. Check both, then detach it.
+- [ ] **Global policy** → *Operations that cannot be validated at all* — each operation appears
+      **once**, at its newest revision, not once per environment with nothing to tell the rows
+      apart. Sorted by API and version.
+- [ ] Open one of Pavel's APIs as Alice → **policies** → **Require subscription key** is editable
+      for you and was locked for him. The default is on; only an administrator turns it off, per
+      API. Try it through the API as Pavel and it is a **400**, not just a disabled control.
 - [ ] **Trust** → *Certificate authorities* — register a CA PEM for DEV only. The preview says what the
       PEM is before it is trusted, and the anchor lists the environments it is live in. TEST is
       untouched.
@@ -696,6 +805,10 @@ As **Alice**.
 - [ ] Every simulated result is labelled simulated.
 - [ ] Keyboard only: tab to every control in a form and submit it. Nothing clickable is unreachable.
 - [ ] No key material appears in any URL, and no key is shown to anybody but the consuming application.
+- [ ] Grammar on the screens about the central noun: it is *an* application, never *a application*,
+      and a certificate's danger zone says *1 binding **names** this certificate*.
+- [ ] No sidebar entry reads like a development slug. **External systems**, not *Integrations*;
+      **FixMe diagnostics**, not *FixMe*.
 
 ---
 

@@ -41,7 +41,7 @@ describe("capabilities", () => {
     }
   });
 
-  test("without a application name the sentence still points somewhere", () => {
+  test("without an application name the sentence still points somewhere", () => {
     const permission = permit("edit", OTHER_APPLICATION);
     expect(permission.reason).toContain("the owning application");
     expect(permission.reason).toContain("administrator");

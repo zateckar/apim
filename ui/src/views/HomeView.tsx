@@ -51,7 +51,7 @@ export function HomeView({ session }: { session: Session }) {
   if (!dashboard.data) return <Skeleton rows={6} />;
   const data = dashboard.data;
 
-  // A application that has neither published nor subscribed to anything gets the three paths instead of
+  // An application that has neither published nor subscribed to anything gets the three paths instead of
   // three empty blocks (plan §9.5). Empty blocks would be an accurate answer to a question nobody
   // asked; this is the answer to the question they have.
   if (data.startHere) {

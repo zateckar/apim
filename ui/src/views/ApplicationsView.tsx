@@ -17,13 +17,13 @@ import { ALLOWED, permitAdmin } from "../lib/capabilities";
 /**
  * Applications (v5 plan §8).
  *
- * A application is the unit of ownership, and until v5 it existed only as a switcher in the sidebar with
+ * An application is the unit of ownership, and until v5 it existed only as a switcher in the sidebar with
  * no screen behind it: no way to see who was in one, no way to create one, and no way to find out
- * that a application's membership was coming from an identity provider group. All three were things
+ * that an application's membership was coming from an identity provider group. All three were things
  * somebody had to be told.
  *
  * `sourceGroup` is shown to administrators only `[P1-18]`. Application names are already a discovery
- * surface, but which group grants a application tells any signed-in user exactly which group to get
+ * surface, but which group grants an application tells any signed-in user exactly which group to get
  * themselves added to in order to own another application's APIs.
  */
 export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappedGroups: string[] }) {
@@ -42,7 +42,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
         {!list.loading && rows.length === 0 ? (
           <EmptyState
             title="No applications yet"
-            detail="Nothing can be published until there is a application to own it."
+            detail="Nothing can be published until there is an application to own it."
             action={
               <button className="ghost" onClick={() => setCreating("")}>
                 Create the first application
@@ -81,7 +81,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
 
         {user.isAdmin && creating === null && (
           <button className="ghost" onClick={() => setCreating("")}>
-            Create a application
+            Create an application
           </button>
         )}
         {creating !== null && (
@@ -101,16 +101,16 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
           hint="Your identity provider put somebody in these. The portal matched them to no application, so they granted nothing."
         >
           <p className="muted">
-            A group is <strong>matched</strong> to a application, never turned into one automatically —
+            A group is <strong>matched</strong> to an application, never turned into one automatically —
             otherwise anybody holding a group in the directory could become the owner of a new
-            scope. Map one to an existing application on its own page, or create a application for it here.
+            scope. Map one to an existing application on its own page, or create an application for it here.
           </p>
           <ul className="plain">
             {unmappedGroups.map((group) => (
               <li key={group}>
                 <span className="mono">{group}</span>{" "}
                 <button className="ghost small" onClick={() => setCreating(group)}>
-                  Create a application for it
+                  Create an application for it
                 </button>
               </li>
             ))}
@@ -183,7 +183,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
 
   const application = detail.data;
   const total = Object.values(application.owns).reduce((sum, n) => sum + n, 0);
-  const canManage = permitAdmin(user.isAdmin, "change or delete a application");
+  const canManage = permitAdmin(user.isAdmin, "change or delete an application");
 
   return (
     <>
@@ -261,7 +261,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
         <Card title="Delete this application">
           {total > 0 ? (
             <p className="muted">
-              It still owns {total} thing(s). Move or withdraw those first — deleting a application must
+              It still owns {total} thing(s). Move or withdraw those first — deleting an application must
               not be a way to delete published APIs.
             </p>
           ) : (

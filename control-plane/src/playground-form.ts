@@ -2,6 +2,7 @@ import type { ConfigOperation, ConfigRoute } from "../../shared/config-doc.ts";
 import type { ApiModel, ApiOperation, ApiParameter } from "../../shared/types.ts";
 import type { User } from "./auth.ts";
 import { gatewayUrlsFor } from "./config.ts";
+import { publicGatewayUrl } from "./api/fleet.ts";
 import { routeFor } from "./playground.ts";
 import { notFound, type App } from "./router.ts";
 
@@ -78,7 +79,11 @@ export function buildPlaygroundForm(app: App, user: User, resourceId: string, en
   const passthrough = route.policy.passthrough;
   const streaming = passthrough?.websocket ? "websocket" : passthrough?.sse ? "sse" : null;
   const gateways = gatewayUrlsFor(app.config, environment);
-  const base = `${gateways[0]?.url ?? ""}${route.basePath === "/" ? "" : route.basePath}`;
+  // The address in the copyable `curl` is the reverse proxy's, never a replica's: what somebody
+  // pastes into their own terminal has to keep working after the fleet is resized. The replica
+  // list is only a fallback for an environment whose gateway has no published hostname yet.
+  const origin = publicGatewayUrl(app.db, environment) ?? gateways[0]?.url ?? "";
+  const base = `${origin}${route.basePath === "/" ? "" : route.basePath}`;
 
   const warnings: string[] = [];
   if (route.policy.ipAllow) {
@@ -155,7 +160,7 @@ function modelFor(app: App, revisionId: string): ApiModel | null {
 
 /**
  * The caller's own subscriptions that would work here: active, in this environment, held by an
- * application on a application the caller is in, for a product that contains this API. Anything else is a
+ * application on an application the caller is in, for a product that contains this API. Anything else is a
  * key that produces a `403` the reader would read as a platform fault.
  */
 function usableSubscriptions(

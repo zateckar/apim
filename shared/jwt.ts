@@ -229,7 +229,7 @@ function isMap(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The **scopes of ownership** a role claim carries — what a application's source group is matched against.
+ * The **scopes of ownership** a role claim carries — what an application's source group is matched against.
  *
  * Three shapes, because directories disagree and all three are in the wild:
  *
@@ -239,7 +239,7 @@ function isMap(value: unknown): value is Record<string, unknown> {
  *
  * The third is the one that needs explaining. A realm that scopes roles per application says "this
  * person holds `api.developers` **for** ORDERS and EAI", and it is ORDERS and EAI — the *values* —
- * that name the thing being owned. So the values are what a application is matched on, and holding any
+ * that name the thing being owned. So the values are what an application is matched on, and holding any
  * role for an application is membership of the application that application maps to.
  *
  * That last part is a real flattening: this product's applications have members and administrators and

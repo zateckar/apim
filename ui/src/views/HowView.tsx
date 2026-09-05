@@ -82,8 +82,8 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     who: "You are an administrator and a new colleague needs access.",
     steps: [
       "If they sign in through the identity provider, they get an account here the first time they arrive — you do not create one.",
-      "Put them in a application. Membership is what lets somebody publish and change; it is not a label.",
-      "A application can also be granted by an identity provider group, which the portal matches to it by name.",
+      "Put them in an application. Membership is what lets somebody publish and change; it is not a label.",
+      "An application can also be granted by an identity provider group, which the portal matches to it by name.",
     ],
     ends: "They can act on that application's APIs at their very next request — nobody has to sign out and back in.",
     to: "/users",

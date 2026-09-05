@@ -264,6 +264,13 @@ export function registerCatalogRoutes(router: Router): void {
     const user = requireUser(ctx);
     const applicationId = ctx.url.searchParams.get("application");
     const productId = ctx.url.searchParams.get("product");
+    // Honoured rather than ignored (finding 4). The portal happens to filter client-side, so the
+    // screens were right and every other caller that trusted the parameter was not — the worst
+    // shape a filter can have.
+    const environment = ctx.url.searchParams.get("environment");
+    if (environment && !ctx.app.config.promotionChain.includes(environment)) {
+      throw badRequest(`unknown environment "${environment}"`);
+    }
     let sql =
       `SELECT s.*, a.id AS app_application, a.name AS app_name,
               p.application_id AS product_application, p.name AS product_name
@@ -277,6 +284,10 @@ export function registerCatalogRoutes(router: Router): void {
     if (productId) {
       sql += " AND s.product_id = ?";
       args.push(productId);
+    }
+    if (environment) {
+      sql += " AND s.environment = ?";
+      args.push(environment);
     }
     sql += " ORDER BY s.created_at DESC";
     // A subscription is a credential relationship, not a discovery surface — but it has two sides,

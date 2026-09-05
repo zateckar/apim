@@ -23,6 +23,10 @@ export interface ResourceRow {
   visibility: string;
   /** Where a discovered contract came from, so `regenerate` knows what to re-ask (goals G4, G5). */
   discovery_url: string | null;
+  /** The catalogue's taxonomy (schema-007). The domain is the first segment of the published path;
+   * `null` means the row predates domains and gets one on its next save. */
+  domain: string | null;
+  subdomain: string | null;
 }
 
 export function getResource(ctx: Ctx, id: string): ResourceRow {

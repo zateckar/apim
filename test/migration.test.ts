@@ -56,7 +56,20 @@ describe("migrations", () => {
       const versions = db
         .query("SELECT version FROM schema_version ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6]);
+      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+
+      // schema-007 gives the catalogue its taxonomy and the gateway its published hostname.
+      const upgradedColumns = (db.query("PRAGMA table_info(resource)").all() as Array<{ name: string }>)
+        .map((c) => c.name);
+      expect(upgradedColumns).toContain("domain");
+      expect(upgradedColumns).toContain("subdomain");
+      const targetColumns = (db.query("PRAGMA table_info(target)").all() as Array<{ name: string }>)
+        .map((c) => c.name);
+      expect(targetColumns).toContain("public_url");
+      // And it remaps the well-known development application ids, which schema-006 renamed the
+      // table around but left spelled `team_…` — the collision that made an upgraded database
+      // refuse to boot.
+      expect(db.query("SELECT id FROM application WHERE id LIKE 'team_%'").all()).toEqual([]);
 
       // v3 adds tables and columns but rebuilds nothing, so every v2 row is still where it was.
       for (const table of ["artifact", "global_policy_entry", "certificate", "tls_exception", "usage_counter"]) {
@@ -278,7 +291,7 @@ describe("migrations", () => {
       expect(counts(second)).toEqual(after);
       expect(
         (second.query("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number }).n,
-      ).toBe(6);
+      ).toBe(7);
     } finally {
       second.close();
       rmSync(dir, { recursive: true, force: true });

@@ -73,7 +73,7 @@ describe("the route table knows about people", () => {
     expect(asAdmin).toContain("applications");
   });
 
-  test("a person's page and a application's page resolve to the right screen", () => {
+  test("a person's page and an application's page resolve to the right screen", () => {
     expect(matchRoute("/users/usr_1")).toMatchObject({
       route: { id: "user" },
       params: { userId: "usr_1" },
@@ -122,7 +122,7 @@ describe("your own account", () => {
   test("says how you sign in, in words rather than a provider id", () => {
     const html = renderToStaticMarkup(<AccountView me={meFor(member)} reload={() => {}} />);
     expect(html).toContain("your organisation&#x27;s identity provider");
-    // A application from a group says which group, and what removing it would do — because that is where
+    // An application from a group says which group, and what removing it would do — because that is where
     // somebody goes when they wonder why they lost access.
     expect(html).toContain("SG-APIM-ORDERS");
     expect(html).toContain("Removing you from that group removes this application");
@@ -178,24 +178,24 @@ describe("your own account", () => {
 });
 
 describe("applications", () => {
-  test("a member does not see which group grants a application", () => {
+  test("a member does not see which group grants an application", () => {
     // Application names are already a discovery surface. Which group grants one tells any signed-in user
     // exactly which group to get themselves added to `[P1-18]`.
     const html = renderToStaticMarkup(<ApplicationsView user={member} unmappedGroups={[]} />);
     expect(html).not.toContain("Granted by the group");
-    expect(html).not.toContain("Create a application");
+    expect(html).not.toContain("Create an application");
 
     const asAdmin = renderToStaticMarkup(<ApplicationsView user={admin} unmappedGroups={[]} />);
     expect(asAdmin).toContain("Granted by the group");
-    expect(asAdmin).toContain("Create a application");
+    expect(asAdmin).toContain("Create an application");
   });
 
-  test("an unmapped group is offered to an admin as a application to create, not created for them", () => {
+  test("an unmapped group is offered to an admin as an application to create, not created for them", () => {
     const html = renderToStaticMarkup(
       <ApplicationsView user={admin} unmappedGroups={["SG-APIM-BILLING"]} />,
     );
     expect(html).toContain("SG-APIM-BILLING");
-    expect(html).toContain("Create a application for it");
+    expect(html).toContain("Create an application for it");
     // The rule, said where somebody would otherwise ask why it did not happen automatically.
     expect(html).toContain("never turned into one automatically");
   });
@@ -205,7 +205,7 @@ describe("a screen that is still loading", () => {
   test("does not claim the application is empty before it has asked", () => {
     // `renderToStaticMarkup` runs no effects, so this is the pre-fetch frame — and that frame is
     // worth an assertion: an empty-state that renders before the request has been made tells the
-    // reader a application has nobody in it, and they act on it.
+    // reader an application has nobody in it, and they act on it.
     const html = renderToStaticMarkup(<ApplicationView applicationId="application_orders" user={admin} />);
     expect(html).toContain("skeleton");
     expect(html).not.toContain("Nobody is in this application");

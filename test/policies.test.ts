@@ -93,7 +93,8 @@ async function world(
   return {
     dp,
     key: api.key!,
-    basePath,
+    // The published path, not the one asked for: the domain is the first segment of every address.
+    basePath: api.basePath,
     backend,
     stop: () => {
       dp.stop();
@@ -1055,7 +1056,7 @@ describe("per-operation overrides", () => {
       try {
         const call = (path: string, method = "GET") =>
           dp.fetchHttp(
-            new Request(`http://gw/ops${path}`, {
+            new Request(`http://gw${api.basePath}${path}`, {
               method,
               headers: {
                 "x-api-key": api.key!,

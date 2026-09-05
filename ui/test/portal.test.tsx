@@ -111,10 +111,6 @@ const COVERED_ELSEWHERE = [
     id: "subscriptions",
     why: "an application-scoped tab: /:applicationId/subscriptions, scoped to the consuming application",
   },
-  {
-    id: "fleet",
-    why: "linked as Health Status at /health, which renders the same GatewayView for members as well as admins",
-  },
 ];
 
 describe("the portal shell", () => {

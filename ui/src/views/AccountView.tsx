@@ -48,7 +48,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
 
       <Card
         title="Your applications"
-        hint="Being in a application is what lets you publish and change what it owns. It is not a label."
+        hint="Being in an application is what lets you publish and change what it owns. It is not a label."
       >
         {me.claimsStale && (
           <Notice kind="warn">
@@ -60,7 +60,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
         {(me.applications ?? []).length === 0 ? (
           <EmptyState
             title="You are not in any application"
-            detail="You can read the catalog and subscribe, but you cannot publish or change anything until an administrator puts you in a application."
+            detail="You can read the catalog and subscribe, but you cannot publish or change anything until an administrator puts you in an application."
             action={<Link to="/catalog">Browse the catalog →</Link>}
           />
         ) : (

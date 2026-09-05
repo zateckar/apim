@@ -383,7 +383,7 @@ describe("search, facets and sort", () => {
     const { pets } = await estate();
     expect((await catalog(pets.pavel, "?sort=name")).truncated).toBe(false);
 
-    // 2000 resources — `RANK_CEILING` exactly — owned by a application nobody is in and released
+    // 2000 resources — `RANK_CEILING` exactly — owned by an application nobody is in and released
     // nowhere, so every one of them is fetched as a candidate and then filtered out again. They
     // sort before the real estate, so they fill the window and push it out entirely.
     const now = new Date().toISOString();
@@ -450,7 +450,9 @@ describe("the listing page", () => {
       basePath: string;
       live: boolean;
     }>;
-    expect(endpoints).toEqual([{ environment: "dev", host: "*", basePath: "/pets-v1", live: true }]);
+    expect(endpoints).toEqual([
+      { environment: "dev", host: "*", basePath: api.basePath, live: true },
+    ]);
 
     // The example carries the header this route actually requires. One that named the wrong
     // header would fail in a way that looks like the platform is broken.

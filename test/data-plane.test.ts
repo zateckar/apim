@@ -1,11 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { DataPlane, DpConfig } from "../data-plane/src/server.ts";
 import {
+  FIXTURE_DOMAIN,
+  FIXTURE_SUBDOMAIN,
   makeCp,
   makeDp as newDataPlane,
   publishApi,
   serveCp,
   startBackend,
+  underDomain,
   type TestCp,
 } from "./helpers.ts";
 
@@ -36,8 +39,14 @@ function makeDp(overrides: Partial<DpConfig> = {}) {
   return dp;
 }
 
+/**
+ * Paths here are written the way the fixture asks for them — `/petstore/store/inventory` — and the
+ * gateway serves them under the fixture's domain, so the domain prefix is added here rather than at
+ * every call. A path that already carries it is left alone, which is what the 404 cases want.
+ */
 async function get(dp: DataPlane, path: string, headers: Record<string, string> = {}) {
-  return dp.fetchHttp(new Request(`http://gateway.test${path}`, { headers }), "203.0.113.7");
+  const url = underDomain(path, FIXTURE_DOMAIN, FIXTURE_SUBDOMAIN);
+  return dp.fetchHttp(new Request(`http://gateway.test${url}`, { headers }), "203.0.113.7");
 }
 
 beforeEach(() => {
@@ -302,7 +311,7 @@ describe("what reaches the backend", () => {
 
     const payload = JSON.stringify({ name: "fluffy", photoUrls: [] });
     const response = await dp.fetchHttp(
-      new Request("http://gateway.test/petstore/pet", {
+      new Request("http://gateway.test/it/solution/petstore/pet", {
         method: "POST",
         headers: { "X-Api-Key": published.key!, "content-type": "application/json" },
         body: payload,
@@ -348,7 +357,7 @@ describe("limits and backend failures", () => {
     await dp.client.pollOnce();
 
     const response = await dp.fetchHttp(
-      new Request("http://gateway.test/petstore/pet", {
+      new Request("http://gateway.test/it/solution/petstore/pet", {
         method: "POST",
         headers: {
           "X-Api-Key": published.key!,
@@ -380,7 +389,7 @@ describe("limits and backend failures", () => {
       },
     });
     const response = await dp.fetchHttp(
-      new Request("http://gateway.test/petstore/pet", {
+      new Request("http://gateway.test/it/solution/petstore/pet", {
         method: "POST",
         headers: { "X-Api-Key": published.key!, "content-type": "application/json" },
         body: stream,

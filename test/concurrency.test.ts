@@ -22,7 +22,9 @@ function heldBackend() {
   let held = 0;
   const backend = startBackend(async (req) => {
     const url = new URL(req.url);
-    if (url.pathname.startsWith("/fast")) return Response.json({ fast: true });
+    // The base path is not stripped here, so what arrives is the whole published path — domain
+    // included — and the fast route is the one whose *name* segment says so.
+    if (url.pathname.includes("/fast")) return Response.json({ fast: true });
     held++;
     await new Promise<void>((resolve) => gates.push(resolve));
     return Response.json({ slow: true });
@@ -127,12 +129,12 @@ describe("a slow backend cannot take the gateway with it", () => {
       const dp = makePlane({ name: "gated" });
       await dp.start();
       // Both routes must be live before anything is measured, or a 404 would look like a shed.
-      expect(dp.client.table?.routes.map((r) => r.basePath).sort()).toEqual(["/fast", "/slow"]);
+      expect(dp.client.table?.routes.map((r) => r.basePath).sort()).toEqual(["/it/solution/fast", "/it/solution/slow"]);
 
       // Two requests in, both parked on the backend, neither answered.
       const parked = [
-        dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1"),
-        dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1"),
+        dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1"),
+        dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1"),
       ];
       const deadline = Date.now() + 2000;
       while (backend.held < 2 && Date.now() < deadline) await Bun.sleep(5);
@@ -147,7 +149,7 @@ describe("a slow backend cannot take the gateway with it", () => {
       expect(dp.gate.inFlight).toBe(2);
 
       // The third is shed rather than queued, and says so.
-      const shed = await dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const shed = await dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       expect(shed.status).toBe(503);
       expect(shed.headers.get("retry-after")).toBe("3");
       const problem = (await shed.json()) as { detail: string; scope: string };
@@ -157,7 +159,7 @@ describe("a slow backend cannot take the gateway with it", () => {
       expect(backend.held).toBe(2);
 
       // The whole point: a different route is completely unaffected.
-      const fast = await dp.fetchHttp(new Request("http://gw/fast/pet"), "127.0.0.1");
+      const fast = await dp.fetchHttp(new Request("http://gw/it/solution/fast/pet"), "127.0.0.1");
       expect(fast.status).toBe(200);
       expect(await fast.json()).toEqual({ fast: true });
 
@@ -168,7 +170,7 @@ describe("a slow backend cannot take the gateway with it", () => {
 
       // Issued, then released, in that order: awaiting a request the backend is still holding
       // would wait for a release that only happens on the next line.
-      const again = dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const again = dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       while (backend.held < 3) await Bun.sleep(5);
       backend.releaseAll();
       expect((await again).status).toBe(200);
@@ -189,10 +191,10 @@ describe("a slow backend cannot take the gateway with it", () => {
       const dp = makePlane({ name: "capped", maxConcurrentRequests: 1 });
       await dp.start();
 
-      const parked = dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const parked = dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       while (backend.held < 1) await Bun.sleep(5);
 
-      const shed = await dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const shed = await dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       expect(shed.status).toBe(503);
       const problem = (await shed.json()) as { scope: string; maxInFlight: number };
       expect(problem.scope).toBe("instance");
@@ -222,9 +224,9 @@ describe("a slow backend cannot take the gateway with it", () => {
       const dp = makePlane({ name: "counted" });
       await dp.start();
 
-      const parked = dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const parked = dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       while (backend.held < 1) await Bun.sleep(5);
-      await dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      await dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
 
       const report = dp.telemetry.snapshot();
       const outcomes = report.windows
@@ -258,7 +260,7 @@ describe("a slow backend cannot take the gateway with it", () => {
 
       // A hundred unauthenticated requests: all 401, none of them holding anything.
       for (let i = 0; i < 100; i++) {
-        const response = await dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+        const response = await dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
         expect(response.status).toBe(401);
       }
       expect(dp.gate.inFlight).toBe(0);
@@ -289,7 +291,7 @@ describe("a caller that leaves takes its upstream call with it", () => {
 
       const controller = new AbortController();
       const abandoned = dp.fetchHttp(
-        new Request("http://gw/slow/pet", { signal: controller.signal }),
+        new Request("http://gw/it/solution/slow/pet", { signal: controller.signal }),
         "127.0.0.1",
       );
       while (backend.held < 1) await Bun.sleep(5);
@@ -302,7 +304,7 @@ describe("a caller that leaves takes its upstream call with it", () => {
       expect(dp.gate.inFlight).toBe(0);
 
       // And the freed slot is immediately usable, which is the point of freeing it.
-      const next = dp.fetchHttp(new Request("http://gw/slow/pet"), "127.0.0.1");
+      const next = dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
       while (backend.held < 2) await Bun.sleep(5);
       backend.releaseAll();
       expect((await next).status).toBe(200);
@@ -325,7 +327,7 @@ describe("a caller that leaves takes its upstream call with it", () => {
 
       const controller = new AbortController();
       const abandoned = dp.fetchHttp(
-        new Request("http://gw/slow/pet", { signal: controller.signal }),
+        new Request("http://gw/it/solution/slow/pet", { signal: controller.signal }),
         "127.0.0.1",
       );
       while (backend.held < 1) await Bun.sleep(5);

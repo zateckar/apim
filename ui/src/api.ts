@@ -102,7 +102,17 @@ export interface User {
 }
 
 export interface Meta {
-  environments: Array<{ environment: string; instances: number; liveInstances: number }>;
+  environments: Array<{
+    environment: string;
+    instances: number;
+    liveInstances: number;
+    /**
+     * The gateway's published hostname — the reverse proxy in front of the replicas, and the only
+     * gateway address a consumer is ever given. `null` until an administrator sets one.
+     */
+    publicUrl?: string | null;
+    gateways?: Array<{ label: string; url: string }>;
+  }>;
   chain: string[];
   kinds: string[];
   policyUnits: Array<{
@@ -414,7 +424,24 @@ export interface EnvironmentsView {
     instances: number;
     liveInstances: number;
     maxInstances: number;
+    publicUrl: string | null;
+    label: string | null;
   }>;
+}
+
+/** `GET /api/gateways` — the admin screen that adds, publishes and removes a gateway. */
+export interface GatewayRow {
+  environment: string;
+  exists: boolean;
+  id: string | null;
+  adapter: string | null;
+  label: string | null;
+  publicUrl: string | null;
+  enforce: boolean;
+  paused: boolean;
+  replicas: number;
+  liveReplicas: number;
+  maxReplicas: number;
 }
 
 export interface PolicyUnitRow {
@@ -626,6 +653,11 @@ export interface FleetHealth {
   routes: number;
   subscriptions: number;
   liveInstances: number;
+  /** Replicas that are not revoked, and how many of those are behind or not reporting. */
+  expectedInstances: number;
+  behindInstances: number;
+  publicUrl: string | null;
+  label: string | null;
   inSync: boolean;
   staleAfterSec: number;
   instances: Array<{

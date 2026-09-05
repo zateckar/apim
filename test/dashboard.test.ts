@@ -21,7 +21,7 @@ import { makeCp, poll, publishApi, startBackend, type TestCp } from "./helpers.t
  *  - **every list is bounded**, with the truncation count beside it.
  *  - **one evaluator.** The API page's banner and the dashboard's list are the same rows, produced
  *    by the same SQL, so a user cannot be told two different things about one API.
- *  - **`start-here-*` never leaks into an `attention[]` block**: "publish your first API" on a application
+ *  - **`start-here-*` never leaks into an `attention[]` block**: "publish your first API" on an application
  *    that has fifty is nonsense.
  */
 
@@ -191,8 +191,14 @@ describe("the window and the numbers", () => {
     cp.app.telemetry.flushNow();
 
     const dash = await dashboard(api.pavel, "?environment=dev&sinceMin=60");
+    // The Telemetry endpoints are the estate view and are admin-only; the dashboard is the
+    // member-facing one. Both read through `rowsFor`, and the only traffic in this fixture is
+    // Pavel's own API, so the two scopes contain the same rows and the identity below is about
+    // the aggregation rather than about who may see what.
     const summary = (await (
-      await cp.call("GET", "/api/telemetry/summary?environment=dev&sinceMin=60", { cookie: api.pavel })
+      await cp.call("GET", "/api/telemetry/summary?environment=dev&sinceMin=60", {
+        cookie: await cp.login("alice"),
+      })
     ).json()) as {
       totals: {
         requests: number;
@@ -608,7 +614,7 @@ describe("an API that serves traffic without a control somebody would expect", (
     expect(dash.platform.environments[0]!.trustAnchors).toBe(1);
     expect(dash.platform.environments[0]!.expiringAnchors).toBe(1);
 
-    // A application that does not own the certificate is not told about it.
+    // An application that does not own the certificate is not told about it.
     const clara = await cp.login("clara");
     expect(codes(await dashboard(clara, "?environment=dev"))).not.toContain("certificate-expiring");
   });

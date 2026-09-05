@@ -326,7 +326,7 @@ describe("reading telemetry back", () => {
     }
   });
 
-  test("reads are application-scoped, and the no-route bucket is admin-only", async () => {
+  test("the estate view is admin-only, and its rows are still application-scoped", async () => {
     const api = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
     await poll(cp, { telemetry: report(7, { resourceId: api.resourceId }) });
     await poll(cp, { runId: "run_b", telemetry: report(4) });
@@ -335,17 +335,20 @@ describe("reading telemetry back", () => {
     const asAdmin = await summary();
     expect(asAdmin.totals.requests).toBe(11);
 
-    // Pavel owns the API, so he sees its traffic but not the estate's unmatched traffic.
-    const asPavel = await (
-      await cp.call("GET", "/api/telemetry/summary?environment=dev", { cookie: api.pavel })
-    ).json();
-    expect(asPavel.totals.requests).toBe(7);
+    // The Telemetry screen is the estate's — it names every replica behind the proxy — and the
+    // route table has always said so. The endpoints now agree with the sidebar rather than
+    // answering anyone who types the address.
+    for (const cookie of [api.pavel, api.clara]) {
+      const denied = await cp.call("GET", "/api/telemetry/summary?environment=dev", { cookie });
+      expect(denied.status).toBe(403);
+    }
 
-    // Clara is in another application and owns none of it.
-    const asClara = await (
-      await cp.call("GET", "/api/telemetry/summary?environment=dev", { cookie: api.clara })
+    // The row-level scoping is unchanged and is what the member-facing dashboard reads: Pavel
+    // owns the API and sees its traffic, never the estate's unmatched bucket.
+    const dashboard = await (
+      await cp.call("GET", "/api/dashboard?environment=dev", { cookie: api.pavel })
     ).json();
-    expect(asClara.totals.requests).toBe(0);
+    expect(dashboard.owner.traffic.requests).toBe(7);
   });
 
   test("per-resource, per-consumer and per-instance views agree with the totals", async () => {
@@ -412,10 +415,10 @@ describe("the gateway counts what it serves", () => {
         await dp.start();
 
         // A mix of exits, so "one series per exit" is actually exercised.
-        await dp.fetchHttp(new Request("http://gw/counted/pet", { headers: { "x-api-key": api.key! } }), "127.0.0.1");
-        await dp.fetchHttp(new Request("http://gw/counted/pet", { headers: { "x-api-key": api.key! } }), "127.0.0.1");
-        await dp.fetchHttp(new Request("http://gw/counted/pet"), "127.0.0.1");
-        await dp.fetchHttp(new Request("http://gw/nowhere"), "127.0.0.1");
+        await dp.fetchHttp(new Request("http://gw/it/solution/counted/pet", { headers: { "x-api-key": api.key! } }), "127.0.0.1");
+        await dp.fetchHttp(new Request("http://gw/it/solution/counted/pet", { headers: { "x-api-key": api.key! } }), "127.0.0.1");
+        await dp.fetchHttp(new Request("http://gw/it/solution/counted/pet"), "127.0.0.1");
+        await dp.fetchHttp(new Request("http://gw/it/solution/nowhere"), "127.0.0.1");
 
         const sent = 4;
         expect(dp.telemetry.requestsTotal).toBe(sent);
@@ -482,7 +485,7 @@ describe("the gateway counts what it serves", () => {
       const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "sized" });
       try {
         await dp.start();
-        for (const path of ["/sized/plain", "/sized/gzip", "/sized/chunked"]) {
+        for (const path of ["/it/solution/sized/plain", "/it/solution/sized/gzip", "/it/solution/sized/chunked"]) {
           const response = await dp.fetchHttp(new Request(`http://gw${path}`), "127.0.0.1");
           expect(response.status).toBe(200);
           // Whichever path counted it, the client still gets the whole decoded body.
@@ -524,7 +527,7 @@ describe("the gateway counts what it serves", () => {
       try {
         await dp.start();
         console.log = (...args: unknown[]) => void written.push(args.map(String).join(" "));
-        const response = await dp.fetchHttp(new Request("http://gw/logged/pet"), "127.0.0.1");
+        const response = await dp.fetchHttp(new Request("http://gw/it/solution/logged/pet"), "127.0.0.1");
         console.log = original;
         expect(response.status).toBe(200);
         expect(written.filter((line) => line.startsWith("{"))).toEqual([]);
@@ -555,7 +558,7 @@ describe("the gateway counts what it serves", () => {
       const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "quiet", telemetry: "off" });
       try {
         await dp.start();
-        const response = await dp.fetchHttp(new Request("http://gw/quiet/pet"), "127.0.0.1");
+        const response = await dp.fetchHttp(new Request("http://gw/it/solution/quiet/pet"), "127.0.0.1");
         expect(response.status).toBe(200);
         // The body still arrives intact; it is simply not pulled through a counting transform.
         expect(await response.text()).toContain("ok");
@@ -594,7 +597,7 @@ describe("the gateway counts what it serves", () => {
         await dp.start();
         // Distinct statuses would be distinct series; the cap folds them instead.
         for (const status of [200, 404, 500, 503]) {
-          await dp.fetchHttp(new Request(`http://gw/folding/${status}`), "127.0.0.1");
+          await dp.fetchHttp(new Request(`http://gw/it/solution/folding/${status}`), "127.0.0.1");
         }
         expect(dp.telemetry.droppedSeries).toBeGreaterThan(0);
         const stats = dp.telemetry.stats();

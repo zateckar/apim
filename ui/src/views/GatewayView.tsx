@@ -1,51 +1,67 @@
-import { useState } from "react";
 import { api, type EnvironmentsView, type FleetHealth, type Meta, type User } from "../api";
-import { Card, DangerZone, Digest, Notice, Pill, useAction, useAsync } from "../components";
-import { ALLOWED } from "../lib/capabilities";
+import { Card, Digest, Notice, Pill, useAsync } from "../components";
 
 /**
- * G3: the fleet. Design section 8.5 keys the poll on `gateway_instance`, so more gateways is more
- * rows plus one process each.
+ * Health Status: what each environment's gateway is *doing*. Nothing on this screen changes the
+ * estate — adding a gateway, publishing its hostname and minting a replica's token live on the
+ * admin **Gateways** screen, because "is it healthy" and "does it exist" are different questions
+ * and merging them left the second one with no page of its own.
  *
- * The in-sync flag lags exactly one poll, by design: an instance reports the digest it has
+ * The in-sync flag lags exactly one poll, by design: a replica reports the digest it has
  * *activated*, so the control plane learns about a new config on the poll after the one that
  * delivered it (design section 8.7).
  */
-function Fleet({ environment, isAdmin, onChanged }: { environment: string; isAdmin: boolean; onChanged: () => void }) {
+function Fleet({ environment }: { environment: string }) {
   const health = useAsync(
     () => api.get<FleetHealth>(`/api/targets/${environment}/health`),
     [environment],
   );
-  const action = useAction();
-  const [name, setName] = useState("");
-  const [minted, setMinted] = useState<{ name: string; token: string } | null>(null);
 
   if (health.error) return <Notice kind="error">{health.error}</Notice>;
   if (!health.data) return <p className="muted">Loading {environment}…</p>;
   const fleet = health.data;
 
   return (
-    <Card title={environment}>
+    <Card title={`${environment}${fleet.label ? ` · ${fleet.label}` : ""}`}>
       <div className="row wrap">
-        <Pill kind={fleet.inSync ? "ok" : "warn"}>{fleet.inSync ? "in sync" : "converging"}</Pill>
+        {/* "In sync" counts every replica that has not been revoked, not only the ones answering.
+            Counting only the live ones let a killed replica improve the headline (finding 10). */}
+        <Pill kind={fleet.inSync ? "ok" : "warn"}>
+          {fleet.inSync ? "in sync" : `${fleet.behindInstances} behind`}
+        </Pill>
         <Pill kind="muted">{fleet.routes} routes</Pill>
         <Pill kind="muted">{fleet.subscriptions} subscriptions</Pill>
-        <Pill kind="muted">{fleet.liveInstances} live</Pill>
+        <Pill kind={fleet.liveInstances === fleet.expectedInstances ? "muted" : "warn"}>
+          {fleet.liveInstances} of {fleet.expectedInstances} replicas answering
+        </Pill>
         {fleet.paused && <Pill kind="warn">paused</Pill>}
         <span className="muted">
           config <Digest value={fleet.configDigest} />
         </span>
       </div>
 
+      <p className="hint">
+        {fleet.publicUrl ? (
+          <>
+            Published at <code>{fleet.publicUrl}</code>. The replicas below sit behind that proxy
+            and are never addressed directly by a consumer.
+          </>
+        ) : (
+          <>
+            This gateway has no published hostname yet, so the portal has no address to give
+            consumers. An administrator sets one on the Gateways screen.
+          </>
+        )}
+      </p>
+
       <table>
         <thead>
           <tr>
-            <th>Gateway</th>
+            <th>Replica</th>
             <th>Active config</th>
             <th>Last seen</th>
             <th>Requests</th>
             <th>State</th>
-            {isAdmin && <th />}
           </tr>
         </thead>
         <tbody>
@@ -61,7 +77,7 @@ function Fleet({ environment, isAdmin, onChanged }: { environment: string; isAdm
                 )}
                 {/* Why it is behind, rather than leaving it looking merely slow to converge: a
                     config whose artifacts or certificates are not available is never activated,
-                    and the instance keeps serving the last good one (plan `[R1-21]`). */}
+                    and the replica keeps serving the last good one (plan `[R1-21]`). */}
                 {typeof instance.process?.activationBlocked === "string" && (
                   <div className="notice error" style={{ margin: "6px 0 0" }}>
                     not activated: {instance.process.activationBlocked}
@@ -83,74 +99,45 @@ function Fleet({ environment, isAdmin, onChanged }: { environment: string; isAdm
                   <Pill kind="ok">live</Pill>
                 )}
               </td>
-              {isAdmin && (
-                <td>
-                  {!instance.revoked && (
-                    <DangerZone
-                      what={`Revoke ${instance.name}`}
-                      name={instance.name}
-                      consequence="It stops serving at its next poll and cannot be un-revoked; mint a new instance to replace it."
-                      permission={ALLOWED}
-                      busy={action.busy}
-                      error={action.error}
-                      onConfirm={async () => {
-                        const ok = await action.run(() => api.del(`/api/instances/${instance.id}`));
-                        if (ok) {
-                          health.reload();
-                          onChanged();
-                        }
-                      }}
-                    />
-                  )}
-                </td>
-              )}
             </tr>
           ))}
+          {fleet.instances.length === 0 && (
+            <tr>
+              <td colSpan={5} className="muted">
+                No replicas are registered, so nothing serves this environment.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
+    </Card>
+  );
+}
 
-      <Notice kind="error">{action.error}</Notice>
-
-      {isAdmin && (
-        <div className="row">
-          <input
-            placeholder="new gateway name, e.g. dev-3"
-            value={name}
-            onChange={(event) => setName(event.target.value)}
-          />
-          <button
-            disabled={action.busy || name.trim() === ""}
-            onClick={async () => {
-              const created = await api
-                .post<{ name: string; token: string }>(`/api/targets/${environment}/instances`, {
-                  name: name.trim(),
-                })
-                .catch((err) => {
-                  action.setError(String(err));
-                  return null;
-                });
-              if (created) {
-                setMinted(created);
-                setName("");
-                health.reload();
-                onChanged();
-              }
-            }}
-          >
-            Mint a token
-          </button>
-        </div>
-      )}
-
-      {minted && (
-        <Notice kind="warn">
-          <strong>{minted.name}</strong> — copy this token now, it is shown once and only its hash
-          is stored:
-          <pre>{minted.token}</pre>
-          Start the gateway with it:
-          <pre>{`DP_NAME=${minted.name} DP_PORT=<port> GATEWAY_TOKEN=${minted.token} bun run dp`}</pre>
-        </Notice>
-      )}
+/** The rate-limit arithmetic, read from the fleet rather than from the session's cached meta. */
+function RateLimitArithmetic({ chain }: { chain: string[] }) {
+  const environments = useAsync(() => api.get<EnvironmentsView>("/api/environments"), []);
+  return (
+    <Card title="How a rate limit adds up">
+      <p className="hint">
+        Rate limiting is per replica and needs no coordination (design section 5.7), so the fleet
+        ceiling is <code>calls x replicas</code>:
+      </p>
+      <Notice kind="error">{environments.error}</Notice>
+      <ul>
+        {(environments.data?.items ?? chain.map((environment) => ({
+          environment,
+          liveInstances: 0,
+          instances: 0,
+        }))).map((item) => (
+          <li key={item.environment}>
+            <strong>{item.environment}</strong>: {item.liveInstances} replica
+            {item.liveInstances === 1 ? "" : "s"} answering of {item.instances} — a limit of{" "}
+            <code>N</code> calls admits up to <code>N x {item.liveInstances || 1}</code> across the
+            fleet right now.
+          </li>
+        ))}
+      </ul>
     </Card>
   );
 }
@@ -162,11 +149,11 @@ export function GatewayView({ meta, user }: { meta: Meta; user: User }) {
     <>
       <header className="page">
         <div>
-          <h2>Gateways</h2>
+          <h2>Health Status</h2>
           <p className="muted">
-            One target per environment, any number of gateways behind it. A gateway keeps serving
-            through a control-plane outage from its last-good config; a revoked token stops it at
-            the next poll.
+            One gateway per environment, any number of replicas behind its proxy. A replica keeps
+            serving through a control-plane outage from its last-good config; a revoked token stops
+            it at the next poll.
           </p>
         </div>
       </header>
@@ -176,33 +163,20 @@ export function GatewayView({ meta, user }: { meta: Meta; user: User }) {
         <div key={item.environment}>
           {!item.hasTarget ? (
             <Card title={item.environment}>
-              <Notice kind="warn">No standalone target is configured for this environment.</Notice>
+              <Notice kind="warn">
+                This environment has no gateway, so nothing published to it is served.
+                {user.isAdmin
+                  ? " Add one on the Gateways screen."
+                  : " An administrator adds one on the Gateways screen."}
+              </Notice>
             </Card>
           ) : (
-            <Fleet
-              environment={item.environment}
-              isAdmin={user.isAdmin}
-              onChanged={environments.reload}
-            />
+            <Fleet environment={item.environment} />
           )}
         </div>
       ))}
 
-      <Card title="How a rate limit adds up">
-        <p className="hint">
-          Rate limiting is per instance and needs no coordination (design section 5.7), so the
-          fleet ceiling is <code>calls x instances</code>:
-        </p>
-        <ul>
-          {meta.environments.map((environment) => (
-            <li key={environment.environment}>
-              <strong>{environment.environment}</strong>: {environment.liveInstances} live gateway
-              {environment.liveInstances === 1 ? "" : "s"} — a limit of <code>N</code> calls admits
-              up to <code>N x {environment.liveInstances || 1}</code> across the fleet.
-            </li>
-          ))}
-        </ul>
-      </Card>
+      <RateLimitArithmetic chain={meta.chain} />
     </>
   );
 }

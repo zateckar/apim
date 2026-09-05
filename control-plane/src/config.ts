@@ -21,6 +21,15 @@ export interface TargetDef {
   enforce: boolean;
   paused: boolean;
   config: Record<string, unknown>;
+  /**
+   * The reverse proxy in front of this gateway's replicas — the hostname every API URL the portal
+   * shows a consumer is built from. A *seed* only: it is written when the target row is created
+   * and never again, because an administrator can change it on the Gateways screen and a file that
+   * reasserted itself at every boot would silently undo them.
+   */
+  publicUrl?: string;
+  /** What to call this deployment: `cloud`, `on-prem`. Seeded the same way, for the same reason. */
+  label?: string;
 }
 
 /**

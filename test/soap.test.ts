@@ -223,7 +223,7 @@ describe("a soap API through the gateway", () => {
     const headers: Record<string, string> = { "content-type": "text/xml; charset=utf-8" };
     if (key) headers["x-api-key"] = key;
     if (action !== null) headers.soapaction = `"${action}"`;
-    return new Request("http://gw/petstore-soap", { method: "POST", headers, body });
+    return new Request("http://gw/it/solution/petstore-soap", { method: "POST", headers, body });
   }
 
   test("a valid call proxies and the backend sees the envelope untouched", async () => {
@@ -282,7 +282,7 @@ describe("a soap API through the gateway", () => {
     const world = await soapWorld();
     try {
       const response = await world.dp.fetchHttp(
-        new Request("http://gw/petstore-soap", {
+        new Request("http://gw/it/solution/petstore-soap", {
           method: "POST",
           headers: { "content-type": "application/json", "x-api-key": world.api.key! },
           body: "{}",

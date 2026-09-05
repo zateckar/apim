@@ -101,7 +101,7 @@ describe("the directory is read live", () => {
       expect(JSON.parse(snapshot.roles_json)).toEqual(["member"]);
       expect(JSON.parse(snapshot.applications_json)).toEqual(["application_orders"]);
 
-      // An admin grants a application while clara is signed in. Nothing invalidates her session and
+      // An admin grants an application while clara is signed in. Nothing invalidates her session and
       // nothing rewrites the snapshot.
       const alice = await cp.login("alice");
       await cp.call("PUT", "/api/users/clara/applications/application_platform", { cookie: alice });

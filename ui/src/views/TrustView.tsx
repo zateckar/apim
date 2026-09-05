@@ -207,7 +207,7 @@ function CertificateRowView({
               : row.usedBy.length > 0
                 ? {
                     enabled: false,
-                    reason: `${row.usedBy.length} binding${row.usedBy.length === 1 ? "" : "s"} name this certificate; change ${row.usedBy.length === 1 ? "it" : "them"} first.`,
+                    reason: `${row.usedBy.length} binding${row.usedBy.length === 1 ? " names" : "s name"} this certificate; change ${row.usedBy.length === 1 ? "it" : "them"} first.`,
                   }
                 : ALLOWED
           }

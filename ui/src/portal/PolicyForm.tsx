@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { DISABLED_KEY, disabledUnits } from "../../../shared/policy";
 import { Field, Modal } from "./common";
 
 /**
@@ -13,11 +14,16 @@ import { Field, Modal } from "./common";
  * platform appears here without anybody editing this file, and the editor cannot offer something
  * the control plane will refuse.
  *
- * **Attached is the whole state.** There is no separate enable/disable, because in this model a
- * unit's *existence in the document* is what turns it on; the old portal needed a disabled-but-kept
- * state only because Azure XML has nowhere to put "configured, not running". Removing a card keeps
- * its value in this editor's session, so a mis-click is undone by adding it back, and nothing is
- * written until Save.
+ * **Order on the page is order at the gateway.** The sections are the pipeline — inbound,
+ * upstream, outbound — and within a section the rows are in the order the units actually run. A
+ * list that sorted alphabetically, or by when somebody happened to add each one, would teach the
+ * reader something false about their own route.
+ *
+ * **Off and gone are different.** The power control moves a unit into the document's `disabled`
+ * list, which the control plane subtracts before the config is rendered: the configuration stays
+ * exactly as it is and no gateway is told about it. Somebody suppressing a rate limit during an
+ * incident should not have to retype it afterwards, and that is not the same act as deleting it —
+ * which the bin does, values and all.
  *
  * **Nothing is hidden without a sentence.** A unit that needs a second backend, or that only
  * applies to one variant, or that only an administrator may change, says so where the control would
@@ -34,14 +40,146 @@ export interface UnitDef {
   global: boolean;
 }
 
-/** The picker's headings, in the order a request meets them. */
-const SECTIONS: Array<{ group: UnitDef["group"]; label: string }> = [
-  { group: "identity", label: "Inbound — who may call" },
-  { group: "traffic", label: "Traffic — how much they may call" },
-  { group: "shape", label: "Shape — what goes through" },
-  { group: "backend", label: "Backend — how it is forwarded" },
-  { group: "protocol", label: "Protocol" },
+/**
+ * Where in the pipeline each unit runs. The catalogue's `group` says what a unit is *about*;
+ * this says *when* it happens, which is the question somebody reading a list of policies down the
+ * page is actually asking — the order on screen has to be the order at the gateway or the list
+ * teaches the wrong thing.
+ *
+ * A unit that straddles the boundary is filed where it is decided: `validate` and `cache` are
+ * inbound even though both also touch the response, because that is where the request either
+ * continues or does not.
+ */
+const PHASES: Array<{ id: string; label: string; note: string; units: string[] }> = [
+  {
+    id: "inbound",
+    label: "Inbound",
+    note: "on the request, before the backend is called",
+    units: [
+      "auth.subscriptionKey",
+      "auth.basic",
+      "auth.jwt",
+      "auth.introspection",
+      "auth.mtls",
+      "ipAllow",
+      "preconditions",
+      "cors",
+      "rateLimit",
+      "quota",
+      "concurrency",
+      "cache",
+      "validate",
+      "rewrite",
+      "headers.request",
+      "transform",
+    ],
+  },
+  {
+    id: "upstream",
+    label: "Upstream",
+    note: "how the call to the backend is made",
+    units: ["backendAuth", "timeoutMs", "retries", "circuitBreaker", "passthrough"],
+  },
+  {
+    id: "outbound",
+    label: "Outbound",
+    note: "on the response, on the way back",
+    units: ["headers.response", "errorFormat"],
+  },
 ];
+
+function phaseOf(unitKey: string): string {
+  return PHASES.find((phase) => phase.units.includes(unitKey))?.id ?? "inbound";
+}
+
+/**
+ * A one-line reading of what a unit is *set to*, for the collapsed row.
+ *
+ * The description says what a policy does and is the same on every API; this says what this one
+ * says, which is the only thing that differs between two rows with the same title. Hand-written
+ * where the shape has a headline number, and a generic scan of the top-level fields otherwise —
+ * a wrong-but-confident summary would be worse than none, so the generic path only reports what
+ * it can read literally.
+ */
+export function summarize(unitKey: string, value: unknown): string | null {
+  if (value === undefined || value === null) return null;
+  if (unitKey === "timeoutMs" && typeof value === "number") {
+    return value % 1000 === 0 ? `${value / 1000}s` : `${value}ms`;
+  }
+  if (typeof value === "number") return String(value);
+  if (typeof value === "boolean") return value ? "on" : "off";
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "empty";
+    return value.every((entry) => typeof entry === "string")
+      ? value.slice(0, 3).join(", ") + (value.length > 3 ? ` +${value.length - 3}` : "")
+      : `${value.length} ${value.length === 1 ? "rule" : "rules"}`;
+  }
+  if (typeof value !== "object") return null;
+  const v = value as Record<string, unknown>;
+  const count = (key: string, noun: string) => {
+    const entry = v[key];
+    const n = Array.isArray(entry) ? entry.length : 0;
+    return `${n} ${noun}${n === 1 ? "" : "s"}`;
+  };
+  // A quota's period is a month in seconds. Nobody reads 2592000.
+  const duration = (sec: unknown) => {
+    if (typeof sec !== "number" || !Number.isFinite(sec)) return "?";
+    if (sec >= 86_400 && sec % 86_400 === 0) return `${sec / 86_400}d`;
+    if (sec >= 3_600 && sec % 3_600 === 0) return `${sec / 3_600}h`;
+    if (sec >= 120 && sec % 60 === 0) return `${sec / 60}m`;
+    return `${sec}s`;
+  };
+  switch (unitKey) {
+    case "auth.subscriptionKey":
+      return `${String(v.in ?? "header")} ${String(v.name ?? "")}`.trim();
+    case "auth.jwt":
+      return `${v.issuerRef || "no issuer"} · ${count("audience", "audience")}`;
+    case "auth.introspection":
+      return `${v.issuerRef || "no issuer"} · ${v.cacheTtlSec ?? 0}s cache`;
+    case "auth.mtls":
+      return `${count("allowedIssuers", "issuer")} · ${count("allowedSubjectCns", "CN")}`;
+    case "auth.basic":
+      return String(v.credentialRef || "no credential");
+    case "rateLimit":
+      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} per replica`;
+    case "quota":
+      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} across the fleet`;
+    case "cache":
+      return `${duration(v.ttlSec)}`;
+    case "concurrency":
+      return `${v.maxInFlight ?? "?"} in flight per replica`;
+    case "retries":
+      return `${v.attempts ?? "?"} ${v.attempts === 1 ? "attempt" : "attempts"}`;
+    case "circuitBreaker":
+      return `open after ${v.failures ?? "?"} ${v.failures === 1 ? "failure" : "failures"} in ${duration(v.windowSec)}`;
+    case "validate":
+      return `request ${v.request ?? "default"} · response ${v.response ?? "default"}`;
+    case "rewrite": {
+      const bits: string[] = [];
+      if (v.stripBasePath) bits.push("strip base path");
+      if (typeof v.path === "string" && v.path) bits.push(`path ${v.path}`);
+      return bits.length > 0 ? bits.join(" · ") : "no change";
+    }
+    case "backendAuth":
+      return String(v.type ?? "none");
+    case "headers.request":
+    case "headers.response":
+      return `${count("set", "set")} · ${count("remove", "removal")}`;
+    case "cors":
+      return count("origins", "origin");
+    case "errorFormat":
+      return String(v.shape ?? "problem+json");
+    default: {
+      // Whatever the object literally says, up to three fields, skipping anything nested — a
+      // summary that flattens an object is a summary that misleads.
+      const parts = Object.entries(v)
+        .filter(([, entry]) => typeof entry !== "object" || entry === null)
+        .slice(0, 3)
+        .map(([key, entry]) => `${key} ${String(entry)}`);
+      return parts.length > 0 ? parts.join(" · ") : null;
+    }
+  }
+}
 
 /** Units that only make sense against more than one backend, and why. */
 const NEEDS_POOL: Record<string, string> = {
@@ -102,7 +240,7 @@ export function PolicyForm({
 
   const offered = units.filter((unit) => !unit.appliesToKinds || unit.appliesToKinds.includes(kind));
   const known = new Set(offered.map((unit) => unit.key));
-  const attached = attachedKeys(document);
+  const attached = attachedKeys(document).filter((key) => key !== DISABLED_KEY);
   /** Units in the document that this build has no card for: shown, never silently dropped. */
   const unrecognised = attached.filter((key) => !known.has(key));
 
@@ -112,8 +250,23 @@ export function PolicyForm({
     const next = { ...document };
     setRemoved({ ...removed, [key]: next[key] });
     delete next[key];
+    // A unit that is gone cannot also be switched off, and leaving its name behind would resurrect
+    // the entry the next time somebody added it back.
+    const stillOff = off.filter((entry) => entry !== key);
+    if (stillOff.length > 0) next[DISABLED_KEY] = stillOff;
+    else delete next[DISABLED_KEY];
     write(next);
     if (editing === key) setEditing(null);
+  };
+
+  const off = disabledUnits(document);
+  /** Switched off, not removed: the value stays exactly as it is and the gateway is not told. */
+  const toggle = (key: string) => {
+    const next = { ...document };
+    const stillOff = off.includes(key) ? off.filter((entry) => entry !== key) : [...off, key];
+    if (stillOff.length > 0) next[DISABLED_KEY] = stillOff.sort();
+    else delete next[DISABLED_KEY];
+    write(next);
   };
 
   const cards = offered.filter((unit) => attached.includes(unit.key));
@@ -138,17 +291,32 @@ export function PolicyForm({
         </p>
       )}
 
-      {SECTIONS.map(({ group, label }) => {
-        const section = cards.filter((unit) => unit.group === group);
+      {cards.length > 0 && (
+        <p className="muted small policy-order">
+          Applied in order · request → upstream → response
+        </p>
+      )}
+
+      {PHASES.map((phase) => {
+        // Sorted by the phase's own list, so the page reads top to bottom in the order the
+        // gateway runs them rather than in the order somebody happened to add them.
+        const section = cards
+          .filter((unit) => phaseOf(unit.key) === phase.id)
+          .sort((a, b) => phase.units.indexOf(a.key) - phase.units.indexOf(b.key));
         if (section.length === 0) return null;
         return (
-          <div className="policy-section" key={group}>
-            <h4>{label}</h4>
+          <div className="policy-section" key={phase.id}>
+            <div className="policy-section-label">
+              {phase.label} — {phase.note}
+            </div>
             {section.map((unit) => (
               <PolicyCard
                 key={unit.key}
                 unit={unit}
                 value={document[unit.key]}
+                summary={summarize(unit.key, document[unit.key])}
+                enabled={!off.includes(unit.key)}
+                onToggle={() => toggle(unit.key)}
                 open={editing === unit.key}
                 onOpen={() => setEditing(editing === unit.key ? null : unit.key)}
                 onChange={(next) => set(unit.key, next)}
@@ -175,6 +343,14 @@ export function PolicyForm({
         );
       })}
 
+      {off.length > 0 && (
+        <p className="muted small">
+          {off.length} polic{off.length === 1 ? "y is" : "ies are"} switched off: kept exactly as
+          configured, and not sent to any gateway. Turning one back on is one click and no
+          re-typing.
+        </p>
+      )}
+
       {Object.keys(removed).length > 0 && (
         <p className="muted">
           Removed in this tab and not yet saved:{" "}
@@ -199,12 +375,18 @@ export function PolicyForm({
 
       {adding && (
         <Modal title="Add a policy" close={() => setAdding(false)}>
-          {SECTIONS.map(({ group, label }) => {
-            const section = available.filter((unit) => unit.group === group);
+          {/* Grouped by pipeline phase, the same way the attached list is: a policy that appears
+              under Inbound when you add it should not appear under something else afterwards. */}
+          {PHASES.map((phase) => {
+            const section = available
+              .filter((unit) => phaseOf(unit.key) === phase.id)
+              .sort((a, b) => phase.units.indexOf(a.key) - phase.units.indexOf(b.key));
             if (section.length === 0) return null;
             return (
-              <div key={group}>
-                <h4>{label}</h4>
+              <div key={phase.id}>
+                <div className="policy-section-label">
+                  {phase.label} — {phase.note}
+                </div>
                 {section.map((unit) => {
                   const blocked =
                     unit.key === "auth.subscriptionKey" && !isAdmin
@@ -244,9 +426,20 @@ export function PolicyForm({
   );
 }
 
+/**
+ * One attached policy, collapsed to a line: what it is, what it is set to, and three controls.
+ *
+ * Collapsed rather than a card of prose, because the question a policy list answers is "what runs
+ * on this route, in what order" and eight paragraphs of description answer a different one. The
+ * description is still there — it moves under the row when you open it, where somebody who is
+ * about to change the thing will read it.
+ */
 function PolicyCard({
   unit,
   value,
+  summary,
+  enabled,
+  onToggle,
   open,
   onOpen,
   onChange,
@@ -261,6 +454,9 @@ function PolicyCard({
 }: {
   unit: UnitDef;
   value: unknown;
+  summary: string | null;
+  enabled: boolean;
+  onToggle: () => void;
   open: boolean;
   onOpen: () => void;
   onChange: (next: unknown) => void;
@@ -275,35 +471,75 @@ function PolicyCard({
 }) {
   const locked = disabled || Boolean(lockedReason);
   return (
-    <div className="card policy-card">
-      <div className="native-row">
-        <div>
-          <strong>{unit.title}</strong> <span className="mono muted">{unit.key}</span>
-          <p>{unit.description}</p>
-          {lockedReason && <p className="muted">{lockedReason}</p>}
-          {warning && <div className="notice warn">{warning}</div>}
+    <div className="policy-item">
+      <div className={`policy-card${enabled ? "" : " off"}`}>
+        <div className="policy-card-body">
+          <div className="policy-card-title">
+            {unit.title} <span className="mono muted">{unit.key}</span>
+          </div>
+          <div className="policy-card-summary">
+            {summary ?? unit.description.split(".")[0]}
+          </div>
         </div>
-        <div className="native-actions">
-          <button type="button" className="btn sm" onClick={onOpen}>
-            {open ? "Done" : "Edit"}
+        <div className="policy-card-actions">
+          <button
+            type="button"
+            className={`icon-btn${enabled ? "" : " inactive"}`}
+            disabled={locked}
+            aria-pressed={enabled}
+            title={
+              enabled
+                ? "Switch off — the configuration is kept and the gateway stops applying it"
+                : "Switch back on"
+            }
+            aria-label={`${enabled ? "Switch off" : "Switch on"} ${unit.title}`}
+            onClick={onToggle}
+          >
+            ⏻
           </button>
-          <button type="button" className="btn sm" disabled={locked} onClick={onRemove}>
-            Remove
+          <button
+            type="button"
+            className="icon-btn"
+            title={open ? "Close" : "Edit"}
+            aria-label={`${open ? "Close" : "Edit"} ${unit.title}`}
+            onClick={onOpen}
+          >
+            {open ? "▴" : "✎"}
+          </button>
+          <button
+            type="button"
+            className="icon-btn danger"
+            disabled={locked}
+            title="Remove — deletes the configuration as well"
+            aria-label={`Remove ${unit.title}`}
+            onClick={onRemove}
+          >
+            ✕
           </button>
         </div>
       </div>
+      {!enabled && (
+        <p className="muted small">
+          Switched off. Its configuration is kept here and no gateway is told about it.
+        </p>
+      )}
+      {lockedReason && <p className="muted small">{lockedReason}</p>}
+      {warning && <div className="notice warn">{warning}</div>}
       {open && (
-        <fieldset disabled={locked} className="native-form-grid">
-          <UnitForm
-            unitKey={unit.key}
-            value={value}
-            onChange={onChange}
-            instances={instances}
-            certificates={certificates}
-            certificate={certificate}
-            onCertificate={onCertificate}
-          />
-        </fieldset>
+        <div className="policy-item-open">
+          <p className="muted small">{unit.description}</p>
+          <fieldset disabled={locked} className="native-form-grid">
+            <UnitForm
+              unitKey={unit.key}
+              value={value}
+              onChange={onChange}
+              instances={instances}
+              certificates={certificates}
+              certificate={certificate}
+              onCertificate={onCertificate}
+            />
+          </fieldset>
+        </div>
       )}
     </div>
   );

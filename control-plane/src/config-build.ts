@@ -14,6 +14,7 @@ import {
   type GatewayConfig,
 } from "../../shared/config-doc.ts";
 import {
+  activeDocument,
   parseOperationUnitKey,
   validateDocument,
   VALIDATE_DEFAULTS,
@@ -311,7 +312,10 @@ export function buildRoutes(
     // Only a variant whose request path reads the model loads it: a REST model is tens of
     // kilobytes and the operation index it needs is already denormalized onto the revision.
     const model = row.model ? (JSON.parse(row.model) as ApiModel) : null;
-    const policy = effectiveDocument(db, row.resource_id, environment);
+    // `activeDocument` subtracts the units the document switches off. It happens here, once, on
+    // the way to the wire: a disabled unit never reaches a gateway, so no gateway has to know
+    // what "disabled" means.
+    const policy = activeDocument(effectiveDocument(db, row.resource_id, environment));
 
     // A route whose effective document is invalid is OMITTED rather than served. It cannot happen
     // through the API — both writes validate the effective document — but a restored backup or a

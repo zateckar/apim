@@ -1,4 +1,7 @@
 import {
+  activeDocument,
+  DISABLED_KEY,
+  disabledUnits,
   GLOBAL_UNITS,
   isGloballyAttachable,
   lintDocument,
@@ -292,12 +295,18 @@ export function registerPolicyRoutes(router: Router): void {
     const environment = environmentOf(ctx);
     assertEnvironment(ctx, environment);
     const units = effectiveWithOrigin(ctx.app.db, row.id, environment);
-    const document = policyFor(ctx.app.db, row.id, environment);
+    const stored = policyFor(ctx.app.db, row.id, environment);
+    // `document` is what the gateway will be served, which is the question this endpoint exists to
+    // answer, so a unit the API has switched off is not in it. `disabled` says which those are,
+    // because "off" and "never configured" look identical from the document alone and are not the
+    // same fact about a route.
+    const document = activeDocument(stored as Record<string, unknown>);
     return json({
       environment,
       document,
-      units,
-      warnings: lintDocument(document as Record<string, unknown>, { environment }),
+      disabled: disabledUnits(stored as Record<string, unknown>),
+      units: units.filter((unit) => unit.unitKey !== DISABLED_KEY),
+      warnings: lintDocument(document, { environment }),
       // What an owner may do about a global unit: override it on this API, and nothing else.
       globalUnits: units.filter((unit) => unit.origin === "global").map((unit) => unit.unitKey),
     });

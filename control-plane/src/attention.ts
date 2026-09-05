@@ -302,6 +302,16 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
 
   // Both of these are anti-joins over the two policy tiers: a unit attached to the environment's
   // global tier counts, because the effective document is what the gateway runs `[R2-17]`.
+  //
+  // A unit the resource has switched off does not count either. It is attached and it is stored,
+  // and it is not running — which is exactly the state this rule exists to notice, so reading
+  // "attached" from the row alone would let somebody disable the only authentication on a route
+  // and have the estate go quiet about it.
+  const notDisabled = `AND NOT EXISTS (
+                SELECT 1 FROM policy_entry d, json_each(d.value_json) je
+                 WHERE d.resource_id = r.id AND d.environment = rel.environment
+                   AND d.unit_key = 'disabled' AND je.value = %UNIT%
+              )`;
   const openRoutes = db
     .query<EnvResourceRow, string[]>(
       `SELECT r.id, r.name, r.api_version, r.application_id, rel.environment
@@ -312,11 +322,13 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
                 SELECT 1 FROM policy_entry p
                  WHERE p.resource_id = r.id AND p.environment = rel.environment
                    AND p.unit_key IN (${placeholders(AUTH_UNITS)})
+                   ${notDisabled.replace("%UNIT%", "p.unit_key")}
               )
           AND NOT EXISTS (
                 SELECT 1 FROM global_policy_entry g
                  WHERE g.environment = rel.environment
                    AND g.unit_key IN (${placeholders(AUTH_UNITS)})
+                   ${notDisabled.replace("%UNIT%", "g.unit_key")}
               )${owner.sql}
         ORDER BY r.name LIMIT ${RULE_LIMIT}`,
     )
@@ -342,10 +354,12 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
           AND NOT EXISTS (
                 SELECT 1 FROM policy_entry p
                  WHERE p.resource_id = r.id AND p.environment = rel.environment AND p.unit_key = 'concurrency'
+                   ${notDisabled.replace("%UNIT%", "p.unit_key")}
               )
           AND NOT EXISTS (
                 SELECT 1 FROM global_policy_entry g
                  WHERE g.environment = rel.environment AND g.unit_key = 'concurrency'
+                   ${notDisabled.replace("%UNIT%", "g.unit_key")}
               )${owner.sql}
         ORDER BY r.name LIMIT ${RULE_LIMIT}`,
     )

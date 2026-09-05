@@ -1,5 +1,6 @@
 import { digestOf } from "../../../shared/canonical.ts";
 import {
+  DISABLED_KEY,
   lintDocument,
   OPERATION_OVERRIDABLE,
   parseOperationUnitKey,
@@ -1558,7 +1559,10 @@ export function registerResourceRoutes(router: Router): void {
     const environment = environmentOf(ctx);
     const unitKey = ctx.params.unitKey!;
     const scoped = parseOperationUnitKey(unitKey);
-    if (!scoped && !POLICY_UNITS.includes(unitKey as never)) {
+    // `disabled` is a real key of the document — the list of units that are configured and not
+    // running — so it is settable here like any other. It is not in POLICY_UNITS because it is not
+    // a policy; `validateUnit` checks its contents.
+    if (!scoped && unitKey !== DISABLED_KEY && !POLICY_UNITS.includes(unitKey as never)) {
       throw badRequest(
         `unknown policy unit "${unitKey}" (known: ${POLICY_UNITS.join(", ")}, and ` +
           `operations["<id>"].{${OPERATION_OVERRIDABLE.join("|")}})`,

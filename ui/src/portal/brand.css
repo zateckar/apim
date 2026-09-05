@@ -2725,6 +2725,15 @@ a { color: inherit; text-decoration: none; }
 .policy-card-summary { font-size: 11.5px; color: var(--fg-muted); margin-top: 2px; }
 .policy-card-summary.mono { font-family: var(--font-mono); }
 .policy-card-actions { display: flex; gap: 4px; flex-shrink: 0; }
+/* The row is a flex line; anything it expands into has to sit outside it, not inside. */
+.policy-item { margin-bottom: 8px; }
+.policy-item-open {
+  border: 1px solid var(--border); border-top: 0;
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  padding: 12px; background: var(--bg-subtle);
+}
+.policy-item:has(> .policy-item-open) > .policy-card { border-radius: var(--r-md) var(--r-md) 0 0; }
+.policy-order { margin: 0 0 12px; }
 
 .policy-pick {
   display: flex; align-items: center; gap: 12px;

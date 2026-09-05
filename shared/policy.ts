@@ -97,7 +97,43 @@ export function isGloballyAttachable(unitKey: string): boolean {
   // An operation id means nothing outside the API that declares it, so no per-operation unit is
   // globally attachable, whatever its base unit.
   if (parseOperationUnitKey(unitKey)) return false;
-  return GLOBAL_UNITS.includes(unitKey);
+  return GLOBAL_UNITS.includes(unitKey) || unitKey === DISABLED_KEY;
+}
+
+/**
+ * Configured, but not running.
+ *
+ * `disabled` is a reserved key holding the unit keys the document carries but the gateway must
+ * not apply. It exists because turning a policy off and losing its configuration are different
+ * things: an operator suppressing a rate limit during an incident wants the numbers back
+ * afterwards, and deleting the unit is how they get lost. The alternative — a flag inside every
+ * unit's own value — would put the same field in twenty-one validators and let each of them
+ * disagree about it.
+ *
+ * It is subtracted in the control plane, in `activeDocument`, so a disabled unit never reaches
+ * the wire at all and no gateway has to know the concept exists.
+ */
+export const DISABLED_KEY = "disabled";
+
+/** The unit keys a document switches off, ignoring anything it does not actually carry. */
+export function disabledUnits(doc: Record<string, unknown>): string[] {
+  const raw = doc[DISABLED_KEY];
+  if (!Array.isArray(raw)) return [];
+  return raw.filter((key): key is string => typeof key === "string" && doc[key] !== undefined);
+}
+
+/**
+ * The document as the gateway will see it: the reserved key gone, and every unit it names gone
+ * with it. Everything that renders, counts or cross-checks a document reads this rather than the
+ * stored one, so "off" cannot mean one thing on a screen and another at the gateway.
+ */
+export function activeDocument<T extends Record<string, unknown>>(doc: T): T {
+  const off = disabledUnits(doc);
+  if (off.length === 0 && doc[DISABLED_KEY] === undefined) return doc;
+  const out = { ...doc } as Record<string, unknown>;
+  delete out[DISABLED_KEY];
+  for (const key of off) delete out[key];
+  return out as T;
 }
 
 // ---------------------------------------------------------------------------- unit value types
@@ -1426,12 +1462,39 @@ export function validateUnit(unitKey: string, value: unknown): string[] {
       return validatePassthrough(value);
     case "errorFormat":
       return validateErrorFormat(value);
+    case DISABLED_KEY:
+      return validateDisabled(value);
     default:
       return [
         `unknown policy unit "${unitKey}" (the vocabulary is closed; known units: ` +
           `${POLICY_UNITS.join(", ")}, and operations["<id>"].{${OPERATION_OVERRIDABLE.join("|")}})`,
       ];
   }
+}
+
+/**
+ * `disabled` names units, and only units this vocabulary has. Naming a unit the document does not
+ * carry is allowed and ignored: a promotion can drop a unit while leaving the list that mentioned
+ * it, and refusing the whole document over a dangling name would block the promotion rather than
+ * the mistake.
+ */
+function validateDisabled(value: unknown): string[] {
+  if (!Array.isArray(value)) return [`${DISABLED_KEY}: expected an array of policy unit keys`];
+  const errors: string[] = [];
+  for (const entry of value) {
+    if (typeof entry !== "string") {
+      errors.push(`${DISABLED_KEY}: expected an array of policy unit keys`);
+      continue;
+    }
+    if (entry === DISABLED_KEY) {
+      errors.push(`${DISABLED_KEY}: cannot disable itself`);
+      continue;
+    }
+    if (!(POLICY_UNITS as readonly string[]).includes(entry) && !parseOperationUnitKey(entry)) {
+      errors.push(`${DISABLED_KEY}: "${entry}" is not a policy unit`);
+    }
+  }
+  return errors;
 }
 
 export interface DocumentOptions {
@@ -1459,11 +1522,18 @@ export const AUTH_UNITS = [
  * not enough — cross-unit constraints hold too.
  */
 export function validateDocument(
-  doc: Record<string, unknown>,
+  stored: Record<string, unknown>,
   opts: DocumentOptions = {},
 ): string[] {
   const errors: string[] = [];
-  for (const [key, value] of Object.entries(doc)) errors.push(...validateUnit(key, value));
+  // Every unit's own value is checked as *stored*, disabled ones included: switching a policy off
+  // is not licence to leave nonsense in it, and the value has to be valid on the day it is
+  // switched back on.
+  for (const [key, value] of Object.entries(stored)) errors.push(...validateUnit(key, value));
+  // The cross-unit rules are about what actually runs, so they read the document the gateway will
+  // be given. A disabled rateLimit does not count against anything, and must not demand a
+  // subscription key on its behalf.
+  const doc = activeDocument(stored);
   const global = opts.tier === "global";
 
   // Only auth.subscriptionKey resolves to a subscription, and that is what these count against.

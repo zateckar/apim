@@ -6,6 +6,7 @@ import {
   assertAuthConfig,
   assertGatewayUrlsAllowed,
   assertIssuerAllowed,
+  assertLogsUrlAllowed,
   loadConfig,
   type CpConfig,
   type TargetDef,
@@ -24,6 +25,8 @@ import { registerCatalogRoutes } from "./api/catalog.ts";
 import { registerDashboardRoutes } from "./api/dashboard.ts";
 import { registerFleetRoutes } from "./api/fleet.ts";
 import { registerGatewayRoutes } from "./api/gateway.ts";
+import { registerHealthRoutes, uptimeMonitorFor } from "./api/health.ts";
+import { registerLogRoutes } from "./api/logs.ts";
 import { registerMarketRoutes } from "./api/market.ts";
 import { registerPlaygroundRoutes } from "./api/playground.ts";
 import { registerPolicyRoutes } from "./api/policy.ts";
@@ -33,7 +36,7 @@ import { registerTelemetryRoutes } from "./api/telemetry.ts";
 import { registerTrustRoutes } from "./api/trust.ts";
 import { registerUserRoutes } from "./api/users.ts";
 
-import { registerIntegrationRoutes } from "./integrations.ts";
+import { ensureApplicationMetadata, registerIntegrationRoutes } from "./integrations.ts";
 
 export function createRouter(): Router {
   const router = new Router();
@@ -50,6 +53,8 @@ export function createRouter(): Router {
   registerPolicyRoutes(router);
   registerPlaygroundRoutes(router);
   registerDashboardRoutes(router);
+  registerLogRoutes(router);
+  registerHealthRoutes(router);
   registerTrustRoutes(router);
   registerIntegrationRoutes(router);
   registerOperationRoutes(router);
@@ -68,6 +73,9 @@ export function createApp(config: CpConfig): App {
   // no-ops unless their provider is enabled — so `AUTH_PROVIDERS=dev` on an empty database is
   // self-sufficient, and a `local` deployment comes up with exactly one account.
   ensureDevDirectory(app);
+  // Business metadata is quoted from LeanIX, so every application it has not been asked about gets
+  // one queued lookup. Idempotent, and the outbox owns the retry.
+  ensureApplicationMetadata(app);
   return app;
 }
 
@@ -229,20 +237,34 @@ if (import.meta.main) {
   // Keycloak restarts is an availability coupling nobody asked for `[P1-15]`.
   await assertGatewayUrlsAllowed(config);
   await assertIssuerAllowed(config);
+  await assertLogsUrlAllowed(config);
   const app = createApp(config);
   await ensureBootstrapAdmin(app);
   const server = startServer(app);
   startJobRunner(app);
   app.telemetry.start(config.telemetryFlushIntervalSec * 1000);
   app.quota.start(config.usageFlushIntervalSec * 1000);
+  // Started here rather than in `createApp`, because it makes outbound requests: a test world that
+  // merely opens a database must not start probing gateway addresses on a timer.
+  uptimeMonitorFor(app).start();
   console.log(
     `[cp] control plane on http://localhost:${server.port} — db ${config.dbPath}, ` +
       `environments ${config.promotionChain.join(",")}, UI from ${config.uiDist}, ` +
       `sign-in ${config.authProviders.join("+")}` +
       `${config.oidc ? ` (${config.oidc.issuer})` : ""}, ` +
       `telemetry flush ${config.telemetryFlushIntervalSec}s / retain ${config.telemetryRetentionHours}h, ` +
-      `quota flush ${config.usageFlushIntervalSec}s (the quota RPO)`,
+      `quota flush ${config.usageFlushIntervalSec}s (the quota RPO), ` +
+      `logs from ${config.logs.provider === "elk" ? `${config.logs.url} index ${config.logs.index}` : "a simulated index"}`,
   );
+  // Said once, for the same reason the sign-in bypass is: a screen full of plausible request logs
+  // that nobody observed should not be something an operator has to infer from a chip in the UI.
+  if (config.logs.provider === "mock") {
+    console.warn(
+      "[cp] request logs are SIMULATED: LOGS_PROVIDER=mock generates deterministic traffic from " +
+        "the published estate. Nothing on the Logs screen is an observation. Set LOGS_PROVIDER=elk " +
+        "with ELK_URL to read the real index.",
+    );
+  }
   // Said once, loudly, on purpose: an operator reading a log should not have to infer that this
   // process will hand out an administrator session to anybody who asks.
   if (config.authProviders.includes("dev")) {

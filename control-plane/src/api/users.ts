@@ -8,6 +8,7 @@ import {
 } from "../auth-local.ts";
 import { newId, nowIso } from "../db.ts";
 import { badRequest, conflict, notFound } from "../errors.ts";
+import { applicationMetadata, ensureApplicationMetadata } from "../integrations.ts";
 import {
   adminFrom,
   assertStillReachable,
@@ -364,6 +365,7 @@ export function registerUserRoutes(router: Router): void {
       )
       .all();
     const counts = memberCounts(ctx);
+    const metadata = applicationMetadata(ctx.app);
     return json({
       items: rows.map((application) => ({
         id: application.id,
@@ -371,6 +373,12 @@ export function registerUserRoutes(router: Router): void {
         mine: can(user, application.id),
         capabilities: can(user, application.id) ? ["read", "create", "update", "delete"] : ["read"],
         members: counts.get(application.id) ?? 0,
+        /**
+         * Quoted from LeanIX, and absent rather than blank when the lookup has not answered.
+         * Every consumer of this treats it as decoration: nothing chooses, authorises or routes
+         * on a business id this portal does not own.
+         */
+        leanixId: metadata.get(application.id)?.leanixId ?? null,
         /**
          * Admin-only `[P1-18]`. Application names are already a discovery surface, but which identity
          * provider group grants an application tells any signed-in user exactly which group to get
@@ -403,6 +411,13 @@ export function registerUserRoutes(router: Router): void {
       id: application.id,
       name: application.name,
       ...(user.isAdmin ? { sourceGroup: application.source_group } : {}),
+      /** Quoted from LeanIX; `null` throughout when the lookup has not answered for it yet. */
+      metadata: applicationMetadata(ctx.app).get(application.id) ?? {
+        leanixId: null,
+        description: null,
+        ownerContact: null,
+        simulated: false,
+      },
       owns: ownedBy(ctx, application.id),
       members: members.map((m) => ({
         userId: m.user_id,
@@ -439,6 +454,9 @@ export function registerUserRoutes(router: Router): void {
       name,
       sourceGroup,
     ]);
+    // Ask LeanIX about it now rather than at the next boot, so the business id appears on the
+    // picker within a poll of the application existing.
+    ensureApplicationMetadata(ctx.app);
     writeAudit(ctx.app.db, {
       actor: actor.id,
       action: "application.create",
@@ -501,6 +519,12 @@ export function registerUserRoutes(router: Router): void {
     }
     const members = memberCounts(ctx).get(application.id) ?? 0;
     ctx.app.db.run("DELETE FROM membership WHERE application_id = ?", [application.id]);
+    // The lookup goes with what it describes. It carries a foreign key to the row about to
+    // disappear, so leaving it behind would fail the integrity check on the next restart.
+    ctx.app.db.run(
+      `DELETE FROM integration_event WHERE application_id = ? AND ${OWN_METADATA_LOOKUP}`,
+      [application.id, application.id],
+    );
     ctx.app.db.run("DELETE FROM application WHERE id = ?", [application.id]);
     writeAudit(ctx.app.db, {
       actor: actor.id,
@@ -588,6 +612,26 @@ function ownedBy(ctx: Ctx, applicationId: string): { resources: number; products
     products: count("product"),
     subscriptions: count("subscription"),
     certificates: count("certificate"),
-    processes: count("operation") + count("integration_event") + count("kafka_topic") + count("kafka_access") + count("kafka_message"),
+    processes:
+      count("operation") +
+      ctx.app.db
+        .query<{ n: number }, [string, string]>(
+          `SELECT COUNT(*) AS n FROM integration_event
+            WHERE application_id = ? AND NOT ${OWN_METADATA_LOOKUP}`,
+        )
+        .get(applicationId, applicationId)!.n +
+      count("kafka_topic") +
+      count("kafka_access") +
+      count("kafka_message"),
   };
 }
+
+/**
+ * The portal's own LeanIX lookup *about* the application being deleted.
+ *
+ * Every other integration event is work somebody started and somebody is waiting on, so it stands
+ * in the way of a delete. This one the portal emitted on its own initiative the moment the
+ * application existed, which would make every application permanently undeletable — a record about
+ * a thing is not a reason to keep the thing.
+ */
+const OWN_METADATA_LOOKUP = "(integration = 'leanix' AND kind = 'metadata' AND subject = ?)";

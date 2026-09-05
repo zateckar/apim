@@ -1113,3 +1113,131 @@ export interface TrustAnchorPreview {
   selfSigned: boolean;
   keyAlgorithm: string;
 }
+
+// --------------------------------------------------------------------------- request logs (ELK)
+
+/**
+ * One access-log line. The control plane does not store these — it reads them from the log index,
+ * and `provider`/`simulated` on the envelope say which index answered. Every screen that shows
+ * them has to show that too: simulated traffic that looks like observation is worse than none.
+ */
+export interface LogEntry {
+  id: string;
+  at: string;
+  environment: string;
+  gateway: string;
+  instance: string | null;
+  resourceId: string;
+  resourceName: string;
+  operationId: string | null;
+  method: string;
+  path: string;
+  status: number;
+  durationMs: number;
+  backendMs: number | null;
+  subscriptionId: string | null;
+  consumerApplicationId: string | null;
+  clientIp: string | null;
+  requestId: string;
+  error: string | null;
+}
+
+export interface LogWindow {
+  from: string;
+  to: string;
+}
+
+export interface LogPage {
+  items: LogEntry[];
+  total: number;
+  /** The index caps how deep it will count; past the cap `total` is a floor rather than a count. */
+  totalIsLowerBound: boolean;
+  simulated: boolean;
+  provider: "elk" | "mock";
+  window: LogWindow;
+  nextCursor: string | null;
+}
+
+export interface LogBucket {
+  at: string;
+  total: number;
+  ok: number;
+  clientError: number;
+  serverError: number;
+  p50Ms: number | null;
+  p95Ms: number | null;
+}
+
+export interface LogHistogram {
+  buckets: LogBucket[];
+  intervalSec: number;
+  simulated: boolean;
+  provider: "elk" | "mock";
+  window: LogWindow;
+}
+
+// ------------------------------------------------------------------ the health screen
+
+export type ComponentStatus = "up" | "down" | "disabled";
+
+export interface HealthItem {
+  id: string;
+  label: string;
+  kind: "control-plane" | "database" | "fleet" | "gateway" | "log-index" | "integration";
+  environment: string | null;
+  status: ComponentStatus;
+  latencyMs: number | null;
+  checkedAt: string;
+  message: string | null;
+  tag: string | null;
+  /** True when nothing was really contacted. The screen says so rather than counting it as evidence. */
+  simulated: boolean;
+}
+
+export type EnvironmentVerdict = "healthy" | "degraded" | "down" | "unknown";
+
+export interface EnvironmentRollup {
+  environment: string;
+  status: EnvironmentVerdict;
+  up: number;
+  down: number;
+  disabled: number;
+  total: number;
+  impact: string[];
+}
+
+export interface HealthSnapshot {
+  generatedAt: string;
+  /** The cadence the server wants to be polled at. The browser does not choose it. */
+  intervalMs: number;
+  summary: { up: number; down: number; disabled: number; total: number };
+  environments: EnvironmentRollup[];
+  items: HealthItem[];
+  warming: boolean;
+}
+
+export interface SyntheticsBucket {
+  at: string;
+  status: "up" | "down" | "empty";
+  total: number;
+  down: number;
+  avgDurationMs: number | null;
+}
+
+export interface SyntheticsMonitor {
+  id: string;
+  name: string;
+  host: string | null;
+  buckets: SyntheticsBucket[];
+  /** Share of the buckets that ran which were up, 0-1. `null` when nothing ran. */
+  availability: number | null;
+  lastError: string | null;
+}
+
+export interface SyntheticsSnapshot {
+  range: string;
+  intervalMs: number;
+  generatedAt: string;
+  environments: Array<{ environment: string; monitors: SyntheticsMonitor[] }>;
+  simulated: boolean;
+}

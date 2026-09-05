@@ -3363,6 +3363,11 @@ a { color: inherit; text-decoration: none; }
 .md-tb.on { background: var(--accent-ring); color: var(--accent); }
 .md-tb:disabled { opacity: .5; cursor: not-allowed; }
 .md-tb-sep { width: 1px; height: 18px; background: var(--border); margin: 0 3px; }
+/* Pushes the Preview toggle to the far edge of the toolbar, away from the
+   insert buttons: it changes what the pane *is* rather than editing the text,
+   so it should not read as one more formatting button. */
+.md-tb-grow { flex: 1; }
+.md-tb:focus-visible { outline: 2px solid var(--accent-ring, var(--accent)); outline-offset: 1px; }
 .md-editor-body { padding: 10px 12px; min-height: 96px; font-size: 13.5px; }
 .md-editor-body .ProseMirror { outline: none; }
 .md-editor-body .ProseMirror:focus { outline: none; }

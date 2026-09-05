@@ -37,6 +37,34 @@ export function getResource(ctx: Ctx, id: string): ResourceRow {
   return row;
 }
 
+/**
+ * The documentation link a write is asking for, or `undefined` for "leave it alone".
+ *
+ * Only an absolute http(s) URL is accepted: this is rendered as a link a reader clicks, and the
+ * portal is not the place to find out somebody stored a `javascript:` in it. Both writers of the
+ * column — `PATCH /api/resources/:id` and the publish/configure commands — go through here, so
+ * there is one rule rather than two that can drift apart.
+ *
+ * `undefined` in means the caller's form does not carry the field at all; `null` or `""` means the
+ * link is being taken off.
+ */
+export function readDocsUrl(value: string | null | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return null;
+  if (trimmed.length > 500) throw badRequest("docsUrl: at most 500 characters");
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw badRequest("docsUrl: expected an absolute http(s) URL, for example https://wiki.example/api");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw badRequest("docsUrl: expected an absolute http(s) URL, for example https://wiki.example/api");
+  }
+  return trimmed;
+}
+
 export function assertCan(user: User | null, applicationId: string | null | undefined, what: string): void {
   if (!can(user, applicationId)) {
     throw forbidden(`${what}: you are not a member of the owning application and not an admin`);

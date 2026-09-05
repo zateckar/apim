@@ -166,6 +166,60 @@ export function runIntegrationEvents(app: App): void {
   }
 }
 
+/**
+ * The business metadata LeanIX holds about an application, as the portal last received it.
+ *
+ * Read from the outbox rather than from a table of its own: LeanIX owns these values, this portal
+ * only quotes them, and a second copy would be a second thing to keep in step. An application the
+ * lookup has not answered for yet simply has no entry, and every screen that shows the id degrades
+ * to showing nothing — the id is a convenience for a human eye, never something a decision rests on.
+ */
+export interface ApplicationMetadata {
+  leanixId: string | null;
+  description: string | null;
+  ownerContact: string | null;
+  simulated: boolean;
+}
+
+export function applicationMetadata(app: App): Map<string, ApplicationMetadata> {
+  const out = new Map<string, ApplicationMetadata>();
+  const rows = app.db
+    .query<{ application_id: string; result_json: string | null }, []>(
+      `SELECT application_id, result_json FROM integration_event
+        WHERE integration = 'leanix' AND kind = 'metadata' AND state = 'delivered'
+        ORDER BY updated_at`,
+    )
+    .all();
+  for (const row of rows) {
+    if (!row.result_json) continue;
+    try {
+      const result = JSON.parse(row.result_json) as Record<string, unknown>;
+      out.set(row.application_id, {
+        leanixId: typeof result.leanixId === "string" ? result.leanixId : null,
+        description: typeof result.description === "string" ? result.description : null,
+        ownerContact: typeof result.ownerContact === "string" ? result.ownerContact : null,
+        simulated: result.simulated === true,
+      });
+    } catch {
+      // A result we cannot read is the same as no result: the screen shows the application's own
+      // name and nothing more.
+    }
+  }
+  return out;
+}
+
+/**
+ * Ask LeanIX about every application it has not been asked about.
+ *
+ * Called at boot and whenever an application is created. `emitIntegration` is keyed on
+ * (integration, kind, subject), so this is idempotent — an application is looked up once, and the
+ * outbox retries the transport on its own if the lookup fails.
+ */
+export function ensureApplicationMetadata(app: App): void {
+  const rows = app.db.query<{ id: string }, []>("SELECT id FROM application").all();
+  for (const row of rows) emitIntegration(app, row.id, "leanix", "metadata", row.id, {});
+}
+
 export function requestApproval(
   app: App,
   consumer: string,
@@ -194,12 +248,29 @@ export function requestApproval(
 export function registerIntegrationRoutes(router: Router): void {
   router.add("GET", "/api/integrations", "session", (ctx) =>
     json({
+      // `mock` describes the six business integrations below. Log search is listed with them
+      // because it is an external system this portal reads, but it carries its own mode: an estate
+      // can point at a real ELK cluster while the six are still simulated, and the screen has to
+      // be able to say so rather than labelling everything with one word.
       mode: "mock",
-      items: MOCK_INTEGRATIONS.map((name) => ({
-        name,
-        mode: "mock",
-        simulated: true,
-      })),
+      items: [
+        ...MOCK_INTEGRATIONS.map((name) => ({
+          name,
+          mode: "mock" as const,
+          simulated: true,
+          direction: "outbound" as const,
+        })),
+        {
+          name: "elk" as const,
+          mode: ctx.app.config.logs.provider,
+          simulated: ctx.app.config.logs.provider === "mock",
+          direction: "read" as const,
+          detail:
+            ctx.app.config.logs.provider === "elk"
+              ? `index ${ctx.app.config.logs.index}`
+              : "simulated log index — no cluster is contacted",
+        },
+      ],
     }),
   );
   router.add("GET", "/api/integration-events", "session", (ctx) => {

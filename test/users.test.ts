@@ -673,6 +673,34 @@ describe("applications", () => {
       cp.close();
     }
   });
+
+  test("the portal's own LeanIX lookup is not something that has to be moved first", async () => {
+    const cp = world();
+    try {
+      const alice = await cp.login("alice");
+      // Emitted for every application the moment it exists. Counting it as work in progress would
+      // make every application permanently undeletable, which is how this was first written.
+      const lookup = cp.app.db
+        .query<{ n: number }, [string]>(
+          "SELECT COUNT(*) AS n FROM integration_event WHERE integration='leanix' AND kind='metadata' AND subject=?",
+        )
+        .get("application_orders")!;
+      expect(lookup.n).toBe(1);
+
+      expect((await cp.call("DELETE", "/api/applications/application_orders", { cookie: alice })).status).toBe(200);
+      // It goes with what it describes: it carries a foreign key to the row that just disappeared.
+      expect(
+        cp.app.db
+          .query<{ n: number }, [string]>(
+            "SELECT COUNT(*) AS n FROM integration_event WHERE application_id = ?",
+          )
+          .get("application_orders")!.n,
+      ).toBe(0);
+      expect(cp.app.db.query("PRAGMA foreign_key_check").all()).toEqual([]);
+    } finally {
+      cp.close();
+    }
+  });
 });
 
 describe("reading one account", () => {

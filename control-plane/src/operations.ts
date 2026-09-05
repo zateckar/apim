@@ -9,7 +9,7 @@ import {
   notFound,
 } from "./router.ts";
 import { can } from "./auth.ts";
-import { assertCan, getResource, etagOf, assertIfMatch } from "./api/common.ts";
+import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl } from "./api/common.ts";
 import { revisionSource, writeRevision } from "./api/resources.ts";
 import { newId, nowIso } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
@@ -77,6 +77,12 @@ export interface PublishInput extends PoolInput {
   productId?: string;
   productName?: string;
   description?: string;
+  /**
+   * The one external documentation link — the team wiki page, usually. Catalog metadata rather
+   * than routing: it never reaches a gateway, it is the deep link the portal offers next to the
+   * description. Absent leaves whatever the resource has; `null` or `""` clears it.
+   */
+  docsUrl?: string | null;
   spec?: unknown;
   specUrl?: string;
   discoverUrl?: string;
@@ -550,8 +556,8 @@ export function registerOperationRoutes(router: Router) {
         );
       }
       ctx.app.db.run(
-        `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,domain,subdomain,created_at,updated_at)
-    VALUES (?,?,?,?,?,'active',?,?,?,?,?)`,
+        `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,docs_url,domain,subdomain,created_at,updated_at)
+    VALUES (?,?,?,?,?,'active',?,?,?,?,?,?)`,
         [
           id,
           kind,
@@ -559,6 +565,7 @@ export function registerOperationRoutes(router: Router) {
           applicationId,
           version,
           body.description ?? "",
+          readDocsUrl(body.docsUrl) ?? null,
           taxonomy.domain,
           taxonomy.subdomain,
           at,
@@ -609,6 +616,8 @@ export function registerOperationRoutes(router: Router) {
         applicationName: owner?.name ?? row.application_id,
         apiVersion: row.api_version,
         description: row.description,
+        /** The one external documentation link, so the workspace can offer it as a header action. */
+        docsUrl: row.docs_url ?? null,
         domain: row.domain ?? null,
         subdomain: row.subdomain ?? null,
         etag: etagOf(row),
@@ -708,9 +717,19 @@ export function registerOperationRoutes(router: Router) {
           )
           .get(row.id)!.id;
       }
+      // `docsUrl` absent means the caller's form does not carry the field (the policy tab, the
+      // definition tab) — not that the link should go. Sending `""` is how it is cleared.
+      const docsUrl = readDocsUrl(body.docsUrl);
       ctx.app.db.run(
-        "UPDATE resource SET updated_at=?,description=COALESCE(?,description),domain=?,subdomain=? WHERE id=?",
-        [nowIso(), body.description ?? null, taxonomy.domain, taxonomy.subdomain, row.id],
+        "UPDATE resource SET updated_at=?,description=COALESCE(?,description),docs_url=?,domain=?,subdomain=? WHERE id=?",
+        [
+          nowIso(),
+          body.description ?? null,
+          docsUrl === undefined ? row.docs_url : docsUrl,
+          taxonomy.domain,
+          taxonomy.subdomain,
+          row.id,
+        ],
       );
       if (body.policy && environment !== ctx.app.config.promotionChain[0])
         ctx.app.db.run(

@@ -12,11 +12,15 @@ import {
   useTicker,
   OperationList,
 } from "./common";
-import { Publish, Editor, Workspace } from "./apis";
+import { Publish, Editor } from "./apis";
+import { Catalog } from "./catalog";
+import { Dashboard } from "./dashboard";
 import { Subscriptions, Approvals, Integrations, Kafka } from "./processes";
+import { ApplicationPicker } from "./components/ApplicationPicker";
 import { ProductsView } from "../views/ProductsView";
 import { TrustView } from "../views/TrustView";
 import { GatewayView } from "../views/GatewayView";
+import { HealthView } from "../views/HealthView";
 import { GatewayAdminView } from "../views/GatewayAdminView";
 
 /**
@@ -201,30 +205,19 @@ export function Portal({
           </div>
           <div className="name">Integration Portal</div>
         </div>
-        <div className="app-picker">
-          <span className="app-picker-label">APPLICATION</span>
-          <select
-            aria-label="Application"
-            value={applicationId}
-            onChange={(e) => {
-              s.setApplication(e.target.value);
-              localStorage.setItem("portal-application", e.target.value);
-              go(
-                `/${e.target.value}/${section in titles ? section : "dashboard"}`,
-              );
-            }}
-          >
-            {s.applications
-              .filter(
-                (a) => s.user.isAdmin || s.user.applications.includes(a.id),
-              )
-              .map((a) => (
-                <option key={a.id} value={a.id}>
-                  {a.name}
-                </option>
-              ))}
-          </select>
-        </div>
+        <ApplicationPicker
+          applications={s.applications.filter(
+            (a) => s.user.isAdmin || s.user.applications.includes(a.id),
+          )}
+          value={applicationId}
+          onChange={(next) => {
+            s.setApplication(next);
+            localStorage.setItem("portal-application", next);
+            // The same tab under the new application, so switching applications while comparing
+            // two of them does not throw the reader back to a dashboard every time.
+            go(`/${next}/${section in titles ? section : "dashboard"}`);
+          }}
+        />
         <nav aria-label="Application navigation">
           {nav("dashboard", "Dashboard", link("dashboard"))}
           {APPLICATION_NAV.map((group) => (
@@ -368,7 +361,7 @@ export function Portal({
           ) : section === "publish" || parts[2] === "publish" ? (
             <Publish session={effective} />
           ) : ["apis", "mcp", "a2a", "discover"].includes(section) ? (
-            <Workspace session={effective} section={section} tick={tick} />
+            <Catalog session={effective} section={section} tick={tick} />
           ) : section === "dashboard" ? (
             <Dashboard
               session={effective}
@@ -411,17 +404,11 @@ export function Portal({
             </Panel>
           ) : section === "health" || section === "fleet" ? (
             <div className="native-legacy">
-              {s.user.isAdmin ? (
-                <GatewayView user={s.user} meta={s.meta} />
-              ) : (
-                <Panel title="Health Status">
-                  <p>
-                    What each gateway's replicas are running is an
-                    administrator's view. Whether <em>your</em> API is live, and
-                    where, is on its own page and on the dashboard.
-                  </p>
-                </Panel>
-              )}
+              {/* Open to everybody. Which environment is healthy is what decides whether a
+                  publisher promotes this afternoon, and a screen only admins could read made
+                  them ask in chat. The convergence detail below it stays admin-only. */}
+              <HealthView user={s.user} />
+              {s.user.isAdmin && <GatewayView user={s.user} meta={s.meta} />}
             </div>
           ) : section === "gateways" ? (
             <div className="native-legacy">
@@ -446,64 +433,5 @@ export function Portal({
         </main>
       </div>
     </div>
-  );
-}
-function Dashboard({
-  session: s,
-  operations,
-  tick,
-}: {
-  session: Session;
-  operations: any[];
-  tick: number;
-}) {
-  const resources = useAsync(
-    () => listAll(`/api/resources?application=${s.application}`),
-    [s.application, tick],
-  );
-  const subs = useAsync(
-    () => api.get<{ items: any[] }>("/api/subscriptions"),
-    [s.application, tick],
-  );
-  return (
-    <>
-      <div className="native-stats">
-        {[
-          ["Published APIs", resources.data?.items.length ?? 0],
-          [
-            "Subscriptions",
-            subs.data?.items.filter((x) => x.applicationId === s.application)
-              .length ?? 0,
-          ],
-          [
-            "Changes in progress",
-            operations.filter(
-              (x) => !["complete", "superseded"].includes(x.state),
-            ).length,
-          ],
-        ].map(([label, count]) => (
-          <div className="card native-stat" key={label}>
-            <span>{label}</span>
-            <strong>{count}</strong>
-          </div>
-        ))}
-      </div>
-      <ErrorNotice error={resources.error ?? subs.error} />
-      <Panel title="Recent activity">
-        <OperationList items={operations.slice(0, 8)} />
-      </Panel>
-      <Panel title="Your application">
-        <p>
-          Publish APIs, share them through products, and request access to other
-          applications. Changes are applied automatically across your gateways.
-        </p>
-        <button
-          className="btn"
-          onClick={() => go(`/${s.application}/integrations`)}
-        >
-          Application metadata and contacts
-        </button>
-      </Panel>
-    </>
   );
 }

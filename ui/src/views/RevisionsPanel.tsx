@@ -50,13 +50,25 @@ export function RevisionsPanel({
   resourceId,
   chain,
   canEdit,
+  environment,
+  canPublish,
+  onReleased,
 }: {
   resourceId: string;
   chain: string[];
   canEdit: Permission;
+  /**
+   * The environment a rollback would target. Omitted by the screens that only *read* the history —
+   * the catalog listing and the legacy detail view — and set by the workspace, which is the one
+   * place a publisher is already choosing an environment.
+   */
+  environment?: string;
+  canPublish?: Permission;
+  onReleased?: () => void;
 }) {
   const list = useAsync(() => api.get<RevisionList>(`/api/resources/${resourceId}/revisions`), [resourceId]);
   const [compare, setCompare] = useState<{ from: string; to: string } | null>(null);
+  const [rollback, setRollback] = useState<RevisionRow | null>(null);
 
   if (list.error) return <Notice kind="error">{list.error}</Notice>;
   if (!list.data) return <Skeleton rows={5} />;
@@ -139,6 +151,17 @@ export function RevisionsPanel({
                     previous={items[index + 1] ?? null}
                     onCompare={(from) => setCompare({ from, to: revision.id })}
                   />
+                  {environment && canPublish && (
+                    <>
+                      {" "}
+                      <RollBack
+                        revision={revision}
+                        environment={environment}
+                        permission={canPublish}
+                        onStart={() => setRollback(revision)}
+                      />
+                    </>
+                  )}
                   {" "}
                   <a
                     className="small"
@@ -164,6 +187,21 @@ export function RevisionsPanel({
           to={compare.to}
           revisions={items}
           onClose={() => setCompare(null)}
+        />
+      )}
+
+      {rollback && environment && (
+        <RollBackCard
+          resourceId={resourceId}
+          revision={rollback}
+          live={items.find((row) => row.releasedIn[environment] === "live") ?? null}
+          environment={environment}
+          onClose={() => setRollback(null)}
+          onDone={() => {
+            setRollback(null);
+            list.reload();
+            onReleased?.();
+          }}
         />
       )}
 
@@ -212,6 +250,198 @@ function Compare({
         Compare
       </button>
     </span>
+  );
+}
+
+/**
+ * The rollback control on one row.
+ *
+ * Offered only for a revision that is **frozen** and **not live here**. An unfrozen draft has
+ * never been anywhere, so there is nothing to go back to; the live one is already where it is.
+ * Both refusals are on the disabled button rather than hidden, so a publisher looking for the
+ * rollback learns why this row is not it.
+ */
+function RollBack({
+  revision,
+  environment,
+  permission,
+  onStart,
+}: {
+  revision: RevisionRow;
+  environment: string;
+  permission: Permission;
+  onStart: () => void;
+}) {
+  const state = revision.releasedIn[environment] ?? "never";
+  const allowed = first(
+    permission,
+    blockedBecause(
+      state === "live",
+      `Revision ${revision.rev} is what ${environment.toUpperCase()} is already running.`,
+    ),
+    blockedBecause(
+      revision.frozenAt === null,
+      "This revision has never been released, so this would be a first release rather than a rollback — promote it from the Definition tab.",
+    ),
+    blockedBecause(
+      !revision.diffable,
+      "This revision's definition was pruned, so there is nothing left to serve.",
+    ),
+  );
+  return (
+    <span className="action">
+      <button
+        className="ghost small"
+        disabled={!allowed.enabled}
+        title={allowed.reason ?? `Put revision ${revision.rev} back into ${environment.toUpperCase()}`}
+        onClick={onStart}
+      >
+        Roll back
+      </button>
+    </span>
+  );
+}
+
+/**
+ * Rolling back, through the ordinary release path.
+ *
+ * The dry run first, because a rollback **is** a release and deserves the same plan in front of
+ * it: the same gate, the same warnings, and the same confirmation of the plan the publisher was
+ * actually shown. A "just put it back" button that skipped that would be the one change in the
+ * estate nobody reviewed — and rolling back to a contract that removed an operation is exactly as
+ * breaking as rolling forward to one.
+ */
+function RollBackCard({
+  resourceId,
+  revision,
+  live,
+  environment,
+  onClose,
+  onDone,
+}: {
+  resourceId: string;
+  revision: RevisionRow;
+  live: RevisionRow | null;
+  environment: string;
+  onClose: () => void;
+  onDone: () => void;
+}) {
+  const [plan, setPlan] = useState<ReleasePlan | null>(null);
+  const [done, setDone] = useState(false);
+  const dryRun = useAction();
+  const confirm = useAction();
+
+  return (
+    <Card
+      title={`Roll ${environment.toUpperCase()} back to revision ${revision.rev}`}
+      hint="A rollback is a release of an older revision. Nothing is deleted, and the revision that was live stays in this list."
+    >
+      {done ? (
+        <>
+          <p>
+            {environment.toUpperCase()} is being moved back to revision {revision.rev}. The gateways
+            apply it on their next poll.
+          </p>
+          <button className="primary" onClick={onDone}>
+            Done
+          </button>
+        </>
+      ) : (
+        <>
+          <p className="muted small">
+            {live
+              ? `Revision ${live.rev} is live in ${environment.toUpperCase()} and stays in the history as "was live".`
+              : `Nothing is currently live in ${environment.toUpperCase()}.`}
+          </p>
+          <Notice kind="error">{dryRun.error ?? confirm.error}</Notice>
+          {plan && <PlanSummary plan={plan} />}
+          <div className="row">
+            <button className="ghost" onClick={onClose}>
+              Cancel
+            </button>
+            {plan ? (
+              <button
+                className="primary"
+                disabled={confirm.busy || (plan.blockers ?? []).length > 0}
+                onClick={() =>
+                  void confirm.run(async () => {
+                    await api.post(`/api/resources/${resourceId}/releases`, {
+                      revision: revision.rev,
+                      environment,
+                      // Echoed back, so the control plane can refuse a confirmation whose plan no
+                      // longer matches what it would do now — somebody may have released between
+                      // the check and the click.
+                      planId: plan.planId,
+                    });
+                    setDone(true);
+                  })
+                }
+              >
+                Confirm the rollback
+              </button>
+            ) : (
+              <button
+                className="primary"
+                disabled={dryRun.busy}
+                onClick={() =>
+                  void dryRun.run(async () =>
+                    setPlan(
+                      await api.post<ReleasePlan>(`/api/resources/${resourceId}/releases?dryRun=1`, {
+                        revision: revision.rev,
+                        environment,
+                      }),
+                    ),
+                  )
+                }
+              >
+                Check what this would do
+              </button>
+            )}
+          </div>
+        </>
+      )}
+    </Card>
+  );
+}
+
+/** Whatever the release dry run tells us. Only the three fields this card renders are named. */
+interface ReleasePlan {
+  planId?: string;
+  warnings?: string[];
+  blockers?: string[];
+}
+
+function PlanSummary({ plan }: { plan: ReleasePlan }) {
+  const warnings = plan.warnings ?? [];
+  const blockers = plan.blockers ?? [];
+  if (warnings.length === 0 && blockers.length === 0) {
+    return (
+      <p className="muted small">
+        Nothing stands in the way. Confirming applies exactly the plan shown here.
+      </p>
+    );
+  }
+  return (
+    <>
+      {blockers.length > 0 && (
+        <Notice kind="error">
+          <ul>
+            {blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+      {warnings.length > 0 && (
+        <Notice kind="warn">
+          <ul>
+            {warnings.map((warning) => (
+              <li key={warning}>{warning}</li>
+            ))}
+          </ul>
+        </Notice>
+      )}
+    </>
   );
 }
 

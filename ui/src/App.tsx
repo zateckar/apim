@@ -27,6 +27,8 @@ export interface Application {
   id: string;
   name: string;
   mine: boolean;
+  /** Quoted from LeanIX, `null` until that lookup has answered. Decoration, never a decision. */
+  leanixId?: string | null;
 }
 
 /**

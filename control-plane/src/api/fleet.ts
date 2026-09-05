@@ -11,6 +11,7 @@ import {
   readJson,
   requireAdmin,
   Router,
+  type App,
   type Ctx,
 } from "../router.ts";
 
@@ -36,8 +37,19 @@ export interface InstanceView {
 }
 
 export function instancesFor(ctx: Ctx, environment?: string): InstanceView[] {
-  const staleAfterMs = ctx.app.config.instanceStaleAfterSec * 1000;
-  const rows = ctx.app.db
+  return instancesOf(ctx.app, environment);
+}
+
+/**
+ * The same list, asked of the application rather than of a request.
+ *
+ * The uptime monitor runs on a timer and has no `Ctx` to hand: it is not serving anybody. Rather
+ * than fabricating one, the query lives here and `instancesFor` is the request-shaped wrapper —
+ * so "which replicas are live and what are they serving" has exactly one implementation.
+ */
+export function instancesOf(app: App, environment?: string): InstanceView[] {
+  const staleAfterMs = app.config.instanceStaleAfterSec * 1000;
+  const rows = app.db
     .query<
       {
         id: string;

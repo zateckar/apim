@@ -1,9 +1,12 @@
 import { PolicyForm } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
+import { LogsPanel } from "../views/LogsPanel";
+import { RevisionsPanel } from "../views/RevisionsPanel";
 import { useState } from "react";
 import type { Session } from "../App";
 import { api, type Locality } from "../api";
 import { go, useAsync } from "../components";
+import { ALLOWED, type Permission } from "../lib/capabilities";
 import { parse } from "yaml";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
@@ -20,12 +23,44 @@ import {
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
 import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
+import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
 import { DOMAINS, findDomain, publishedPath } from "../../../shared/domains";
 
 interface PoolEntry {
   url: string;
   weight?: number;
+}
+
+/**
+ * The description row. Not a `<Field>`, because `Field` is a `<label>` and a label wrapping the
+ * editor's toolbar would forward every button press to the textarea as a second activation. The
+ * markup is otherwise the same, so the row lines up with the fields above and below it.
+ */
+function DescriptionField({
+  value,
+  onChange,
+  rows,
+  disabled,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  rows?: number;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="native-field">
+      <span className="lbl">Description</span>
+      <MarkdownEditor
+        value={value}
+        onChange={onChange}
+        rows={rows}
+        disabled={disabled}
+        ariaLabel="Description"
+        placeholder="What this API is for, who should call it, what it is not."
+      />
+    </div>
+  );
 }
 
 /**
@@ -253,88 +288,6 @@ export function versionedPath(basePath: string, current: string, next: string): 
   return `${trimmed}/${next}`;
 }
 
-export function Workspace({
-  session: s,
-  section,
-  tick,
-}: {
-  session: Session;
-  section: string;
-  tick: number;
-}) {
-  const [search, setSearch] = useState(""),
-    [subscribe, setSubscribe] = useState<any>(null);
-  const data = useAsync(() => listAll("/api/resources"), [tick]);
-  // `apis` means REST and SOAP, not "everything": MCP servers and A2A agents have their own
-  // sidebar entries, and listing them here too put the same API under two headings and made the
-  // count on each one wrong (finding 9).
-  const inSection = (kind: string) =>
-    section === "mcp" ? kind === "mcp" : section === "a2a" ? kind === "a2a" : section === "apis" ? kind === "rest" || kind === "soap" : true;
-  const rows = (data.data?.items ?? []).filter(
-    (r) =>
-      (section === "discover" || r.applicationId === s.application) &&
-      inSection(r.kind) &&
-      `${r.name} ${r.description} ${r.domain ?? ""} ${r.subdomain ?? ""}`
-        .toLowerCase()
-        .includes(search.toLowerCase()),
-  );
-  return (
-    <Panel
-      title={section === "discover" ? "Discover APIs" : "Published APIs"}
-      actions={
-        <input
-          aria-label="Search APIs"
-          placeholder="Search APIs…"
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-        />
-      }
-    >
-      <ErrorNotice error={data.error} />
-      {data.loading && !data.data ? (
-        <Empty>Loading APIs…</Empty>
-      ) : rows.length ? (
-        <div className="native-list">
-          {rows.map((r) => (
-            <div className="native-row" key={r.id}>
-              <div>
-                <a
-                  href={`/${s.application}/apis/${r.id}`}
-                  onClick={(e) => {
-                    e.preventDefault();
-                    go(`/${s.application}/apis/${r.id}`);
-                  }}
-                >
-                  <strong>{r.name}</strong>
-                </a>
-                <small>
-                  {r.kind.toUpperCase()} · {s.applicationName(r.applicationId)}{" "}
-                  · {r.apiVersion} ·{" "}
-                  {r.domain
-                    ? `${r.domain}${r.subdomain ? ` / ${r.subdomain}` : ""}`
-                    : "no domain yet"}
-                </small>
-                <p>{r.description}</p>
-              </div>
-              <button className="btn" onClick={() => setSubscribe(r)}>
-                Subscribe
-              </button>
-            </div>
-          ))}
-        </div>
-      ) : (
-        <Empty>No APIs match this view.</Empty>
-      )}
-      {subscribe && (
-        <SubscribeDialog
-          session={s}
-          resourceId={subscribe.id}
-          close={() => setSubscribe(null)}
-        />
-      )}
-    </Panel>
-  );
-}
 export function Publish({ session: s }: { session: Session }) {
   const w = useWork(),
     products = useAsync(
@@ -347,6 +300,7 @@ export function Publish({ session: s }: { session: Session }) {
     [name, setName] = useState(""),
     [apiVersion, setApiVersion] = useState("v1"),
     [description, setDescription] = useState(""),
+    [docsUrl, setDocsUrl] = useState(""),
     [productId, setProduct] = useState(""),
     [productName, setProductName] = useState(""),
     [backendUrl, setBackend] = useState(""),
@@ -374,6 +328,7 @@ export function Publish({ session: s }: { session: Session }) {
               kind,
               apiVersion,
               description,
+              docsUrl: docsUrl.trim() || null,
               backendUrl,
               domain,
               subdomain: subdomain || null,
@@ -483,11 +438,21 @@ export function Publish({ session: s }: { session: Session }) {
           The domain is the first segment of the address and the version is the last, which is
           what makes the catalog browsable by domain and a URL legible without looking anything up.
         </p>
-        <Field label="Description">
-          <textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
+        <DescriptionField
+          value={description}
+          onChange={setDescription}
+          rows={6}
+        />
+        <Field label="Documentation link">
+          <input
+            type="url"
+            placeholder="https://wiki.example/teams/…"
+            value={docsUrl}
+            onChange={(e) => setDocsUrl(e.target.value)}
           />
+          <span className="hint">
+            One page a consumer can open for the rest of the story. Optional, and changeable later.
+          </span>
         </Field>
         <Field label="Definition source">
           <select value={source} onChange={(e) => setSource(e.target.value)}>
@@ -570,6 +535,31 @@ export function Editor({
     </>
   );
 }
+/**
+ * The workspace's own `canEdit` boolean, as the `Permission` the shared panels take.
+ *
+ * The two shapes exist because the workspace reads a resource view that already collapsed the
+ * capability list into a flag and a sentence, while `lib/capabilities` is the vocabulary every
+ * other screen speaks. Converting here rather than re-deriving keeps one source for the reason.
+ */
+function editPermission(d: any): Permission {
+  return d.resource.canEdit
+    ? ALLOWED
+    : { enabled: false, reason: d.resource.editReason ?? "Only the owning application may change this." };
+}
+
+/** The workspace's panels, in reading order. Also the allowlist `?tab=` is checked against. */
+const EDITOR_TABS = [
+  "definition",
+  "properties",
+  "policies",
+  "subscriptions",
+  "playground",
+  "logs",
+  "revisions",
+  "history",
+];
+
 function EditorForm({
   data: d,
   session: s,
@@ -584,8 +574,14 @@ function EditorForm({
   tick: number;
 }) {
   const w = useWork(),
-    [tab, setTab] = useState("definition"),
+    // `?tab=` is how a link lands on the right panel: the dashboard's traffic table opens the Logs
+    // tab, an attention row opens Policies. A tab nobody has is ignored rather than left blank.
+    [tab, setTab] = useState(() => {
+      const asked = new URLSearchParams(location.search).get("tab");
+      return asked && EDITOR_TABS.includes(asked) ? asked : "definition";
+    }),
     [description, setDescription] = useState(d.resource.description ?? ""),
+    [docsUrl, setDocsUrl] = useState(d.resource.docsUrl ?? ""),
     [pool, setPool] = useState<PoolEntry[]>(() =>
       (d.settings?.backend?.pool ?? []).length
         ? d.settings.backend.pool.map((entry: PoolEntry) => ({ ...entry }))
@@ -656,6 +652,19 @@ function EditorForm({
         title={d.resource.name}
         actions={
           <div className="native-actions">
+            {/* The documentation link, where somebody looking at the API is: the description says
+                what it is, this is the rest of the story. Absent rather than disabled — unlike the
+                controls below there is nothing to explain, the owner simply has not set one. */}
+            {d.resource.docsUrl && (
+              <a
+                className="btn"
+                href={d.resource.docsUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                Open wiki ↗
+              </a>
+            )}
             {/* Present and disabled rather than absent, with the reason on the screen: a control
                 that vanishes leaves somebody wondering whether the feature exists at all, and on a
                 foreign API that was the only answer this workspace gave (finding 8). */}
@@ -716,14 +725,7 @@ function EditorForm({
           </Field>
         )}
         <div className="seg">
-          {[
-            "definition",
-            "properties",
-            "policies",
-            "subscriptions",
-            "playground",
-            "history",
-          ].map((t) => (
+          {EDITOR_TABS.map((t) => (
             <button
               className={tab === t ? "active" : ""}
               key={t}
@@ -766,12 +768,25 @@ function EditorForm({
         )}
         {tab === "properties" && (
           <div className="native-form-grid">
-            <Field label="Description">
-              <textarea
+            <DescriptionField
+              value={description}
+              onChange={setDescription}
+              disabled={!d.resource.canEdit}
+            />
+            {/* One link, not a list: the question a consumer has after the description is "where do
+                I read more", and two answers to it means one of them is stale. */}
+            <Field label="Documentation link">
+              <input
+                type="url"
+                placeholder="https://wiki.example/teams/…"
                 disabled={!d.resource.canEdit}
-                value={description}
-                onChange={(e) => setDescription(e.target.value)}
+                value={docsUrl}
+                onChange={(e) => setDocsUrl(e.target.value)}
               />
+              <span className="hint">
+                Shown on the catalog listing and behind <b>Open wiki</b> above. Clear it to remove
+                the link.
+              </span>
             </Field>
             {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
                 second one appears only when somebody asks for it. */}
@@ -947,6 +962,32 @@ function EditorForm({
             close={() => setSubscribe(false)}
           />
         )}{" "}
+        {tab === "logs" && (
+          <div className="native-legacy">
+            {/* Publisher-only, and said so on the screen rather than by the tab disappearing: a
+                consumer who wonders where their calls went should learn who to ask. */}
+            <LogsPanel
+              resourceId={d.resource.id}
+              environment={s.environment}
+              canRead={d.resource.canEdit}
+              reason={d.resource.editReason}
+            />
+          </div>
+        )}
+        {tab === "revisions" && (
+          <div className="native-legacy">
+            {/* Separate from `history` on purpose: that one is what the portal did, this one is
+                what the contract promises and when the promise changed. */}
+            <RevisionsPanel
+              resourceId={d.resource.id}
+              chain={s.meta.chain}
+              environment={s.environment}
+              canEdit={editPermission(d)}
+              canPublish={editPermission(d)}
+              onReleased={refresh}
+            />
+          </div>
+        )}
         {tab === "history" && <OperationList items={operations} />}{" "}
         {["definition", "properties", "policies"].includes(tab) && (
           <div className="native-actions">
@@ -959,6 +1000,9 @@ function EditorForm({
                   const body: any = {
                     environment: s.environment,
                     description,
+                    // `""` is how the link is taken off — absent would mean "the form does not
+                    // carry this field", which is what the definition and policy tabs mean.
+                    docsUrl: docsUrl.trim(),
                     domain,
                     subdomain: subdomain || null,
                     basePath,

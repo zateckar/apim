@@ -73,6 +73,66 @@ export interface GatewayUrl {
 export type AuthProvider = "local" | "oidc" | "dev";
 export const AUTH_PROVIDERS: readonly AuthProvider[] = ["local", "oidc", "dev"];
 
+/**
+ * Where per-request logs come from (`LOGS_PROVIDER`).
+ *
+ * `mock` is the default and produces deterministic simulated traffic derived from the estate; the
+ * responses are marked `simulated` and every screen that shows them says so. `elk` reads a real
+ * Elasticsearch index. There is deliberately **no fallback** from `elk` to `mock`: a portal that
+ * quietly invented traffic when the log cluster was down would present fiction as observation.
+ */
+export interface LogsConfig {
+  provider: "elk" | "mock";
+  url: string | null;
+  index: string;
+  /**
+   * Where the availability checks land. A different index from the access lines because they are
+   * different documents with different retention — Heartbeat writes one document per check, and
+   * mixing them into the access index would make every request-count aggregation wrong.
+   */
+  uptimeIndex: string;
+  apiKey: string | null;
+  username: string | null;
+  password: string | null;
+  timeoutMs: number;
+  maxResultWindow: number;
+  maxRangeHours: number;
+}
+
+function readLogs(): LogsConfig {
+  const raw = (process.env.LOGS_PROVIDER ?? "mock").trim().toLowerCase();
+  if (raw !== "elk" && raw !== "mock") {
+    throw new Error(`LOGS_PROVIDER: expected "elk" or "mock", got "${raw}"`);
+  }
+  const url = (process.env.ELK_URL ?? "").trim().replace(/\/+$/, "") || null;
+  if (raw === "elk" && !url) {
+    throw new Error(
+      'ELK_URL is required when LOGS_PROVIDER=elk — the base URL of the Elasticsearch HTTP API, ' +
+        "e.g. https://elk.example.com:9200. It must also be in the egress allowlist.",
+    );
+  }
+  const apiKey = (process.env.ELK_API_KEY ?? "").trim() || null;
+  const username = (process.env.ELK_USERNAME ?? "").trim() || null;
+  if (raw === "elk" && !apiKey && !username) {
+    throw new Error(
+      "LOGS_PROVIDER=elk needs a credential: either ELK_API_KEY, or ELK_USERNAME with " +
+        "ELK_PASSWORD. An unauthenticated log cluster is not assumed.",
+    );
+  }
+  return {
+    provider: raw,
+    url,
+    index: (process.env.ELK_INDEX ?? "apim-access-*").trim(),
+    uptimeIndex: (process.env.ELK_UPTIME_INDEX ?? "heartbeat-*").trim(),
+    apiKey,
+    username,
+    password: process.env.ELK_PASSWORD ?? null,
+    timeoutMs: intFromEnv("ELK_TIMEOUT_MS", 10_000),
+    maxResultWindow: intFromEnv("ELK_MAX_RESULT_WINDOW", 10_000),
+    maxRangeHours: intFromEnv("LOGS_MAX_RANGE_HOURS", 24 * 30),
+  };
+}
+
 /** Everything the OIDC provider needs. Present only when `oidc` is one of the providers. */
 export interface OidcConfig {
   issuer: string;
@@ -169,6 +229,8 @@ export interface CpConfig {
   /** Live anchors per environment. The document carries every one of them, so it is bounded. */
   maxTrustAnchors: number;
   dashboardDefaultSinceMin: number;
+  /** Where per-request access logs are read from. The control plane never stores them. */
+  logs: LogsConfig;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -448,6 +510,7 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
     revisionKeepDays: intFromEnv("REVISION_KEEP_DAYS", 365),
     maxTrustAnchors: intFromEnv("MAX_TRUST_ANCHORS", 16),
     dashboardDefaultSinceMin: intFromEnv("DASHBOARD_DEFAULT_SINCE_MIN", 1440),
+    logs: readLogs(),
     ...overrides,
   };
 
@@ -554,6 +617,22 @@ export async function assertIssuerAllowed(config: CpConfig): Promise<void> {
     throw new Error(
       `OIDC_ISSUER is not reachable under the egress allowlist:\n  ${errors.join("\n  ")}\n` +
         `Add the identity provider's host to ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}.`,
+    );
+  }
+}
+
+/**
+ * The log cluster is admin configuration and the control plane fetches it, so design section 5.3
+ * applies to it exactly as it applies to a spec import — checked once at boot, naming the variable,
+ * rather than on the first click of the Logs tab.
+ */
+export async function assertLogsUrlAllowed(config: CpConfig): Promise<void> {
+  if (config.logs.provider !== "elk" || !config.logs.url) return;
+  const errors = await checkEgress(config.logs.url, config.integrations, "ELK_URL");
+  if (errors.length > 0) {
+    throw new Error(
+      `ELK_URL is not reachable under the egress allowlist:\n  ${errors.join("\n  ")}\n` +
+        `Add the log cluster's host to ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}.`,
     );
   }
 }

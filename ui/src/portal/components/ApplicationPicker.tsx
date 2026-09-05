@@ -1,0 +1,128 @@
+import { useEffect, useRef, useState } from "react";
+import type { Application } from "../../App";
+import * as I from "../icons";
+
+/**
+ * Which application you are acting as.
+ *
+ * This is the most consequential control in the shell — it decides whose APIs you are editing and
+ * whose name goes on a subscription request — so it is a real menu with a swatch, a search box and
+ * a checkmark rather than a bare `<select>`. Selecting one is **context, not authority**: the
+ * server re-derives what you may do from the session on every request, and this list only ever
+ * offers applications you are a member of (or, for an administrator, all of them).
+ *
+ * Names are uppercased in CSS rather than in the string. Teams register `EAI`, `Skoda Auto` and
+ * `mvis`, and a picker that showed all three as written reads as three different kinds of thing;
+ * the underlying value keeps its own case so search and routing are unaffected.
+ */
+export function ApplicationPicker({
+  applications,
+  value,
+  onChange,
+}: {
+  /** Already filtered to what this caller may act as. */
+  applications: Application[];
+  value: string;
+  onChange: (applicationId: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const box = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (event: MouseEvent) => {
+      if (!box.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    document.addEventListener("mousedown", onDown);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  const current = applications.find((application) => application.id === value);
+  const term = search.trim().toLowerCase();
+  // Both the name and the id, because half the estate refers to an application by its slug.
+  const matching = term
+    ? applications.filter(
+        (a) => a.name.toLowerCase().includes(term) || a.id.toLowerCase().includes(term),
+      )
+    : applications;
+
+  return (
+    <div className="app-picker" ref={box}>
+      <span className="app-picker-label">Application</span>
+      <button
+        className="app-picker-btn"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        aria-label="Application"
+        disabled={applications.length === 0}
+        onClick={() => {
+          setOpen(!open);
+          setSearch("");
+        }}
+      >
+        <span className="swatch">{initialsOf(current?.name ?? "")}</span>
+        <span className="meta">
+          <span className="t">{current?.name ?? "No application"}</span>
+          {current?.leanixId && <span className="app-leanix">LeanIX: {current.leanixId}</span>}
+        </span>
+        <I.ChevDown size={14} className="chev" />
+      </button>
+      {open && (
+        <div className="app-picker-menu" role="listbox" aria-label="Applications">
+          {/* The search box appears once the list is long enough to need it. Below that it is one
+              more thing to tab past on the way to a list you can already see all of. */}
+          {applications.length > 6 && (
+            <div className="search">
+              <input
+                autoFocus
+                aria-label="Search applications"
+                placeholder="Search applications…"
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          )}
+          {matching.length === 0 && (
+            <div className="empty">
+              {applications.length === 0
+                ? "You are not a member of any application yet. An administrator adds you to one."
+                : `Nothing matches “${search}”.`}
+            </div>
+          )}
+          {matching.map((application) => (
+            <button
+              key={application.id}
+              role="option"
+              aria-selected={application.id === value}
+              className={`opt ${application.id === value ? "active" : ""}`}
+              onClick={() => {
+                setOpen(false);
+                onChange(application.id);
+              }}
+            >
+              <span className="swatch">{initialsOf(application.name)}</span>
+              <span style={{ flex: 1, minWidth: 0 }}>
+                <span className="n">{application.name}</span>
+                {application.leanixId && <span className="app-leanix">LeanIX: {application.leanixId}</span>}
+              </span>
+              {application.id === value && <I.Check size={13} />}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function initialsOf(name: string): string {
+  const words = name.trim().split(/[\s_-]+/).filter(Boolean);
+  if (words.length === 0) return "—";
+  if (words.length === 1) return words[0]!.slice(0, 2).toUpperCase();
+  return (words[0]![0]! + words[1]![0]!).toUpperCase();
+}

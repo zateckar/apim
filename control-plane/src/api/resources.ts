@@ -50,6 +50,7 @@ import {
   getResource,
   nextCursor,
   pageOf,
+  readDocsUrl,
   touch,
   type ResourceRow,
 } from "./common.ts";
@@ -805,7 +806,9 @@ export function registerResourceRoutes(router: Router): void {
      */
     const summary = body.summary === undefined ? row.summary : body.summary;
     const description = body.description === undefined ? row.description : body.description;
-    const docsUrl = body.docsUrl === undefined ? row.docs_url : body.docsUrl;
+    // Same rule as the configure path applies: this URL is rendered as a link, so only http(s).
+    const asked = readDocsUrl(body.docsUrl);
+    const docsUrl = asked === undefined ? row.docs_url : asked;
     const icon = body.icon === undefined ? row.icon : body.icon;
     if (summary !== null && summary !== undefined && summary.length > 200) {
       throw badRequest("summary: at most 200 characters — it is a card subtitle, not the description");
@@ -925,6 +928,157 @@ export function registerResourceRoutes(router: Router): void {
     return new Response(null, { status: 204 });
   });
 
+  /**
+   * Hand an API to another application.
+   *
+   * Its own command rather than a field on `PATCH`, for three reasons that each show up in the body
+   * of it.
+   *
+   *  - **It moves the whole family, not one version.** Ownership is a property of the API, and an
+   *    estate where `orders v1` and `orders v2` answer to different teams has no answer to "who do
+   *    I ask about orders".
+   *  - **It needs authority on both sides.** The caller has to be able to give it away *and* to
+   *    accept it, or be an administrator. Otherwise anybody could park their obligations on a team
+   *    that has not agreed to carry them.
+   *  - **It gives away the caller's own access.** Once it lands, a caller who is not a member of
+   *    the new owner can no longer edit what they just transferred, so the confirmation in front of
+   *    it says so and the audit line records both sides.
+   *
+   * The address does not move: a published path is built from the domain, never from the owning
+   * application, so nothing a consumer calls changes.
+   *
+   * Products are the hard part, because `PUT /api/products/:id/members` holds the invariant that a
+   * product contains only its own application's APIs — a transfer that ignored it would leave rows
+   * the product editor then refuses to save. Two cases, and the difference is whether anybody else
+   * is in the bundle:
+   *
+   *  - A product that sells **only this family** goes with it. Its subscriptions are untouched, so
+   *    no consumer loses access and the new owner inherits the approvals queue along with the API.
+   *  - A product that also sells **something else** blocks the transfer, named in the refusal.
+   *    Splitting it would revoke access; moving it would carry away APIs nobody agreed to give;
+   *    leaving it would break the invariant. There is no answer here that is not somebody's
+   *    surprise, so the two teams make it deliberately.
+   */
+  router.add("POST", "/api/resources/:id/owner", "session", async (ctx) => {
+    const user = requireUser(ctx);
+    const row = getResource(ctx, ctx.params.id!);
+    const body = await readJson<{ applicationId?: string; reason?: string }>(ctx);
+    const target = (body.applicationId ?? "").trim();
+    if (!target) throw badRequest("applicationId: required — name the application taking this API over");
+    if (target === row.application_id) {
+      throw badRequest(`${row.name} already belongs to ${target}`);
+    }
+    const receiver = ctx.app.db
+      .query<{ id: string; name: string }, [string]>("SELECT id, name FROM application WHERE id = ?")
+      .get(target);
+    if (!receiver) throw badRequest(`applicationId: no application ${target}`);
+
+    assertCan(user, row.application_id, "give this API away");
+    assertCan(user, target, `hand this API to ${receiver.name}`);
+    assertIfMatch(ctx, row);
+
+    // Every version, because the family is what is being transferred.
+    const family = ctx.app.db
+      .query<ResourceRow, [string, string]>(
+        "SELECT * FROM resource WHERE application_id = ? AND name = ? ORDER BY api_version",
+      )
+      .all(row.application_id, row.name);
+    const ids = family.map((member) => member.id);
+    const placeholders = ids.map(() => "?").join(", ");
+
+    // Reported as one list rather than one at a time: a half-moved family is worse than a refused
+    // move, so every reason to refuse is collected before anything is written.
+    const clashes = ctx.app.db
+      .query<{ api_version: string }, [string, string]>(
+        "SELECT api_version FROM resource WHERE application_id = ? AND name = ?",
+      )
+      .all(target, row.name)
+      .map((clash) => clash.api_version);
+    if (clashes.length > 0) {
+      throw conflict(
+        `${receiver.name} already has an API named ${row.name} at ${clashes.join(", ")} — ` +
+          "rename one of them first, because two APIs of one name in one application cannot be " +
+          "told apart",
+      );
+    }
+
+    /*
+     * Every product that sells any version of this family, with the count of members that are
+     * *not* in it. Zero means the product exists to sell this API and travels with it; anything
+     * else means the bundle is shared and the transfer stops here.
+     */
+    const products = ctx.app.db
+      .query<
+        { id: string; name: string; application_id: string; others: number },
+        string[]
+      >(
+        `SELECT p.id, p.name, p.application_id,
+                (SELECT COUNT(*) FROM product_member om
+                  WHERE om.product_id = p.id AND om.resource_id NOT IN (${placeholders})) AS others
+           FROM product p
+          WHERE p.id IN (SELECT product_id FROM product_member WHERE resource_id IN (${placeholders}))`,
+      )
+      .all(...ids, ...ids);
+    const shared = products.filter(
+      (product) => product.others > 0 && product.application_id !== target,
+    );
+    if (shared.length > 0) {
+      throw conflict(
+        `${row.name} is sold through ${shared.map((product) => product.name).join(", ")}, which ` +
+          "also sell other APIs. A product holds only its own application's APIs, so this one " +
+          "cannot follow and cannot stay — remove the API from it, or split the product, and the " +
+          "subscriptions stay a decision somebody made rather than one this command made for them",
+      );
+    }
+    // Only products that are entirely this family's, and only where the move is a move.
+    const moving = products.filter((product) => product.application_id !== target);
+
+    const at = nowIso();
+    const from = row.application_id;
+    ctx.app.db.transaction(() => {
+      for (const member of family) {
+        ctx.app.db.run("UPDATE resource SET application_id = ?, updated_at = ? WHERE id = ?", [
+          target,
+          at,
+          member.id,
+        ]);
+      }
+      // Subscriptions are keyed on the product, not on its owner, so nothing a consumer holds is
+      // touched: they keep their key and the new owner inherits the approvals.
+      for (const product of moving) {
+        ctx.app.db.run("UPDATE product SET application_id = ? WHERE id = ?", [target, product.id]);
+      }
+    })();
+    // The index carries the owning application, so a stale entry would leave the old team's name on
+    // a card in the catalog and hide the API from the new owner's own filter.
+    for (const member of family) reindexResource(ctx.app.db, member.id);
+    writeAudit(ctx.app.db, {
+      actor: user.id,
+      action: "resource.transfer",
+      subject: `resource:${row.id}`,
+      outcome: "ok",
+      detail: {
+        name: row.name,
+        from,
+        to: target,
+        versions: family.map((member) => member.api_version),
+        products: moving.map((product) => product.id),
+        reason: body.reason ?? null,
+      },
+    });
+
+    const moved = getResource(ctx, row.id);
+    return json(
+      {
+        ...resourceView(ctx, moved),
+        transferred: family.map((member) => ({ id: member.id, apiVersion: member.api_version })),
+        /** Named rather than counted: these carried their subscriptions across with them. */
+        productsMoved: moving.map((product) => ({ id: product.id, name: product.name })),
+      },
+      { headers: { etag: etagOf(moved) } },
+    );
+  });
+
   // ---------------------------------------------------------------- versions (G2)
 
   /**
@@ -992,8 +1146,9 @@ export function registerResourceRoutes(router: Router): void {
 
     const create = db.transaction(() => {
       db.run(
-        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, domain, subdomain, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?)`,
+        `INSERT INTO resource (id, kind, name, application_id, api_version, lifecycle, domain, subdomain,
+                               summary, description, tags_json, docs_url, icon, created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, 'active', ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           newResourceId,
           row.kind,
@@ -1004,6 +1159,13 @@ export function registerResourceRoutes(router: Router): void {
           // of one thing sit in different parts of the catalog.
           row.domain,
           row.subdomain,
+          // …and the same API described the same way: v2 of a documented API arriving with a blank
+          // card and no wiki link reads as a different, undocumented product.
+          row.summary,
+          row.description,
+          row.tags_json,
+          row.docs_url,
+          row.icon,
           at,
           at,
         ],

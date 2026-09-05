@@ -251,6 +251,22 @@ td.upstream { color: var(--danger); }
 .listing footer .pill { margin-right: 0; }
 
 .facets { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+/* The catalog's domain accordion: one row per domain in the taxonomy, closed until asked for. */
+.domain-list { display: flex; flex-direction: column; gap: 8px; margin-bottom: 18px; }
+.domain-section {
+  background: var(--surface); border: 1px solid var(--border); border-radius: 10px;
+  overflow: hidden;
+}
+.domain-head {
+  display: flex; align-items: baseline; gap: 12px; width: 100%; text-align: left;
+  background: none; border: 0; cursor: pointer; padding: 14px 18px; font: inherit;
+}
+.domain-head:hover:not(:disabled) { background: var(--surface-2, #f8fafc); }
+.domain-head:disabled { cursor: default; opacity: .55; }
+.domain-name { font-weight: 700; letter-spacing: .4px; }
+.domain-chevron { margin-left: auto; color: var(--muted); }
+.domain-body { padding: 0 18px 14px; }
+
 .facet-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .facet-label {
   font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);

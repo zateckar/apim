@@ -497,6 +497,9 @@ export interface MarketCard {
   icon: string | null;
   summary: string | null;
   tags: string[];
+  /** Null for a row published before the taxonomy existed; the catalog files those under Other. */
+  domain: string | null;
+  subdomain: string | null;
   applicationId: string;
   lifecycle: string;
   visibility: string;
@@ -543,6 +546,12 @@ export interface MarketFacets {
   tags: Array<{ value: string; count: number }>;
   applications: Array<{ value: string; count: number }>;
   environments: Array<{ value: string; count: number }>;
+  /**
+   * Every domain in the taxonomy, in taxonomy order, whether or not anything is filed under it —
+   * plus `other` last for what predates the taxonomy. Topics are counted separately because they
+   * are the same estate but a different kind of thing to subscribe to.
+   */
+  domains: Array<{ value: string; count: number; topics: number }>;
   total: number;
   /** The facet counts are over a bounded scan, so they can be a floor rather than a total. */
   truncated: boolean;

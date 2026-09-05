@@ -623,7 +623,7 @@ describe("native application workflows", () => {
         .filter((r) => [first.resourceId, v2.resourceId].includes(r.resourceId))
         .map((r) => r.basePath)
         .sort(),
-    ).toEqual(["/it/solution/sample", "/it/solution/sample/v2"]);
+    ).toEqual(["/it/solution/sample/v1", "/it/solution/sample/v2"]);
     // And each knows about the other, which is what the version switcher reads.
     const after = await (
       await call(

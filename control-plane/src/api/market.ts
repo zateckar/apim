@@ -4,6 +4,7 @@ import { bm25Expression, matchExpression } from "../search.ts";
 import { badRequest, json, notFound, readJson, requireUser, Router, type Ctx } from "../router.ts";
 import { createSubscription } from "./catalog.ts";
 import { environmentOf, pageOf, nextCursor, type ResourceRow } from "./common.ts";
+import { DOMAINS, findDomain } from "../../../shared/domains.ts";
 
 /**
  * The Catalog (goal G6, plan section 11.2) — a marketplace over APIs, MCP servers and A2A agents.
@@ -72,18 +73,48 @@ export function registerMarketRoutes(router: Router): void {
     // unlisted resource's release for a caller who cannot see the resource — a count that is both
     // a small leak and a number the filter then contradicts.
     const environments: Record<string, number> = {};
+    const domains: Record<string, number> = {};
     for (const row of visible) {
       kinds[row.kind] = (kinds[row.kind] ?? 0) + 1;
       applications[row.application_id] = (applications[row.application_id] ?? 0) + 1;
+      domains[row.domain ?? UNCLASSIFIED] = (domains[row.domain ?? UNCLASSIFIED] ?? 0) + 1;
       for (const tag of tagsFor(ctx, row.id)) tags[tag] = (tags[tag] ?? 0) + 1;
       for (const environment of liveEnvironments(ctx, row.id)) {
         environments[environment] = (environments[environment] ?? 0) + 1;
       }
     }
+    // Topics are catalog items in the same taxonomy, and the Catalog screen counts them beside the
+    // APIs — a domain that reads "11 APIs" while holding four topics is describing half an estate.
+    const topics: Record<string, number> = {};
+    for (const row of ctx.app.db
+      .query<{ domain: string | null }, []>(
+        "SELECT domain FROM kafka_topic WHERE state != 'deleted'",
+      )
+      .all()) {
+      topics[row.domain ?? UNCLASSIFIED] = (topics[row.domain ?? UNCLASSIFIED] ?? 0) + 1;
+    }
+
     return json({
       kinds: counted(kinds),
       tags: counted(tags).slice(0, 50),
       applications: counted(applications),
+      /*
+       * In taxonomy order rather than by count, with "Other" last: the domain list is a fixed
+       * structure the estate is filed into, so a domain that happens to be empty today still
+       * belongs in it — and one that reorders itself as APIs are published is not a structure.
+       */
+      domains: [
+        ...DOMAINS.map((domain) => ({
+          value: domain.name,
+          count: domains[domain.name] ?? 0,
+          topics: topics[domain.name] ?? 0,
+        })),
+        {
+          value: UNCLASSIFIED,
+          count: domains[UNCLASSIFIED] ?? 0,
+          topics: topics[UNCLASSIFIED] ?? 0,
+        },
+      ],
       // In promotion-chain order, because dev → test → prod is how the estate is read.
       environments: ctx.app.config.promotionChain
         .filter((environment) => environments[environment])
@@ -236,8 +267,13 @@ interface Filters {
   tag: string | null;
   application: string | null;
   environment: string | null;
+  /** A domain label, or the literal `other` for everything the taxonomy does not yet cover. */
+  domain: string | null;
   sort: Sort;
 }
+
+/** The bucket unclassified rows fall into, on both the filter and the facet. */
+export const UNCLASSIFIED = "other";
 
 function readFilters(ctx: Ctx): Filters {
   const sort = (ctx.url.searchParams.get("sort") ?? "relevance") as Sort;
@@ -252,12 +288,17 @@ function readFilters(ctx: Ctx): Filters {
   if (environment && !ctx.app.config.promotionChain.includes(environment)) {
     throw badRequest(`unknown environment "${environment}"`);
   }
+  const domain = ctx.url.searchParams.get("domain");
+  if (domain && domain !== UNCLASSIFIED && !findDomain(domain)) {
+    throw badRequest(`domain: "${domain}" is not one of ${DOMAINS.map((d) => d.name).join(", ")}`);
+  }
   return {
     q: ctx.url.searchParams.get("q"),
     kind,
     tag: ctx.url.searchParams.get("tag"),
     application: ctx.url.searchParams.get("application"),
     environment,
+    domain,
     sort,
   };
 }
@@ -302,6 +343,11 @@ function rank(ctx: Ctx, filters: Filters): Ranked {
   if (filters.environment) {
     candidates = candidates.filter((c) =>
       liveEnvironments(ctx, c.row.id).includes(filters.environment!),
+    );
+  }
+  if (filters.domain) {
+    candidates = candidates.filter((c) =>
+      filters.domain === UNCLASSIFIED ? !c.row.domain : c.row.domain === filters.domain,
     );
   }
 
@@ -468,6 +514,11 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
     icon: row.icon,
     summary: row.summary ?? firstSentence(model?.description) ?? null,
     tags: tagsFor(ctx, row.id),
+    // The taxonomy, so a card can be filed under its domain without a second request. `null` for a
+    // row published before domains existed — the catalog files those under "Other" rather than
+    // dropping them, because a catalog that hides what it cannot classify is not an inventory.
+    domain: row.domain,
+    subdomain: row.subdomain,
     applicationId: row.application_id,
     lifecycle: row.lifecycle,
     visibility: row.visibility,

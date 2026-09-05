@@ -195,6 +195,7 @@ async function settings(
   kind: string,
   environment: string,
   taxonomy: Taxonomy,
+  apiVersion: string,
   defaults?: Snapshot,
 ): Promise<Omit<Snapshot, "revisionId">> {
   const h = normalizeHost(body.host ?? defaults?.host ?? "*");
@@ -208,6 +209,7 @@ async function settings(
         domain: taxonomy.domain,
         subdomain: taxonomy.subdomain,
         name: body.name ?? "",
+        apiVersion,
       })
     : `/${body.name}`;
   const p = normalizeBasePath(body.basePath ?? defaults?.basePath ?? fallback);
@@ -428,7 +430,7 @@ export function registerOperationRoutes(router: Router) {
     // is a list, and one API without a domain is enough to make the grouping incomplete.
     const taxonomy = readTaxonomy(body, { domain: null, subdomain: null }, true);
     const source = await revisionSource(ctx, { kind }, body);
-    const config = await settings(ctx, body, kind, environment, taxonomy);
+    const config = await settings(ctx, body, kind, environment, taxonomy, version);
     return ctx.app.db.transaction(() => {
       const duplicate = repeated(ctx, requestDigest);
       if (duplicate) return duplicate;
@@ -601,6 +603,7 @@ export function registerOperationRoutes(router: Router) {
       row.kind,
       environment,
       taxonomy,
+      row.api_version,
       previous,
     );
     const source =
@@ -682,6 +685,7 @@ export function registerOperationRoutes(router: Router) {
       row.kind,
       environment,
       { domain: row.domain, subdomain: row.subdomain },
+      row.api_version,
       defaults,
     );
     return ctx.app.db.transaction(() => {

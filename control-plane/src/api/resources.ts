@@ -935,6 +935,9 @@ export function registerResourceRoutes(router: Router): void {
    * UNIQUE(environment, host, base_path) on arrival (review V4-03) — and never `/name/version`
    * either once the API has a domain, because the domain is the first segment of the address and a
    * version that dropped it would be the one route in the estate you could not find by domain.
+   *
+   * Every published address ends in its version, so this is the same shape v1 already has: the
+   * sibling differs in one segment, which is what makes two versions answering at once legible.
    */
   const versionBasePath = (row: ResourceRow, apiVersion: string) =>
     row.domain

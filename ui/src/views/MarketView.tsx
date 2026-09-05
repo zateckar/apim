@@ -32,12 +32,14 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
   const [q, setQ] = useState("");
   const [kind, setKind] = useState<string | null>(null);
   const [tag, setTag] = useState<string | null>(null);
+  const [application, setApplication] = useState("");
   const [sort, setSort] = useState("relevance");
 
   const query = new URLSearchParams();
   if (q.trim()) query.set("q", q.trim());
   if (kind) query.set("kind", kind);
   if (tag) query.set("tag", tag);
+  if (application) query.set("application", application);
   query.set("sort", sort);
   query.set("limit", "60");
 
@@ -45,18 +47,24 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
   // latency somebody can feel.
   const listing = useAsync(
     () => api.get<{ items: MarketCard[]; total: number; truncated: boolean }>(`/api/catalog?${query}`),
-    [q, kind, tag, sort],
+    [q, kind, tag, application, sort],
   );
   const facets = useAsync(() => api.get<MarketFacets>("/api/catalog/facets"), []);
 
   const items = listing.data?.items ?? [];
-  const filtered = Boolean(q.trim() || kind || tag);
+  const filtered = Boolean(q.trim() || kind || tag || application);
 
+  /*
+   * Two layouts, one estate. Browsing is by domain, because the domain is how the estate is
+   * organised and how a URL is read; searching is across domains, because somebody typing `addPet`
+   * is asking a question the taxonomy has no opinion about. The filter bar decides which is on.
+   */
   return (
     <>
       <p className="muted small">
-        Search matches names, descriptions, tags and the contract itself — operation ids, MCP tool
-        names, A2A skills. {facets.data ? `${facets.data.total} listed.` : ""}
+        Browse every API and Kafka topic by domain, or search across all of them — names,
+        descriptions, tags and the contract itself: operation ids, MCP tool names, A2A skills.
+        {facets.data ? ` ${facets.data.total} listed.` : ""}
       </p>
 
       <Card>
@@ -69,6 +77,20 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
               placeholder="pets, addPet, order book, streaming…"
               onChange={(event) => setQ(event.target.value)}
             />
+          </div>
+          <div className="field" style={{ flex: "0 0 180px" }}>
+            <label>Application</label>
+            <select
+              value={application}
+              onChange={(event) => setApplication(event.target.value)}
+            >
+              <option value="">All applications</option>
+              {(facets.data?.applications ?? []).map((entry) => (
+                <option key={entry.value} value={entry.value}>
+                  {entry.value} ({entry.count})
+                </option>
+              ))}
+            </select>
           </div>
           <div className="field" style={{ flex: "0 0 180px" }}>
             <label>Sort by</label>
@@ -146,11 +168,21 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
         </Card>
       )}
 
-      <div className="market-grid">
-        {items.map((item) => (
-          <ListingCard key={item.id} item={item} onTag={setTag} />
-        ))}
-      </div>
+      {filtered ? (
+        <div className="market-grid">
+          {items.map((item) => (
+            <ListingCard key={item.id} item={item} onTag={setTag} />
+          ))}
+        </div>
+      ) : (
+        items.length > 0 && (
+          <div className="domain-list">
+            {(facets.data?.domains ?? []).map((entry) => (
+              <DomainSection key={entry.value} entry={entry} onTag={setTag} />
+            ))}
+          </div>
+        )
+      )}
 
       {/* The flag is about the scan, not the answer: the estate is larger than one ranking pass
           looks at, so listings may exist that were never considered — including when the list
@@ -169,6 +201,78 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
         </p>
       )}
     </>
+  );
+}
+
+/**
+ * One domain, closed until asked for. The count comes from the facets — every domain in the
+ * taxonomy is listed, including the empty ones, because the taxonomy is a structure the estate is
+ * filed into rather than a summary of what happens to exist today. The rows are fetched only on
+ * expand: thirteen domains eagerly loading their contents is thirteen requests nobody asked for.
+ */
+function DomainSection({
+  entry,
+  onTag,
+}: {
+  entry: { value: string; count: number; topics: number };
+  onTag: (tag: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const listing = useAsync(
+    () =>
+      open
+        ? api.get<{ items: MarketCard[] }>(
+            `/api/catalog?domain=${encodeURIComponent(entry.value)}&sort=name&limit=200`,
+          )
+        : Promise.resolve({ items: [] as MarketCard[] }),
+    [open, entry.value],
+  );
+  const empty = entry.count === 0 && entry.topics === 0;
+
+  return (
+    <section className="domain-section">
+      <button
+        type="button"
+        className="domain-head"
+        aria-expanded={open}
+        disabled={empty}
+        onClick={() => setOpen(!open)}
+      >
+        <span className="domain-name">
+          {entry.value === "other" ? "OTHER" : entry.value.toUpperCase()}
+        </span>
+        <span className="muted small">
+          {empty
+            ? "nothing filed here yet"
+            : [
+                entry.count > 0 ? `${entry.count} API${entry.count === 1 ? "" : "s"}` : null,
+                entry.topics > 0 ? `${entry.topics} topic${entry.topics === 1 ? "" : "s"}` : null,
+              ]
+                .filter(Boolean)
+                .join(" · ")}
+        </span>
+        <span aria-hidden className="domain-chevron">
+          {open ? "⌄" : "›"}
+        </span>
+      </button>
+      {open && (
+        <div className="domain-body">
+          {entry.value === "other" && (
+            <p className="muted small">
+              Published before the taxonomy existed. Each of these gets a domain — and a new
+              address — on its next save.
+            </p>
+          )}
+          <Notice kind="error">{listing.error}</Notice>
+          {listing.loading && <p className="muted">Loading…</p>}
+          <div className="market-grid">
+            {(listing.data?.items ?? []).map((item) => (
+              <ListingCard key={item.id} item={item} onTag={onTag} />
+            ))}
+          </div>
+        </div>
+      )}
+    </section>
   );
 }
 
@@ -221,6 +325,13 @@ function ListingCard({ item, onTag }: { item: MarketCard; onTag: (tag: string) =
           </Link>
           <div className="muted mono">
             {item.name} · {item.apiVersion}
+          </div>
+          {/* Where it is filed, so a search result read outside its domain section still says
+              which part of the estate it belongs to. */}
+          <div className="muted small">
+            {item.domain
+              ? `${item.domain}${item.subdomain ? ` / ${item.subdomain}` : ""}`
+              : "no domain yet"}
           </div>
         </div>
         <span className={`badge kind-${item.kind}`}>{KIND_LABELS[item.kind] ?? item.kind}</span>

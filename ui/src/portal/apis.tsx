@@ -230,7 +230,7 @@ export function Publish({ session: s }: { session: Session }) {
               subdomain: subdomain || null,
               // Derived, never typed: the same function the control plane validates against, so
               // what the preview above the button says is what the gateway will answer on.
-              basePath: publishedPath({ domain, subdomain, name }),
+              basePath: publishedPath({ domain, subdomain, name, apiVersion }),
               ...(productId ? { productId } : { productName }),
             };
             if (source === "url")
@@ -321,10 +321,12 @@ export function Publish({ session: s }: { session: Session }) {
           <span className="mono">
             {(s.meta.environments.find((e) => e.environment === s.meta.chain[0])?.publicUrl ??
               "https://<gateway>") +
-              (domain ? publishedPath({ domain, subdomain, name: name || "api" }) : "/…")}
+              (domain
+                ? publishedPath({ domain, subdomain, name: name || "api", apiVersion })
+                : "/…")}
           </span>
-          . The domain is the first segment of the address, which is what makes the catalog
-          browsable by domain rather than only searchable by name.
+          . The domain is the first segment of the address and the version is the last, which is
+          what makes the catalog browsable by domain and a URL legible without looking anything up.
         </p>
         <Field label="Description">
           <textarea
@@ -465,19 +467,16 @@ function EditorForm({
     (e) => e.environment === s.environment,
   );
   /**
-   * The address, derived from the taxonomy rather than typed. The version segment appears only on
-   * a version that is not the family's first, which is the rule `versionedPath` already follows —
-   * v1 keeps the short URL it was published on.
+   * The address, derived from the taxonomy rather than typed, and always ending in the version —
+   * the same shape every other API in the estate has, so a consumer reading the URL knows which
+   * contract they are on.
    */
   const basePath = domain
     ? publishedPath({
         domain,
         subdomain,
         name: d.resource.name,
-        apiVersion:
-          versions.length > 1 && versions[0]?.id !== d.resource.id
-            ? d.resource.apiVersion
-            : null,
+        apiVersion: d.resource.apiVersion,
       })
     : (d.settings?.basePath ?? "");
   /** Load balancing and the breaker need somewhere to fail over to. */

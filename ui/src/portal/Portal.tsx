@@ -18,6 +18,8 @@ import { Dashboard } from "./dashboard";
 import { Subscriptions, Approvals, Integrations, Kafka } from "./processes";
 import { Mailbox, NotificationsBell } from "./notifications";
 import { ApplicationPicker } from "./components/ApplicationPicker";
+import { ChangeLog } from "./components/ChangeLog";
+import { portalVersion } from "../lib/changelog";
 import { ProductsView } from "../views/ProductsView";
 import { TrustView } from "../views/TrustView";
 import { GatewayView } from "../views/GatewayView";
@@ -175,7 +177,8 @@ export function Portal({
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("portal-theme", theme);
   }, [theme]);
-  const [navOpen, setNavOpen] = useState(false);
+  const [navOpen, setNavOpen] = useState(false),
+    [changes, setChanges] = useState(false);
   const title = resourceId
     ? "API workspace"
     : (titles[section] ?? matchRoute(path).route.title);
@@ -281,6 +284,16 @@ export function Portal({
           </div>
           <div className="native-actions">
             <span className="chip neutral">Integrations simulated</span>
+            {/* The version is a button because it answers a question: what changed since the last
+                time I was here. A chip that only states a number leaves that question unanswered
+                and the answer in a file nobody using the portal can open. */}
+            <button
+              className="btn sm"
+              aria-label={`Portal version ${portalVersion()} — what changed`}
+              onClick={() => setChanges(true)}
+            >
+              v{portalVersion()}
+            </button>
             <button
               className="btn sm"
               aria-label="Toggle theme"
@@ -300,6 +313,7 @@ export function Portal({
             <NotificationsBell applicationId={applicationId} tick={tick} />
           </div>
         </header>
+        {changes && <ChangeLog close={() => setChanges(false)} />}
         <main className="native-content">
           <div className="native-page-head">
             <div>

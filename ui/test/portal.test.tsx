@@ -9,7 +9,11 @@ import {
 } from "../src/portal/Portal.tsx";
 import { nextVersion, versionedPath } from "../src/portal/apis.tsx";
 import { ROUTES } from "../src/lib/routes.ts";
+import { portalVersion } from "../src/lib/changelog.ts";
+import { currentVersion, parseChangeLog } from "../../shared/changelog.ts";
 import type { Meta, User } from "../src/api.ts";
+
+const SOURCE = await Bun.file(new URL("../../CHANGELOG.md", import.meta.url)).text();
 
 /**
  * The portal shell, and the one property that cannot be checked by looking at it (reuse analysis
@@ -218,6 +222,14 @@ describe("the portal shell", () => {
     expect(versionedPath("/checkout", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1/", "v1", "v2")).toBe("/checkout/v2");
+  });
+
+  test("the top bar names the build, and the name comes from the change log", () => {
+    // Two things at once: the version chip is on the screen, and `CHANGELOG.md` really is the
+    // place it comes from — a `?raw` import that resolved to nothing would render "v0.0.0".
+    expect(portalVersion()).toBe(currentVersion(parseChangeLog(SOURCE)));
+    expect(portalVersion()).not.toBe("0.0.0");
+    expect(asAdmin.html).toContain(`v${portalVersion()}`);
   });
 
   test("the simulated integrations are declared in the chrome, not only inside their screens", () => {

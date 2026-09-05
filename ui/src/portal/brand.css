@@ -1185,6 +1185,11 @@ a { color: inherit; text-decoration: none; }
   max-height: 80vh;
 }
 .dialog.changelog-dialog .dialog-body { padding: 0; }
+/* The same entry list inside this portal's `<dialog class="native-modal">`.
+   The modal's own body padding is removed so each entry's rule reaches the
+   full width, the way a list of releases should read. */
+.changelog { margin: -22px; }
+.changelog .changelog-entry:last-child { border-bottom: none; padding-bottom: 4px; }
 .changelog-entry {
   padding: 18px 22px;
   border-bottom: 1px solid var(--border);

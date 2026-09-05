@@ -16,6 +16,7 @@ import { Publish, Editor } from "./apis";
 import { Catalog } from "./catalog";
 import { Dashboard } from "./dashboard";
 import { Subscriptions, Approvals, Integrations, Kafka } from "./processes";
+import { Mailbox, NotificationsBell } from "./notifications";
 import { ApplicationPicker } from "./components/ApplicationPicker";
 import { ProductsView } from "../views/ProductsView";
 import { TrustView } from "../views/TrustView";
@@ -56,6 +57,10 @@ export const APPLICATION_NAV = [
       // This screen is the console for the surrounding systems — LeanIX, the directory, FixMe —
       // every one of which is simulated in this phase, which the chrome already says.
       ["integrations", "External systems"],
+      // The bell's headlines are a summary; this is the message. Navigable in its own right
+      // because "what was that mail about" is a question people arrive with, not one they only
+      // ever reach by opening a popover first.
+      ["mail", "Mail"],
       ["activity", "Activity"],
     ],
   },
@@ -125,6 +130,7 @@ const titles: Record<string, string> = {
   certificates: "Certificates",
   approvals: "Approvals",
   integrations: "External systems",
+  mail: "Mail",
   activity: "Activity",
   publish: "Publish an API",
   discover: "Catalog",
@@ -169,8 +175,7 @@ export function Portal({
     document.documentElement.dataset.theme = theme;
     localStorage.setItem("portal-theme", theme);
   }, [theme]);
-  const [navOpen, setNavOpen] = useState(false),
-    [bell, setBell] = useState(false);
+  const [navOpen, setNavOpen] = useState(false);
   const title = resourceId
     ? "API workspace"
     : (titles[section] ?? matchRoute(path).route.title);
@@ -283,31 +288,18 @@ export function Portal({
             >
               {theme === "light" ? "Dark" : "Light"}
             </button>
+            {/* Deployments in flight, which is a different question from "what happened that I
+                have not seen" — that one is the bell's, and it counts unread rather than active. */}
             <button
               className="btn sm"
-              aria-label="Notifications"
-              onClick={() => setBell(!bell)}
+              aria-label={`${active.length} changes in progress`}
+              onClick={() => go(link("activity"))}
             >
               <I.Activity /> {active.length}
             </button>
+            <NotificationsBell applicationId={applicationId} tick={tick} />
           </div>
         </header>
-        {bell && (
-          <div className="native-notifications">
-            <Panel
-              title="Recent changes"
-              actions={
-                <button className="btn sm" onClick={() => setBell(false)}>
-                  Close
-                </button>
-              }
-            >
-              <OperationList
-                items={(operations.data?.items ?? []).slice(0, 8)}
-              />
-            </Panel>
-          </div>
-        )}
         <main className="native-content">
           <div className="native-page-head">
             <div>
@@ -398,6 +390,8 @@ export function Portal({
               tick={tick}
               fixme={section === "fixme"}
             />
+          ) : section === "mail" ? (
+            <Mailbox session={effective} tick={tick} />
           ) : section === "activity" ? (
             <Panel title="Changes and deployment progress">
               <OperationList items={operations.data?.items ?? []} />

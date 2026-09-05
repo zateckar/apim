@@ -37,6 +37,7 @@ import { registerTrustRoutes } from "./api/trust.ts";
 import { registerUserRoutes } from "./api/users.ts";
 
 import { ensureApplicationMetadata, registerIntegrationRoutes } from "./integrations.ts";
+import { registerNotificationRoutes } from "./notifications.ts";
 
 export function createRouter(): Router {
   const router = new Router();
@@ -57,6 +58,7 @@ export function createRouter(): Router {
   registerHealthRoutes(router);
   registerTrustRoutes(router);
   registerIntegrationRoutes(router);
+  registerNotificationRoutes(router);
   registerOperationRoutes(router);
   registerKafkaRoutes(router);
   return router;

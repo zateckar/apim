@@ -1390,6 +1390,29 @@ a { color: inherit; text-decoration: none; }
    delete err, etc.). Server-derived rows keep the neutral default. */
 .notif-ic.notif-ic-ok  { background: var(--ok-soft);  color: var(--ok); }
 .notif-ic.notif-ic-err { background: var(--err-soft); color: var(--err); }
+/* `warn` is the tone of a row somebody has to act on — an access request
+   waiting for an answer — and `info` of one that only reports. Without
+   these two the whole feed rendered in the neutral default and the one
+   row with something to do looked like the four above it. */
+.notif-ic.notif-ic-warn { background: var(--warn-soft); color: var(--warn); }
+.notif-ic.notif-ic-info { background: var(--info-soft); color: var(--info); }
+/* An unread row is marked at the start of the line as well as by its
+   background: the tinted background alone does not survive a colour
+   scheme somebody has turned the contrast down on. */
+.notif-dot {
+  width: 6px; height: 6px; border-radius: 99px;
+  background: var(--accent); flex: 0 0 auto; margin-top: 10px;
+}
+.notif-dot.read { background: transparent; }
+/* The opened message in the mailbox. Indented to the depth of the row's
+   text column so the body lines up under the subject rather than under
+   the icon. */
+.notif-message {
+  padding: 4px 14px 16px 50px;
+  border-bottom: 1px solid var(--divider);
+  font-size: 13px;
+}
+.notif-message p { margin: 10px 0; color: var(--fg-muted); white-space: pre-wrap; }
 .notif-body-line { color: var(--fg-muted); }
 .notif-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
 .notif-title { font-size: 12.5px; line-height: 1.35; }

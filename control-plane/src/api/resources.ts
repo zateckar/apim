@@ -11,8 +11,9 @@ import { normalizeBasePath, normalizeHost } from "../../../shared/routing.ts";
 import { diffModels } from "../../../shared/diff.ts";
 import { API_VERSION_PATTERN, REACHED_FLEET_STATES, RESOURCE_KINDS } from "../../../shared/types.ts";
 import type { ApiModel, OriginalFormat } from "../../../shared/types.ts";
-import { MAX_POOL_SIZE, MAX_WEIGHT, type BackendPool } from "../../../shared/backend.ts";
-import type { BackendEntry, ConfigOperation } from "../../../shared/config-doc.ts";
+import { type BackendPool } from "../../../shared/backend.ts";
+import type { ConfigOperation } from "../../../shared/config-doc.ts";
+import { readPool } from "../backend-pool.ts";
 import { looksLikeWsdl, normalizeWsdl, toSoapSummary } from "../normalize-wsdl.ts";
 import { discoverA2a, looksLikeAgentCard, normalizeA2a } from "../normalize-a2a.ts";
 import { discoverMcp, looksLikeMcpManifest, normalizeMcp } from "../normalize-mcp.ts";
@@ -1370,55 +1371,9 @@ export function registerResourceRoutes(router: Router): void {
       throw badRequest(`unknown environment "${environment}"`);
     }
 
-    const pool: BackendEntry[] = [];
-    if (Array.isArray(body.pool)) {
-      for (const [index, raw] of body.pool.entries()) {
-        const entry = (raw ?? {}) as Record<string, unknown>;
-        if (typeof entry.url !== "string" || entry.url.length === 0) {
-          throw badRequest(`pool[${index}].url: expected a backend URL`);
-        }
-        if (entry.weight !== undefined) {
-          const weight = Number(entry.weight);
-          if (!Number.isInteger(weight) || weight < 1 || weight > MAX_WEIGHT) {
-            throw badRequest(`pool[${index}].weight: expected an integer from 1 to ${MAX_WEIGHT}`);
-          }
-        }
-        pool.push({
-          url: entry.url,
-          ...(entry.weight === undefined ? {} : { weight: Number(entry.weight) }),
-        });
-      }
-    } else if (Array.isArray(body.urls)) {
-      for (const url of body.urls) pool.push({ url: String(url) });
-    }
-
-    if (pool.length === 0) throw badRequest("expected a non-empty `pool` or `urls` array");
-    if (pool.length > MAX_POOL_SIZE) {
-      throw badRequest(
-        `a pool may hold at most ${MAX_POOL_SIZE} backends. Past that, the breaker's per-backend ` +
-          "state and the retry budget stop being reasonable to reason about; put a load balancer behind one URL",
-      );
-    }
-    const seen = new Set<string>();
-    for (const entry of pool) {
-      if (seen.has(entry.url)) throw badRequest(`${entry.url} appears twice; use \`weight\` instead`);
-      seen.add(entry.url);
-      const errors = await checkEgress(entry.url, ctx.app.config.integrations, "pool");
-      if (errors.length > 0) throw badRequest(errors.join("; "));
-    }
-
-    // `failover` is the default because it is what a single-backend binding already means, so an
-    // unchanged caller gets unchanged behaviour.
-    const rule = body.rule === undefined ? "failover" : String(body.rule);
-    if (rule !== "failover" && rule !== "round-robin") {
-      throw badRequest('rule: expected "failover" (primary first) or "round-robin"');
-    }
-    if (rule === "failover" && pool.some((entry) => entry.weight !== undefined)) {
-      throw badRequest(
-        "weights only mean something under round-robin: failover tries the pool in the order it is " +
-          "written, so a weight would be silently ignored",
-      );
-    }
+    const read = await readPool(body, ctx.app.config.integrations);
+    if (!read) throw badRequest("expected a non-empty `pool` or `urls` array");
+    const { pool, rule } = read;
 
     let clientCertRef: string | undefined;
     if (body.clientCertRef !== undefined && body.clientCertRef !== null) {

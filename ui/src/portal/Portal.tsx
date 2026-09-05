@@ -68,6 +68,42 @@ export const ADMIN_NAV = [
   ["audit", "Audit"],
 ] as const;
 
+/** The sections whose third segment names an API rather than a tab. */
+const RESOURCE_SECTIONS = ["apis", "mcp", "a2a", "discover"];
+
+/**
+ * Which application, which section and which API an address is asking for.
+ *
+ * Two shapes reach here. `/:applicationId/apis/:resourceId` is what the shell writes. `/apis/:id`
+ * is what everything written before the shell became application-scoped writes — the route table,
+ * the "Used by" links on a certificate, an attention row, a colleague's bookmark. Resolving only
+ * the first shape left the second rendering the *list* of APIs with the id silently dropped, which
+ * looks like the link worked and did not.
+ */
+export function parsePath(
+  path: string,
+  applications: Array<{ id: string }>,
+): { applicationId: string | null; section: string; resourceId: string | null } {
+  const parts = path.split("?")[0]!.split("/").filter(Boolean);
+  const known = applications.find((a) => a.id === parts[0]);
+  if (known)
+    return {
+      applicationId: known.id,
+      section: parts[1] ?? "dashboard",
+      resourceId: parts[2] && parts[2] !== "publish" ? parts[2] : null,
+    };
+  const section = parts[0] ?? "dashboard";
+  return {
+    applicationId: null,
+    section,
+    // `/apis/new` is the publish route, not an API called "new".
+    resourceId:
+      RESOURCE_SECTIONS.includes(section) && parts[1] && parts[1] !== "new"
+        ? parts[1]
+        : null,
+  };
+}
+
 const titles: Record<string, string> = {
   dashboard: "Dashboard",
   apis: "APIs",
@@ -93,18 +129,18 @@ export function Portal({
   session: Session;
   path: string;
 }) {
-  const parts = path.split("/").filter(Boolean),
-    known = s.applications.find((a) => a.id === parts[0]);
-  const section = known ? (parts[1] ?? "dashboard") : (parts[0] ?? "dashboard");
-  const resourceId =
-    known && parts[2] && parts[2] !== "publish" ? parts[2] : null;
+  const parts = path.split("/").filter(Boolean);
+  const { applicationId: named, section, resourceId } = parsePath(
+    path,
+    s.applications,
+  );
   const authorized =
-    known && (s.user.isAdmin || s.user.applications.includes(known.id));
-  const applicationId = authorized ? known.id : s.application,
+    named !== null && (s.user.isAdmin || s.user.applications.includes(named));
+  const applicationId = authorized ? named : s.application,
     effective = { ...s, application: applicationId };
   useEffect(() => {
-    if (authorized && known.id !== s.application) s.setApplication(known.id);
-  }, [known?.id]);
+    if (authorized && named !== s.application) s.setApplication(named!);
+  }, [named]);
   const tick = useTicker();
   const operations = useAsync(
     () =>

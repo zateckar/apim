@@ -504,6 +504,149 @@ describe("native application workflows", () => {
     ).toHaveLength(1);
   });
 
+  test("a backend pool set through configure reaches the gateway, with the binding's own rules", async () => {
+    setup();
+    const op = await publish();
+    runDueJobs(cp.app);
+    await ack("dev");
+    const editor = await (
+      await call(
+        "GET",
+        `/api/resources/${op.resourceId}/editor?environment=dev`,
+        "pavel",
+      )
+    ).json();
+    const pool = [
+      { url: "http://127.0.0.1:9999", weight: 3 },
+      { url: "http://127.0.0.1:9998", weight: 1 },
+    ];
+    expect(
+      (
+        await call(
+          "POST",
+          `/api/resources/${op.resourceId}/configure`,
+          "pavel",
+          { environment: "dev", pool, rule: "round-robin" },
+          { "idempotency-key": "pool", "if-match": editor.resource.etag },
+        )
+      ).status,
+    ).toBe(202);
+    runDueJobs(cp.app);
+    await ack("dev");
+    const built = buildConfig(
+      cp.app.db,
+      cp.app.kek,
+      "dev",
+      cp.app.config.integrations,
+    );
+    const route = built.routes.find((r) => r.resourceId === op.resourceId)!;
+    expect(route.backend.pool).toEqual(pool);
+    expect(route.backend.rule).toBe("round-robin");
+
+    // The command path and the binding endpoint read a pool through the same validator, so a shape
+    // one refuses cannot be reached through the other.
+    const fresh = await (
+      await call(
+        "GET",
+        `/api/resources/${op.resourceId}/editor?environment=dev`,
+        "pavel",
+      )
+    ).json();
+    const weighted = await call(
+      "POST",
+      `/api/resources/${op.resourceId}/configure`,
+      "pavel",
+      {
+        environment: "dev",
+        pool: [{ url: "http://127.0.0.1:9999", weight: 2 }],
+        rule: "failover",
+      },
+      { "idempotency-key": "weighted", "if-match": fresh.resource.etag },
+    );
+    expect(weighted.status).toBe(400);
+    expect((await weighted.json()).detail).toContain("round-robin");
+  });
+
+  test("a new version serves beside its predecessor and carries its own subscriptions", async () => {
+    setup();
+    const first = await publish();
+    runDueJobs(cp.app);
+    await ack("dev");
+    const editor = await (
+      await call(
+        "GET",
+        `/api/resources/${first.resourceId}/editor?environment=dev`,
+        "pavel",
+      )
+    ).json();
+    expect(editor.versions.map((v: any) => v.apiVersion)).toEqual(["v1"]);
+
+    const second = await call(
+      "POST",
+      "/api/publish",
+      "pavel",
+      {
+        applicationId: "application_platform",
+        name: "sample",
+        apiVersion: "v2",
+        productName: "sample-v2-product",
+        basePath: "/sample/v2",
+        pool: editor.settings.backend.pool,
+        rule: editor.settings.backend.rule,
+        policy: editor.settings.policy,
+        spec: MINI_SPEC,
+      },
+      { "idempotency-key": "sample-v2" },
+    );
+    expect(second.status).toBe(202);
+    const v2 = await second.json();
+    runDueJobs(cp.app);
+    await ack("dev");
+
+    // Both live at once, on their own paths.
+    const built = buildConfig(
+      cp.app.db,
+      cp.app.kek,
+      "dev",
+      cp.app.config.integrations,
+    );
+    expect(
+      built.routes
+        .filter((r) => [first.resourceId, v2.resourceId].includes(r.resourceId))
+        .map((r) => r.basePath)
+        .sort(),
+    ).toEqual(["/sample", "/sample/v2"]);
+    // And each knows about the other, which is what the version switcher reads.
+    const after = await (
+      await call(
+        "GET",
+        `/api/resources/${v2.resourceId}/editor?environment=dev`,
+        "pavel",
+      )
+    ).json();
+    expect(after.versions.map((v: any) => v.apiVersion).sort()).toEqual(["v1", "v2"]);
+    // A third publish of a version that already exists is refused rather than silently replacing it.
+    expect(
+      (
+        await call(
+          "POST",
+          "/api/publish",
+          "pavel",
+          {
+            applicationId: "application_platform",
+            name: "sample",
+            apiVersion: "v2",
+            productName: "sample-v2-again",
+            basePath: "/sample/v2-again",
+            backendUrl: "http://127.0.0.1:9999",
+            spec: MINI_SPEC,
+          },
+          { "idempotency-key": "sample-v2-again" },
+        )
+      ).status,
+    ).toBe(409);
+  });
+
   test("an edit made after a promotion was accepted belongs to a later operation", async () => {
     setup();
     const op = await publish();

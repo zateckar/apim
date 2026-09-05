@@ -20,6 +20,33 @@ import {
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
 import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
+import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
+
+interface PoolEntry {
+  url: string;
+  weight?: number;
+}
+
+/**
+ * The next free identifier in the `v<n>` series, which is what almost every version here is. An API
+ * versioned some other way falls back to a suffix rather than to a guess that collides.
+ */
+export function nextVersion(existing: string[]): string {
+  const numbers = existing
+    .map((value) => /^v(\d+)$/.exec(value)?.[1])
+    .filter((value): value is string => value !== undefined)
+    .map(Number);
+  if (numbers.length) return `v${Math.max(...numbers) + 1}`;
+  return `${existing[existing.length - 1] ?? "v1"}-next`;
+}
+
+/** A sibling version needs its own path, since two versions serve at the same time. */
+export function versionedPath(basePath: string, current: string, next: string): string {
+  const trimmed = basePath.replace(/\/+$/, "");
+  if (trimmed.endsWith(`/${current}`))
+    return `${trimmed.slice(0, -current.length - 1)}/${next}`;
+  return `${trimmed}/${next}`;
+}
 
 export function Workspace({
   session: s,
@@ -107,6 +134,7 @@ export function Publish({ session: s }: { session: Session }) {
       new URLSearchParams(location.search).get("kind") ?? "rest",
     ),
     [name, setName] = useState(""),
+    [apiVersion, setApiVersion] = useState("v1"),
     [description, setDescription] = useState(""),
     [productId, setProduct] = useState(""),
     [productName, setProductName] = useState(""),
@@ -125,6 +153,7 @@ export function Publish({ session: s }: { session: Session }) {
               applicationId: s.application,
               name,
               kind,
+              apiVersion,
               description,
               backendUrl,
               basePath: basePath || `/${name}`,
@@ -159,6 +188,14 @@ export function Publish({ session: s }: { session: Session }) {
                 </option>
               ))}
             </select>
+          </Field>
+          <Field label="Version">
+            <input
+              required
+              pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+              value={apiVersion}
+              onChange={(e) => setApiVersion(e.target.value)}
+            />
           </Field>
           <Field label="Product">
             <select
@@ -302,13 +339,19 @@ function EditorForm({
   const w = useWork(),
     [tab, setTab] = useState("definition"),
     [description, setDescription] = useState(d.resource.description ?? ""),
-    [backend, setBackend] = useState(d.settings?.backend?.pool?.[0]?.url ?? ""),
+    [pool, setPool] = useState<PoolEntry[]>(() =>
+      (d.settings?.backend?.pool ?? []).length
+        ? d.settings.backend.pool.map((entry: PoolEntry) => ({ ...entry }))
+        : [{ url: "" }],
+    ),
+    [rule, setRule] = useState<string>(d.settings?.backend?.rule ?? "failover"),
     [path, setPath] = useState(d.settings?.basePath ?? ""),
     [spec, setSpec] = useState(d.definition ?? ""),
     [policy, setPolicy] = useState(
       JSON.stringify(d.settings?.policy ?? {}, null, 2),
     ),
     [promote, setPromote] = useState(false),
+    [version, setVersion] = useState(false),
     [certificate, setCertificate] = useState(
       d.settings?.backend?.clientCertRef ?? "",
     ),
@@ -322,6 +365,9 @@ function EditorForm({
     [s.environment],
   );
   const next = s.meta.chain[s.meta.chain.indexOf(s.environment) + 1];
+  const first = s.meta.chain[0]!;
+  const versions: Array<{ id: string; apiVersion: string; lifecycle: string }> =
+    d.versions ?? [];
   let doc: unknown = null;
   try {
     doc = parse(spec);
@@ -332,6 +378,23 @@ function EditorForm({
         title={d.resource.name}
         actions={
           <div className="native-actions">
+            {d.resource.canEdit &&
+              // A new version is published where publishing starts, so it is offered there and the
+              // reason is on the screen rather than in a tooltip nobody hovers.
+              (s.environment === first ? (
+                <button
+                  className="btn"
+                  disabled={w.busy || !d.settings}
+                  onClick={() => setVersion(true)}
+                >
+                  New version
+                </button>
+              ) : (
+                <span className="muted">
+                  A new version starts in {first.toUpperCase()} — switch
+                  environment to publish one.
+                </span>
+              ))}
             {d.resource.canEdit && next && (
               <button
                 className="btn primary"
@@ -346,9 +409,26 @@ function EditorForm({
       >
         <p>
           {s.applicationName(d.resource.applicationId)} ·{" "}
-          {d.resource.kind.toUpperCase()} · Products:{" "}
+          {d.resource.kind.toUpperCase()} · {d.resource.apiVersion} · Products:{" "}
           {d.products.map((p: any) => p.name).join(", ") || "None"}
         </p>
+        {versions.length > 1 && (
+          <Field label="Version">
+            <select
+              value={d.resource.id}
+              onChange={(e) =>
+                go(`/${s.application}/apis/${e.target.value}`)
+              }
+            >
+              {versions.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.apiVersion}
+                  {v.lifecycle === "active" ? "" : ` (${v.lifecycle})`}
+                </option>
+              ))}
+            </select>
+          </Field>
+        )}
         <div className="seg">
           {[
             "definition",
@@ -400,13 +480,86 @@ function EditorForm({
                 onChange={(e) => setDescription(e.target.value)}
               />
             </Field>
-            <Field label={`${s.environment.toUpperCase()} backend URL`}>
-              <input
+            {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
+                second one appears only when somebody asks for it. */}
+            <div className="native-pool">
+              <span className="lbl">
+                {s.environment.toUpperCase()} backends
+              </span>
+              {pool.map((entry, index) => (
+                <div className="native-actions" key={index}>
+                  <input
+                    aria-label={`Backend ${index + 1} URL`}
+                    disabled={!d.resource.canEdit}
+                    value={entry.url}
+                    onChange={(e) =>
+                      setPool(
+                        pool.map((row, at) =>
+                          at === index ? { ...row, url: e.target.value } : row,
+                        ),
+                      )
+                    }
+                  />
+                  {rule === "round-robin" && (
+                    <input
+                      type="number"
+                      min={1}
+                      max={MAX_WEIGHT}
+                      aria-label={`Backend ${index + 1} share of traffic`}
+                      disabled={!d.resource.canEdit}
+                      value={entry.weight ?? 1}
+                      onChange={(e) =>
+                        setPool(
+                          pool.map((row, at) =>
+                            at === index
+                              ? { ...row, weight: Number(e.target.value) }
+                              : row,
+                          ),
+                        )
+                      }
+                    />
+                  )}
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={!d.resource.canEdit || pool.length === 1}
+                    onClick={() =>
+                      setPool(pool.filter((_, at) => at !== index))
+                    }
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+              <button
+                type="button"
+                className="btn sm"
+                disabled={!d.resource.canEdit || pool.length >= MAX_POOL_SIZE}
+                onClick={() => setPool([...pool, { url: "" }])}
+              >
+                Add backend
+              </button>
+            </div>
+            <Field label="When there is more than one backend">
+              <select
                 disabled={!d.resource.canEdit}
-                value={backend}
-                onChange={(e) => setBackend(e.target.value)}
-              />
+                value={rule}
+                onChange={(e) => setRule(e.target.value)}
+              >
+                <option value="failover">
+                  Failover — try them in the order written
+                </option>
+                <option value="round-robin">
+                  Round-robin — spread calls across them
+                </option>
+              </select>
             </Field>
+            {rule === "round-robin" && (
+              <p className="muted">
+                Each gateway keeps its own place in the rotation, so calls are
+                spread per instance rather than across the fleet.
+              </p>
+            )}
             <Field label="Public path">
               <input
                 disabled={!d.resource.canEdit}
@@ -494,8 +647,22 @@ function EditorForm({
                   };
                   if (certificate !== (d.settings.backend.clientCertRef ?? ""))
                     body.clientCertRef = certificate || null;
-                  if (backend !== d.settings.backend.pool?.[0]?.url)
-                    body.backendUrl = backend;
+                  const next = pool
+                    .filter((entry) => entry.url.trim())
+                    .map((entry) => ({
+                      url: entry.url.trim(),
+                      ...(rule === "round-robin" && entry.weight && entry.weight !== 1
+                        ? { weight: Number(entry.weight) }
+                        : {}),
+                    }));
+                  if (
+                    JSON.stringify(next) !==
+                      JSON.stringify(d.settings.backend.pool ?? []) ||
+                    rule !== (d.settings.backend.rule ?? "failover")
+                  ) {
+                    body.pool = next;
+                    body.rule = rule;
+                  }
                   if (policy !== JSON.stringify(d.settings.policy, null, 2))
                     body.policy = JSON.parse(policy);
                   if (spec !== d.definition)
@@ -516,6 +683,14 @@ function EditorForm({
       <Panel title="Deployment progress">
         <OperationList items={operations.slice(0, 5)} />
       </Panel>
+      {version && (
+        <NewVersion
+          data={d}
+          session={s}
+          spec={spec}
+          close={() => setVersion(false)}
+        />
+      )}
       {promote && (
         <Modal
           title={`Promote to ${next!.toUpperCase()}`}
@@ -555,5 +730,119 @@ function EditorForm({
         </Modal>
       )}
     </>
+  );
+}
+
+/**
+ * A new version is a *different* API that serves at the same time as this one, so it is a dialog
+ * rather than a tab: nothing here edits the version you are looking at. It starts as a copy of the
+ * definition, backends and policies on screen, and it needs its own path because both answer at once.
+ */
+function NewVersion({
+  data: d,
+  session: s,
+  spec,
+  close,
+}: {
+  data: any;
+  session: Session;
+  spec: string;
+  close: () => void;
+}) {
+  const w = useWork(),
+    first = s.meta.chain[0]!;
+  const products = useAsync(
+    () => api.get<{ items: any[] }>("/api/products"),
+    [d.resource.id],
+  );
+  const existing: string[] = (d.versions ?? []).map((v: any) => v.apiVersion);
+  const [identifier, setIdentifier] = useState(() => nextVersion(existing));
+  const [path, setPath] = useState(() =>
+    versionedPath(d.settings?.basePath ?? "", d.resource.apiVersion, nextVersion(existing)),
+  );
+  const [productId, setProduct] = useState<string>(d.products?.[0]?.id ?? "");
+  const owned =
+    products.data?.items.filter(
+      (p) => p.applicationId === d.resource.applicationId && p.lifecycle === "active",
+    ) ?? [];
+  return (
+    <Modal title={`New version of ${d.resource.name}`} close={close}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void w.run(async () => {
+            const result = await command("/api/publish", {
+              applicationId: d.resource.applicationId,
+              name: d.resource.name,
+              kind: d.resource.kind,
+              apiVersion: identifier,
+              productId,
+              description: d.resource.description ?? "",
+              host: d.settings.host,
+              basePath: path,
+              pool: d.settings.backend.pool,
+              rule: d.settings.backend.rule ?? "failover",
+              policy: d.settings.policy,
+              ...(d.settings.backend.clientCertRef
+                ? { clientCertRef: d.settings.backend.clientCertRef }
+                : {}),
+              spec: d.resource.kind === "soap" ? spec : parse(spec),
+            });
+            s.setEnvironment(first);
+            close();
+            go(`/${s.application}/apis/${result.resourceId}`);
+          });
+        }}
+      >
+        <p>
+          This publishes a separate API to {first.toUpperCase()}.{" "}
+          <strong>{d.resource.apiVersion}</strong> keeps serving on its own path
+          and keeps its own subscriptions — a key for one does not open the other.
+        </p>
+        <ErrorNotice error={products.error ?? w.error} />
+        <Field label="Version identifier">
+          <input
+            required
+            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+            value={identifier}
+            onChange={(e) => {
+              setIdentifier(e.target.value);
+              setPath(
+                versionedPath(
+                  d.settings?.basePath ?? "",
+                  d.resource.apiVersion,
+                  e.target.value,
+                ),
+              );
+            }}
+          />
+        </Field>
+        <Field label="Public path">
+          <input required value={path} onChange={(e) => setPath(e.target.value)} />
+        </Field>
+        <Field label="Product">
+          <select
+            required
+            value={productId}
+            onChange={(e) => setProduct(e.target.value)}
+          >
+            {!owned.length && <option value="">No product to publish into</option>}
+            {owned.map((p) => (
+              <option key={p.id} value={p.id}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <p className="muted">
+          Carried over: the definition on screen, the {first.toUpperCase()}{" "}
+          backends and the policies. Not carried over: subscriptions, and
+          anything set in a later environment.
+        </p>
+        <button className="btn primary" disabled={w.busy || !productId}>
+          {w.busy ? "Publishing…" : `Publish ${identifier} to ${first.toUpperCase()}`}
+        </button>
+      </form>
+    </Modal>
   );
 }

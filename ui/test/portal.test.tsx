@@ -5,7 +5,9 @@ import {
   APPLICATION_NAV,
   GLOBAL_NAV,
   Portal,
+  parsePath,
 } from "../src/portal/Portal.tsx";
+import { nextVersion, versionedPath } from "../src/portal/apis.tsx";
 import { ROUTES } from "../src/lib/routes.ts";
 import type { Meta, User } from "../src/api.ts";
 
@@ -175,6 +177,51 @@ describe("the portal shell", () => {
     for (const [tab] of ADMIN_NAV) expect(asMember.hrefs, tab).not.toContain(`/${tab}`);
     // The screens that are not admin-only stay: the shell hides authority, not the portal.
     for (const [tab] of GLOBAL_NAV) expect(asMember.hrefs, tab).toContain(`/${tab}`);
+  });
+
+  test("an API address resolves to that API, in either shape", () => {
+    const apps = [{ id: "application_platform" }];
+    // What the shell writes.
+    expect(parsePath("/application_platform/apis/res_1", apps)).toEqual({
+      applicationId: "application_platform",
+      section: "apis",
+      resourceId: "res_1",
+    });
+    // What the route table, a certificate's "Used by" link and an old bookmark write. This used to
+    // resolve to the *list* with the id dropped, so the link looked like it worked and did not.
+    expect(parsePath("/apis/res_1", apps)).toMatchObject({
+      applicationId: null,
+      section: "apis",
+      resourceId: "res_1",
+    });
+    for (const section of ["mcp", "a2a", "discover"])
+      expect(parsePath(`/${section}/res_1`, apps).resourceId, section).toBe("res_1");
+  });
+
+  test("the addresses that are not an API are still not an API", () => {
+    const apps = [{ id: "application_platform" }];
+    // `/apis/new` is the publish route, and `publish` is the shell's own.
+    expect(parsePath("/apis/new", apps).resourceId).toBeNull();
+    expect(parsePath("/application_platform/apis/publish", apps).resourceId).toBeNull();
+    // A section that never carries a resource id keeps its second segment out of it.
+    expect(parsePath("/users/usr_1", apps).resourceId).toBeNull();
+    expect(parsePath("/users/usr_1", apps).section).toBe("users");
+    // No application prefix, no section: the dashboard.
+    expect(parsePath("/", apps).section).toBe("dashboard");
+    expect(parsePath("/application_platform", apps).section).toBe("dashboard");
+    // A query string does not become a segment.
+    expect(parsePath("/apis/res_1?environment=dev", apps).resourceId).toBe("res_1");
+  });
+
+  test("the next version identifier follows the series, and gets its own path", () => {
+    expect(nextVersion(["v1"])).toBe("v2");
+    expect(nextVersion(["v1", "v2", "v10"])).toBe("v11");
+    // An API versioned some other way gets a suffix rather than a guess that collides.
+    expect(nextVersion(["2024-01"])).toBe("2024-01-next");
+    // Both versions serve at once, so the path has to differ.
+    expect(versionedPath("/checkout", "v1", "v2")).toBe("/checkout/v2");
+    expect(versionedPath("/checkout/v1", "v1", "v2")).toBe("/checkout/v2");
+    expect(versionedPath("/checkout/v1/", "v1", "v2")).toBe("/checkout/v2");
   });
 
   test("the simulated integrations are declared in the chrome, not only inside their screens", () => {

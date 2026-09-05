@@ -15,6 +15,7 @@ import { newId, nowIso } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
 import { checkEgress } from "./egress.ts";
+import { readPool, type PoolInput } from "./backend-pool.ts";
 import {
   buildConfig,
   buildRoutes,
@@ -54,7 +55,7 @@ interface OperationRow {
   created_at: string;
   updated_at: string;
 }
-export interface PublishInput {
+export interface PublishInput extends PoolInput {
   applicationId?: string;
   name?: string;
   kind?: string;
@@ -165,7 +166,19 @@ async function settings(
   if (h.errors.length || p.errors.length)
     throw badRequest([...h.errors, ...p.errors].join("; "));
   let backend = defaults?.backend;
-  if (body.backendUrl !== undefined) {
+  // A pool and a single URL are the same field said two ways: `backendUrl` is the one-member
+  // shorthand the publish and promotion forms send, `pool`/`rule` is what the properties form
+  // sends once there is more than one. Both land on the reader the binding endpoint uses, so a
+  // pool cannot mean one thing here and another there.
+  const read = await readPool(body, ctx.app.config.integrations);
+  if (read) {
+    backend = {
+      ...read,
+      ...(defaults?.backend.clientCertRef
+        ? { clientCertRef: defaults.backend.clientCertRef }
+        : {}),
+    };
+  } else if (body.backendUrl !== undefined) {
     const errors = await checkEgress(
       body.backendUrl,
       ctx.app.config.integrations,
@@ -460,6 +473,13 @@ export function registerOperationRoutes(router: Router) {
           "SELECT p.id,p.name FROM product p JOIN product_member pm ON pm.product_id=p.id WHERE pm.resource_id=?",
         )
         .all(row.id),
+      // Every version of this API, so the workspace can offer the switcher and the next identifier
+      // without a second round trip. Siblings are the rows sharing an application and a name.
+      versions: ctx.app.db
+        .query(
+          "SELECT id,api_version AS apiVersion,lifecycle FROM resource WHERE application_id=? AND name=? ORDER BY api_version",
+        )
+        .all(row.application_id, row.name),
     });
   });
   router.add("POST", "/api/resources/:id/configure", "session", async (ctx) => {

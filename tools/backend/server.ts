@@ -27,6 +27,15 @@ export interface BackendOptions {
    * takes the perf run down on a date nobody chose.
    */
   tls?: { certPem: string; keyPem: string };
+  /**
+   * `--mtls`: refuse any connection that does not present a client certificate this CA issued.
+   *
+   * It exists so the gateway's *own* client identity can be tested against something local. Without
+   * a backend that actually asks, attaching a client certificate in the portal is unfalsifiable —
+   * the call succeeds whether or not the gateway presents one, which is exactly the bug such a
+   * setting has. Here, omitting it fails the handshake and the gateway answers 502.
+   */
+  clientCaPem?: string;
   quiet?: boolean;
 }
 
@@ -170,6 +179,9 @@ export class PetstoreBackend {
       this.stats.byStatus[String(response.status)] =
         (this.stats.byStatus[String(response.status)] ?? 0) + 1;
       if (this.options.instance) response.headers.set("x-backend-instance", this.options.instance);
+      // Only reachable through a completed mutual handshake, so it says on the response which
+      // question a 200 just answered.
+      if (this.options.clientCaPem) response.headers.set("x-backend-mtls", "verified");
       return response;
     } finally {
       this.stats.inFlight--;
@@ -422,7 +434,21 @@ export function startBackend(backend: PetstoreBackend) {
     port: backend.options.port,
     idleTimeout: 120,
     ...(backend.options.tls
-      ? { tls: { cert: backend.options.tls.certPem, key: backend.options.tls.keyPem } }
+      ? {
+          tls: {
+            cert: backend.options.tls.certPem,
+            key: backend.options.tls.keyPem,
+            // `rejectUnauthorized` is what makes this a test rather than a decoration: a client
+            // with no certificate, or one from another issuer, does not get a connection at all.
+            ...(backend.options.clientCaPem
+              ? {
+                  ca: backend.options.clientCaPem,
+                  requestCert: true,
+                  rejectUnauthorized: true,
+                }
+              : {}),
+          },
+        }
       : {}),
     fetch(req, server) {
       const url = new URL(req.url);
@@ -481,7 +507,12 @@ function hasFlag(name: string): boolean {
  * or a person can pick the CA up and register it as a trust anchor. This is the backend the trust
  * store exists for — one whose certificate no public store has ever heard of.
  */
-function startTls(): { tls: { certPem: string; keyPem: string }; caPath: string } {
+function startTls(mutual: boolean): {
+  tls: { certPem: string; keyPem: string };
+  caPath: string;
+  clientCaPem?: string;
+  clientPaths?: { cert: string; key: string };
+} {
   const ca = generateCertificate({ cn: "apim-local-backend-ca", ca: true });
   const leaf = generateCertificate({
     cn: "petstore.internal",
@@ -493,7 +524,23 @@ function startTls(): { tls: { certPem: string; keyPem: string }; caPath: string 
   const caPath = flag("tls-ca-out", ".data/backend-ca.pem");
   mkdirSync(dirname(caPath), { recursive: true });
   writeFileSync(caPath, `${ca.certPem}\n`);
-  return { tls: { certPem: leaf.certPem, keyPem: leaf.keyPem }, caPath };
+  const started = { tls: { certPem: leaf.certPem, keyPem: leaf.keyPem }, caPath };
+  if (!mutual) return started;
+
+  // A separate authority from the server's: the two directions of a mutual handshake are two
+  // trust decisions, and sharing one CA would let a mistake in either look like success.
+  const clientCa = generateCertificate({ cn: "apim-local-client-ca", ca: true });
+  const client = generateCertificate({ cn: "gateway-client", issuer: clientCa });
+  const certPath = flag("client-cert-out", ".data/backend-client.crt");
+  const keyPath = flag("client-key-out", ".data/backend-client.key");
+  mkdirSync(dirname(certPath), { recursive: true });
+  writeFileSync(certPath, `${client.certPem}\n`);
+  writeFileSync(keyPath, `${client.keyPem}\n`);
+  return {
+    ...started,
+    clientCaPem: clientCa.certPem,
+    clientPaths: { cert: certPath, key: keyPath },
+  };
 }
 
 export function loadProfiles(path: string | undefined): Profiles {
@@ -507,7 +554,9 @@ export function loadProfiles(path: string | undefined): Profiles {
 
 if (import.meta.main) {
   const port = Number(flag("port", process.env.BACKEND_PORT ?? "9080"));
-  const started = hasFlag("tls") || hasFlag("tls-ca-out") ? startTls() : null;
+  const mutual = hasFlag("mtls");
+  const started =
+    mutual || hasFlag("tls") || hasFlag("tls-ca-out") ? startTls(mutual) : null;
   const backend = new PetstoreBackend(
     {
       port,
@@ -515,6 +564,7 @@ if (import.meta.main) {
       // Defaults to the port, so a pool started without the flag is still distinguishable.
       instance: flag("instance", process.env.BACKEND_INSTANCE ?? `petstore-${port}`),
       ...(started ? { tls: started.tls } : {}),
+      ...(started?.clientCaPem ? { clientCaPem: started.clientCaPem } : {}),
     },
     loadProfiles(process.env.BACKEND_PROFILES),
   );
@@ -529,6 +579,13 @@ if (import.meta.main) {
     console.log(
       `[backend] TLS with a generated internal CA — register ${started.caPath} as a trust anchor ` +
         "for this environment, and the gateway verifies this backend with no TLS exception",
+    );
+  }
+  if (started?.clientPaths) {
+    console.log(
+      `[backend] mutual TLS — this backend refuses the handshake without a client certificate. ` +
+        `Upload ${started.clientPaths.cert} and ${started.clientPaths.key} as a client certificate ` +
+        "and name it on the API's backend; until then the gateway answers 502",
     );
   }
 }

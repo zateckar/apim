@@ -400,6 +400,84 @@ describe("the gateway verifies through the anchor (G4)", () => {
     }
   });
 
+  /**
+   * The other direction of the handshake, and the one nothing could falsify until the local
+   * petstore learned `--mtls`: a `clientCertRef` that reaches the config document proves the
+   * plumbing, not that the gateway presents anything. Here the backend refuses the connection
+   * outright without one, so the 502 and the 200 are the two halves of the same assertion.
+   */
+  test("a backend that demands a client certificate is refused until one is named", async () => {
+    const clientCa = generateCertificate({ cn: "client-root", ca: true });
+    const client = generateCertificate({ cn: "gateway-client", issuer: clientCa });
+    const leaf = generateCertificate({
+      cn: "petstore.internal",
+      issuer: ca,
+      dnsNames: ["localhost", "petstore.internal"],
+      ipAddresses: ["127.0.0.1"],
+    });
+    const server = Bun.serve({
+      port: 0,
+      tls: {
+        cert: leaf.certPem,
+        key: leaf.keyPem,
+        ca: clientCa.certPem,
+        requestCert: true,
+        rejectUnauthorized: true,
+      },
+      fetch: () => Response.json({ available: 1 }),
+    });
+    const backendUrl = `https://127.0.0.1:${server.port}`;
+    const served = serveCp(cp);
+    const alice = await cp.login("alice");
+    const api = await publishApi(cp, { backendUrl });
+    // The server direction is settled first, so what is left is only the client direction.
+    expect((await register(alice)).status).toBe(201);
+    const dp = makeDp(served.url, cp.token, cp.dir);
+    const call = () =>
+      dp.fetchHttp(
+        new Request(`http://gw/${api.name}/store/inventory`, { headers: { "x-api-key": api.key! } }),
+        "127.0.0.1",
+      );
+
+    try {
+      await dp.start();
+      expect(dp.client.table!.trust.liveCount()).toBe(1);
+      // We can verify them; they cannot verify us. The handshake fails from the far side.
+      expect((await call()).status).toBe(502);
+
+      const created = await (
+        await cp.call("POST", "/api/certificates", {
+          cookie: alice,
+          body: {
+            environment: "dev",
+            applicationId: "application_platform",
+            name: "gateway-client",
+            certPem: client.certPem,
+            chainPem: null,
+            keyPem: client.keyPem,
+          },
+        })
+      ).json();
+      const named = await cp.call("PUT", `/api/resources/${api.resourceId}/binding`, {
+        cookie: alice,
+        body: { environment: "dev", urls: [backendUrl], clientCertRef: created.id },
+      });
+      expect(named.status).toBe(200);
+
+      expect(await dp.client.pollOnce()).toBe("updated");
+      expect((await call()).status).toBe(200);
+      // Still no exception anywhere: mutual TLS is verification on both sides, not a hole in it.
+      const exceptions = await (
+        await cp.call("GET", "/api/trust/exceptions", { cookie: alice })
+      ).json();
+      expect(exceptions.items).toEqual([]);
+    } finally {
+      dp.stop();
+      served.stop();
+      server.stop(true);
+    }
+  });
+
   test("TEST is unaffected until the anchor is copied there", async () => {
     const backend = tlsBackend();
     const served = serveCp(cp);

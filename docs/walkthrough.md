@@ -1,5 +1,10 @@
 # Walking the Integration Portal
 
+> **This describes the shell that `ui/src/portal/` replaced.** Its sidebar (My APIs, Teams, a publish
+> wizard at `/apis/new`) and its journey table are no longer what the portal does; the `curl` sections
+> below still hold, because the gateway did not change. For a walkthrough of the current interface use
+> [manual-test-checklist.md](manual-test-checklist.md).
+
 Two ways to see whether this works: by hand, through the interface, with this file closed; and with
 `curl`, against a running gateway.
 

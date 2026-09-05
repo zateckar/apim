@@ -18,6 +18,15 @@ import {
 export interface TargetDef {
   environment: string;
   adapter: string;
+  /**
+   * This gateway's name within its environment, and the same name in every environment it exists
+   * in — `managed`, `onprem`. It is the identity a publish carries along the promotion chain, so
+   * "published on `managed`" still means something two environments later. Defaults to the
+   * adapter, which is what every target was called before an environment could hold several.
+   */
+  name?: string;
+  /** `managed` | `samb` | `other`. Groups the list; decides nothing. */
+  category?: GatewayCategory;
   enforce: boolean;
   paused: boolean;
   config: Record<string, unknown>;
@@ -28,9 +37,20 @@ export interface TargetDef {
    * reasserted itself at every boot would silently undo them.
    */
   publicUrl?: string;
-  /** What to call this deployment: `cloud`, `on-prem`. Seeded the same way, for the same reason. */
+  /**
+   * The same gateway's inside-only address, when it has one. One on-premise deployment commonly
+   * answers on two DNS names — one resolvable from the internet, one only from the corporate
+   * network — and those are two addresses for one gateway rather than two gateways, so both are
+   * shown and publishing binds to the gateway.
+   */
+  intranetUrl?: string;
+  /** What to call this deployment: `Azure Cloud`, `Mladá Boleslav`. Seeded the same way. */
   label?: string;
 }
+
+/** The estate's own vocabulary for what kind of thing a gateway is. */
+export type GatewayCategory = "managed" | "samb" | "other";
+export const GATEWAY_CATEGORIES: readonly GatewayCategory[] = ["managed", "samb", "other"];
 
 /**
  * Where the playground may send a request in an environment (plan §11). Admin configuration, not
@@ -256,8 +276,30 @@ export function readTargets(path: string): TargetDef[] {
   }
   // Parsed at boot rather than at the first click: a malformed entry is a startup failure that
   // names the target, not a 500 the first time somebody presses Send.
+  const seen = new Set<string>();
   for (const target of parsed.targets) {
     parseGatewayUrls(target, `${path}: target "${target.environment}"`);
+    target.name = (target.name ?? target.adapter).trim();
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(target.name)) {
+      throw new Error(
+        `${path}: gateway name "${target.name}" in ${target.environment}: expected lower-case ` +
+          'letters, digits and hyphens, e.g. "managed"',
+      );
+    }
+    // Two gateways with one name in an environment is the schema's unique constraint, and finding
+    // out at boot names the file rather than the SQLite error.
+    const key = `${target.environment}/${target.name}`;
+    if (seen.has(key)) {
+      throw new Error(`${path}: ${target.environment} has two gateways named "${target.name}"`);
+    }
+    seen.add(key);
+    target.category = target.category ?? "other";
+    if (!GATEWAY_CATEGORIES.includes(target.category)) {
+      throw new Error(
+        `${path}: gateway "${key}" category "${target.category}": expected one of ` +
+          GATEWAY_CATEGORIES.join(", "),
+      );
+    }
   }
   return parsed.targets;
 }

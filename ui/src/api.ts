@@ -112,6 +112,12 @@ export interface Meta {
      */
     publicUrl?: string | null;
     gateways?: Array<{ label: string; url: string }>;
+    /**
+     * The gateways an API can be published on here — the localities, not the replicas. Named
+     * apart from `gateways` above, which is the playground's list of places to send a request and
+     * has meant that since v4.
+     */
+    localities?: Locality[];
   }>;
   chain: string[];
   kinds: string[];
@@ -426,22 +432,44 @@ export interface EnvironmentsView {
     maxInstances: number;
     publicUrl: string | null;
     label: string | null;
+    /** Every gateway an API in this environment can be published on. */
+    gateways: Locality[];
   }>;
 }
 
 /** `GET /api/gateways` — the admin screen that adds, publishes and removes a gateway. */
+/** One address a gateway answers on, and who can reach it. */
+export interface GatewayAddress {
+  network: "internet" | "intranet";
+  url: string;
+}
+
+/** A gateway an API can be published on: one environment, one locality, one or two addresses. */
+export interface Locality {
+  name: string;
+  category: string;
+  label: string | null;
+  addresses: GatewayAddress[];
+  paused: boolean;
+}
+
 export interface GatewayRow {
   environment: string;
-  exists: boolean;
-  id: string | null;
-  adapter: string | null;
+  name: string;
+  category: string;
+  id: string;
+  adapter: string;
   label: string | null;
   publicUrl: string | null;
+  intranetUrl: string | null;
+  addresses: GatewayAddress[];
   enforce: boolean;
   paused: boolean;
   replicas: number;
   liveReplicas: number;
   maxReplicas: number;
+  /** How many APIs are published on it — what makes removing one a decision rather than a click. */
+  published: number;
 }
 
 export interface PolicyUnitRow {
@@ -528,7 +556,19 @@ export interface MarketListingDetail extends MarketCard {
     tags?: string[];
     examples?: string[];
   }>;
-  endpoints: Array<{ environment: string; host: string; basePath: string; live: boolean }>;
+  endpoints: Array<{
+    environment: string;
+    host: string;
+    basePath: string;
+    live: boolean;
+    /** Every address it answers at here — one per address of every gateway it is published on. */
+    urls: Array<{
+      gateway: string;
+      label: string | null;
+      network: "internet" | "intranet";
+      url: string;
+    }>;
+  }>;
   example: { environment: string; language: string; text: string } | null;
   versions: Array<{ id: string; api_version: string; lifecycle: string }>;
   traffic: Array<{ windowStart: string; requests: number }>;
@@ -673,12 +713,31 @@ export interface FleetHealth {
     id: string;
     name: string;
     environment: string;
+    /** Which of the environment's gateways this replica belongs to. */
+    gateway: string;
+    targetId: string;
     configDigest: string | null;
     lastSeenAt: string | null;
     revoked: boolean;
     stale: boolean;
     /** Whatever the instance last reported: process gauges, `activationBlocked`, `validation`. */
     process: Record<string, unknown> | null;
+  }>;
+  /** Per locality, because that is where a disagreement between replicas actually lives. */
+  gateways: Array<{
+    name: string;
+    category: string;
+    label: string | null;
+    addresses: GatewayAddress[];
+    paused: boolean;
+    configDigest: string;
+    routes: number;
+    replicas: number;
+    liveReplicas: number;
+    expectedReplicas: number;
+    behindReplicas: number;
+    inSync: boolean;
+    behind: string[];
   }>;
 }
 

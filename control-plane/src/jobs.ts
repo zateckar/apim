@@ -100,9 +100,16 @@ function reconcile(app: App, payload: ReconcilePayload): string {
           "UPDATE release SET state = 'withdrawn' WHERE resource_id = ? AND environment = ? AND state = 'converged'",
           [payload.resourceId, target.environment],
         );
-        db.run("DELETE FROM applied WHERE target_id = ? AND resource_id = ?", [
-          target.id,
+        // Every gateway in the environment, not just the one that happened to be the job's handle:
+        // "withdrawn from TEST" cannot mean "withdrawn from half of TEST".
+        db.run(
+          `DELETE FROM applied WHERE resource_id = ?
+             AND target_id IN (SELECT id FROM target WHERE environment = ?)`,
+          [payload.resourceId, target.environment],
+        );
+        db.run("DELETE FROM route_gateway WHERE resource_id = ? AND environment = ?", [
           payload.resourceId,
+          target.environment,
         ]);
         writeAudit(db, {
           actor: "reconciler",
@@ -177,23 +184,46 @@ function reconcile(app: App, payload: ReconcilePayload): string {
         );
       }
 
-      db.run(
-        `INSERT INTO applied (target_id, resource_id, revision_id, applied_digest, compiler_version, applied_at)
-         VALUES (?, ?, ?, ?, ?, ?)
-         ON CONFLICT (target_id, resource_id) DO UPDATE SET
-           revision_id = excluded.revision_id,
-           applied_digest = excluded.applied_digest,
-           compiler_version = excluded.compiler_version,
-           applied_at = excluded.applied_at`,
-        [
-          target.id,
-          payload.resourceId,
-          release.revision_id,
-          appliedDigest(route),
-          COMPILER_VERSION,
-          nowIso(),
-        ],
-      );
+      // Which gateways it goes on. A release that came through the promotion API has already said
+      // so; one that arrived any other way lands on every gateway the environment has, which is
+      // what "released into TEST" meant before an environment could hold more than one.
+      let bound = db
+        .query<{ target_id: string }, [string, string]>(
+          "SELECT target_id FROM route_gateway WHERE resource_id = ? AND environment = ?",
+        )
+        .all(payload.resourceId, target.environment)
+        .map((r) => r.target_id);
+      if (bound.length === 0) {
+        bound = db
+          .query<{ id: string }, [string]>("SELECT id FROM target WHERE environment = ?")
+          .all(target.environment)
+          .map((r) => r.id);
+        for (const id of bound) {
+          db.run(
+            "INSERT INTO route_gateway (resource_id, environment, target_id) VALUES (?, ?, ?)",
+            [payload.resourceId, target.environment, id],
+          );
+        }
+      }
+      for (const id of bound) {
+        db.run(
+          `INSERT INTO applied (target_id, resource_id, revision_id, applied_digest, compiler_version, applied_at)
+           VALUES (?, ?, ?, ?, ?, ?)
+           ON CONFLICT (target_id, resource_id) DO UPDATE SET
+             revision_id = excluded.revision_id,
+             applied_digest = excluded.applied_digest,
+             compiler_version = excluded.compiler_version,
+             applied_at = excluded.applied_at`,
+          [
+            id,
+            payload.resourceId,
+            release.revision_id,
+            appliedDigest(route),
+            COMPILER_VERSION,
+            nowIso(),
+          ],
+        );
+      }
       writeAudit(db, {
         actor: "reconciler",
         action: "reconcile.apply",

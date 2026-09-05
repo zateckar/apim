@@ -5,6 +5,7 @@ import { badRequest, json, notFound, readJson, requireUser, Router, type Ctx } f
 import { createSubscription } from "./catalog.ts";
 import { environmentOf, pageOf, nextCursor, type ResourceRow } from "./common.ts";
 import { DOMAINS, findDomain } from "../../../shared/domains.ts";
+import { publishedUrlsFor } from "./fleet.ts";
 
 /**
  * The Catalog (goal G6, plan section 11.2) — a marketplace over APIs, MCP servers and A2A agents.
@@ -150,6 +151,10 @@ export function registerMarketRoutes(router: Router): void {
         host: route.host,
         basePath: route.base_path,
         live: card.environments.includes(route.environment),
+        // Every address it actually answers at here: one per address of every gateway it is
+        // published on. A base path alone leaves the consumer to guess the host, and with an
+        // internet name and an intranet name for the same gateway there is no single right guess.
+        urls: publishedUrlsFor(ctx.app.db, row.id, route.environment),
       })),
       // A ready-to-paste call, built from the live route and the key header this route actually
       // requires — an example that does not work is worse than none.

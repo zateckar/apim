@@ -267,6 +267,23 @@ td.upstream { color: var(--danger); }
 .domain-chevron { margin-left: auto; color: var(--muted); }
 .domain-body { padding: 0 18px 14px; }
 
+/* Which gateways an API answers on, and the URLs that produces. */
+.gateway-picker {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
+  margin: 12px 0; display: flex; flex-direction: column; gap: 8px;
+}
+.gateway-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.gateway-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.gateway-option input:disabled { cursor: default; }
+.gateway-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.gateway-option-body > span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.url-list { list-style: none; padding: 0; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
+.url-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.endpoint-block { margin-bottom: 14px; }
+.endpoint-block > h4 { display: flex; align-items: center; gap: 8px; margin: 0 0 6px; }
+.gateway-env { margin-bottom: 24px; }
+.gateway-env > h3 { letter-spacing: .4px; }
+
 .facet-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .facet-label {
   font-size: 11px; text-transform: uppercase; letter-spacing: .6px; color: var(--muted);

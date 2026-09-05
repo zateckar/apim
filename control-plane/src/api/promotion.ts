@@ -211,12 +211,12 @@ export function registerPromotionRoutes(router: Router): void {
       if (used) throw conflict(`plan ${planId} has already been confirmed by release ${used.id}`);
     }
 
+    // Any of the environment's gateways as the job's handle; the reconciler puts the release on
+    // every gateway the resource is bound to, or on all of them when nothing has said otherwise.
     const target = db
-      .query<{ id: string }, [string]>(
-        "SELECT id FROM target WHERE environment = ? AND adapter = 'standalone'",
-      )
+      .query<{ id: string }, [string]>("SELECT id FROM target WHERE environment = ? ORDER BY name")
       .get(environment);
-    if (!target) throw conflict(`no standalone target is configured for ${environment}`);
+    if (!target) throw conflict(`no gateway is configured for ${environment}`);
 
     const releaseId = newId("rel");
     db.run(

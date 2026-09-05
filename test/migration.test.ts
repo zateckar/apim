@@ -56,7 +56,7 @@ describe("migrations", () => {
       const versions = db
         .query("SELECT version FROM schema_version ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6, 7]);
+      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
 
       // schema-007 gives the catalogue its taxonomy and the gateway its published hostname.
       const upgradedColumns = (db.query("PRAGMA table_info(resource)").all() as Array<{ name: string }>)
@@ -66,6 +66,22 @@ describe("migrations", () => {
       const targetColumns = (db.query("PRAGMA table_info(target)").all() as Array<{ name: string }>)
         .map((c) => c.name);
       expect(targetColumns).toContain("public_url");
+
+      // schema-008 rebuilds `target` so an environment can hold several gateways, and gives every
+      // one of them a name. A v1 database has none, so the backfill has nothing to name — what
+      // matters is that the rebuild kept the table and its new shape.
+      expect(targetColumns).toContain("intranet_url");
+      const rebuilt = (db.query("PRAGMA table_info(target)").all() as Array<{ name: string }>)
+        .map((c) => c.name);
+      expect(rebuilt).toContain("name");
+      expect(rebuilt).toContain("category");
+      expect(
+        (db.query("SELECT sql FROM sqlite_master WHERE name = 'target'").get() as { sql: string })
+          .sql,
+      ).toContain("UNIQUE (environment, name)");
+      expect(
+        db.query("SELECT name FROM sqlite_master WHERE name = 'route_gateway'").get(),
+      ).toEqual({ name: "route_gateway" });
       // And it remaps the well-known development application ids, which schema-006 renamed the
       // table around but left spelled `team_…` — the collision that made an upgraded database
       // refuse to boot.
@@ -291,7 +307,7 @@ describe("migrations", () => {
       expect(counts(second)).toEqual(after);
       expect(
         (second.query("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number }).n,
-      ).toBe(7);
+      ).toBe(8);
     } finally {
       second.close();
       rmSync(dir, { recursive: true, force: true });

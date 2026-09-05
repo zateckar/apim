@@ -40,6 +40,13 @@ const MIGRATIONS: Migration[] = [
     // while it runs and `foreign_key_check` decides afterwards whether it succeeded.
     foreignKeysOff: true,
   },
+  {
+    version: 8,
+    name: "an environment has gateways, plural",
+    file: "schema-008.sql",
+    // Rebuilds `target`, which `gateway_instance` and `applied` reference.
+    foreignKeysOff: true,
+  },
 ];
 
 /**

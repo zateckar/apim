@@ -204,43 +204,45 @@ function Overview({ item }: { item: MarketListingDetail }) {
 
       <Card
         title="Where it is live"
-        hint="An environment appears here once a release has converged onto its gateways."
+        hint="An environment appears here once a release has converged onto its gateways. One URL per gateway address: an on-premise deployment usually answers on both an internet and an intranet name, and which one you can reach depends on where you are calling from."
       >
-        <table>
-          <thead>
-            <tr>
-              <th>Environment</th>
-              <th>Host</th>
-              <th>Base path</th>
-              <th>State</th>
-            </tr>
-          </thead>
-          <tbody>
-            {item.endpoints.map((endpoint) => (
-              <tr key={endpoint.environment}>
-                <td>
-                  <strong>{endpoint.environment}</strong>
-                </td>
-                <td className="mono">{endpoint.host === "*" ? "any host" : endpoint.host}</td>
-                <td className="mono">{endpoint.basePath}</td>
-                <td>
-                  {endpoint.live ? (
-                    <span className="badge ok">live</span>
-                  ) : (
-                    <span className="badge">routed, not released</span>
-                  )}
-                </td>
-              </tr>
-            ))}
-            {item.endpoints.length === 0 && (
-              <tr>
-                <td colSpan={4} className="muted">
-                  No routes yet.
-                </td>
-              </tr>
+        {item.endpoints.map((endpoint) => (
+          <div key={endpoint.environment} className="endpoint-block">
+            <h4>
+              {endpoint.environment.toUpperCase()}{" "}
+              {endpoint.live ? (
+                <span className="badge ok">live</span>
+              ) : (
+                <span className="badge">routed, not released</span>
+              )}
+            </h4>
+            {endpoint.urls.length > 0 ? (
+              <ul className="url-list">
+                {endpoint.urls.map((entry) => (
+                  <li key={`${entry.gateway}:${entry.url}`}>
+                    <span className="badge">
+                      {entry.network === "intranet" ? "Intranet" : "Internet"}
+                    </span>
+                    <span className="mono">{entry.url}</span>
+                    <span className="muted small">
+                      {entry.gateway}
+                      {entry.label ? ` · ${entry.label}` : ""}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            ) : (
+              <p className="muted">
+                <span className="mono">
+                  {endpoint.host === "*" ? "" : endpoint.host}
+                  {endpoint.basePath}
+                </span>{" "}
+                — no gateway here has a published address yet, so there is no URL to call.
+              </p>
             )}
-          </tbody>
-        </table>
+          </div>
+        ))}
+        {item.endpoints.length === 0 && <p className="muted">No routes yet.</p>}
       </Card>
 
       {item.a2a && (

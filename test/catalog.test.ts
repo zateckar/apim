@@ -449,9 +449,25 @@ describe("the listing page", () => {
       host: string;
       basePath: string;
       live: boolean;
+      urls: Array<{ gateway: string; label: string | null; network: string; url: string }>;
     }>;
     expect(endpoints).toEqual([
-      { environment: "dev", host: "*", basePath: api.basePath, live: true },
+      {
+        environment: "dev",
+        host: "*",
+        basePath: api.basePath,
+        live: true,
+        // Where it actually answers, not a base path the reader has to prefix themselves: one URL
+        // per address of every gateway it is published on.
+        urls: [
+          {
+            gateway: "local",
+            label: "Workstation",
+            network: "internet",
+            url: `http://127.0.0.1:8081${api.basePath}`,
+          },
+        ],
+      },
     ]);
 
     // The example carries the header this route actually requires. One that named the wrong

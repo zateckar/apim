@@ -25,6 +25,12 @@ import {
   limitsFor,
   policyFor,
 } from "./config-build.ts";
+import {
+  boundGatewayNames,
+  gatewaysIn,
+  publishedUrlsFor,
+  resolveGateways,
+} from "./api/fleet.ts";
 import { writeAudit } from "./audit.ts";
 import { reindexResource } from "./search.ts";
 import { emitIntegration } from "./integrations.ts";
@@ -36,6 +42,13 @@ interface Snapshot {
   basePath: string;
   backend: Record<string, unknown>;
   policy: Record<string, unknown>;
+  /**
+   * Gateway *names*, not target ids. A snapshot travels along the promotion chain, and "published
+   * on `managed` and `onprem`" has to still mean something in the next environment — a DEV target
+   * id means nothing there. Optional so a snapshot written before v8 still parses; the reconciler
+   * reads it as "every gateway this environment has".
+   */
+  gateways?: string[];
   sourceOperationId?: string;
   sourceEnvironment?: string;
   requestDigest?: string;
@@ -76,6 +89,12 @@ export interface PublishInput extends PoolInput {
   /** The taxonomy. Required on publish; on configure, absent means "leave it as it is". */
   domain?: string;
   subdomain?: string | null;
+  /**
+   * Which of the environment's gateways this API answers on, by name. Absent means every gateway
+   * the environment has today — the answer a one-gateway estate would give anyway, and the one a
+   * caller who has never heard of localities means.
+   */
+  gateways?: string[];
 }
 
 /** Where a resource sits in the catalogue's taxonomy, as stored on the resource row. */
@@ -287,7 +306,12 @@ async function settings(
   // control says so rather than the save failing later.
   if (!ctx.user?.isAdmin) {
     const before = defaults?.policy?.["auth.subscriptionKey"] ?? DEFAULT_POLICY["auth.subscriptionKey"];
-    if (JSON.stringify(policy["auth.subscriptionKey"] ?? null) !== JSON.stringify(before)) {
+    // Only a document that actually carries the unit can be trying to change it. The unit is
+    // stored explicitly once somebody has set it and not before, so reading its *absence* as an
+    // attempt to remove it refused every save that had nothing to do with policy at all — a
+    // description, a backend, a gateway selection — for any API nobody had touched it on.
+    const sent = body.policy?.["auth.subscriptionKey"];
+    if (sent !== undefined && JSON.stringify(sent) !== JSON.stringify(before)) {
       throw badRequest(
         "auth.subscriptionKey: only an administrator can change whether this API requires a " +
           "subscription key",
@@ -297,7 +321,56 @@ async function settings(
   }
   const errors = validateDocument(policy, { kind });
   if (errors.length) throw badRequest(errors.join("; "));
-  return { host: h.host, basePath: p.basePath, backend, policy };
+  return {
+    host: h.host,
+    basePath: p.basePath,
+    backend,
+    policy,
+    gateways: readGateways(ctx, environment, body.gateways ?? defaults?.gateways),
+  };
+}
+
+/**
+ * Which gateways this API answers on in this environment.
+ *
+ * Absent means all of them, because that is what publishing meant before an environment could
+ * hold more than one and it is what somebody who has not thought about localities intends. An
+ * explicit empty list is refused rather than quietly widened: "published on no gateway" is an API
+ * with an address nobody can reach, and the person who ticked every box off should be told so
+ * here rather than discover it from a 404.
+ */
+function readGateways(
+  ctx: Ctx,
+  environment: string,
+  requested: string[] | undefined,
+): string[] {
+  const available = gatewaysIn(ctx.app.db, environment);
+  if (available.length === 0) {
+    throw badRequest(
+      `${environment.toUpperCase()} has no gateway to publish on; an administrator adds one on ` +
+        "the Gateways screen",
+    );
+  }
+  if (requested === undefined) return available.map((t) => t.name);
+  if (!Array.isArray(requested)) throw badRequest("gateways: expected an array of gateway names");
+  const names = [...new Set(requested.map((n) => String(n).trim()).filter(Boolean))];
+  if (names.length === 0) {
+    throw badRequest(
+      `gateways: an API must be published on at least one gateway (${environment.toUpperCase()} ` +
+        `has ${available.map((t) => t.name).join(", ")})`,
+    );
+  }
+  const unknown = names.filter((n) => !available.some((t) => t.name === n));
+  if (unknown.length > 0) {
+    throw badRequest(
+      `gateways: ${environment.toUpperCase()} has no gateway named ` +
+        `${unknown.map((n) => `"${n}"`).join(", ")} (it has ` +
+        `${available.map((t) => t.name).join(", ")})`,
+    );
+  }
+  // Sorted so the same selection always produces the same snapshot, and an idempotency digest
+  // over it cannot depend on the order the checkboxes were ticked in.
+  return names.sort();
 }
 function currentSnapshot(
   ctx: Ctx,
@@ -332,6 +405,9 @@ function currentSnapshot(
     basePath: route.base_path,
     backend: JSON.parse(binding.backend_json),
     policy: policyFor(ctx.app.db, id, environment),
+    // Read back from the binding rows rather than remembered, so a configure that says nothing
+    // about gateways leaves the API exactly where it is answering.
+    gateways: boundGatewayNames(ctx.app.db, id, environment),
   };
 }
 function assertRouteFree(
@@ -556,9 +632,19 @@ export function registerOperationRoutes(router: Router) {
               basePath: snapshot.basePath,
               backend: snapshot.backend,
               policy: snapshot.policy,
+              gateways: snapshot.gateways ?? [],
             }
-          : { host: snapshot.host, basePath: snapshot.basePath, redacted: true }
+          : {
+              host: snapshot.host,
+              basePath: snapshot.basePath,
+              // Which gateways it answers on is not topology: it is half of the address, and
+              // every URL on this screen is built from it.
+              gateways: snapshot.gateways ?? [],
+              redacted: true,
+            }
         : null,
+      /** Where it actually answers here: one entry per address of every gateway it is on. */
+      urls: publishedUrlsFor(ctx.app.db, row.id, environment),
       published: Boolean(snapshot),
       definition,
       products: ctx.app.db
@@ -670,6 +756,10 @@ export function registerOperationRoutes(router: Router) {
       host: target?.host ?? source.host,
       basePath: target?.basePath ?? source.basePath,
       policy: override ? JSON.parse(override.policy_json) : source.policy,
+      // Where it is already answering here, if anywhere. Not carried over from the source: the
+      // gateway names may not line up across environments, and a promotion into a locality this
+      // environment does not have is a decision, not a default.
+      gateways: target?.gateways,
     };
     if (!target && !body.backendUrl)
       throw badRequest(
@@ -701,28 +791,37 @@ export function registerOperationRoutes(router: Router) {
   });
 }
 
-/** A current complete configuration must be acknowledged by every non-revoked instance. */
+/**
+ * A current complete configuration must be acknowledged by every non-revoked instance — each
+ * against its own gateway's document, because two gateways in one environment serve different
+ * subsets of it and comparing both to the union would say "behind" forever.
+ */
 export function fleetApplied(app: App, environment: string): boolean {
-  const desired = buildConfig(
-    app.db,
-    app.kek,
-    environment,
-    app.config.integrations,
-  );
-  if (desired.errors.length) return false;
+  if (buildConfig(app.db, app.kek, environment, app.config.integrations).errors.length) {
+    return false;
+  }
+  const targets = gatewaysIn(app.db, environment);
   const instances = app.db
     .query<
-      { config_digest: string | null; last_seen_at: string | null },
+      { target_id: string; config_digest: string | null; last_seen_at: string | null },
       [string]
     >(
-      `SELECT gi.config_digest,gi.last_seen_at FROM gateway_instance gi JOIN target t ON t.id=gi.target_id WHERE t.environment=? AND gi.revoked_at IS NULL`,
+      `SELECT gi.target_id,gi.config_digest,gi.last_seen_at FROM gateway_instance gi JOIN target t ON t.id=gi.target_id WHERE t.environment=? AND gi.revoked_at IS NULL`,
     )
     .all(environment);
+  const digests = new Map(
+    targets.map((t) => [
+      t.id,
+      targets.length === 1
+        ? buildConfig(app.db, app.kek, environment, app.config.integrations).digest
+        : buildConfig(app.db, app.kek, environment, app.config.integrations, t.id).digest,
+    ]),
+  );
   return (
     instances.length > 0 &&
     instances.every(
       (i) =>
-        i.config_digest === desired.digest &&
+        i.config_digest === digests.get(i.target_id) &&
         i.last_seen_at &&
         Date.now() - Date.parse(i.last_seen_at) < 120000,
     )
@@ -758,15 +857,39 @@ export function runOperations(app: App): void {
           !fleetApplied(app, snapshot.sourceEnvironment)
         )
           return;
-        const target = db
-          .query<{ id: string; paused: number }, [string]>(
-            "SELECT id,paused FROM target WHERE environment=? AND adapter='standalone'",
+        // Which gateways this operation puts the API on. Names, resolved here rather than at
+        // request time, because the row it writes has to be the one that exists now — a gateway
+        // could have been removed while the operation sat in the queue.
+        const chosen = snapshot.gateways
+          ? resolveGateways(db, operation.environment, snapshot.gateways)
+          : {
+              ids: gatewaysIn(db, operation.environment).map((t) => t.id),
+              missing: [] as string[],
+            };
+        if (chosen.missing.length > 0)
+          throw new Error(
+            `${operation.environment.toUpperCase()} has no gateway named ` +
+              `${chosen.missing.map((n) => `"${n}"`).join(", ")}.`,
+          );
+        if (chosen.ids.length === 0)
+          throw new Error(
+            "Environment has no gateway to publish on; deployment will resume automatically.",
+          );
+        const targets = db
+          .query<{ id: string; paused: number }, string[]>(
+            `SELECT id,paused FROM target WHERE environment=? AND id IN (${chosen.ids
+              .map(() => "?")
+              .join(",")})`,
           )
-          .get(operation.environment);
-        if (!target || target.paused)
+          .all(operation.environment, ...chosen.ids);
+        // Every chosen gateway has to be able to take it. Deploying to the half that is running
+        // would leave the API answering in one locality and not the other, which is the one state
+        // "published on both" must never quietly mean.
+        if (targets.length === 0 || targets.some((t) => t.paused))
           throw new Error(
             "Environment is unavailable; deployment will resume automatically.",
           );
+        const target = targets[0]!;
         db.run(
           "INSERT INTO route(resource_id,environment,host,base_path) VALUES (?,?,?,?) ON CONFLICT(resource_id,environment) DO UPDATE SET host=excluded.host,base_path=excluded.base_path",
           [
@@ -776,6 +899,17 @@ export function runOperations(app: App): void {
             snapshot.basePath,
           ],
         );
+        // Replaced wholesale rather than merged: the snapshot is the whole answer to "where does
+        // this answer", so a gateway dropped from the selection has to stop being told about it.
+        db.run("DELETE FROM route_gateway WHERE resource_id=? AND environment=?", [
+          operation.resource_id,
+          operation.environment,
+        ]);
+        for (const id of chosen.ids)
+          db.run(
+            "INSERT INTO route_gateway(resource_id,environment,target_id) VALUES (?,?,?)",
+            [operation.resource_id, operation.environment, id],
+          );
         db.run(
           "INSERT INTO binding(resource_id,environment,backend_json) VALUES (?,?,?) ON CONFLICT(resource_id,environment) DO UPDATE SET backend_json=excluded.backend_json",
           [
@@ -846,16 +980,27 @@ export function runOperations(app: App): void {
           operation.environment,
           app.config.integrations,
         );
+        // One row per gateway it was put on: `applied` answers "what does this gateway have", and
+        // with several in an environment that is a different answer per gateway.
+        for (const id of chosen.ids)
+          db.run(
+            `INSERT INTO applied(target_id,resource_id,revision_id,applied_digest,compiler_version,applied_at) VALUES (?,?,?,?,?,?) ON CONFLICT(target_id,resource_id) DO UPDATE SET revision_id=excluded.revision_id,applied_digest=excluded.applied_digest,compiler_version=excluded.compiler_version,applied_at=excluded.applied_at`,
+            [
+              id,
+              operation.resource_id,
+              snapshot.revisionId,
+              appliedDigest(route),
+              COMPILER_VERSION,
+              nowIso(),
+            ],
+          );
+        // And none for a gateway it has just been taken off.
         db.run(
-          `INSERT INTO applied(target_id,resource_id,revision_id,applied_digest,compiler_version,applied_at) VALUES (?,?,?,?,?,?) ON CONFLICT(target_id,resource_id) DO UPDATE SET revision_id=excluded.revision_id,applied_digest=excluded.applied_digest,compiler_version=excluded.compiler_version,applied_at=excluded.applied_at`,
-          [
-            target.id,
-            operation.resource_id,
-            snapshot.revisionId,
-            appliedDigest(route),
-            COMPILER_VERSION,
-            nowIso(),
-          ],
+          `DELETE FROM applied WHERE resource_id=? AND target_id IN (
+             SELECT id FROM target WHERE environment=? AND id NOT IN (${chosen.ids
+               .map(() => "?")
+               .join(",")}))`,
+          [operation.resource_id, operation.environment, ...chosen.ids],
         );
         db.run(
           "UPDATE operation SET state='waiting-for-gateways',error=NULL,result_json=?,updated_at=? WHERE id=?",

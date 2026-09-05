@@ -3,7 +3,7 @@ import { RESOURCE_KINDS } from "../../../shared/types.ts";
 import { gatewayUrlsFor } from "../config.ts";
 import { displayNames } from "../principals.ts";
 import { badRequest, json, requireAdmin, notFound, Router } from "../router.ts";
-import { instancesFor, publicGatewayUrl } from "./fleet.ts";
+import { gatewayAddresses, gatewaysIn, instancesFor, publicGatewayUrl } from "./fleet.ts";
 
 export function registerAdminRoutes(router: Router): void {
   /**
@@ -41,6 +41,18 @@ export function registerAdminRoutes(router: Router): void {
           : publicUrl
             ? [{ label: environment, url: publicUrl }]
             : replicas,
+        /**
+         * The gateways an API can be published on here — the localities, not the replicas. Named
+         * separately from `gateways` above, which is the playground's list of places to send a
+         * request and has meant that since v4; renaming either would have broken the other.
+         */
+        localities: gatewaysIn(ctx.app.db, environment).map((t) => ({
+          name: t.name,
+          category: t.category,
+          label: t.label,
+          addresses: gatewayAddresses(t),
+          paused: Boolean(t.paused),
+        })),
       };
     });
     return json({
@@ -59,7 +71,10 @@ export function registerAdminRoutes(router: Router): void {
   router.add("GET", "/api/targets", "session", (ctx) =>
     json({
       items: ctx.app.db
-        .query("SELECT id, environment, adapter, enforce, paused FROM target ORDER BY environment, adapter")
+        .query(
+          `SELECT id, environment, name, category, adapter, enforce, paused
+             FROM target ORDER BY environment, name`,
+        )
         .all(),
     }),
   );

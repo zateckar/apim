@@ -2,7 +2,7 @@ import { PolicyForm } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { useState } from "react";
 import type { Session } from "../App";
-import { api } from "../api";
+import { api, type Locality } from "../api";
 import { go, useAsync } from "../components";
 import { parse } from "yaml";
 import CodeMirror from "@uiw/react-codemirror";
@@ -87,6 +87,148 @@ export function DomainPicker({
         </select>
       </Field>
     </>
+  );
+}
+
+/**
+ * Which of an environment's gateways an API answers on.
+ *
+ * An environment can be served from more than one place — a managed gateway in the cloud, an
+ * on-premise one — and the choice is per API and per environment. It is a checkbox list rather
+ * than a dropdown because the answer is usually "both", and it refuses to reach zero: an API on
+ * no gateway has an address nobody can call, which is not a state anyone means to be in.
+ *
+ * A locality's addresses are shown beside it, badged, because "on-premise" tells you nothing
+ * about what a consumer will type and the URL does.
+ */
+export function GatewayPicker({
+  localities,
+  selected,
+  environment,
+  onChange,
+  disabled,
+}: {
+  localities: Locality[];
+  selected: string[];
+  environment: string;
+  onChange: (next: string[]) => void;
+  disabled?: boolean;
+}) {
+  if (localities.length === 0) {
+    return (
+      <p className="muted">
+        {environment.toUpperCase()} has no gateway. An administrator adds one on the Gateways
+        screen; until then nothing published here is served.
+      </p>
+    );
+  }
+  // With one gateway there is no choice to make, so the control would be a checkbox that cannot
+  // be unticked. It says where the API answers instead.
+  if (localities.length === 1) {
+    return (
+      <p className="muted">
+        Published on <strong>{localities[0]!.name}</strong>
+        {localities[0]!.label ? ` · ${localities[0]!.label}` : ""} — the only gateway{" "}
+        {environment.toUpperCase()} has.
+      </p>
+    );
+  }
+  return (
+    <div className="gateway-picker">
+      <div className="gateway-picker-head">
+        <strong>Gateways</strong>
+        <span className="muted small">
+          {selected.length} of {localities.length} selected · {environment.toUpperCase()}
+        </span>
+      </div>
+      {localities.map((locality) => {
+        const on = selected.includes(locality.name);
+        // The last one standing cannot be unticked; the reason is on the line below the list.
+        const locked = on && selected.length === 1;
+        return (
+          <label key={locality.name} className="gateway-option">
+            <input
+              type="checkbox"
+              checked={on}
+              disabled={disabled || locked}
+              onChange={() =>
+                onChange(
+                  on
+                    ? selected.filter((n) => n !== locality.name)
+                    : [...selected, locality.name].sort(),
+                )
+              }
+            />
+            <span className="gateway-option-body">
+              <span>
+                <strong>{locality.name}</strong>
+                {locality.label ? <span className="muted"> · {locality.label}</span> : null}
+                {locality.paused && <span className="badge warn">paused</span>}
+              </span>
+              {locality.addresses.length === 0 ? (
+                <span className="muted small">no published address yet</span>
+              ) : (
+                locality.addresses.map((address) => (
+                  <span key={address.url} className="muted small mono">
+                    <span className="badge">
+                      {address.network === "intranet" ? "Intranet" : "Internet"}
+                    </span>{" "}
+                    {address.url}
+                  </span>
+                ))
+              )}
+            </span>
+          </label>
+        );
+      })}
+      <p className="hint">An API must be published on at least one gateway.</p>
+    </div>
+  );
+}
+
+/**
+ * Every URL this API answers at — one per address of every gateway it is published on.
+ *
+ * Not one URL with a placeholder host. A consumer inside the network and a consumer outside it
+ * are given different names for the same gateway, and an API on two localities has four addresses
+ * rather than one; showing a single line meant somebody had to know which of them applied to them,
+ * which is exactly the thing a portal exists to answer.
+ */
+export function PathPreview({
+  localities,
+  selected,
+  path,
+}: {
+  localities: Locality[];
+  selected: string[];
+  path: string;
+}) {
+  const urls = localities
+    .filter((l) => selected.includes(l.name))
+    .flatMap((l) => l.addresses.map((a) => ({ ...a, gateway: l.name })));
+  if (urls.length === 0) {
+    return (
+      <p className="muted">
+        This API will answer at <span className="mono">{path}</span> on every gateway it is
+        published on. None of them has a published address yet, so there is no URL to show.
+      </p>
+    );
+  }
+  return (
+    <ul className="url-list">
+      {urls.map((entry) => (
+        <li key={`${entry.gateway}:${entry.url}`}>
+          <span className="badge">
+            {entry.network === "intranet" ? "Intranet" : "Internet"}
+          </span>
+          <span className="mono">
+            {entry.url}
+            {path}
+          </span>
+          <span className="muted small">{entry.gateway}</span>
+        </li>
+      ))}
+    </ul>
   );
 }
 
@@ -213,6 +355,13 @@ export function Publish({ session: s }: { session: Session }) {
     [source, setSource] = useState("text"),
     [url, setUrl] = useState(""),
     [spec, setSpec] = useState("");
+  const first = s.meta.chain[0]!;
+  const localities = s.meta.environments.find((e) => e.environment === first)?.localities ?? [];
+  // Everything the environment has, until somebody narrows it: publishing on every gateway is
+  // what a one-gateway estate does anyway, and it is what somebody who has not thought about
+  // localities means.
+  const [gateways, setGateways] = useState<string[] | null>(null);
+  const selected = gateways ?? localities.map((l) => l.name);
   return (
     <Panel title="Publish to DEV">
       <form
@@ -231,6 +380,7 @@ export function Publish({ session: s }: { session: Session }) {
               // Derived, never typed: the same function the control plane validates against, so
               // what the preview above the button says is what the gateway will answer on.
               basePath: publishedPath({ domain, subdomain, name, apiVersion }),
+              gateways: selected,
               ...(productId ? { productId } : { productName }),
             };
             if (source === "url")
@@ -316,16 +466,21 @@ export function Publish({ session: s }: { session: Session }) {
             }}
           />
         </div>
+        <GatewayPicker
+          localities={localities}
+          selected={selected}
+          environment={first}
+          onChange={setGateways}
+        />
+        <PathPreview
+          localities={localities}
+          selected={selected}
+          path={
+            domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
+          }
+        />
         <p className="muted">
-          This API will answer at{" "}
-          <span className="mono">
-            {(s.meta.environments.find((e) => e.environment === s.meta.chain[0])?.publicUrl ??
-              "https://<gateway>") +
-              (domain
-                ? publishedPath({ domain, subdomain, name: name || "api", apiVersion })
-                : "/…")}
-          </span>
-          . The domain is the first segment of the address and the version is the last, which is
+          The domain is the first segment of the address and the version is the last, which is
           what makes the catalog browsable by domain and a URL legible without looking anything up.
         </p>
         <Field label="Description">
@@ -465,6 +620,15 @@ function EditorForm({
     d.versions ?? [];
   const environmentMeta = s.meta.environments.find(
     (e) => e.environment === s.environment,
+  );
+  const localities = environmentMeta?.localities ?? [];
+  // Where it answers today. Falling back to every gateway rather than to none: a row published
+  // before an environment could hold more than one is on all of them, and an empty list here
+  // would read as "on nothing" and refuse the next save.
+  const [gateways, setGateways] = useState<string[]>(() =>
+    (d.settings?.gateways ?? []).length
+      ? [...d.settings.gateways]
+      : localities.map((l: Locality) => l.name),
   );
   /**
    * The address, derived from the taxonomy rather than typed, and always ending in the version —
@@ -720,11 +884,18 @@ function EditorForm({
                 anybody calling the old address has to be told.
               </p>
             )}
+            <GatewayPicker
+              localities={localities}
+              selected={gateways}
+              environment={s.environment}
+              disabled={!d.resource.canEdit}
+              onChange={setGateways}
+            />
+            <PathPreview localities={localities} selected={gateways} path={basePath} />
             <p className="muted">
-              {(environmentMeta?.publicUrl ?? "https://<gateway>") + basePath} —
-              the address consumers are given in {s.environment.toUpperCase()}.
-              It is the gateway's published hostname; its replicas are behind it
-              and are never addressed directly.
+              These are the addresses consumers are given in {s.environment.toUpperCase()}. Each
+              is a gateway's published hostname; its replicas are behind it and are never
+              addressed directly.
             </p>
             <ErrorNotice error={certificates.error} />
           </div>
@@ -791,6 +962,7 @@ function EditorForm({
                     domain,
                     subdomain: subdomain || null,
                     basePath,
+                    gateways,
                   };
                   if (certificate !== (d.settings.backend.clientCertRef ?? ""))
                     body.clientCertRef = certificate || null;

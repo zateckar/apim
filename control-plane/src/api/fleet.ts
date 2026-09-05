@@ -1,5 +1,6 @@
 import { writeAudit } from "../audit.ts";
 import { buildConfig } from "../config-build.ts";
+import { GATEWAY_CATEGORIES } from "../config.ts";
 import { hashToken, mintInstanceToken } from "../crypto.ts";
 import { newId, nowIso, type DB } from "../db.ts";
 import {
@@ -24,6 +25,9 @@ export interface InstanceView {
   id: string;
   name: string;
   environment: string;
+  /** Which of the environment's gateways this replica belongs to. */
+  gateway: string;
+  targetId: string;
   configDigest: string | null;
   lastSeenAt: string | null;
   revoked: boolean;
@@ -39,6 +43,8 @@ export function instancesFor(ctx: Ctx, environment?: string): InstanceView[] {
         id: string;
         name: string;
         environment: string;
+        gateway: string;
+        target_id: string;
         config_digest: string | null;
         last_seen_at: string | null;
         revoked_at: string | null;
@@ -46,11 +52,11 @@ export function instancesFor(ctx: Ctx, environment?: string): InstanceView[] {
       },
       never[]
     >(
-      `SELECT gi.id, gi.name, t.environment, gi.config_digest, gi.last_seen_at, gi.revoked_at,
-              gi.process_json
+      `SELECT gi.id, gi.name, t.environment, t.name AS gateway, gi.target_id,
+              gi.config_digest, gi.last_seen_at, gi.revoked_at, gi.process_json
          FROM gateway_instance gi JOIN target t ON t.id = gi.target_id
         ${environment ? "WHERE t.environment = ?" : ""}
-        ORDER BY t.environment, gi.name`,
+        ORDER BY t.environment, t.name, gi.name`,
     )
     .all(...((environment ? [environment] : []) as never[]));
 
@@ -58,6 +64,8 @@ export function instancesFor(ctx: Ctx, environment?: string): InstanceView[] {
     id: row.id,
     name: row.name,
     environment: row.environment,
+    gateway: row.gateway,
+    targetId: row.target_id,
     configDigest: row.config_digest,
     lastSeenAt: row.last_seen_at,
     revoked: Boolean(row.revoked_at),
@@ -66,31 +74,78 @@ export function instancesFor(ctx: Ctx, environment?: string): InstanceView[] {
   }));
 }
 
-interface TargetRow {
+export interface TargetRow {
   id: string;
+  environment: string;
+  name: string;
+  category: string;
   adapter: string;
   enforce: number;
   paused: number;
   public_url: string | null;
+  intranet_url: string | null;
   label: string | null;
 }
 
-const TARGET_COLUMNS = "id, adapter, enforce, paused, public_url, label";
+const TARGET_COLUMNS =
+  "id, environment, name, category, adapter, enforce, paused, public_url, intranet_url, label";
+
+/**
+ * Every gateway in an environment, in the order the estate reads them: managed first, on-premise
+ * next, everything else after, and alphabetical within a group so the list does not reshuffle
+ * itself when a gateway is renamed.
+ */
+export function gatewaysIn(db: DB, environment: string): TargetRow[] {
+  return db
+    .query<TargetRow, [string]>(
+      `SELECT ${TARGET_COLUMNS} FROM target WHERE environment = ?
+        ORDER BY CASE category WHEN 'managed' THEN 0 WHEN 'samb' THEN 1 ELSE 2 END, name`,
+    )
+    .all(environment);
+}
 
 function findTarget(ctx: Ctx, environment: string): TargetRow | null {
-  return (
-    ctx.app.db
-      .query<TargetRow, [string]>(
-        `SELECT ${TARGET_COLUMNS} FROM target WHERE environment = ? AND adapter = 'standalone'`,
-      )
-      .get(environment) ?? null
-  );
+  return gatewaysIn(ctx.app.db, environment)[0] ?? null;
+}
+
+function gatewayIn(ctx: Ctx, environment: string, name: string): TargetRow {
+  const row = ctx.app.db
+    .query<TargetRow, [string, string]>(
+      `SELECT ${TARGET_COLUMNS} FROM target WHERE environment = ? AND name = ?`,
+    )
+    .get(environment, name);
+  if (!row) throw notFound(`no gateway "${name}" in ${environment}`);
+  return row;
 }
 
 function targetFor(ctx: Ctx, environment: string): TargetRow {
   const target = findTarget(ctx, environment);
-  if (!target) throw notFound(`no standalone target for ${environment}`);
+  if (!target) throw notFound(`no gateway for ${environment}`);
   return target;
+}
+
+/** Strip the trailing slash so a URL and a base path never join into a double one. */
+function trimUrl(url: string | null): string | null {
+  return url ? url.replace(/\/+$/, "") : null;
+}
+
+/**
+ * Both addresses a gateway answers on, in the shape the portal shows them.
+ *
+ * One on-premise deployment commonly has two DNS names — one resolvable from the internet, one
+ * only from inside — and they are two addresses for one gateway rather than two gateways. So both
+ * appear against the same row, badged, and publishing binds to the gateway.
+ */
+export function gatewayAddresses(target: {
+  public_url: string | null;
+  intranet_url: string | null;
+}): Array<{ network: "internet" | "intranet"; url: string }> {
+  const out: Array<{ network: "internet" | "intranet"; url: string }> = [];
+  const internet = trimUrl(target.public_url);
+  const intranet = trimUrl(target.intranet_url);
+  if (internet) out.push({ network: "internet", url: internet });
+  if (intranet) out.push({ network: "intranet", url: intranet });
+  return out;
 }
 
 /**
@@ -99,52 +154,135 @@ function targetFor(ctx: Ctx, environment: string): TargetRow {
  * A gateway in one environment and one locality runs as several replicas behind a TLS-terminating
  * L7 proxy. The replicas are an operational fact — admins mint their tokens and watch them
  * converge — and a consumer who learned one of their addresses would be holding a URL that stops
- * working the next time the fleet is resized. So exactly one address is published, and it is this
- * one.
+ * working the next time the fleet is resized. So a replica's address is never published.
+ *
+ * Where an environment has several gateways this returns the first one's, which is what a caller
+ * with nothing else to go on should try; anything that knows *which* API it is asking about should
+ * use `publishedUrlsFor` instead and get every address the API is actually reachable at.
  */
 export function publicGatewayUrl(db: DB, environment: string): string | null {
-  const url =
-    db
-      .query<{ public_url: string | null }, [string]>(
-        "SELECT public_url FROM target WHERE environment = ? AND adapter = 'standalone'",
-      )
-      .get(environment)?.public_url ?? null;
-  return url ? url.replace(/\/+$/, "") : null;
+  for (const target of gatewaysIn(db, environment)) {
+    const first = gatewayAddresses(target)[0];
+    if (first) return first.url;
+  }
+  return null;
+}
+
+/**
+ * Where one API answers in one environment: every address of every gateway it is published on,
+ * with the base path already appended. This is the list the Properties screen shows, and the
+ * reason a URL there is worth trusting — it is derived from the binding rows the fleet is served
+ * from, not from a hostname somebody typed beside the API.
+ */
+export function publishedUrlsFor(
+  db: DB,
+  resourceId: string,
+  environment: string,
+): Array<{ gateway: string; label: string | null; network: "internet" | "intranet"; url: string }> {
+  const route = db
+    .query<{ base_path: string }, [string, string]>(
+      "SELECT base_path FROM route WHERE resource_id = ? AND environment = ?",
+    )
+    .get(resourceId, environment);
+  if (!route) return [];
+  const targets = db
+    .query<TargetRow, [string, string]>(
+      `SELECT ${TARGET_COLUMNS.split(", ")
+        .map((c) => `t.${c}`)
+        .join(", ")}
+         FROM route_gateway rg JOIN target t ON t.id = rg.target_id
+        WHERE rg.resource_id = ? AND rg.environment = ?
+        ORDER BY CASE t.category WHEN 'managed' THEN 0 WHEN 'samb' THEN 1 ELSE 2 END, t.name`,
+    )
+    .all(resourceId, environment);
+  return targets.flatMap((target) =>
+    gatewayAddresses(target).map((address) => ({
+      gateway: target.name,
+      label: target.label,
+      network: address.network,
+      url: `${address.url}${route.base_path}`,
+    })),
+  );
+}
+
+/**
+ * Turn the gateway *names* a publish carried into this environment's target ids.
+ *
+ * Names rather than ids because a publish travels: "published on `managed` and `onprem`" has to
+ * still mean something in TEST, and a DEV target id means nothing there. A name that does not
+ * exist in the destination is refused rather than dropped — silently publishing on fewer gateways
+ * than were asked for is how an API goes missing in one locality and nobody finds out.
+ */
+export function resolveGateways(
+  db: DB,
+  environment: string,
+  names: string[],
+): { ids: string[]; missing: string[] } {
+  const known = new Map(gatewaysIn(db, environment).map((t) => [t.name, t.id]));
+  const ids: string[] = [];
+  const missing: string[] = [];
+  for (const name of names) {
+    const id = known.get(name);
+    if (id) ids.push(id);
+    else missing.push(name);
+  }
+  return { ids, missing };
+}
+
+/** Which gateways an API is currently published on in an environment, by name. */
+export function boundGatewayNames(db: DB, resourceId: string, environment: string): string[] {
+  return db
+    .query<{ name: string }, [string, string]>(
+      `SELECT t.name FROM route_gateway rg JOIN target t ON t.id = rg.target_id
+        WHERE rg.resource_id = ? AND rg.environment = ? ORDER BY t.name`,
+    )
+    .all(resourceId, environment)
+    .map((r) => r.name);
 }
 
 /** Reject anything that is not an origin with an optional path prefix. */
-function readPublicUrl(value: unknown): string | null {
+function readPublicUrl(value: unknown, field = "publicUrl"): string | null {
   if (value === null || value === undefined || value === "") return null;
   let url: URL;
   try {
     url = new URL(String(value));
   } catch {
-    throw badRequest("publicUrl: expected an absolute http or https URL, e.g. https://api.example");
+    throw badRequest(`${field}: expected an absolute http or https URL, e.g. https://api.example`);
   }
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw badRequest("publicUrl: expected http or https");
+    throw badRequest(`${field}: expected http or https`);
   }
   if (url.search || url.hash) {
-    throw badRequest("publicUrl: an origin with an optional path prefix, no query string");
+    throw badRequest(`${field}: an origin with an optional path prefix, no query string`);
   }
   return url.href.replace(/\/+$/, "");
 }
 
-function gatewayView(ctx: Ctx, environment: string, target: TargetRow | null) {
-  const instances = target ? instancesFor(ctx, environment) : [];
+function gatewayView(ctx: Ctx, target: TargetRow) {
+  const instances = instancesFor(ctx, target.environment).filter((i) => i.targetId === target.id);
   const live = instances.filter((i) => !i.stale && !i.revoked);
+  const published = ctx.app.db
+    .query<{ n: number }, [string]>(
+      "SELECT COUNT(*) AS n FROM route_gateway WHERE target_id = ?",
+    )
+    .get(target.id)!.n;
   return {
-    environment,
-    exists: Boolean(target),
-    id: target?.id ?? null,
-    adapter: target?.adapter ?? null,
-    label: target?.label ?? null,
-    publicUrl: target?.public_url ?? null,
-    enforce: target ? Boolean(target.enforce) : false,
-    paused: target ? Boolean(target.paused) : false,
+    environment: target.environment,
+    name: target.name,
+    category: target.category,
+    id: target.id,
+    adapter: target.adapter,
+    label: target.label,
+    publicUrl: target.public_url,
+    intranetUrl: target.intranet_url,
+    addresses: gatewayAddresses(target),
+    enforce: Boolean(target.enforce),
+    paused: Boolean(target.paused),
     replicas: instances.length,
     liveReplicas: live.length,
     maxReplicas: ctx.app.config.maxInstancesPerTarget,
+    /** How many APIs are published on it — what makes removing one a decision rather than a click. */
+    published,
   };
 }
 
@@ -155,20 +293,32 @@ export function registerFleetRoutes(router: Router): void {
     return json({
       chain: ctx.app.config.promotionChain,
       items: ctx.app.config.promotionChain.map((environment) => {
-        const target = findTarget(ctx, environment);
+        const gateways = gatewaysIn(ctx.app.db, environment);
+        const target = gateways[0] ?? null;
         const mine = instances.filter((i) => i.environment === environment);
         const live = mine.filter((i) => !i.stale && !i.revoked);
         return {
           environment,
           hasTarget: Boolean(target),
-          enforce: target ? Boolean(target.enforce) : false,
-          paused: target ? Boolean(target.paused) : false,
+          // `enforce` and `paused` are still asked of the environment because everything that reads
+          // them is asking "can I deploy here"; a paused gateway anywhere in the environment stops
+          // that, so the answer is the pessimistic one rather than the first row's.
+          enforce: gateways.length > 0 && gateways.every((t) => Boolean(t.enforce)),
+          paused: gateways.some((t) => Boolean(t.paused)),
           instances: mine.length,
           liveInstances: live.length,
           maxInstances: ctx.app.config.maxInstancesPerTarget,
           // The proxy in front of the replicas — the only gateway address a consumer is given.
           publicUrl: target?.public_url ?? null,
           label: target?.label ?? null,
+          /** Every gateway an API in this environment can be published on. */
+          gateways: gateways.map((t) => ({
+            name: t.name,
+            category: t.category,
+            label: t.label,
+            addresses: gatewayAddresses(t),
+            paused: Boolean(t.paused),
+          })),
         };
       }),
     });
@@ -184,9 +334,24 @@ export function registerFleetRoutes(router: Router): void {
     if (!ctx.app.config.promotionChain.includes(environment)) {
       throw notFound(`unknown environment "${environment}"`);
     }
-    const target = targetFor(ctx, environment);
+    const body = await readJson<{ name?: string; gateway?: string }>(ctx);
+    // A replica belongs to one gateway, not to an environment. With one gateway the caller need
+    // not say which — with two, guessing would mint a token for the wrong locality and the
+    // mistake would only show up as an on-premise replica serving cloud routes.
+    const gateways = gatewaysIn(ctx.app.db, environment);
+    if (gateways.length === 0) throw notFound(`no gateway for ${environment}`);
+    let target: TargetRow;
+    if (body.gateway) {
+      target = gatewayIn(ctx, environment, String(body.gateway));
+    } else if (gateways.length === 1) {
+      target = gateways[0]!;
+    } else {
+      throw badRequest(
+        `gateway: ${environment} has ${gateways.length} gateways (` +
+          `${gateways.map((t) => t.name).join(", ")}); say which one this replica belongs to`,
+      );
+    }
 
-    const body = await readJson<{ name?: string }>(ctx);
     const name = (body.name ?? "").trim();
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
       throw badRequest('name: expected lower-case letters, digits and hyphens, e.g. "dev-2"');
@@ -199,8 +364,8 @@ export function registerFleetRoutes(router: Router): void {
       .get(target.id)!.n;
     if (live >= ctx.app.config.maxInstancesPerTarget) {
       throw conflict(
-        `${environment} already has ${live} live instances (MAX_INSTANCES_PER_TARGET is ` +
-          `${ctx.app.config.maxInstancesPerTarget}); revoke one first`,
+        `${environment}/${target.name} already has ${live} live instances ` +
+          `(MAX_INSTANCES_PER_TARGET is ${ctx.app.config.maxInstancesPerTarget}); revoke one first`,
       );
     }
     const clash = ctx.app.db
@@ -208,7 +373,9 @@ export function registerFleetRoutes(router: Router): void {
         "SELECT id FROM gateway_instance WHERE target_id = ? AND name = ? AND revoked_at IS NULL",
       )
       .get(target.id, name);
-    if (clash) throw conflict(`an instance named "${name}" already exists in ${environment}`);
+    if (clash) {
+      throw conflict(`an instance named "${name}" already exists on ${environment}/${target.name}`);
+    }
 
     const token = mintInstanceToken();
     const id = newId("gwi");
@@ -222,10 +389,13 @@ export function registerFleetRoutes(router: Router): void {
       action: "instance.mint",
       subject: `instance:${id}`,
       outcome: "ok",
-      detail: { environment, name },
+      detail: { environment, gateway: target.name, name },
     });
     // Shown exactly once: only the hash is stored, so it cannot be recovered.
-    return json({ id, name, environment, token }, { status: 201, headers: { "cache-control": "no-store" } });
+    return json(
+      { id, name, environment, gateway: target.name, token },
+      { status: 201, headers: { "cache-control": "no-store" } },
+    );
   });
 
   router.add("DELETE", "/api/instances/:id", "session", (ctx) => {
@@ -260,98 +430,127 @@ export function registerFleetRoutes(router: Router): void {
   router.add("GET", "/api/gateways", "session", (ctx) => {
     requireAdmin(ctx, "gateway management is admin-only");
     return json({
-      items: ctx.app.config.promotionChain.map((environment) =>
-        gatewayView(ctx, environment, findTarget(ctx, environment)),
+      items: ctx.app.config.promotionChain.flatMap((environment) =>
+        gatewaysIn(ctx.app.db, environment).map((target) => gatewayView(ctx, target)),
       ),
+      /** So the screen can offer "add a gateway to PROD" for an environment holding none. */
+      environments: ctx.app.config.promotionChain,
+      categories: GATEWAY_CATEGORIES,
     });
   });
 
-  /** One gateway per environment, so this creates the missing one rather than taking a name. */
   router.add("POST", "/api/gateways", "session", async (ctx) => {
     const user = requireAdmin(ctx, "creating a gateway is admin-only");
-    const body = await readJson<{ environment?: string; label?: string; publicUrl?: string }>(ctx);
+    const body = await readJson<{
+      environment?: string;
+      name?: string;
+      category?: string;
+      label?: string;
+      publicUrl?: string;
+      intranetUrl?: string;
+    }>(ctx);
     const environment = String(body.environment ?? "");
     if (!ctx.app.config.promotionChain.includes(environment)) {
       throw badRequest(
         `environment: expected one of ${ctx.app.config.promotionChain.join(", ")}`,
       );
     }
-    if (findTarget(ctx, environment)) {
-      throw conflict(
-        `${environment} already has a gateway; edit it instead. One gateway per environment is ` +
-          "what the promotion chain means — its replicas are behind it, not beside it",
-      );
+    const name = String(body.name ?? "").trim();
+    if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
+      throw badRequest('name: expected lower-case letters, digits and hyphens, e.g. "onprem"');
+    }
+    const category = String(body.category ?? "other");
+    if (!(GATEWAY_CATEGORIES as readonly string[]).includes(category)) {
+      throw badRequest(`category: expected one of ${GATEWAY_CATEGORIES.join(", ")}`);
+    }
+    if (gatewaysIn(ctx.app.db, environment).some((t) => t.name === name)) {
+      throw conflict(`${environment} already has a gateway named "${name}"; edit it instead`);
     }
     const publicUrl = readPublicUrl(body.publicUrl);
+    const intranetUrl = readPublicUrl(body.intranetUrl, "intranetUrl");
     const id = newId("tgt");
     ctx.app.db.run(
-      `INSERT INTO target (id, environment, adapter, config_json, enforce, paused, public_url, label)
-       VALUES (?, ?, 'standalone', '{}', 1, 0, ?, ?)`,
-      [id, environment, publicUrl, (body.label ?? "").trim() || null],
+      `INSERT INTO target (id, environment, name, category, adapter, config_json, enforce, paused,
+                           public_url, intranet_url, label)
+       VALUES (?, ?, ?, ?, 'standalone', '{}', 1, 0, ?, ?, ?)`,
+      [id, environment, name, category, publicUrl, intranetUrl, (body.label ?? "").trim() || null],
     );
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "gateway.create",
       subject: `target:${id}`,
       outcome: "ok",
-      detail: { environment, publicUrl, label: body.label ?? null },
+      detail: { environment, name, category, publicUrl, intranetUrl, label: body.label ?? null },
     });
-    return json(gatewayView(ctx, environment, findTarget(ctx, environment)), { status: 201 });
+    // Deliberately empty: nothing already published in this environment moves onto a gateway that
+    // did not exist when it was published. An API arrives here when somebody decides it belongs.
+    return json(gatewayView(ctx, gatewayIn(ctx, environment, name)), { status: 201 });
   });
 
-  router.add("PATCH", "/api/gateways/:environment", "session", async (ctx) => {
+  router.add("PATCH", "/api/gateways/:environment/:name", "session", async (ctx) => {
     const user = requireAdmin(ctx, "changing a gateway is admin-only");
     const environment = ctx.params.environment!;
-    const target = targetFor(ctx, environment);
+    const target = gatewayIn(ctx, environment, ctx.params.name!);
     const body = await readJson<{
       label?: string | null;
+      category?: string;
       publicUrl?: string | null;
+      intranetUrl?: string | null;
       paused?: boolean;
     }>(ctx);
     const publicUrl =
       body.publicUrl === undefined ? target.public_url : readPublicUrl(body.publicUrl);
+    const intranetUrl =
+      body.intranetUrl === undefined
+        ? target.intranet_url
+        : readPublicUrl(body.intranetUrl, "intranetUrl");
     const label =
       body.label === undefined ? target.label : (String(body.label ?? "").trim() || null);
+    const category = body.category === undefined ? target.category : String(body.category);
+    if (!(GATEWAY_CATEGORIES as readonly string[]).includes(category)) {
+      throw badRequest(`category: expected one of ${GATEWAY_CATEGORIES.join(", ")}`);
+    }
     const paused = body.paused === undefined ? Boolean(target.paused) : Boolean(body.paused);
-    ctx.app.db.run("UPDATE target SET public_url = ?, label = ?, paused = ? WHERE id = ?", [
-      publicUrl,
-      label,
-      paused ? 1 : 0,
-      target.id,
-    ]);
+    ctx.app.db.run(
+      `UPDATE target SET public_url = ?, intranet_url = ?, label = ?, category = ?, paused = ?
+        WHERE id = ?`,
+      [publicUrl, intranetUrl, label, category, paused ? 1 : 0, target.id],
+    );
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "gateway.update",
       subject: `target:${target.id}`,
       outcome: "ok",
-      detail: { environment, publicUrl, label, paused },
+      detail: { environment, name: target.name, publicUrl, intranetUrl, label, category, paused },
     });
-    return json(gatewayView(ctx, environment, findTarget(ctx, environment)));
+    return json(gatewayView(ctx, gatewayIn(ctx, environment, target.name)));
   });
 
   /**
-   * Removing a gateway removes the environment's ability to serve anything, so it is refused
-   * while a replica is still live: an admin who meant "retire this locality" would otherwise take
-   * every route in the environment offline and find out from a consumer.
+   * Removing a gateway takes everything published on it offline, so it is refused while a replica
+   * is still live or an API is still bound to it: an admin who meant "retire this locality" would
+   * otherwise stop serving routes and find out from a consumer.
    */
-  router.add("DELETE", "/api/gateways/:environment", "session", (ctx) => {
+  router.add("DELETE", "/api/gateways/:environment/:name", "session", (ctx) => {
     const user = requireAdmin(ctx, "removing a gateway is admin-only");
     const environment = ctx.params.environment!;
-    const target = targetFor(ctx, environment);
-    const live = instancesFor(ctx, environment).filter((i) => !i.revoked);
+    const target = gatewayIn(ctx, environment, ctx.params.name!);
+    const live = instancesFor(ctx, environment).filter(
+      (i) => !i.revoked && i.targetId === target.id,
+    );
     if (live.length > 0) {
       throw conflict(
-        `${environment} still has ${live.length} un-revoked replica${live.length === 1 ? "" : "s"} ` +
-          `(${live.map((i) => i.name).join(", ")}); revoke them first`,
+        `${environment}/${target.name} still has ${live.length} un-revoked replica` +
+          `${live.length === 1 ? "" : "s"} (${live.map((i) => i.name).join(", ")}); revoke them first`,
       );
     }
     const routes = ctx.app.db
-      .query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM route WHERE environment = ?")
-      .get(environment)!.n;
+      .query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM route_gateway WHERE target_id = ?")
+      .get(target.id)!.n;
     if (routes > 0) {
       throw conflict(
-        `${environment} still serves ${routes} route${routes === 1 ? "" : "s"}; withdraw them ` +
-          "before removing the gateway they answer on",
+        `${environment}/${target.name} still serves ${routes} API${routes === 1 ? "" : "s"}; ` +
+          "move them to another gateway or withdraw them first",
       );
     }
     ctx.app.db.run("DELETE FROM target WHERE id = ?", [target.id]);
@@ -360,9 +559,9 @@ export function registerFleetRoutes(router: Router): void {
       action: "gateway.delete",
       subject: `target:${target.id}`,
       outcome: "ok",
-      detail: { environment },
+      detail: { environment, name: target.name },
     });
-    return json({ environment, removed: true });
+    return json({ environment, name: target.name, removed: true });
   });
 
   /** What the demo and the UI wait on: every live instance reports the current digest. */
@@ -375,13 +574,22 @@ export function registerFleetRoutes(router: Router): void {
 
 /**
  * One environment's health. Shared with the dashboard rather than recomputed there (plan §6.2), so
- * "in sync" cannot mean two things on two screens. `null` when the environment has no target at
+ * "in sync" cannot mean two things on two screens. `null` when the environment has no gateway at
  * all — the endpoint turns that into a 404, and the dashboard reports the environment as unset.
+ *
+ * Since v8 an environment may hold several gateways serving different subsets of its routes, so
+ * "behind" is asked of each replica against *its own* gateway's digest. The headline figures stay
+ * environment-wide, because that is the question the dashboard is asking; `gateways` underneath
+ * says which locality the disagreement is in.
  */
 export function healthFor(ctx: Ctx, environment: string) {
-  const target = findTarget(ctx, environment);
+  const targets = gatewaysIn(ctx.app.db, environment);
+  const target = targets[0];
   if (!target) return null;
 
+  // The environment-wide document: every route it serves anywhere. It is what the admin config
+  // projection shows and what `routes` counts, and with one gateway it is byte-identical to that
+  // gateway's own config.
   const config = buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations);
   const instances = instancesFor(ctx, environment);
   const live = instances.filter((i) => !i.stale && !i.revoked);
@@ -390,14 +598,42 @@ export function healthFor(ctx: Ctx, environment: string) {
   // instance that fell behind dropped out of the denominator and the environment started reading
   // "in sync" while a row underneath it read `behind` (finding 10).
   const expected = instances.filter((i) => !i.revoked);
-  const behind = expected.filter((i) => i.stale || i.configDigest !== config.digest);
+
+  const gateways = targets.map((row) => {
+    const own =
+      targets.length === 1
+        ? config
+        : buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations, row.id);
+    const mine = instances.filter((i) => i.targetId === row.id);
+    const mineExpected = mine.filter((i) => !i.revoked);
+    const mineBehind = mineExpected.filter(
+      (i) => i.stale || i.configDigest !== own.digest,
+    );
+    return {
+      name: row.name,
+      category: row.category,
+      label: row.label,
+      addresses: gatewayAddresses(row),
+      paused: Boolean(row.paused),
+      configDigest: own.digest,
+      routes: own.routes.length,
+      replicas: mine.length,
+      liveReplicas: mine.filter((i) => !i.stale && !i.revoked).length,
+      expectedReplicas: mineExpected.length,
+      behindReplicas: mineBehind.length,
+      inSync: mineExpected.length > 0 && mineBehind.length === 0,
+      behind: mineBehind.map((i) => i.name),
+    };
+  });
+  const behindInstances = gateways.reduce((n, g) => n + g.behindReplicas, 0);
+
   return {
     environment,
     adapter: target.adapter,
     label: target.label,
     publicUrl: target.public_url,
-    enforce: Boolean(target.enforce),
-    paused: Boolean(target.paused),
+    enforce: targets.every((t) => Boolean(t.enforce)),
+    paused: targets.some((t) => Boolean(t.paused)),
     configDigest: config.digest,
     routes: config.routes.length,
     subscriptions: config.subscriptions.length,
@@ -409,11 +645,14 @@ export function healthFor(ctx: Ctx, environment: string) {
     liveInstances: live.length,
     /** Replicas that are expected to be serving: everything not revoked. */
     expectedInstances: expected.length,
-    /** Of those, the ones on an older digest or not reporting at all. */
-    behindInstances: behind.length,
+    /** Of those, the ones on an older digest than their own gateway's, or not reporting at all. */
+    behindInstances,
     // An instance reports the digest it has *activated*, so this becomes true one poll after the
-    // config changed. That lag is design section 8.7's intent, not a defect.
-    inSync: expected.length > 0 && behind.length === 0,
+    // config changed. That lag is design section 8.7's intent, not a defect. A gateway with no
+    // replicas at all cannot be in sync, so neither is the environment holding it.
+    inSync: expected.length > 0 && behindInstances === 0 && gateways.every((g) => g.inSync),
+    /** Per locality, because that is where a disagreement actually lives. */
+    gateways,
     staleAfterSec: ctx.app.config.instanceStaleAfterSec,
   };
 }

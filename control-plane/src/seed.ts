@@ -40,12 +40,13 @@ export function seedBaseline(
   const instances: SeededInstance[] = [];
   for (const entry of fleet) {
     if (!app.config.promotionChain.includes(entry.environment)) continue;
+    // The environment's first gateway. A seeded replica belongs to a gateway, and the seed only
+    // knows about the one TARGETS_FILE starts with; anything else is added deliberately, and its
+    // replicas are minted deliberately too.
     const target = db
-      .query<{ id: string }, [string]>(
-        "SELECT id FROM target WHERE environment = ? AND adapter = 'standalone'",
-      )
+      .query<{ id: string }, [string]>("SELECT id FROM target WHERE environment = ? ORDER BY name")
       .get(entry.environment);
-    if (!target) throw new Error(`no standalone target for ${entry.environment} (check TARGETS_FILE)`);
+    if (!target) throw new Error(`no gateway for ${entry.environment} (check TARGETS_FILE)`);
 
     const token = mintInstanceToken();
     const existing = db

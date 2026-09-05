@@ -61,6 +61,7 @@ function artifactReachableFrom(ctx: Ctx, digest: string): boolean {
     ctx.app.kek,
     ctx.instance!.environment,
     ctx.app.config.integrations,
+    ctx.instance!.targetId,
   );
   return config.routes.some((route) => route.artifacts.some((ref) => ref.digest === digest));
 }
@@ -157,7 +158,16 @@ export function registerGatewayRoutes(router: Router): void {
       ],
     );
 
-    const config = buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations);
+    // This gateway's config, not the environment's: an environment may hold several gateways and
+    // an API says which of them it is published on, so handing a replica the whole environment
+    // would have the on-premise gateway answering for routes nobody put there (v8).
+    const config = buildConfig(
+      ctx.app.db,
+      ctx.app.kek,
+      environment,
+      ctx.app.config.integrations,
+      instance.targetId,
+    );
     const unchanged = body.instance?.activeDigest === config.digest;
     const quotaAggregates = ctx.app.quota.aggregatesFor(environment);
     const response: PollResponse = {

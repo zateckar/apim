@@ -1671,12 +1671,13 @@ export function registerResourceRoutes(router: Router): void {
     const row = getResource(ctx, ctx.params.id!);
     assertCan(user, row.application_id, "withdraw this resource");
     const environment = environmentOf(ctx);
+    // Any of the environment's gateways will do as the job's handle: withdrawing takes the API off
+    // every gateway in the environment, because "withdrawn from TEST" cannot mean "withdrawn from
+    // half of TEST".
     const target = ctx.app.db
-      .query<{ id: string }, [string]>(
-        "SELECT id FROM target WHERE environment = ? AND adapter = 'standalone'",
-      )
+      .query<{ id: string }, [string]>("SELECT id FROM target WHERE environment = ? ORDER BY name")
       .get(environment);
-    if (!target) throw conflict(`no standalone target is configured for ${environment}`);
+    if (!target) throw conflict(`no gateway is configured for ${environment}`);
 
     const jobId = enqueueJob(
       ctx.app.db,

@@ -73,17 +73,22 @@ export function createApp(config: CpConfig): App {
 /**
  * TARGETS_FILE is the source of truth for which targets exist (design section 11).
  *
- * `public_url` and `label` are the exception, and deliberately: they are what an administrator
- * sets on the Gateways screen, and a file that reasserted them at every boot would undo that
- * without saying so. They are seeded on insert and left alone afterwards.
+ * Keyed on (environment, name) since v8, because an environment may hold several gateways and the
+ * adapter no longer tells them apart. The name defaults to the adapter, so a file written before
+ * gateways had names still matches the rows it created.
+ *
+ * The addresses, the label and the category are the exception, and deliberately: they are what an
+ * administrator sets on the Gateways screen, and a file that reasserted them at every boot would
+ * undo that without saying so. They are seeded on insert and left alone afterwards.
  */
 function syncTargets(app: App): void {
   for (const target of app.config.targets) {
+    const name = target.name ?? target.adapter;
     const existing = app.db
       .query<{ id: string }, [string, string]>(
-        "SELECT id FROM target WHERE environment = ? AND adapter = ?",
+        "SELECT id FROM target WHERE environment = ? AND name = ?",
       )
-      .get(target.environment, target.adapter);
+      .get(target.environment, name);
     if (existing) {
       app.db.run("UPDATE target SET enforce = ?, paused = ?, config_json = ? WHERE id = ?", [
         target.enforce ? 1 : 0,
@@ -93,16 +98,20 @@ function syncTargets(app: App): void {
       ]);
     } else {
       app.db.run(
-        `INSERT INTO target (id, environment, adapter, config_json, enforce, paused, public_url, label)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+        `INSERT INTO target (id, environment, name, category, adapter, config_json, enforce, paused,
+                             public_url, intranet_url, label)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
-          `tgt_${target.environment}_${target.adapter}`,
+          `tgt_${target.environment}_${name}`,
           target.environment,
+          name,
+          target.category ?? "other",
           target.adapter,
           JSON.stringify(target.config ?? {}),
           target.enforce ? 1 : 0,
           target.paused ? 1 : 0,
           target.publicUrl ?? null,
+          target.intranetUrl ?? null,
           target.label ?? null,
         ],
       );

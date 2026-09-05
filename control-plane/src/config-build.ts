@@ -254,14 +254,22 @@ function artifactsFor(db: DB, digest: string | null, resourceKind: string): Arti
  * what makes "publish" mean something: an edited but unreleased revision is invisible here.
  * Policy, routes and bindings are read live, because they are per-environment state edited in
  * place (design section 6.1) and reach the fleet on the next poll with no release.
+ *
+ * `targetId` narrows the answer to one gateway. Since v8 an environment may hold several — a
+ * managed one in the cloud, an on-premise one — and an API says which of them it is published on;
+ * a gateway that was handed the environment's whole route table would serve routes nobody chose to
+ * put there, and the selection would be a label rather than a fact. Omitting it asks the other
+ * question, "what does this environment serve anywhere", which is what the admin config projection
+ * and the readiness checks want.
  */
 export function buildRoutes(
   db: DB,
   environment: string,
   limits: ConfigLimits,
+  targetId?: string,
 ): { routes: ConfigRoute[]; errors: GatewayConfig["errors"] } {
   const rows = db
-    .query<RouteRow, [string]>(
+    .query<RouteRow, string[]>(
       `SELECT r.id          AS resource_id,
               r.name        AS resource_name,
               r.api_version,
@@ -283,9 +291,17 @@ export function buildRoutes(
          JOIN route rt     ON rt.resource_id = r.id AND rt.environment = rel.environment
          JOIN binding b    ON b.resource_id  = r.id AND b.environment  = rel.environment
         WHERE rel.environment = ? AND rel.state = 'converged'
+          ${
+            targetId
+              ? `AND EXISTS (SELECT 1 FROM route_gateway rg
+                              WHERE rg.resource_id = r.id
+                                AND rg.environment = rel.environment
+                                AND rg.target_id   = ?)`
+              : ""
+          }
         ORDER BY rt.base_path, rt.host`,
     )
-    .all(environment);
+    .all(...(targetId ? [environment, targetId] : [environment]));
 
   const now = new Date().toISOString();
   const routes: ConfigRoute[] = [];
@@ -523,9 +539,10 @@ export function buildConfig(
   kek: Buffer,
   environment: string,
   integrations: Integrations,
+  targetId?: string,
 ): GatewayConfig {
   const limits = limitsFor(integrations);
-  const { routes, errors } = buildRoutes(db, environment, limits);
+  const { routes, errors } = buildRoutes(db, environment, limits, targetId);
   const subscriptions = buildSubscriptions(db, kek, environment);
   const certificates = buildCertificates(db, environment);
   const body = {

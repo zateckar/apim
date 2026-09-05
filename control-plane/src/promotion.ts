@@ -112,10 +112,8 @@ export function computePlan(app: App, input: PlanInput): ReleasePlan {
     .get(input.resource.id, to);
   if (!hasBinding) blockers.push({ code: "no-binding", detail: `${to} has no backend binding` });
 
-  const target = db
-    .query("SELECT 1 FROM target WHERE environment = ? AND adapter = 'standalone'")
-    .get(to);
-  if (!target) blockers.push({ code: "no-target", detail: `no standalone target for ${to}` });
+  const target = db.query("SELECT 1 FROM target WHERE environment = ?").get(to);
+  if (!target) blockers.push({ code: "no-target", detail: `no gateway for ${to}` });
 
   if (from && !input.skipChain && !reachedFleet(db, input.revision.id, from)) {
     const furthest = furthestPoint(db, input.revision.id, chain);

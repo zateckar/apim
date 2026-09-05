@@ -22,10 +22,12 @@ function Fleet({ environment }: { environment: string }) {
   const fleet = health.data;
 
   return (
-    <Card title={`${environment}${fleet.label ? ` · ${fleet.label}` : ""}`}>
+    <Card title={environment.toUpperCase()}>
       <div className="row wrap">
         {/* "In sync" counts every replica that has not been revoked, not only the ones answering.
-            Counting only the live ones let a killed replica improve the headline (finding 10). */}
+            Counting only the live ones let a killed replica improve the headline (finding 10).
+            Each replica is compared against its *own* gateway's config, because two gateways in
+            one environment serve different subsets of it. */}
         <Pill kind={fleet.inSync ? "ok" : "warn"}>
           {fleet.inSync ? "in sync" : `${fleet.behindInstances} behind`}
         </Pill>
@@ -35,29 +37,58 @@ function Fleet({ environment }: { environment: string }) {
           {fleet.liveInstances} of {fleet.expectedInstances} replicas answering
         </Pill>
         {fleet.paused && <Pill kind="warn">paused</Pill>}
-        <span className="muted">
-          config <Digest value={fleet.configDigest} />
-        </span>
       </div>
 
-      <p className="hint">
-        {fleet.publicUrl ? (
-          <>
-            Published at <code>{fleet.publicUrl}</code>. The replicas below sit behind that proxy
-            and are never addressed directly by a consumer.
-          </>
-        ) : (
-          <>
-            This gateway has no published hostname yet, so the portal has no address to give
-            consumers. An administrator sets one on the Gateways screen.
-          </>
-        )}
-      </p>
+      {/* One block per gateway: an environment can be served from several localities, and a
+          disagreement between replicas lives in one of them rather than in the environment. */}
+      {fleet.gateways.map((gateway) => (
+        <div key={gateway.name} className="gateway-env">
+          <h4>
+            {gateway.name}
+            {gateway.label ? <span className="muted"> · {gateway.label}</span> : null}
+          </h4>
+          <div className="row wrap">
+            <Pill kind={gateway.inSync ? "ok" : "warn"}>
+              {gateway.inSync
+                ? "in sync"
+                : gateway.expectedReplicas === 0
+                  ? "no replicas"
+                  : `${gateway.behindReplicas} behind`}
+            </Pill>
+            <Pill kind="muted">{gateway.routes} routes</Pill>
+            {gateway.paused && <Pill kind="warn">paused</Pill>}
+            <span className="muted">
+              config <Digest value={gateway.configDigest} />
+            </span>
+          </div>
+          <p className="hint">
+            {gateway.addresses.length > 0 ? (
+              <>
+                Published at{" "}
+                {gateway.addresses.map((address, index) => (
+                  <span key={address.url}>
+                    {index > 0 ? " and " : ""}
+                    <code>{address.url}</code> ({address.network})
+                  </span>
+                ))}
+                . The replicas below sit behind those names and are never addressed directly by a
+                consumer.
+              </>
+            ) : (
+              <>
+                This gateway has no published address yet, so the portal has no URL to give
+                consumers for it. An administrator sets one on the Gateways screen.
+              </>
+            )}
+          </p>
+        </div>
+      ))}
 
       <table>
         <thead>
           <tr>
             <th>Replica</th>
+            <th>Gateway</th>
             <th>Active config</th>
             <th>Last seen</th>
             <th>Requests</th>
@@ -68,9 +99,13 @@ function Fleet({ environment }: { environment: string }) {
           {fleet.instances.map((instance) => (
             <tr key={instance.id}>
               <td>{instance.name}</td>
+              <td className="muted">{instance.gateway}</td>
               <td>
                 <Digest value={instance.configDigest} />
-                {instance.configDigest === fleet.configDigest ? (
+                {/* Against its own gateway's document, not the environment's: an on-premise
+                    replica serving a subset is current, not behind. */}
+                {instance.configDigest ===
+                fleet.gateways.find((g) => g.name === instance.gateway)?.configDigest ? (
                   <Pill kind="ok">current</Pill>
                 ) : (
                   <Pill kind="warn">behind</Pill>
@@ -103,7 +138,7 @@ function Fleet({ environment }: { environment: string }) {
           ))}
           {fleet.instances.length === 0 && (
             <tr>
-              <td colSpan={5} className="muted">
+              <td colSpan={6} className="muted">
                 No replicas are registered, so nothing serves this environment.
               </td>
             </tr>
@@ -151,9 +186,9 @@ export function GatewayView({ meta, user }: { meta: Meta; user: User }) {
         <div>
           <h2>Health Status</h2>
           <p className="muted">
-            One gateway per environment, any number of replicas behind its proxy. A replica keeps
-            serving through a control-plane outage from its last-good config; a revoked token stops
-            it at the next poll.
+            Each environment is served by one or more gateways, with any number of replicas behind
+            each one's proxy. A replica keeps serving through a control-plane outage from its
+            last-good config; a revoked token stops it at the next poll.
           </p>
         </div>
       </header>

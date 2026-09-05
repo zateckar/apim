@@ -8,19 +8,34 @@ import { ALLOWED } from "../lib/capabilities";
  *
  * The model this screen makes visible, because until now nothing did:
  *
- *  - **A gateway** serves one environment in one locality. It has a *published hostname* — the
- *    TLS-terminating L7 reverse proxy that sits in front of it — and that hostname is what every
- *    API URL in this portal is built from.
- *  - **A replica** is one process behind that proxy. Replicas are how the gateway scales and are
- *    an operational fact, not an address: a consumer given a replica's URL is holding something
- *    that stops working the next time the fleet is resized. So admins see them, mint their tokens
- *    and revoke them here, and nobody else is shown them at all.
+ *  - **A gateway** serves one environment in one locality — a managed one in the cloud, an
+ *    on-premise one in a data centre — and an environment may have several. It has one or two
+ *    *published addresses*: the TLS-terminating L7 reverse proxy in front of it, and, where the
+ *    same deployment answers on a second DNS name reachable only from inside, that one too. Those
+ *    addresses are what every API URL in this portal is built from.
+ *  - **A replica** is one process behind that proxy. Replicas are how a gateway scales and are an
+ *    operational fact, not an address: a consumer given a replica's URL is holding something that
+ *    stops working the next time the fleet is resized. So admins see them, mint their tokens and
+ *    revoke them here, and nobody else is shown them at all.
  *
  * Health lives on its own screen. This one is where a gateway comes into existence, gets its
- * hostname, gains and loses replicas, and is removed.
+ * addresses, gains and loses replicas, and is removed.
  */
+const CATEGORY_LABELS: Record<string, string> = {
+  managed: "Managed",
+  samb: "On-premise",
+  other: "Other",
+};
+
+interface GatewayList {
+  items: GatewayRow[];
+  environments: string[];
+  categories: string[];
+}
+
 export function GatewayAdminView() {
-  const gateways = useAsync(() => api.get<{ items: GatewayRow[] }>("/api/gateways"), []);
+  const gateways = useAsync(() => api.get<GatewayList>("/api/gateways"), []);
+  const environments = gateways.data?.environments ?? [];
 
   return (
     <>
@@ -28,70 +43,163 @@ export function GatewayAdminView() {
         <div>
           <h2>Gateways</h2>
           <p className="muted">
-            One gateway per environment, published under its proxy's hostname, with as many
-            replicas behind it as the load needs. Health and convergence are on Health Status.
+            Each environment is served by one or more gateways, every one published under its
+            proxy's hostname with as many replicas behind it as the load needs. An API says which
+            of them it answers on. Health and convergence are on Health Status.
           </p>
         </div>
       </header>
 
       <Notice kind="error">{gateways.error}</Notice>
-      {gateways.data?.items.map((row) => (
-        <Gateway key={row.environment} row={row} onChanged={gateways.reload} />
-      ))}
+      {environments.map((environment) => {
+        const rows = (gateways.data?.items ?? []).filter((g) => g.environment === environment);
+        return (
+          <section key={environment} className="gateway-env">
+            <h3>{environment.toUpperCase()}</h3>
+            {rows.length === 0 && (
+              <p className="hint">
+                This environment has no gateway. Nothing promoted to it is served until one
+                exists, and it has no address to publish.
+              </p>
+            )}
+            {rows.map((row) => (
+              <Gateway key={row.id} row={row} onChanged={gateways.reload} />
+            ))}
+            <AddGateway
+              environment={environment}
+              categories={gateways.data?.categories ?? []}
+              taken={rows.map((r) => r.name)}
+              onChanged={gateways.reload}
+            />
+          </section>
+        );
+      })}
     </>
+  );
+}
+
+function AddGateway({
+  environment,
+  categories,
+  taken,
+  onChanged,
+}: {
+  environment: string;
+  categories: string[];
+  taken: string[];
+  onChanged: () => void;
+}) {
+  const action = useAction();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("managed");
+  const [label, setLabel] = useState("");
+  const [publicUrl, setPublicUrl] = useState("");
+  const [intranetUrl, setIntranetUrl] = useState("");
+
+  if (!open) {
+    return (
+      <button className="ghost small" onClick={() => setOpen(true)}>
+        Add a gateway to {environment}
+      </button>
+    );
+  }
+
+  return (
+    <Card title={`New gateway in ${environment}`}>
+      <Notice kind="error">{action.error}</Notice>
+      <Field label="Name" value={name} onChange={setName} />
+      <p className="hint">
+        Lower-case letters, digits and hyphens — <code>managed</code>, <code>onprem</code>. It is
+        how an API says where it is published, and it should be the same name in every environment
+        this gateway exists in, because a publish carries the name along the promotion chain.
+        {taken.length > 0 && ` Already taken here: ${taken.join(", ")}.`}
+      </p>
+      <div className="field">
+        <label>Kind</label>
+        <select value={category} onChange={(event) => setCategory(event.target.value)}>
+          {categories.map((value) => (
+            <option key={value} value={value}>
+              {CATEGORY_LABELS[value] ?? value}
+            </option>
+          ))}
+        </select>
+      </div>
+      <Field label="Locality" value={label} onChange={setLabel} />
+      <Field label="Internet address" value={publicUrl} onChange={setPublicUrl} />
+      <Field label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <div className="row">
+        <button
+          disabled={action.busy || name.trim() === ""}
+          onClick={async () => {
+            const ok = await action.run(
+              () =>
+                api.post("/api/gateways", {
+                  environment,
+                  name: name.trim(),
+                  category,
+                  label: label.trim() || null,
+                  publicUrl: publicUrl.trim() || null,
+                  intranetUrl: intranetUrl.trim() || null,
+                }),
+              "created",
+            );
+            if (ok) {
+              setOpen(false);
+              setName("");
+              setLabel("");
+              setPublicUrl("");
+              setIntranetUrl("");
+              onChanged();
+            }
+          }}
+        >
+          Create
+        </button>
+        <button className="ghost" onClick={() => setOpen(false)}>
+          Cancel
+        </button>
+      </div>
+      <p className="hint">
+        It starts empty. Nothing already published in {environment.toUpperCase()} moves onto a
+        gateway that did not exist when it was published — each API arrives here when somebody
+        decides it belongs.
+      </p>
+    </Card>
   );
 }
 
 function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void }) {
   const action = useAction();
   const [publicUrl, setPublicUrl] = useState(row.publicUrl ?? "");
+  const [intranetUrl, setIntranetUrl] = useState(row.intranetUrl ?? "");
   const [label, setLabel] = useState(row.label ?? "");
 
-  if (!row.exists) {
-    return (
-      <Card title={row.environment}>
-        <p className="hint">
-          This environment has no gateway. Nothing promoted to it is served until one exists, and
-          it has no address to publish.
-        </p>
-        <Notice kind="error">{action.error}</Notice>
-        <Field label="Published hostname" value={publicUrl} onChange={setPublicUrl} />
-        <Field
-          label="Locality"
-          value={label}
-          onChange={setLabel}
-        />
-        <button
-          disabled={action.busy}
-          onClick={async () => {
-            const ok = await action.run(
-              () =>
-                api.post("/api/gateways", {
-                  environment: row.environment,
-                  publicUrl: publicUrl.trim() || null,
-                  label: label.trim() || null,
-                }),
-              "created",
-            );
-            if (ok) onChanged();
-          }}
-        >
-          Add a gateway for {row.environment}
-        </button>
-      </Card>
-    );
-  }
-
-  const dirty = (row.publicUrl ?? "") !== publicUrl || (row.label ?? "") !== label;
+  const dirty =
+    (row.publicUrl ?? "") !== publicUrl ||
+    (row.intranetUrl ?? "") !== intranetUrl ||
+    (row.label ?? "") !== label;
 
   return (
-    <Card title={`${row.environment}${row.label ? ` · ${row.label}` : ""}`}>
+    <Card
+      title={`${row.name}${row.label ? ` · ${row.label}` : ""}`}
+      hint={CATEGORY_LABELS[row.category] ?? row.category}
+    >
       <div className="row wrap">
-        <Pill kind={row.publicUrl ? "ok" : "warn"}>
-          {row.publicUrl ?? "no published hostname"}
-        </Pill>
+        {row.addresses.length === 0 ? (
+          <Pill kind="warn">no published address</Pill>
+        ) : (
+          row.addresses.map((address) => (
+            <Pill key={address.url} kind="ok">
+              {address.network === "intranet" ? "Intranet" : "Internet"} · {address.url}
+            </Pill>
+          ))
+        )}
         <Pill kind="muted">
           {row.liveReplicas} of {row.replicas} replicas answering
+        </Pill>
+        <Pill kind="muted">
+          {row.published} API{row.published === 1 ? "" : "s"} published
         </Pill>
         {row.paused && <Pill kind="warn">paused</Pill>}
       </div>
@@ -99,17 +207,23 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
 
-      <Field label="Published hostname" value={publicUrl} onChange={setPublicUrl} />
+      <Field label="Internet address" value={publicUrl} onChange={setPublicUrl} />
       <p className="hint">
         The reverse proxy in front of this gateway's replicas — an origin with an optional path
-        prefix, no query string. Every API URL the portal shows a consumer in{" "}
-        {row.environment.toUpperCase()} is built from it, so changing it changes what every
-        consumer is told to call. It does not move any traffic by itself.
+        prefix, no query string. Every API URL the portal shows a consumer for this gateway is
+        built from it, so changing it changes what every consumer is told to call. It does not
+        move any traffic by itself.
+      </p>
+      <Field label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <p className="hint">
+        The same gateway's inside-only name, if it has one. Two DNS names for one deployment are
+        two addresses, not two gateways: an API published here is reachable at both.
       </p>
       <Field label="Locality" value={label} onChange={setLabel} />
       <p className="hint">
-        What to call this deployment — <code>cloud</code>, <code>on-prem</code> — so a gateway is
-        identifiable by something other than its environment.
+        Where this deployment physically is — <code>Azure Cloud</code>,{" "}
+        <code>Mladá Boleslav</code> — so a gateway is identifiable by something other than its
+        name.
       </p>
 
       <div className="row">
@@ -118,8 +232,9 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
           onClick={async () => {
             const ok = await action.run(
               () =>
-                api.patch(`/api/gateways/${row.environment}`, {
+                api.patch(`/api/gateways/${row.environment}/${row.name}`, {
                   publicUrl: publicUrl.trim() || null,
+                  intranetUrl: intranetUrl.trim() || null,
                   label: label.trim() || null,
                 }),
               "saved",
@@ -134,7 +249,8 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
           disabled={action.busy}
           onClick={async () => {
             const ok = await action.run(
-              () => api.patch(`/api/gateways/${row.environment}`, { paused: !row.paused }),
+              () =>
+                api.patch(`/api/gateways/${row.environment}/${row.name}`, { paused: !row.paused }),
               row.paused ? "resumed" : "paused",
             );
             if (ok) onChanged();
@@ -144,17 +260,25 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
         </button>
       </div>
 
-      <Replicas environment={row.environment} max={row.maxReplicas} onChanged={onChanged} />
+      <Replicas
+        environment={row.environment}
+        gateway={row.name}
+        max={row.maxReplicas}
+        onChanged={onChanged}
+      />
 
       <DangerZone
-        what={`Remove the ${row.environment} gateway`}
-        name={row.environment}
-        consequence="Everything published to this environment stops being served. It is refused while any replica is un-revoked or any route still answers here."
+        what={`Remove the ${row.name} gateway in ${row.environment}`}
+        name={row.name}
+        consequence="Everything published on this gateway stops being served there. It is refused while any replica is un-revoked or any API is still published on it."
         permission={ALLOWED}
         busy={action.busy}
         error={action.error}
         onConfirm={async () => {
-          const ok = await action.run(() => api.del(`/api/gateways/${row.environment}`), "removed");
+          const ok = await action.run(
+            () => api.del(`/api/gateways/${row.environment}/${row.name}`),
+            "removed",
+          );
           if (ok) onChanged();
         }}
       />
@@ -165,10 +289,12 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
 /** The replicas behind one gateway: mint a token, watch it converge, revoke it. */
 function Replicas({
   environment,
+  gateway,
   max,
   onChanged,
 }: {
   environment: string;
+  gateway: string;
   max: number;
   onChanged: () => void;
 }) {
@@ -180,7 +306,8 @@ function Replicas({
   const [name, setName] = useState("");
   const [minted, setMinted] = useState<{ name: string; token: string } | null>(null);
 
-  const instances = health.data?.instances ?? [];
+  // The endpoint answers for the whole environment, and this card is one gateway in it.
+  const instances = (health.data?.instances ?? []).filter((i) => i.gateway === gateway);
   const liveCount = instances.filter((i) => !i.revoked).length;
 
   return (
@@ -246,8 +373,8 @@ function Replicas({
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
         <input
-          placeholder={`new replica name, e.g. ${environment}-${liveCount + 1}`}
-          aria-label={`New replica name for ${environment}`}
+          placeholder={`new replica name, e.g. ${gateway}-${liveCount + 1}`}
+          aria-label={`New replica name for ${environment}/${gateway}`}
           value={name}
           onChange={(event) => setName(event.target.value)}
         />
@@ -257,6 +384,7 @@ function Replicas({
             const created = await api
               .post<{ name: string; token: string }>(`/api/targets/${environment}/instances`, {
                 name: name.trim(),
+                gateway,
               })
               .catch((err) => {
                 action.setError(String(err));
@@ -274,7 +402,7 @@ function Replicas({
         </button>
         {liveCount >= max && (
           <span className="muted">
-            {environment} is at its ceiling of {max} replicas; revoke one first.
+            {gateway} is at its ceiling of {max} replicas; revoke one first.
           </span>
         )}
       </div>

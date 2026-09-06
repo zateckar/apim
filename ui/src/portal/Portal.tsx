@@ -188,9 +188,14 @@ export function Portal({
   }, [theme]);
   const [navOpen, setNavOpen] = useState(false),
     [changes, setChanges] = useState(false);
+  const matched = matchRoute(path);
   const title = resourceId
     ? "API workspace"
-    : (titles[section] ?? matchRoute(path).route.title);
+    : // One subscription's screen is not the list of them, and the section alone cannot tell the
+      // two apart — so that address takes the title the route table gives it.
+      matched.route.id === "subscription"
+      ? matched.route.title
+      : (titles[section] ?? matched.route.title);
   const link = (tab: string) => `/${applicationId}/${tab}`;
   const active = (operations.data?.items ?? []).filter(
     (o) => !["complete", "superseded"].includes(o.state),

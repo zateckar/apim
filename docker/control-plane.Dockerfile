@@ -1,12 +1,12 @@
 # The control plane: the API, the SQLite database, the job runner and the SPA it serves.
 #
-# `oven/bun:1.4.1-alpine`, pinned exactly rather than to a floating minor `[P1-21]`. The same
+# `oven/bun:1.4.2-alpine`, pinned exactly rather than to a floating minor `[P1-21]`. The same
 # version is pinned in `.github/workflows/{ci,images,perf}.yml` and in the gateway's Dockerfile, and
 # a Dockerfile that floated would make a reproducible build stop being one without anybody changing
 # a line. README.md, "The two images", names all five places, because they move together.
 
 # ---------------------------------------------------------------- stage 1: the SPA
-FROM oven/bun:1.4.1-alpine AS ui
+FROM oven/bun:1.4.2-alpine AS ui
 
 WORKDIR /build
 # The manifests first, so a change to a component does not invalidate the install layer.
@@ -21,7 +21,7 @@ RUN cd ui && bun run build
 
 
 # ---------------------------------------------------------------- stage 2: the runtime
-FROM oven/bun:1.4.1-alpine AS runtime
+FROM oven/bun:1.4.2-alpine AS runtime
 
 # `curl` for the healthcheck. Nothing else: the control plane has no runtime dependencies, which is
 # the property the whole design is built on and the reason this image is as small as it is.

@@ -95,7 +95,7 @@ They share no runtime state, are versioned independently, and both run as a non-
 every setting from the environment and from mounted files, carry a `HEALTHCHECK`, and start with
 **no repository checkout**.
 
-Both pin `oven/bun:1.4.1-alpine` exactly rather than to a floating minor. The same version is
+Both pin `oven/bun:1.4.2-alpine` exactly rather than to a floating minor. The same version is
 pinned in **five** places and they must move together:
 
 ```

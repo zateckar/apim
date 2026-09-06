@@ -22,7 +22,7 @@ concurrency:
 env:
   # One version, pinned exactly, in five places: here, `images.yml`, `perf.yml`, and both
   # Dockerfiles. README.md, "The two images", names all five, because they have to move together.
-  BUN_VERSION: "1.4.1"
+  BUN_VERSION: "1.4.2"
 
 jobs:
   check:

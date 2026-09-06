@@ -2,7 +2,7 @@
 # document, and serves. The whole contract between the planes is that document, which is why this
 # image shares nothing with the other one but `shared/`.
 
-FROM oven/bun:1.4.1-alpine AS runtime
+FROM oven/bun:1.4.2-alpine AS runtime
 
 RUN apk add --no-cache curl
 

@@ -1,4 +1,4 @@
-// @ts-expect-error Vite's `?raw` import has no TypeScript declaration; it resolves to a string.
+// `?raw` resolves to a string; `src/vite-env.d.ts` is what tells TypeScript so.
 import raw from "../../../CHANGELOG.md?raw";
 import { currentVersion, parseChangeLog, type ChangeLogEntry } from "../../../shared/changelog";
 

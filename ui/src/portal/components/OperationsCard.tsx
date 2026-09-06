@@ -1,11 +1,10 @@
-// Shared Operations / WSDL-services display. Used by both the
-// publisher's Edit page (Definition tab + Properties tab aside) and
-// the read-only API detail modal in Discover. Same parsing logic, same
-// HTML, same CSS — both views render identical operation lists so a
-// publisher and a consumer see the same operation surface for the same
-// API.
+// Shared Operations / WSDL-services display, used by the publisher's Edit page on both the
+// Definition tab and the Properties tab aside. Same parsing logic, same HTML, same CSS as the
+// consumer's listing in the catalogue, so a publisher and a consumer see the same operation
+// surface for the same API.
 
 import { useMemo, useState } from 'react';
+import { Skeleton } from '../../components';
 import * as I from '../icons';
 import {
   extractOperations,
@@ -27,7 +26,7 @@ function OperationsShell({ state, onRetry }: { state: 'loading' | 'error'; onRet
       </div>
       <div className="card-body">
         {state === 'loading'
-          ? <div className="empty" style={{ padding: '18px 0' }}><span className="spinner" /> Loading operations…</div>
+          ? <Skeleton rows={3} />
           : (
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', fontSize: 12.5, color: 'var(--fg-muted)' }}>
               <span>Couldn’t load the definition, so operations are unavailable.</span>

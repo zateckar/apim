@@ -4,7 +4,7 @@ import {
   CHANGE_LOG_TYPE_LABELS,
 } from "../../../../shared/changelog";
 import { changeLog } from "../../lib/changelog";
-import { Empty, Modal } from "../common";
+import { Modal, Notice } from "../../components";
 
 /**
  * The portal's own release notes, opened from the version in the top bar.
@@ -19,9 +19,11 @@ export function ChangeLog({ close }: { close: () => void }) {
   return (
     <Modal title="What changed in the portal" close={close}>
       {entries.length === 0 ? (
-        <Empty>
+        // Not an empty state: there is no action a reader of the portal can take about a change
+        // log nobody has written. It is a warning that a file the build reads came back empty.
+        <Notice kind="warn">
           The change log is empty. Entries are written into CHANGELOG.md at the repository root.
-        </Empty>
+        </Notice>
       ) : (
         <div className="changelog">
           {entries.map((entry) => (

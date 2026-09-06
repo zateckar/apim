@@ -5,21 +5,24 @@ import { RevisionsPanel } from "../views/RevisionsPanel";
 import { Fragment, useState } from "react";
 import type { Session } from "../App";
 import { api, type Locality } from "../api";
-import { go, useAsync } from "../components";
+import {
+  EmptyState,
+  Field,
+  Link,
+  Modal,
+  Notice,
+  OperationList,
+  Panel,
+  Skeleton,
+  go,
+  useAction,
+  useAsync,
+} from "../components";
 import { ALLOWED, type Permission } from "../lib/capabilities";
 import { parse } from "yaml";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
 import { command, listAll } from "./client";
-import {
-  Panel,
-  Field,
-  ErrorNotice,
-  Empty,
-  Modal,
-  OperationList,
-  useWork,
-} from "./common";
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
 import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
@@ -280,6 +283,34 @@ export function nextVersion(existing: string[]): string {
   return `${existing[existing.length - 1] ?? "v1"}-next`;
 }
 
+/**
+ * Why this identifier cannot be published, or `null`.
+ *
+ * The control plane refuses a duplicate too — `API name and version already exist` — but only after
+ * the request, by which point the dialog has closed on its way to a resource that was never created.
+ * The screen this dialog replaced checked in the browser and disabled its own control; the check
+ * went with the screen when it was deleted, and nobody noticed because that screen was unreachable.
+ *
+ * Case-insensitively: two versions of one API that differ only by case are one version to anybody
+ * reading the published address, where the version is a path segment.
+ */
+export function versionRefusal(
+  name: string,
+  identifier: string,
+  existing: string[],
+): string | null {
+  const wanted = identifier.trim().toLowerCase();
+  // An empty box is not a refusal — the input is `required`, and saying "pick another" about
+  // nothing is an error message for a mistake nobody has made yet.
+  if (!wanted) return null;
+  const clash = existing.find((value) => value.trim().toLowerCase() === wanted);
+  if (clash === undefined) return null;
+  return (
+    `${name} already has a version called ${clash}. Its versions are ${existing.join(", ")} — and ` +
+    `two that differ only by case would be one version to anybody reading the address.`
+  );
+}
+
 /** A sibling version needs its own path, since two versions serve at the same time. */
 export function versionedPath(basePath: string, current: string, next: string): string {
   const trimmed = basePath.replace(/\/+$/, "");
@@ -309,7 +340,7 @@ const PUBLISH_STEPS = [
 
 export function Publish({ session: s }: { session: Session }) {
   const [step, setStep] = useState(0);
-  const w = useWork(),
+  const w = useAction(),
     products = useAsync(
       () => api.get<{ items: any[] }>("/api/products"),
       [s.application],
@@ -422,7 +453,7 @@ export function Publish({ session: s }: { session: Session }) {
           });
         }}
       >
-        <ErrorNotice error={w.error ?? products.error} />
+        <Notice kind="error">{w.error ?? products.error}</Notice>
 
         {at === 0 && (
           <>
@@ -640,7 +671,7 @@ export function Editor({
   );
   return (
     <>
-      <ErrorNotice error={data.error} />
+      <Notice kind="error">{data.error}</Notice>
       {data.data ? (
         <EditorForm
           key={`${id}:${s.environment}:${data.data.resource.etag}`}
@@ -652,7 +683,9 @@ export function Editor({
           tick={tick}
         />
       ) : (
-        <Empty>Loading API…</Empty>
+        // Not an empty state — nothing is empty, the request has not answered yet. A skeleton the
+        // size of what is coming keeps the page from jumping when it does.
+        <Skeleton rows={6} />
       )}
     </>
   );
@@ -719,7 +752,10 @@ function EditorForm({
   operations: any[];
   tick: number;
 }) {
-  const w = useWork(),
+  // The link in the chain before this one, which is where an unpublished API is promoted from.
+  // `null` at the head of the chain, where there is nothing before it and the answer is to publish.
+  const previousEnvironment = s.meta.chain[s.meta.chain.indexOf(s.environment) - 1] ?? null;
+  const w = useAction(),
     // How a link lands on the right panel: the dashboard's traffic table opens the Logs tab, an
     // attention row opens Policies. The address may name it as a segment — `/apis/:id/policy`,
     // which is what the control plane writes — or as `?tab=`, which is what the screens here write.
@@ -843,7 +879,7 @@ function EditorForm({
         }
       >
         {d.resource.editReason && (
-          <div className="banner warn">{d.resource.editReason}</div>
+          <Notice kind="warn">{d.resource.editReason}</Notice>
         )}
         <p>
           {s.applicationName(d.resource.applicationId)} ·{" "}
@@ -881,19 +917,32 @@ function EditorForm({
             </button>
           ))}
         </div>
-        <ErrorNotice error={w.error} />
+        <Notice kind="error">{w.error}</Notice>
         {!d.published && (
-          <Empty>
-            This API has not been published to {s.environment.toUpperCase()}.
-            Switch to the preceding environment and promote it.
-          </Empty>
+          <EmptyState
+            title={`Not published to ${s.environment.toUpperCase()}`}
+            detail="Everything on the panels below is per environment, and this one is serving none of it. A version reaches an environment by being promoted into it from the one before."
+            // The action is the environment it would come *from*, because "promote it" with no way
+            // to reach the screen that promotes is the dead end this rule exists to stop.
+            action={
+              previousEnvironment ? (
+                <button className="btn" onClick={() => s.setEnvironment(previousEnvironment)}>
+                  Open {previousEnvironment.toUpperCase()} and promote it →
+                </button>
+              ) : (
+                <Link to={`/${s.application}/publish`}>Publish an API →</Link>
+              )
+            }
+          />
         )}
+        {/* Not an empty state: the API is published and answering, and what is hidden is hidden on
+            purpose. Saying "nothing here" about somebody else's configuration would be a lie. */}
         {d.published && d.settings?.redacted && (
-          <Empty>
+          <Notice kind="info">
             It answers on <span className="mono">{d.settings.basePath}</span> in{" "}
             {s.environment.toUpperCase()}. Its backends and its policy belong to{" "}
             {d.resource.applicationName} and are not shown outside it.
-          </Empty>
+          </Notice>
         )}
         {tab === "definition" && (
           <>
@@ -1038,12 +1087,12 @@ function EditorForm({
               <input readOnly value={basePath} aria-label="Public path" />
             </Field>
             {!d.resource.domain && (
-              <p className="banner warn">
+              <Notice kind="warn">
                 This API was published before the catalog had domains. Choosing
                 one moves it from <span className="mono">{d.settings?.basePath}</span>{" "}
                 to <span className="mono">{basePath}</span> when you save, so
                 anybody calling the old address has to be told.
-              </p>
+              </Notice>
             )}
             <GatewayPicker
               localities={localities}
@@ -1058,7 +1107,7 @@ function EditorForm({
               is a gateway's published hostname; its replicas are behind it and are never
               addressed directly.
             </p>
-            <ErrorNotice error={certificates.error} />
+            <Notice kind="error">{certificates.error}</Notice>
           </div>
         )}
         {tab === "policies" && (
@@ -1249,7 +1298,7 @@ function EditorForm({
                 onChange={(e) => setTargetUrl(e.target.value)}
               />
             </Field>
-            <ErrorNotice error={w.error} />
+            <Notice kind="error">{w.error}</Notice>
             <button className="btn primary" disabled={w.busy}>
               Promote
             </button>
@@ -1276,7 +1325,7 @@ function NewVersion({
   spec: string;
   close: () => void;
 }) {
-  const w = useWork(),
+  const w = useAction(),
     first = s.meta.chain[0]!;
   const products = useAsync(
     () => api.get<{ items: any[] }>("/api/products"),
@@ -1304,11 +1353,13 @@ function NewVersion({
   /** The name of the product both versions would share, or `null` when they would not. */
   const sameProduct: string | null =
     (d.products ?? []).find((p: any) => p.id === productId)?.name ?? null;
+  const refusal = versionRefusal(d.resource.name, identifier, existing);
   return (
     <Modal title={`New version of ${d.resource.name}`} close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (refusal) return;
           void w.run(async () => {
             const result = await command("/api/publish", {
               applicationId: d.resource.applicationId,
@@ -1348,11 +1399,12 @@ function NewVersion({
             ? `Both versions will be in ${sameProduct}, so an existing key for ${d.resource.apiVersion} will open ${identifier} too. Choose a different product below if the versions should be subscribed to separately.`
             : `${identifier} goes into a different product, so it has its own subscriptions and an existing key for ${d.resource.apiVersion} will not open it.`}
         </p>
-        <ErrorNotice error={products.error ?? w.error} />
+        <Notice kind="error">{products.error ?? w.error}</Notice>
         <Field label="Version identifier">
           <input
             required
             pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+            aria-invalid={refusal ? true : undefined}
             value={identifier}
             onChange={(e) => {
               setIdentifier(e.target.value);
@@ -1360,6 +1412,10 @@ function NewVersion({
             }}
           />
         </Field>
+        {/* Beside the field it is about rather than in the disabled button's tooltip: the reader
+            has to change this box, and a reason they can only find by hovering the control they
+            cannot press is a reason nobody reads. */}
+        {refusal && <Notice kind="error">{refusal}</Notice>}
         <Field label="Public path">
           <input required value={path} onChange={(e) => setPath(e.target.value)} />
         </Field>
@@ -1382,7 +1438,7 @@ function NewVersion({
           backends and the policies. Not carried over: subscriptions, and
           anything set in a later environment.
         </p>
-        <button className="btn primary" disabled={w.busy || !productId}>
+        <button className="btn primary" disabled={w.busy || !productId || refusal !== null}>
           {w.busy ? "Publishing…" : `Publish ${identifier} to ${first.toUpperCase()}`}
         </button>
       </form>

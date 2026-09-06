@@ -125,6 +125,38 @@ describe("interaction hygiene", () => {
     expect(offenders).toEqual([]);
   });
 
+  /**
+   * The two boxes the rule above can be walked around, and the reason each is named here.
+   *
+   * The branded screens used to have an `Empty` of their own that took bare children and carried no
+   * action — the same box with the rule switched off, which is why half the interface was never
+   * covered. It is gone, and so is the `.notice` banner that duplicated `.banner`. Both come back
+   * the same way: somebody writes the class directly instead of reaching for the component. This is
+   * the test that notices.
+   */
+  const ONE_VOCABULARY = [
+    { pattern: /className="[^"]*\bempty\b/g, use: "<EmptyState title detail action>" },
+    { pattern: /className="[^"]*\bnotice\b/g, use: "<Notice kind>" },
+    { pattern: /className="[^"]*\bbanner\b/g, use: "<Notice kind>" },
+  ];
+
+  test("the empty state and the banner are components, not classes anybody can write", () => {
+    const offenders: string[] = [];
+    for (const file of sources) {
+      // `components.tsx` is where those two classes are allowed to be written: it is the one place
+      // that renders them, and a rule that forbade it there would forbid the components existing.
+      if (relative(SRC, file) === "components.tsx") continue;
+      const text = withoutComments(readFileSync(file, "utf8"));
+      for (const { pattern, use } of ONE_VOCABULARY) {
+        for (const match of text.matchAll(pattern)) {
+          const line = text.slice(0, match.index!).split("\n").length;
+          offenders.push(`${relative(SRC, file)}:${line} writes ${match[0]} — use ${use}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   test("nothing destructive happens behind a browser confirm", () => {
     // `confirm()` is a modal that says "Are you sure?" and nothing else: no consequence, no object
     // name, and one stray Return away from a deletion. §9.4 asks for the name typed back instead.
@@ -222,6 +254,23 @@ describe("interaction hygiene", () => {
           offenders.push(`${relative(SRC, file)}:${line} ${name}.error is never rendered`);
         }
       }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("there is one shared component module", () => {
+    // `portal/common.tsx` used to be the second one, and which components a screen got was decided
+    // by which file it happened to import: `Field` took `children` in one and `value`/`onChange` in
+    // the other, `Empty` escaped the rule `EmptyState` is held to, and the same failed request was
+    // a pastel box on one screen and a themed banner on the next. A second module comes back by
+    // somebody exporting one of these names from somewhere else, which is what this looks for.
+    const SHARED = /\bexport function (Notice|EmptyState|Field|TextField|Panel|Modal|Status|DangerZone|Skeleton|Action|useAction|useAsync|OperationList)\b/;
+    const offenders: string[] = [];
+    for (const file of sources) {
+      const name = relative(SRC, file).replaceAll("\\", "/");
+      if (name === "components.tsx") continue;
+      const match = SHARED.exec(readFileSync(file, "utf8"));
+      if (match) offenders.push(`${name} exports ${match[1]}`);
     }
     expect(offenders).toEqual([]);
   });

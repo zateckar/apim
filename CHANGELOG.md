@@ -17,6 +17,31 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.2.1 - 06.09.2026
+
+One catalog instead of two, and the same box in the same place on every screen.
+
+### Changed
+
+- **Catalog** in the sidebar is one screen now. It is the one that searches the contract itself —
+  operation ids, MCP tool names, A2A skills — counts what each filter would return, files Kafka
+  topics beside APIs in the same domains, and says so when the estate is larger than one ranking
+  pass reads. Opening an API from it shows the read-only listing, with Getting started, Try it and
+  the versions, and subscribing walks through the application, the environment and the rate limit
+  and quota being agreed to. The address the old cross-application list answered on still works.
+- APIs, MCP Servers and A2A Agents are unchanged: your own list, with the version picker, the
+  environment chevrons, and the transfer and delete only an owner has.
+- Every empty list on every screen now names something to do about it, rather than half of them.
+  Boxes that were waiting for a request show a placeholder instead, and boxes that were explaining
+  why a control cannot be used are notices.
+- Warnings and errors look the same everywhere, follow the dark theme, and announce themselves.
+- Filter and search boxes on the catalog and elsewhere are properly labelled for a screen reader.
+
+### Fixed
+
+- **New version** refuses an identifier the API already has, before publishing rather than after,
+  and says which versions are taken. Case is not a difference: `V2` and `v2` are one version.
+
 ## 1.2.0 - 06.09.2026
 
 One route table behind the whole portal, and the links that quietly went to the wrong place now

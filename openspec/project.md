@@ -85,11 +85,12 @@ control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota ag
 data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
                 backend pool and breaker, response cache, stream registry, counters, trust store
 ui/             React + Vite SPA, served by the control plane
-                ui/src/App.tsx      signing in, and the session every screen is handed
-                ui/src/screens.tsx  which component answers which route id
-                ui/src/portal/      the branded shell and the screens built for it
-                ui/src/views/       the plainer screens the shell embeds
-                ui/src/lib/         routes · glossary · status · capabilities · attention · datetime
+                ui/src/App.tsx        signing in, and the session every screen is handed
+                ui/src/screens.tsx    which component answers which route id
+                ui/src/components.tsx the one shared component vocabulary
+                ui/src/portal/        the branded shell and the screens built for it
+                ui/src/views/         the plainer screens the shell embeds
+                ui/src/lib/           routes · glossary · status · capabilities · attention · datetime
 docker/         one Dockerfile per plane; one docker-compose.<plane>.yml each, at the root
 tools/          the local upstreams (REST/SOAP/SSE/WebSocket, MCP, A2A) and the two load harnesses
 scripts/        seed · stack · demo · mint-instance · schedule-perf
@@ -117,6 +118,9 @@ Modules named by more than one capability spec:
 - `ui/src/lib/routes.ts` — every address, with the title, one-line purpose and sidebar entry the
   shell renders. The only route table.
 - `ui/src/screens.tsx` — which component answers each route id. The only screen registry.
+- `ui/src/components.tsx` — the shared component vocabulary: the banner, the empty state, the two
+  field shapes, the section, the modal, the typed confirmation and the two async hooks. The only
+  one; `ui/src/portal/common.tsx` was the second and is gone.
 - `ui/src/portal/brand.css` — the visual system, shared verbatim with the predecessor portal.
 
 ## Capability Index
@@ -206,8 +210,7 @@ already has, kept because losing one costs a working link.
 | `integrations` | `/integrations` | External systems | application | Other |
 | `mail` | `/mail` | Mail | application | Other |
 | `activity` | `/activity` | Activity | application | Other |
-| `discover` | `/discover` | Catalog | global | Global |
-| `catalog` | `/catalog` | Catalog | global | — |
+| `catalog` | `/catalog` · `/discover` | Catalog | global | Global |
 | `listing` | `/catalog/:resourceId` | API | global | — |
 | `subscribe` | `/catalog/:resourceId/subscribe` | Subscribe | global | — |
 | `fixme` | `/fixme` | FixMe diagnostics | global | Global |
@@ -862,7 +865,12 @@ Enforced over the source by `ui/test/hygiene.test.ts`, not by review:
 - No colour written into a view — no `#rrggbb` outside the stylesheet.
 - No click handler a keyboard cannot reach: only `button`, `a` and capitalised components may
   carry `onClick`.
-- No empty state without an action.
+- No empty state without an action — over the whole interface, because there is one `EmptyState`
+  and no second component that takes bare children and escapes the rule.
+- **One shared component vocabulary**, in `ui/src/components.tsx`. No other module may export
+  `Notice`, `EmptyState`, `Field`, `Panel`, `Modal`, `DangerZone` or the async hooks, and no screen
+  may write `className="empty"`, `"notice"` or `"banner"` itself — that is how a second vocabulary
+  grows back.
 - No `confirm()`, and no delete of a named object outside a typed confirmation (`DangerZone`).
 - No request whose error is never rendered: every `useAsync` / `useAction` error reaches the page.
 - Every `tone-*` class a view names must exist in the stylesheet.

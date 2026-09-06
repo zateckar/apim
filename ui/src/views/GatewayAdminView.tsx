@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type FleetHealth, type GatewayRow } from "../api";
-import { Card, DangerZone, Field, Notice, Pill, useAction, useAsync } from "../components";
+import { Card, DangerZone, TextField, Notice, Pill, useAction, useAsync } from "../components";
 import { ALLOWED } from "../lib/capabilities";
 
 /**
@@ -109,7 +109,7 @@ function AddGateway({
   return (
     <Card title={`New gateway in ${environment}`}>
       <Notice kind="error">{action.error}</Notice>
-      <Field label="Name" value={name} onChange={setName} />
+      <TextField label="Name" value={name} onChange={setName} />
       <p className="hint">
         Lower-case letters, digits and hyphens — <code>managed</code>, <code>onprem</code>. It is
         how an API says where it is published, and it should be the same name in every environment
@@ -126,9 +126,9 @@ function AddGateway({
           ))}
         </select>
       </div>
-      <Field label="Locality" value={label} onChange={setLabel} />
-      <Field label="Internet address" value={publicUrl} onChange={setPublicUrl} />
-      <Field label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <TextField label="Locality" value={label} onChange={setLabel} />
+      <TextField label="Internet address" value={publicUrl} onChange={setPublicUrl} />
+      <TextField label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
       <div className="row">
         <button
           disabled={action.busy || name.trim() === ""}
@@ -208,19 +208,19 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
 
-      <Field label="Internet address" value={publicUrl} onChange={setPublicUrl} />
+      <TextField label="Internet address" value={publicUrl} onChange={setPublicUrl} />
       <p className="hint">
         The reverse proxy in front of this gateway's replicas — an origin with an optional path
         prefix, no query string. Every API URL the portal shows a consumer for this gateway is
         built from it, so changing it changes what every consumer is told to call. It does not
         move any traffic by itself.
       </p>
-      <Field label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <TextField label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
       <p className="hint">
         The same gateway's inside-only name, if it has one. Two DNS names for one deployment are
         two addresses, not two gateways: an API published here is reachable at both.
       </p>
-      <Field label="Locality" value={label} onChange={setLabel} />
+      <TextField label="Locality" value={label} onChange={setLabel} />
       <p className="hint">
         Where this deployment physically is — <code>Azure Cloud</code>,{" "}
         <code>Mladá Boleslav</code> — so a gateway is identifiable by something other than its

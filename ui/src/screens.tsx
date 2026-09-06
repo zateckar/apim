@@ -1,8 +1,7 @@
 import type { ReactNode } from "react";
 import type { Session } from "./App";
-import { Card, Link } from "./components";
+import { Card, Link, OperationList, Panel } from "./components";
 import type { Match } from "./lib/routes";
-import { Panel, OperationList } from "./portal/common";
 import { Publish, Editor } from "./portal/apis";
 import { Catalog } from "./portal/catalog";
 import { Dashboard } from "./portal/dashboard";
@@ -94,7 +93,6 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   ),
 
   // ------------------------------------------------------------------ the same for everybody
-  discover: ({ session, tick }) => <Catalog session={session} section="discover" tick={tick} />,
   catalog: ({ session }) => <MarketView user={session.user} meta={session.meta} />,
   listing: ({ match, session }) => (
     <MarketListing

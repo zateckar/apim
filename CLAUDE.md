@@ -53,6 +53,7 @@ ui/             React + Vite SPA, served by the control plane
                 ui/src/App.tsx        signing in, and the session every screen is handed
                 ui/src/lib/routes.ts  the one route table: every address, title, purpose, nav entry
                 ui/src/screens.tsx    the one screen registry: route id → component
+                ui/src/components.tsx the one component vocabulary, shared by both chromes
                 ui/src/portal/        the branded shell and the screens built for it
                 ui/src/views/         the plainer screens the shell embeds
                 ui/src/lib/           glossary · status · capabilities · attention · changelog
@@ -127,6 +128,13 @@ the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSW
   answers each route id. The shell renders the title and the purpose, so a screen cannot exist
   without them, and it names no screen itself. A second place that resolves an address or chooses a
   component is the defect this replaced — `ui/test/screens.test.ts` fails when one grows back.
+- **One component vocabulary.** `ui/src/components.tsx` is the only shared component module: the
+  banner (`Notice`), the empty state (`EmptyState`), the labelled slot (`Field`) and the labelled
+  input (`TextField`), the section, the modal, the typed confirmation and the two async hooks. There
+  used to be a second one in `portal/common.tsx` whose `Field`, `Notice`, `Empty` and `useWork`
+  overlapped these and were not interchangeable; which one a screen got was an accident of when it
+  was written. `ui/test/hygiene.test.ts` fails when a second module exports one of those names, or
+  when a screen writes `className="empty"`, `"notice"` or `"banner"` instead of using the component.
 - **No colour written into a view**, no click handler a keyboard cannot reach, no empty state
   without an action, no `confirm()`, no delete of a named object outside a typed confirmation, no
   request whose error is never rendered. `ui/test/hygiene.test.ts` enforces these over the source.

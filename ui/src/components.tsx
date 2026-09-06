@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type ReactNode } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "./api";
 import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow } from "./lib/attention";
 import { define } from "./lib/glossary";
@@ -90,9 +90,32 @@ export function describe(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export function Notice({ kind, children }: { kind: "error" | "warn" | "ok"; children: ReactNode }) {
+/**
+ * The one banner. There were two — `Notice kind="error"` in the plainer screens and `ErrorNotice
+ * error={…}` in the branded ones — which meant the same failure was a pastel box on one screen and
+ * a themed banner on the next, and only one of them announced itself.
+ *
+ * `.banner` rather than `.notice` because its four tones are CSS variables, so dark mode falls out
+ * for free; `role="alert"` on an error, because a message that appears after a failed request is
+ * exactly the case assistive technology has to be told about.
+ *
+ * Renders nothing for empty children, so `<Notice kind="error">{action.error}</Notice>` is safe to
+ * leave in the tree unconditionally — which is what makes the "every error is rendered" rule in
+ * `hygiene.test.ts` cheap to obey.
+ */
+export function Notice({
+  kind,
+  children,
+}: {
+  kind: "error" | "warn" | "ok" | "info";
+  children: ReactNode;
+}) {
   if (!children) return null;
-  return <div className={`notice ${kind}`}>{children}</div>;
+  return (
+    <div className={`banner ${kind === "error" ? "err" : kind}`} role={kind === "error" ? "alert" : undefined}>
+      {children}
+    </div>
+  );
 }
 
 export function Card({ title, hint, children }: { title?: string; hint?: string; children: ReactNode }) {
@@ -105,7 +128,42 @@ export function Card({ title, hint, children }: { title?: string; hint?: string;
   );
 }
 
+/**
+ * A labelled control — the label, and whatever the caller puts under it.
+ *
+ * This and `TextField` below were both called `Field`, in two modules, with prop sets that had
+ * nothing in common: one took `children`, the other took `value` and `onChange`. Which one a screen
+ * got depended on which module it happened to import. They are two components and now they have two
+ * names, because a select, a textarea and a group of radios all need a label and only one of them
+ * is an `<input type="text">`.
+ *
+ * Reach for this one by default; `TextField` is the shorthand for the case it covers.
+ */
 export function Field({
+  label,
+  hint,
+  children,
+}: {
+  label: string;
+  /** One line under the control, for the thing the label has no room to say. */
+  hint?: string;
+  children: ReactNode;
+}) {
+  return (
+    <label className="native-field">
+      <span className="lbl">{label}</span>
+      {children}
+      {hint && <span className="hint">{hint}</span>}
+    </label>
+  );
+}
+
+/**
+ * The shorthand: a labelled text or number input, in the row-flowing chrome the plainer screens
+ * lay their forms out in. The generated id is not decoration — the label used to sit *beside* the
+ * input rather than name it, so a screen reader announced an unlabelled box.
+ */
+export function TextField({
   label,
   value,
   onChange,
@@ -118,10 +176,12 @@ export function Field({
   placeholder?: string;
   type?: "text" | "number";
 }) {
+  const id = useId();
   return (
     <div className="field">
-      <label>{label}</label>
+      <label htmlFor={id}>{label}</label>
       <input
+        id={id}
         type={type}
         value={value}
         placeholder={placeholder}
@@ -284,6 +344,12 @@ export function Action({
 /**
  * An empty list, with the thing to do about it. Every empty state names the next action (plan
  * §9.4): "no results" is a dead end, and a dead end on a first visit is where people give up.
+ *
+ * This is the only empty state. The branded screens had an `Empty` of their own that took bare
+ * children and carried no action — which is to say it was the same box with the rule switched off,
+ * and `hygiene.test.ts` could only enforce the rule over half the interface. Anything that turned
+ * out not to be an empty state when it was converted became what it actually was: a `Skeleton`
+ * while something loads, a `Notice` when the sentence explains rather than invites.
  */
 export function EmptyState({
   title,
@@ -463,4 +529,135 @@ export function useAction() {
   }, []);
 
   return { busy, error, cause, message, run, setError, setMessage };
+}
+
+// ------------------------------------------------------------------ moved in from portal/common
+
+/**
+ * A titled section, with somewhere to put the controls that belong to it.
+ *
+ * `Card` above is the same idea in the plainer chrome, and the two have not been merged: `Card`
+ * puts its children straight into `.card` while this wraps them in `.card-body`, so folding one
+ * into the other would re-pad seventy-nine screens that nobody would have looked at afterwards.
+ * Use `Panel` in the branded shell and `Card` in a `plainChrome` screen.
+ */
+export function Panel({
+  title,
+  children,
+  actions,
+}: {
+  title: string;
+  children: ReactNode;
+  actions?: ReactNode;
+}) {
+  return (
+    <section className="card">
+      <div className="card-head">
+        <h3>{title}</h3>
+        {actions}
+      </div>
+      <div className="card-body">{children}</div>
+    </section>
+  );
+}
+
+/**
+ * A raw workflow state as a chip: what an operation, a subscription or a grant is currently doing.
+ *
+ * `StatusChip` above draws a `lib/status.ts` model, which is the one that names a state by what it
+ * means to the reader. This one maps the column value straight through, and is for the states that
+ * vocabulary does not cover yet.
+ */
+export function Status({ value }: { value: string }) {
+  const tone = ["complete", "active", "ready"].includes(value)
+    ? "ok"
+    : ["rejected", "blocked"].includes(value)
+      ? "err"
+      : "neutral";
+  return <span className={`chip ${tone}`}>{value.replaceAll("-", " ")}</span>;
+}
+
+/**
+ * A modal dialog. Native `<dialog>`, so Escape, the backdrop and the focus trap are the browser's
+ * rather than ours — and focus goes back where it came from on close, which is the part hand-rolled
+ * modals forget.
+ */
+export function Modal({
+  title,
+  children,
+  close,
+}: {
+  title: string;
+  children: ReactNode;
+  close: () => void;
+}) {
+  const ref = useRef<HTMLDialogElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement as HTMLElement;
+    ref.current?.showModal();
+    return () => {
+      ref.current?.close();
+      previous?.focus();
+    };
+  }, []);
+  return (
+    <dialog
+      ref={ref}
+      className="native-modal"
+      aria-label={title}
+      onCancel={(event) => {
+        event.preventDefault();
+        close();
+      }}
+    >
+      <div className="card-head">
+        <h2>{title}</h2>
+        <button className="btn sm" aria-label="Close dialog" onClick={close}>
+          ×
+        </button>
+      </div>
+      <div className="card-body">{children}</div>
+    </dialog>
+  );
+}
+
+/** The shell's clock. A screen that has to re-read after somebody's action depends on it. */
+export function useTicker() {
+  const [tick, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((value) => value + 1), 3000);
+    return () => clearInterval(id);
+  }, []);
+  return tick;
+}
+
+/** Changes in flight, and how far each has reached the gateways. */
+export function OperationList({ items }: { items: any[] }) {
+  if (items.length === 0) {
+    return (
+      <EmptyState
+        title="No changes yet"
+        detail="Publishing an API, editing its policy or promoting it into the next environment records a change here, with how far it has reached the gateways."
+        action={<Link to="/publish">Publish an API →</Link>}
+      />
+    );
+  }
+  return (
+    <div className="native-list">
+      {items.map((operation) => (
+        <div className="native-row" key={operation.id}>
+          <div>
+            <strong>
+              {operation.kind} · {operation.environment?.toUpperCase()}
+            </strong>
+            <small>
+              {operation.error ??
+                `${new Date(operation.createdAt).toLocaleString()} · ${operation.resourceName ?? ""}`}
+            </small>
+          </div>
+          <Status value={operation.state} />
+        </div>
+      ))}
+    </div>
+  );
 }

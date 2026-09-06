@@ -9,7 +9,7 @@ import {
 import {
   Card,
   EmptyState,
-  Field,
+  TextField,
   Link,
   Notice,
   Skeleton,
@@ -232,7 +232,7 @@ function ChooseApplication({
 
       {/* Creating one here rather than sending somebody to another screen and back `[P3-05]`. */}
       <div className="subform">
-        <Field label="…or create one" value={name} onChange={setName} placeholder="checkout-service" />
+        <TextField label="…or create one" value={name} onChange={setName} placeholder="checkout-service" />
         <button
           className="ghost"
           disabled={action.busy || name.trim().length === 0}

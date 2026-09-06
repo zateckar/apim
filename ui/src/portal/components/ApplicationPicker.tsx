@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { Application } from "../../App";
+import { EmptyState, Link } from "../../components";
 import * as I from "../icons";
 
 /**
@@ -88,13 +89,24 @@ export function ApplicationPicker({
               />
             </div>
           )}
-          {matching.length === 0 && (
-            <div className="empty">
-              {applications.length === 0
-                ? "You are not a member of any application yet. An administrator adds you to one."
-                : `Nothing matches “${search}”.`}
-            </div>
-          )}
+          {matching.length === 0 &&
+            (applications.length === 0 ? (
+              <EmptyState
+                title="You are not a member of any application yet"
+                detail="An application is the identity that publishes and consumes here, and everything in the portal belongs to one. An administrator adds you to it."
+                action={<Link to="/how">What an application is →</Link>}
+              />
+            ) : (
+              <EmptyState
+                title={`Nothing matches “${search}”`}
+                detail="The search covers the applications you are a member of. An administrator sees all of them."
+                action={
+                  <button className="btn sm" onClick={() => setSearch("")}>
+                    Clear the search
+                  </button>
+                }
+              />
+            ))}
           {matching.map((application) => (
             <button
               key={application.id}

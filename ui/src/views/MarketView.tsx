@@ -69,9 +69,12 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
 
       <Card>
         <div className="row wrap">
+          {/* Each label names its own control. They used to sit beside one, which reads the same
+              and is not the same: a screen reader announced three unlabelled fields. */}
           <div className="field" style={{ flex: "2 1 320px" }}>
-            <label>Search</label>
+            <label htmlFor="catalog-search">Search</label>
             <input
+              id="catalog-search"
               type="text"
               value={q}
               placeholder="pets, addPet, order book, streaming…"
@@ -79,8 +82,9 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
             />
           </div>
           <div className="field" style={{ flex: "0 0 180px" }}>
-            <label>Application</label>
+            <label htmlFor="catalog-application">Application</label>
             <select
+              id="catalog-application"
               value={application}
               onChange={(event) => setApplication(event.target.value)}
             >
@@ -93,8 +97,8 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
             </select>
           </div>
           <div className="field" style={{ flex: "0 0 180px" }}>
-            <label>Sort by</label>
-            <select value={sort} onChange={(event) => setSort(event.target.value)}>
+            <label htmlFor="catalog-sort">Sort by</label>
+            <select id="catalog-sort" value={sort} onChange={(event) => setSort(event.target.value)}>
               {SORTS.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}

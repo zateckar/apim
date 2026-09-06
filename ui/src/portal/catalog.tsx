@@ -1,24 +1,37 @@
 import { useMemo, useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
-import { go, useAsync, DangerZone } from "../components";
+import {
+  DangerZone,
+  EmptyState,
+  Field,
+  Modal,
+  Notice,
+  Panel,
+  Skeleton,
+  go,
+  useAction,
+  useAsync,
+} from "../components";
 import { permit, type Permission } from "../lib/capabilities";
 import { DOMAINS } from "../../../shared/domains";
 import { command, listAll } from "./client";
-import { Empty, ErrorNotice, Field, Modal, Panel, useWork } from "./common";
 import * as I from "./icons";
 import { KindBadge, legendOf, toneClassOf, type Kind } from "./components/KindBadge";
 import { VersionEnvPicker } from "./components/VersionEnvPicker";
 import { DescriptionMarkdown } from "./components/DescriptionMarkdown";
-import { SubscribeDialog } from "./processes";
 
 /**
- * The catalog, and the per-application API list — one surface with two settings.
+ * What one application publishes: its APIs, its MCP servers, its A2A agents.
  *
- * They are the same list at two scopes, so they are one component: the estate-wide **Catalog**
- * every developer browses, and **My APIs**, which is that list narrowed to the selected
- * application. Keeping them apart produced two rows that drifted, and a publisher who could not
- * tell what a consumer saw.
+ * This screen used to have a second setting, `discover`, which drew the same rows for the whole
+ * estate and was the shell's Catalog. It is not any more. The catalogue is `views/MarketView`, at
+ * `/catalog`, because that is the one backed by `/api/catalog` — ranking across the contract itself,
+ * facet counts over the visible set, Kafka topics in the same taxonomy, and a truthful `truncated`
+ * flag. Filtering `/api/resources` in the browser could imitate the list but not any of that, so
+ * two screens under one title meant two answers to one question. What is left here is the owner's
+ * list, which is what this component was always better at: it is the one with the version picker,
+ * the environment chevrons and the two actions only an owner has.
  *
  * Three decisions shape it.
  *
@@ -70,7 +83,6 @@ interface Family {
 }
 
 const OTHER = "Other";
-const KIND_FILTERS: Kind[] = ["rest", "soap", "mcp", "a2a"];
 
 /**
  * Descending by version, comparing the numbers inside rather than the strings around them, so
@@ -155,51 +167,34 @@ export function Catalog({
   tick,
 }: {
   session: Session;
-  /** `discover` is the whole estate; `apis`, `mcp` and `a2a` narrow to the selected application. */
+  /** Which of the owner's three lists this is: `apis`, `mcp` or `a2a`. */
   section: string;
   tick: number;
 }) {
-  const everything = section === "discover";
   const [search, setSearch] = useState("");
-  const [kinds, setKinds] = useState<ReadonlySet<Kind>>(new Set());
-  const [application, setApplication] = useState("");
-  const [domain, setDomain] = useState("");
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
-  const [listing, setListing] = useState<{ family: Family; version: Version } | null>(null);
-  const [subscribe, setSubscribe] = useState<string | null>(null);
 
   const data = useAsync(() => listAll<ResourceRow>("/api/resources"), [tick]);
-
-  function clearFilters() {
-    setSearch("");
-    setKinds(new Set());
-    setApplication("");
-    setDomain("");
-  }
 
   const families = useMemo(() => {
     // `apis` means REST and SOAP, not "everything": MCP servers and A2A agents have their own
     // sidebar entries, and listing them here too put the same API under two headings.
     const rows = (data.data?.items ?? []).filter((row) => {
-      if (!everything && row.applicationId !== s.application) return false;
+      if (row.applicationId !== s.application) return false;
       if (section === "mcp") return row.kind === "mcp";
       if (section === "a2a") return row.kind === "a2a";
       if (section === "apis") return row.kind === "rest" || row.kind === "soap";
       return true;
     });
     return toFamilies(rows);
-  }, [data.data, section, s.application, everything]);
+  }, [data.data, section, s.application]);
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
+    if (!term) return families;
     return families.filter((family) => {
-      if (kinds.size > 0 && !kinds.has(family.kind)) return false;
-      if (application && family.applicationId !== application) return false;
-      if (domain && (family.domain ?? OTHER) !== domain) return false;
-      if (!term) return true;
       const haystack = [
         family.name,
-        s.applicationName(family.applicationId),
         family.domain ?? "",
         family.subdomain ?? "",
         ...family.versions.map((version) => `${version.apiVersion} ${version.description ?? ""}`),
@@ -208,7 +203,7 @@ export function Catalog({
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [families, search, kinds, application, domain, s]);
+  }, [families, search]);
 
   // Filters are applied *before* bucketing, so a group's count is truthful and an emptied group
   // disappears instead of standing there saying zero.
@@ -228,18 +223,9 @@ export function Catalog({
       }));
   }, [filtered]);
 
-  const filtering = Boolean(search.trim() || kinds.size || application || domain);
-  const applications = useMemo(
-    () => [...new Set(families.map((family) => family.applicationId))].sort(),
-    [families],
-  );
-  const title = everything
-    ? "Catalog"
-    : section === "mcp"
-      ? "MCP servers"
-      : section === "a2a"
-        ? "A2A agents"
-        : "Published APIs";
+  const filtering = Boolean(search.trim());
+  const title =
+    section === "mcp" ? "MCP servers" : section === "a2a" ? "A2A agents" : "Published APIs";
 
   return (
     <>
@@ -248,103 +234,40 @@ export function Catalog({
         actions={
           <div className="search">
             <input
-              aria-label="Search the catalog"
-              placeholder="Search by name, application, domain or description…"
+              aria-label="Search this application's APIs"
+              placeholder="Search by name, domain or description…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
           </div>
         }
       >
-        <ErrorNotice error={data.error} />
-
-        {everything && (
-          <div className="discover-filters">
-            {KIND_FILTERS.map((kind) => {
-              const on = kinds.has(kind);
-              return (
-                <button
-                  key={kind}
-                  className={`chip ${on ? "accent" : ""}`}
-                  aria-pressed={on}
-                  onClick={() => {
-                    // An empty set means every kind; selecting chips narrows to their union, which
-                    // is what "filter" means to somebody who has just clicked one.
-                    const next = new Set(kinds);
-                    if (on) next.delete(kind);
-                    else next.add(kind);
-                    setKinds(next);
-                  }}
-                >
-                  {kind.toUpperCase()}
-                </button>
-              );
-            })}
-            <label className="sr-only" htmlFor="catalog-application">
-              Application
-            </label>
-            <select
-              id="catalog-application"
-              value={application}
-              onChange={(event) => setApplication(event.target.value)}
-            >
-              <option value="">All applications</option>
-              {applications.map((id) => (
-                <option key={id} value={id}>
-                  {s.applicationName(id)}
-                </option>
-              ))}
-            </select>
-            <label className="sr-only" htmlFor="catalog-domain">
-              Domain
-            </label>
-            <select
-              id="catalog-domain"
-              value={domain}
-              onChange={(event) => setDomain(event.target.value)}
-            >
-              <option value="">All domains</option>
-              {[...DOMAINS.map((entry) => entry.name), OTHER].map((name) => (
-                <option key={name} value={name}>
-                  {name}
-                </option>
-              ))}
-            </select>
-            {filtering && (
-              <button className="btn ghost sm" onClick={clearFilters}>
-                Clear filters
-              </button>
-            )}
-          </div>
-        )}
+        <Notice kind="error">{data.error}</Notice>
 
         {data.loading && !data.data ? (
-          <Empty>Loading the catalog…</Empty>
+          <Skeleton rows={4} />
         ) : groups.length === 0 ? (
-          <Empty>
-            {filtering ? (
-              <>
-                Nothing matches those filters.{" "}
-                <button className="btn sm" onClick={clearFilters}>
-                  Clear them
+          filtering ? (
+            <EmptyState
+              title={`Nothing here matches “${search.trim()}”`}
+              detail={`The search covers the name, the domain and each version's description within ${s.applicationName(s.application)}'s own list. The estate-wide catalogue searches the contract itself.`}
+              action={
+                <button className="btn sm" onClick={() => setSearch("")}>
+                  Clear the search
                 </button>
-              </>
-            ) : everything ? (
-              <>
-                Nothing has been published to this estate yet.{" "}
-                <button className="btn sm" onClick={() => go(`/${s.application}/publish`)}>
-                  Publish the first API
-                </button>
-              </>
-            ) : (
-              <>
-                {s.applicationName(s.application)} has published nothing here yet.{" "}
+              }
+            />
+          ) : (
+            <EmptyState
+              title={`${s.applicationName(s.application)} has published nothing here yet`}
+              detail="Publishing takes a definition, an address and a backend to forward to, and puts the result in the first environment of the chain."
+              action={
                 <button className="btn sm" onClick={() => go(`/${s.application}/publish`)}>
                   Publish an API
                 </button>
-              </>
-            )}
-          </Empty>
+              }
+            />
+          )
         ) : (
           <div className="discover-list">
             {groups.map((group) => {
@@ -380,9 +303,6 @@ export function Catalog({
                             key={family.key}
                             family={family}
                             session={s}
-                            everything={everything}
-                            onOpenListing={(version) => setListing({ family, version })}
-                            onSubscribe={(version) => setSubscribe(version.id)}
                             onChanged={data.reload}
                           />
                         ))}
@@ -395,22 +315,6 @@ export function Catalog({
           </div>
         )}
       </Panel>
-
-      {listing && (
-        <ListingDialog
-          session={s}
-          family={listing.family}
-          version={listing.version}
-          close={() => setListing(null)}
-          onSubscribe={() => {
-            setSubscribe(listing.version.id);
-            setListing(null);
-          }}
-        />
-      )}
-      {subscribe && (
-        <SubscribeDialog session={s} resourceId={subscribe} close={() => setSubscribe(null)} />
-      )}
     </>
   );
 }
@@ -418,23 +322,16 @@ export function Catalog({
 function CatalogRow({
   family,
   session: s,
-  everything,
-  onOpenListing,
-  onSubscribe,
   onChanged,
 }: {
   family: Family;
   session: Session;
-  everything: boolean;
-  onOpenListing: (version: Version) => void;
-  onSubscribe: (version: Version) => void;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState(family.versions[0]!.apiVersion);
   const [deleting, setDeleting] = useState(false);
   const [transferring, setTransferring] = useState(false);
   const version = family.versions.find((row) => row.apiVersion === selected) ?? family.versions[0]!;
-  const mine = family.applicationId === s.application;
   const description = version.description?.trim();
   const owner = { application: s.applicationName(family.applicationId) };
   const canDelete = permit("delete", version.capabilities, owner);
@@ -444,15 +341,11 @@ function CatalogRow({
   const editorSection = family.kind === "mcp" ? "mcp" : family.kind === "a2a" ? "a2a" : "apis";
 
   /**
-   * Where the name and the chevrons lead. A publisher looking at their own API wants the editor; a
-   * consumer browsing the catalog wants the listing, which is the read-only view of the same thing.
-   * A chevron additionally says *which environment* the editor should open on.
+   * Where the name and the chevrons lead: the workspace, because every row here belongs to the
+   * selected application. A chevron additionally says *which environment* it should open on. The
+   * read-only listing is what the catalogue offers for somebody else's API, at `/catalog/:id`.
    */
   function open(environment?: string) {
-    if (everything && !mine) {
-      onOpenListing(version);
-      return;
-    }
     if (environment) s.setEnvironment(environment);
     go(`/${family.applicationId}/${editorSection}/${version.id}`);
   }
@@ -497,44 +390,34 @@ function CatalogRow({
         onSelectVersion={setSelected}
         onSelectEnvironment={(environment) => open(environment)}
         trailing={
-          everything && !mine ? (
+          <>
             <button
-              className="btn sm"
-              title={`Request access to ${family.name}`}
-              onClick={() => onSubscribe(version)}
+              className="icon-btn workspace-row-change-owner"
+              aria-label={`Change who owns ${family.name}`}
+              title={
+                canTransfer.enabled
+                  ? `Hand ${family.name} to another application`
+                  : (canTransfer.reason ?? undefined)
+              }
+              disabled={!canTransfer.enabled}
+              onClick={() => setTransferring(true)}
             >
-              <I.Key size={13} /> Subscribe
+              <I.Users size={14} />
             </button>
-          ) : (
-            <>
-              <button
-                className="icon-btn workspace-row-change-owner"
-                aria-label={`Change who owns ${family.name}`}
-                title={
-                  canTransfer.enabled
-                    ? `Hand ${family.name} to another application`
-                    : (canTransfer.reason ?? undefined)
-                }
-                disabled={!canTransfer.enabled}
-                onClick={() => setTransferring(true)}
-              >
-                <I.Users size={14} />
-              </button>
-              <button
-                className="icon-btn danger workspace-row-delete"
-                aria-label={`Delete ${family.name} ${version.apiVersion}`}
-                title={
-                  canDelete.enabled
-                    ? `Delete ${family.name} ${version.apiVersion}`
-                    : (canDelete.reason ?? undefined)
-                }
-                disabled={!canDelete.enabled}
-                onClick={() => setDeleting(true)}
-              >
-                <I.Trash size={14} />
-              </button>
-            </>
-          )
+            <button
+              className="icon-btn danger workspace-row-delete"
+              aria-label={`Delete ${family.name} ${version.apiVersion}`}
+              title={
+                canDelete.enabled
+                  ? `Delete ${family.name} ${version.apiVersion}`
+                  : (canDelete.reason ?? undefined)
+              }
+              disabled={!canDelete.enabled}
+              onClick={() => setDeleting(true)}
+            >
+              <I.Trash size={14} />
+            </button>
+          </>
         }
       />
       {transferring && (
@@ -586,7 +469,7 @@ function DeleteVersionDialog({
   close: () => void;
   onDeleted: () => void;
 }) {
-  const w = useWork();
+  const w = useAction();
   const live = [...version.environments].map((environment) => environment.toUpperCase());
   return (
     <Modal title={`Delete ${family.name} ${version.apiVersion}?`} close={close}>
@@ -657,7 +540,7 @@ function ChangeOwnerDialog({
   const [target, setTarget] = useState(candidates[0]?.id ?? "");
   const [reason, setReason] = useState("");
   const [result, setResult] = useState<TransferResult | null>(null);
-  const w = useWork();
+  const w = useAction();
   const keepsAccess = s.user.isAdmin || s.user.applications.includes(target);
 
   return (
@@ -710,13 +593,15 @@ function ChangeOwnerDialog({
             that also sells something else stops the transfer instead, and says so — that one is a
             decision for the two applications rather than for this dialog.
           </p>
-          <ErrorNotice error={w.error} />
+          <Notice kind="error">{w.error}</Notice>
+          {/* Not an empty state: nothing is missing, the reader simply has no second application
+              to hand this to. The sentence says who does, which is the only useful next move. */}
           {candidates.length === 0 ? (
-            <Empty>
+            <Notice kind="warn">
               You are only a member of {s.applicationName(family.applicationId)}, so there is nowhere
               to hand this to. An administrator can transfer it, or add you to the receiving
               application.
-            </Empty>
+            </Notice>
           ) : (
             <>
               <Field label="New owner">
@@ -762,170 +647,6 @@ function ChangeOwnerDialog({
           </div>
         </form>
       )}
-    </Modal>
-  );
-}
-
-interface Listing {
-  description: string | null;
-  docsUrl: string | null;
-  operations: Array<{
-    id: string;
-    name?: string;
-    method?: string;
-    path?: string;
-    summary?: string | null;
-  }>;
-  endpoints: Array<{ environment: string; live: boolean; basePath: string; urls: string[] }>;
-  example: string | null;
-  products: Array<{ id: string; name: string; lifecycle: string }>;
-  subscriberCount: number;
-  subscribed: boolean;
-}
-
-/**
- * What a consumer sees before subscribing: what it does, what it offers, and where to call it. No
- * control on it changes anything except the one that asks for access.
- */
-function ListingDialog({
-  session: s,
-  family,
-  version,
-  close,
-  onSubscribe,
-}: {
-  session: Session;
-  family: Family;
-  version: Version;
-  close: () => void;
-  onSubscribe: () => void;
-}) {
-  const [tab, setTab] = useState("overview");
-  const listing = useAsync(
-    () => api.get<Listing>(`/api/catalog/${encodeURIComponent(version.id)}`),
-    [version.id],
-  );
-  const detail = listing.data;
-  const description = detail?.description ?? version.description;
-
-  return (
-    <Modal title={`${family.name} ${version.apiVersion}`} close={close}>
-      <p className="muted small">
-        {s.applicationName(family.applicationId)} ·{" "}
-        {family.domain
-          ? `${family.domain}${family.subdomain ? ` / ${family.subdomain}` : ""}`
-          : "no domain"}
-      </p>
-      <div className="tabs">
-        {["overview", "operations", "endpoints"].map((name) => (
-          <button
-            key={name}
-            className={`tab ${tab === name ? "active" : ""}`}
-            onClick={() => setTab(name)}
-          >
-            {name}
-          </button>
-        ))}
-      </div>
-      <ErrorNotice error={listing.error} />
-      {!detail ? (
-        <Empty>Loading the listing…</Empty>
-      ) : tab === "overview" ? (
-        <>
-          {description ? (
-            <DescriptionMarkdown source={description} />
-          ) : (
-            <p className="muted">
-              <em>The publisher has not written a description.</em>
-            </p>
-          )}
-          <div className="kv-list compact">
-            <div className="kv">
-              <span className="k">Live in</span>
-              <span className="v">
-                {[...version.environments].map((environment) => environment.toUpperCase()).join(", ") ||
-                  "nowhere yet"}
-              </span>
-            </div>
-            <div className="kv">
-              <span className="k">Sold through</span>
-              {/* Named rather than counted, because "no product yet" is the whole reason a
-                  Subscribe button can be pressed and answer with nothing to subscribe to. */}
-              <span className="v">
-                {detail.products.length
-                  ? detail.products.map((product) => product.name).join(", ")
-                  : "no product yet — nobody can subscribe"}
-              </span>
-            </div>
-            <div className="kv">
-              <span className="k">Consumers</span>
-              <span className="v">
-                {detail.subscriberCount}
-                {detail.subscribed ? " · you already have access" : ""}
-              </span>
-            </div>
-            {detail.docsUrl && (
-              <div className="kv">
-                <span className="k">Documentation</span>
-                <span className="v">
-                  <a href={detail.docsUrl} target="_blank" rel="noopener noreferrer">
-                    {detail.docsUrl}
-                  </a>
-                </span>
-              </div>
-            )}
-          </div>
-        </>
-      ) : tab === "operations" ? (
-        detail.operations.length === 0 ? (
-          <Empty>The stored contract declares nothing callable.</Empty>
-        ) : (
-          <div className="native-list">
-            {detail.operations.map((operation) => (
-              <div className="native-row" key={operation.id}>
-                <div>
-                  <strong>
-                    {operation.method ? `${operation.method} ` : ""}
-                    {operation.path ?? operation.name ?? operation.id}
-                  </strong>
-                  <small>{operation.summary ?? operation.name ?? ""}</small>
-                </div>
-              </div>
-            ))}
-          </div>
-        )
-      ) : detail.endpoints.length === 0 ? (
-        <Empty>No route has been created for this API yet, so there is no address to call.</Empty>
-      ) : (
-        <>
-          <div className="native-list">
-            {detail.endpoints.map((endpoint) => (
-              <div className="native-row" key={endpoint.environment}>
-                <div>
-                  <strong>{endpoint.environment.toUpperCase()}</strong>
-                  {/* Every address it answers at, not a base path: with an internet name and an
-                      intranet name for the same gateway there is no single right guess. */}
-                  <small className="mono">
-                    {endpoint.urls.length ? endpoint.urls.join("  ·  ") : endpoint.basePath}
-                  </small>
-                </div>
-                <span className={`chip ${endpoint.live ? "ok" : "neutral"}`}>
-                  {endpoint.live ? "live" : "not live"}
-                </span>
-              </div>
-            ))}
-          </div>
-          {detail.example && <pre className="mono">{detail.example}</pre>}
-        </>
-      )}
-      <div className="native-actions">
-        <button className="btn" onClick={close}>
-          Close
-        </button>
-        <button className="btn accent-soft" onClick={onSubscribe}>
-          <I.Key size={13} /> Request access
-        </button>
-      </div>
     </Modal>
   );
 }

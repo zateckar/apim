@@ -1,8 +1,15 @@
 import { useState, type ReactNode } from "react";
 import type { Session } from "../App";
 import { api, type AttentionRow, type Dashboard } from "../api";
-import { go, useAsync } from "../components";
-import { Empty, ErrorNotice, OperationList, Panel } from "./common";
+import {
+  EmptyState,
+  Notice,
+  OperationList,
+  Panel,
+  Skeleton,
+  go,
+  useAsync,
+} from "../components";
 import * as I from "./icons";
 import { formatDuration } from "../lib/datetime";
 
@@ -66,7 +73,7 @@ export function Dashboard({
 
   return (
     <>
-      <ErrorNotice error={data.error} />
+      <Notice kind="error">{data.error}</Notice>
 
       {d?.startHere && d.startHere.length > 0 && (
         <Panel title="Start here">
@@ -158,14 +165,17 @@ export function Dashboard({
         }
       >
         {!d ? (
-          <Empty>Loading traffic…</Empty>
+          <Skeleton rows={4} />
         ) : d.owner.topApis.length === 0 ? (
-          <Empty>
-            No traffic in {s.environment.toUpperCase()} over this window.{" "}
-            <button className="btn sm" onClick={() => go(`/${s.application}/apis`)}>
-              Open your APIs
-            </button>
-          </Empty>
+          <EmptyState
+            title={`No traffic in ${s.environment.toUpperCase()} over this window`}
+            detail="The gateways report what they served every minute, so an API that answered nothing in this window has no row. A longer window is one click above."
+            action={
+              <button className="btn sm" onClick={() => go(`/${s.application}/apis`)}>
+                Open your APIs
+              </button>
+            }
+          />
         ) : (
           <table className="tbl">
             <thead>

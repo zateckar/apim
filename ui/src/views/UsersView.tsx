@@ -10,7 +10,7 @@ import {
   Card,
   DangerZone,
   EmptyState,
-  Field,
+  TextField,
   Link,
   Notice,
   Skeleton,
@@ -57,7 +57,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
       >
         <Notice kind="error">{list.error}</Notice>
         <div className="row">
-          <Field label="Search" value={query} onChange={setQuery} placeholder="name, username or email" />
+          <TextField label="Search" value={query} onChange={setQuery} placeholder="name, username or email" />
           <div className="field">
             <label htmlFor="provider-filter">Signs in with</label>
             <select
@@ -160,10 +160,10 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
     <div className="subcard">
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <Field label="Username" value={username} onChange={setUsername} placeholder="dana" />
-        <Field label="Name" value={displayName} onChange={setDisplayName} placeholder="Dana Developer" />
-        <Field label="Email" value={email} onChange={setEmail} placeholder="dana@example.com" />
-        <Field label="First password" value={password} onChange={setPassword} />
+        <TextField label="Username" value={username} onChange={setUsername} placeholder="dana" />
+        <TextField label="Name" value={displayName} onChange={setDisplayName} placeholder="Dana Developer" />
+        <TextField label="Email" value={email} onChange={setEmail} placeholder="dana@example.com" />
+        <TextField label="First password" value={password} onChange={setPassword} />
       </div>
       <p className="muted small">
         They will have to choose a different one the first time they sign in — this one passed
@@ -441,8 +441,8 @@ function EditLocal({
   return (
     <div className="subcard">
       <div className="row">
-        <Field label="Name" value={displayName} onChange={setDisplayName} />
-        <Field label="Email" value={email} onChange={setEmail} />
+        <TextField label="Name" value={displayName} onChange={setDisplayName} />
+        <TextField label="Email" value={email} onChange={setEmail} />
       </div>
       <button
         className="ghost"
@@ -521,7 +521,7 @@ function ResetPassword({
       <Notice kind="error">{action.error}</Notice>
       {action.message && <Notice kind="ok">{action.message}</Notice>}
       <div className="row">
-        <Field label={`A new password for ${name}`} value={password} onChange={setPassword} />
+        <TextField label={`A new password for ${name}`} value={password} onChange={setPassword} />
         <button
           className="ghost"
           disabled={action.busy || password.length === 0}

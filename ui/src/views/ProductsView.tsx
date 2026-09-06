@@ -5,7 +5,7 @@ import {
   Action,
   Card,
   EmptyState,
-  Field,
+  TextField,
   Link,
   Notice,
   Skeleton,
@@ -209,7 +209,7 @@ function NewProduct({
     >
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <Field label="Name" value={name} onChange={setName} placeholder="orders-product" />
+        <TextField label="Name" value={name} onChange={setName} placeholder="orders-product" />
         <div className="field">
           <label htmlFor="new-product-members">APIs to include</label>
           <select

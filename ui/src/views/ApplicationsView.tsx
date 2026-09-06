@@ -4,7 +4,7 @@ import {
   Card,
   DangerZone,
   EmptyState,
-  Field,
+  TextField,
   Link,
   Notice,
   Skeleton,
@@ -136,8 +136,8 @@ function CreateApplication({
     <div className="subcard">
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <Field label="Name" value={name} onChange={setName} placeholder="Orders" />
-        <Field
+        <TextField label="Name" value={name} onChange={setName} placeholder="Orders" />
+        <TextField
           label="Identity provider group (optional)"
           value={group}
           onChange={setGroup}
@@ -294,8 +294,8 @@ function EditApplication({ application, onSaved }: { application: ApplicationDet
     <div className="subcard">
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <Field label="Name" value={name} onChange={setName} />
-        <Field label="Identity provider group" value={group} onChange={setGroup} />
+        <TextField label="Name" value={name} onChange={setName} />
+        <TextField label="Identity provider group" value={group} onChange={setGroup} />
       </div>
       <button
         className="ghost"

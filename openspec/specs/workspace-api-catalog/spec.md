@@ -6,6 +6,8 @@ Define the two lists of APIs: **My APIs**, the ones an application publishes, an
 the marketplace over everything a caller is allowed to see. The catalogue is a read model over what
 already exists and deliberately not a second source of truth.
 
+They are two lists because they answer two questions, and each is exactly one screen.
+
 ## Requirements
 
 ### Requirement: List an application's own published things
@@ -30,7 +32,37 @@ already exists and deliberately not a second source of truth.
 - GIVEN a row in the application's own list
 - WHEN the name is activated
 - THEN the API **workspace** SHALL open — the publisher's editor
-- AND a row in the cross-application Catalog SHALL instead open the read-only listing
+- AND a card in the cross-application Catalog SHALL instead open the read-only listing at
+  `/catalog/:resourceId`
+
+### Requirement: Offer the catalogue as one screen
+
+#### Scenario: A reader looks for an API somebody else publishes
+
+- GIVEN any signed-in user
+- WHEN they open Catalog
+- THEN there SHALL be exactly one catalogue screen, and it SHALL be the one backed by the search
+  endpoint — so the ranking, the facet counts, the Kafka topics and the truncation flag this
+  capability requires are what the reader actually gets
+- AND a second catalogue that filtered the resource list in the browser SHALL NOT exist beside it,
+  because two screens under one title are two answers to one question and only one of them can
+  satisfy the requirements below
+
+#### Scenario: An older catalogue address is opened
+
+- GIVEN `/discover`, the address the shell's own cross-application list answered on
+- WHEN it is opened
+- THEN it SHALL resolve to the one catalogue
+- AND the reason SHALL be that a kept address costs one entry in the route table and losing it costs
+  somebody a working link
+
+#### Scenario: The owner's own list is rendered
+
+- GIVEN the APIs, MCP Servers or A2A Agents section
+- WHEN it renders
+- THEN the component that draws it SHALL NOT also draw the estate-wide list
+- AND it SHALL keep what only an owner needs — the version picker, the environment chevrons,
+  the transfer and the delete — because those never applied to somebody else's API anyway
 
 ### Requirement: Decide catalogue visibility by three rules
 

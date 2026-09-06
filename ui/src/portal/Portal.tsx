@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
-import { useAsync, go } from "../components";
+import { Notice, useAction, useAsync, useTicker, go } from "../components";
 import { addressOf, matchRoute, navigation, switchApplication, type RouteDef } from "../lib/routes";
 import { screenFor } from "../screens";
 import * as I from "./icons";
-import { ErrorNotice, useWork, useTicker } from "./common";
 import { NotificationsBell } from "./notifications";
 import { ApplicationPicker } from "./components/ApplicationPicker";
 import { ChangeLog } from "./components/ChangeLog";
@@ -53,7 +52,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
 
   const items = operations.data?.items ?? [];
   const active = items.filter((o) => !["complete", "superseded"].includes(o.state));
-  const signout = useWork();
+  const signout = useAction();
 
   /** A sidebar entry. Highlighted by section, so an API's workspace lights up the list it came from. */
   function navItem(entry: RouteDef) {
@@ -123,7 +122,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             Sign out
           </button>
         </div>
-        <ErrorNotice error={signout.error} />
+        <Notice kind="error">{signout.error}</Notice>
       </aside>
       <div className="native-main">
         <header className="topbar">
@@ -209,7 +208,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
               )}
             </div>
           </div>
-          <ErrorNotice error={operations.error} />
+          <Notice kind="error">{operations.error}</Notice>
           {/* Screens written before this shell bring no table styling of their own; `.native-legacy`
               lends them the estate's. Which ones need it is declared in the route table. */}
           {route.plainChrome ? (

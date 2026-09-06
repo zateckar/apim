@@ -26,6 +26,19 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN the next version SHALL be suggested, and the form pre-filled from the current API
 - AND the suggestion SHALL be editable, and validated against `API_VERSION_PATTERN`
 
+#### Scenario: The identifier is one the API already has
+
+- GIVEN the new-version dialog
+- WHEN an identifier matching an existing version is typed
+- THEN the dialog SHALL refuse it **before** the request, with the publish control disabled and the
+  reason rendered beside the field rather than in that control's tooltip
+- AND the comparison SHALL be case-insensitive, because the version is a segment of the published
+  address and two that differ only by case are one version to anybody reading it
+- AND the reason SHALL name the version already there and list the ones the API has, so a free
+  identifier can be chosen without leaving the dialog
+- AND the control plane SHALL refuse it too — the browser check keeps the reader in the dialog they
+  can fix it in, and is not what makes the rule
+
 #### Scenario: A new version's definition is chosen
 
 - GIVEN the new-version dialog

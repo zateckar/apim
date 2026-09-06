@@ -114,9 +114,9 @@ function Fleet({ environment }: { environment: string }) {
                     config whose artifacts or certificates are not available is never activated,
                     and the replica keeps serving the last good one (plan `[R1-21]`). */}
                 {typeof instance.process?.activationBlocked === "string" && (
-                  <div className="notice error" style={{ margin: "6px 0 0" }}>
+                  <Notice kind="error">
                     not activated: {instance.process.activationBlocked}
-                  </div>
+                  </Notice>
                 )}
               </td>
               <td className="muted">

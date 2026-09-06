@@ -1,16 +1,18 @@
 import { useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
-import { useAsync, DangerZone } from "../components";
 import {
-  Panel,
-  Modal,
+  DangerZone,
+  EmptyState,
   Field,
+  Link,
+  Modal,
+  Notice,
+  Panel,
   Status,
-  Empty,
-  ErrorNotice,
-  useWork,
-} from "./common";
+  useAction,
+  useAsync,
+} from "../components";
 import { DomainPicker } from "./apis";
 
 export function SubscribeDialog({
@@ -26,7 +28,7 @@ export function SubscribeDialog({
       () => api.get<{ items: any[] }>("/api/products"),
       [resourceId],
     ),
-    w = useWork();
+    w = useAction();
   const [productId, setProduct] = useState(""),
     [purpose, setPurpose] = useState(""),
     [result, setResult] = useState<any>(null);
@@ -71,7 +73,7 @@ export function SubscribeDialog({
             {s.environment.toUpperCase()}. Access to another application's
             product requires publisher approval through simulated SkoNET.
           </p>
-          <ErrorNotice error={data.error ?? w.error} />
+          <Notice kind="error">{data.error ?? w.error}</Notice>
           <Field label="Product">
             <select
               required
@@ -128,7 +130,7 @@ export function Subscriptions({
       () => api.get<{ items: any[] }>("/api/products"),
       [resourceId, tick],
     ),
-    w = useWork();
+    w = useAction();
   const [key, setKey] = useState<any>(null),
     [withdraw, setWithdraw] = useState<any>(null);
   const rows = (data.data?.items ?? []).filter(
@@ -144,7 +146,7 @@ export function Subscriptions({
   );
   return (
     <Panel title="Subscriptions">
-      <ErrorNotice error={data.error ?? products.error ?? w.error} />
+      <Notice kind="error">{data.error ?? products.error ?? w.error}</Notice>
       {rows.length ? (
         rows.map((r) => (
           <div className="native-row" key={r.id}>
@@ -191,7 +193,11 @@ export function Subscriptions({
           </div>
         ))
       ) : (
-        <Empty>No subscriptions in this environment.</Empty>
+        <EmptyState
+          title={`No subscriptions in ${s.environment.toUpperCase()}`}
+          detail="A subscription is to a product in one environment, and its keys work only there — so an application subscribed in DEV has nothing here until it subscribes in this one too."
+          action={<Link to="/catalog">Find an API to subscribe to →</Link>}
+        />
       )}
       {key && (
         <Modal title="Subscription keys" close={() => setKey(null)}>
@@ -202,7 +208,7 @@ export function Subscriptions({
           <Field label="Secondary key">
             <input readOnly value={key.secondaryKey ?? ""} />
           </Field>
-          <ErrorNotice error={w.error} />
+          <Notice kind="error">{w.error}</Notice>
           <button
             className="btn"
             disabled={w.busy}
@@ -232,7 +238,7 @@ export function Subscriptions({
               ?.name ?? withdraw.productId}
             ? Gateway access is removed automatically.
           </p>
-          <ErrorNotice error={w.error} />
+          <Notice kind="error">{w.error}</Notice>
           <DangerZone
             what="Withdraw subscription"
             name={
@@ -270,7 +276,7 @@ export function Approvals({
         ),
       [s.application, tick],
     ),
-    w = useWork();
+    w = useAction();
   const [selected, setSelected] = useState<any>(null),
     [reason, setReason] = useState("");
   const rows = data.data?.items.filter((e) => e.integration === "skonet") ?? [];
@@ -280,7 +286,7 @@ export function Approvals({
         Decide requests for products and Kafka topics owned by this application.
         Approved access is provisioned automatically.
       </p>
-      <ErrorNotice error={data.error ?? w.error} />
+      <Notice kind="error">{data.error ?? w.error}</Notice>
       {rows.length ? (
         rows.map((e) => (
           <div className="native-row" key={e.id}>
@@ -305,7 +311,11 @@ export function Approvals({
           </div>
         ))
       ) : (
-        <Empty>No approval requests.</Empty>
+        <EmptyState
+          title="No approval requests"
+          detail="Requests to call what this application publishes arrive here. Nobody can ask for access to an API that is in no product, so an empty list on a busy estate is usually a product that was never assembled."
+          action={<Link to={`/${s.application}/products`}>Check your products →</Link>}
+        />
       )}
       {selected && (
         <Modal title="Review access request" close={() => setSelected(null)}>
@@ -316,7 +326,7 @@ export function Approvals({
               onChange={(e) => setReason(e.target.value)}
             />
           </Field>
-          <ErrorNotice error={w.error} />
+          <Notice kind="error">{w.error}</Notice>
           <div className="native-actions">
             {["approved", "rejected"].map((decision) => (
               <button
@@ -359,7 +369,7 @@ export function Integrations({
         ),
       [s.application, tick],
     ),
-    w = useWork();
+    w = useAction();
   return (
     <>
       <Panel title={fixme ? "FixMe diagnostics" : "Application integrations"}>
@@ -367,7 +377,7 @@ export function Integrations({
           External services are simulated. Requests, responses, email
           notifications and approval decisions are persisted.
         </p>
-        <ErrorNotice error={data.error ?? w.error} />
+        <Notice kind="error">{data.error ?? w.error}</Notice>
         <div className="native-actions">
           {(fixme ? ["fixme"] : ["leanix", "ldapws", "fixme"]).map((name) => (
             <button
@@ -434,7 +444,7 @@ export function Kafka({
       () => api.get<{ items: any[] }>("/api/kafka/access"),
       [tick, s.application],
     ),
-    w = useWork();
+    w = useAction();
   const [create, setCreate] = useState(false),
     [name, setName] = useState(""),
     [selected, setSelected] = useState<any>(null),
@@ -466,7 +476,7 @@ export function Kafka({
           </button>
         }
       >
-        <ErrorNotice error={topics.error ?? access.error ?? w.error} />
+        <Notice kind="error">{topics.error ?? access.error ?? w.error}</Notice>
         {rows.length ? (
           rows.map((t) => (
             <div className="native-row" key={t.id}>
@@ -502,7 +512,15 @@ export function Kafka({
             </div>
           ))
         ) : (
-          <Empty>No topics in this environment.</Empty>
+          <EmptyState
+            title={`No topics in ${s.environment.toUpperCase()}`}
+            detail="A topic belongs to one application and one environment, and carries a domain so it is filed beside that application's APIs in the catalogue."
+            action={
+              <button className="btn sm" onClick={() => setCreate(true)}>
+                Create a topic
+              </button>
+            }
+          />
         )}
       </Panel>
       {/* Both sides of the relationship, because both are entitled to see it and a topic cannot be
@@ -558,13 +576,19 @@ export function Kafka({
               {held.length ? (
                 held.map((a) => row(a, true))
               ) : (
-                <Empty>No topic access in this environment.</Empty>
+                <EmptyState
+                  title={`No topic access in ${s.environment.toUpperCase()}`}
+                  detail="Producing to or consuming another application's topic is a grant its owner approves, in one environment at a time."
+                  action={<Link to="/catalog">Find a topic in the catalogue →</Link>}
+                />
               )}
               <h4>Who consumes this application's topics</h4>
+              {/* Not an empty state: nobody holding a grant is the normal, healthy answer for a
+                  topic nobody has asked for, and there is nothing for the owner to do about it. */}
               {against.length ? (
                 against.map((a) => row(a, false))
               ) : (
-                <Empty>Nobody else holds access to your topics here.</Empty>
+                <p className="muted">Nobody else holds access to your topics here.</p>
               )}
             </>
           );
@@ -627,7 +651,7 @@ export function Kafka({
                 }
               />
             </Field>
-            <ErrorNotice error={w.error} />
+            <Notice kind="error">{w.error}</Notice>
             <button className="btn primary" disabled={w.busy}>
               Create topic
             </button>
@@ -636,7 +660,7 @@ export function Kafka({
       )}
       {selected && (
         <Modal title={selected.name} close={() => setSelected(null)}>
-          <ErrorNotice error={w.error} />
+          <Notice kind="error">{w.error}</Notice>
           <p>Kafka broker and REST proxy transport are simulated.</p>
           {selected.canEdit && (
             <>

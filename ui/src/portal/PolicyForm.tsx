@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { DISABLED_KEY, disabledUnits } from "../../../shared/policy";
-import { Field, Modal } from "./common";
+import { Field, Modal, Notice } from "../components";
 
 /**
  * The policy editor: one card per attached unit, an **Add policy** picker for the rest, and a form
@@ -231,10 +231,10 @@ export function PolicyForm({
     document = JSON.parse(value) as Record<string, unknown>;
   } catch (err) {
     return (
-      <div className="notice error" data-testid="policies-parse-failed">
+      <Notice kind="error">
         The advanced JSON below is not valid ({(err as Error).message}), so the controls cannot be
         drawn over it. Correct it, or revert this tab, and they come back.
-      </div>
+      </Notice>
     );
   }
 
@@ -275,12 +275,12 @@ export function PolicyForm({
   return (
     <div className="policy-editor">
       {unrecognised.length > 0 && (
-        <div className="notice warn">
+        <Notice kind="warn">
           {unrecognised.length} unit{unrecognised.length === 1 ? "" : "s"} in this document
           {unrecognised.length === 1 ? " is" : " are"} not offered for a {kind.toUpperCase()} API:{" "}
           <span className="mono">{unrecognised.join(", ")}</span>. They are kept exactly as they are
           and can be edited in the advanced JSON below.
-        </div>
+        </Notice>
       )}
 
       {cards.length === 0 && (
@@ -524,7 +524,7 @@ function PolicyCard({
         </p>
       )}
       {lockedReason && <p className="muted small">{lockedReason}</p>}
-      {warning && <div className="notice warn">{warning}</div>}
+      {warning && <Notice kind="warn">{warning}</Notice>}
       {open && (
         <div className="policy-item-open">
           <p className="muted small">{unit.description}</p>
@@ -790,10 +790,10 @@ function UnitForm({
           </select>
         </Field>
         {origins.includes("*") && value?.credentials && (
-          <div className="notice error">
+          <Notice kind="error">
             Every browser refuses credentials with a wildcard origin, so this route would look
             configured and never work. List the origins instead.
-          </div>
+          </Notice>
         )}
       </>
     );
@@ -888,10 +888,10 @@ function UnitForm({
           </Field>
         )}
         {response === "blocking" && (
-          <div className="notice warn">
+          <Notice kind="warn">
             A blocking response check turns the backend's own bug into a 502 the consumer sees. It
             is the right setting while a backend is being certified and the wrong one afterwards.
-          </div>
+          </Notice>
         )}
         <p className="muted">
           Absence of this unit is not "off" — it is these defaults.
@@ -1114,9 +1114,9 @@ function UnitForm({
           </div>
         </Field>
         {value?.idempotentOnly === false && (
-          <div className="notice warn">
+          <Notice kind="warn">
             Retrying a POST means the backend may process it twice.
-          </div>
+          </Notice>
         )}
       </>
     );
@@ -1234,11 +1234,11 @@ function UnitForm({
               </select>
             </Field>
             {!certificate && (
-              <div className="notice warn">
+              <Notice kind="warn">
                 Mutual TLS is selected and no certificate is bound in this environment, so the
                 gateway will refuse to activate this route. Pick one, or upload one under
                 Certificates.
-              </div>
+              </Notice>
             )}
             <p className="muted">
               The certificate is bound per environment: promoting this API carries the policy, not
@@ -1364,17 +1364,17 @@ function UnitForm({
           />
         </Field>
         {!websocket && !sse && (
-          <div className="notice error">
+          <Notice kind="error">
             Turn on at least one. An attached unit that enables neither changes nothing and reads as
             if it did.
-          </div>
+          </Notice>
         )}
         {websocket && (
-          <div className="notice warn">
+          <Notice kind="warn">
             A WebSocket route cannot also validate requests, transform, or cache: after the upgrade
             there are frames rather than requests. Those units are refused on save rather than
             ignored at runtime.
-          </div>
+          </Notice>
         )}
       </>
     );
@@ -1430,7 +1430,7 @@ function JsonUnit({
         />
       </Field>
       {note && <p className="muted">{note}</p>}
-      {error && <div className="notice error">Not valid JSON: {error}</div>}
+      {error && <Notice kind="error">Not valid JSON: {error}</Notice>}
     </>
   );
 }

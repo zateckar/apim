@@ -269,9 +269,14 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN any signed-in user
 - WHEN they open Catalog from the Global group
-- THEN they SHALL see every API they are allowed to see, across applications, grouped by domain
+- THEN they SHALL see every API and Kafka topic they are allowed to see, across applications,
+  browsable by domain and searchable across domains
 - AND opening one SHALL show a read-only listing with what it does and how to subscribe — never the
   publisher's editor
+- AND the Global group SHALL offer **one** Catalog entry: the shell used to draw a second
+  cross-application list of its own, and two entries under one label is a choice the reader cannot
+  make
+- AND the address that second list answered on SHALL still resolve, to the one catalogue
 
 ### Requirement: Refuse to lose an unsaved edit
 

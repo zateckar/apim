@@ -1,8 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { go, useAsync } from "../components";
+import { EmptyState, Link, Notice, Panel, go, useAsync } from "../components";
 import { formatAgo, formatDateTime } from "../lib/datetime";
-import { Empty, ErrorNotice, Panel } from "./common";
 import * as I from "./icons";
 import type { Session } from "../App";
 
@@ -177,11 +176,13 @@ export function NotificationsBell({
             </button>
           </div>
           <div className="notif-body">
-            <ErrorNotice error={feed.error} />
+            <Notice kind="error">{feed.error}</Notice>
             {!feed.error && items.length === 0 && (
-              <Empty>
-                Nothing yet. Access requests, decisions and finished deployments arrive here.
-              </Empty>
+              <EmptyState
+                title="Nothing yet"
+                detail="Access requests, decisions and finished deployments arrive here."
+                action={<Link to="/mail">Open Mail →</Link>}
+              />
             )}
             {items.map((item) => (
               <button
@@ -259,12 +260,13 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
         access decided, deployments that finished. The transport is simulated in this phase: the
         message was composed and addressed, and no mail server was contacted.
       </p>
-      <ErrorNotice error={feed.error} />
+      <Notice kind="error">{feed.error}</Notice>
       {!feed.error && items.length === 0 && (
-        <Empty>
-          No mail yet. Requesting access to a product, or answering somebody else's request, sends
-          the first message.
-        </Empty>
+        <EmptyState
+          title="No mail yet"
+          detail="Requesting access to a product, or answering somebody else's request, sends the first message."
+          action={<Link to="/catalog">Find an API to subscribe to →</Link>}
+        />
       )}
       <div className="notif-body">
         {items.map((item) => {

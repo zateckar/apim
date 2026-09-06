@@ -117,6 +117,39 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
   run on click
 - AND the control SHALL remain a real `button`, so Enter and Space still activate it
 
+### Requirement: Keep one shared component vocabulary
+
+#### Scenario: A screen needs a shared component
+
+- GIVEN any screen, in the branded shell or in a `plainChrome` view
+- WHEN it needs a banner, an empty state, a labelled field, a section, a modal or an async-action
+  hook
+- THEN it SHALL import it from `ui/src/components.tsx`
+- AND there SHALL be exactly one shared component module, so which components a screen gets is not
+  decided by which file it happens to import
+- AND the reason SHALL be that there were two — `ui/src/components.tsx` and
+  `ui/src/portal/common.tsx` — with four pairs that overlapped and were not interchangeable, so two
+  screens showing the same kind of thing looked and behaved differently
+
+#### Scenario: Two components under one name are reconciled
+
+- GIVEN two components that did the same job under the same name
+- WHEN they are merged
+- THEN one name SHALL survive per concept: `Notice` for every banner, `EmptyState` for every empty
+  state, `useAction` for every async action, `Field` for a labelled slot
+- AND a genuinely different component SHALL get a **different name** rather than a merged prop set —
+  `TextField`, the labelled text input, is not the labelled slot and never was
+- AND `Notice` SHALL render the themed `.banner` tones, with `role="alert"` on an error
+
+#### Scenario: A screen writes a shared class directly
+
+- GIVEN a `className` naming `empty`, `notice` or `banner` in any file other than the component
+  module itself
+- WHEN the source is scanned
+- THEN it SHALL fail
+- AND the reason SHALL be that this is how a second vocabulary grows back: not by adding a module,
+  but by one screen writing the box itself and escaping every rule attached to the component
+
 ### Requirement: Never end a first visit at a dead end
 
 #### Scenario: A list is empty
@@ -125,6 +158,16 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - WHEN the source is scanned
 - THEN it SHALL carry an `action`
 - AND the reason SHALL be that an empty state with no next step is where a first visit ends
+- AND the rule SHALL cover the **whole** interface: there SHALL be no second empty-state component
+  that takes bare children and carries no action
+
+#### Scenario: Something that is not an empty state was written as one
+
+- GIVEN a box that says a request has not answered yet, or explains why a control cannot be used
+- WHEN it is reviewed
+- THEN it SHALL be a `Skeleton` or a `Notice` respectively, not an `EmptyState`
+- AND the reason SHALL be that neither has a next action, and inventing one to satisfy the rule
+  would be worse than the dead end the rule is about
 
 ### Requirement: Confirm a destructive action by typing the object's name
 
@@ -186,6 +229,8 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - THEN it SHALL carry a label above the control, an optional helper line beneath it, and the
   rounded pill geometry of the shared stylesheet
 - AND a read-only field SHALL be visibly disabled with the reason nearby rather than removed
+- AND the label SHALL **name** its control — wrapping it, or carrying `htmlFor` against the
+  control's id — rather than merely sitting above it, which announces an unlabelled box
 
 #### Scenario: A description is edited
 

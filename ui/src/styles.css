@@ -115,10 +115,9 @@ tbody tr:last-child td { border-bottom: none; }
 .tabs button:hover { background: none; color: var(--ink); }
 .tabs button.active { color: var(--accent-ink); border-bottom-color: var(--accent); }
 
-.notice { padding: 10px 12px; border-radius: 6px; margin-bottom: 14px; font-size: 13px; }
-.notice.error { background: #fef3f2; color: var(--danger); border: 1px solid #f3c6c2; }
-.notice.warn { background: var(--warn-bg); color: var(--warn); border: 1px solid #fedf89; }
-.notice.ok { background: #e7f5e4; color: var(--accent-ink); border: 1px solid #b9e0ab; }
+/* `.notice` used to live here, beside `.banner` in brand.css: the same message in two boxes, one
+   of them with light-mode backgrounds written as hex. `Notice` renders `.banner` now, whose four
+   tones are CSS variables, so a warning looks the same on every screen and in both themes. */
 
 .login { max-width: 420px; margin: 12vh auto; }
 .login .card { padding: 26px; }

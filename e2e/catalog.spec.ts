@@ -5,87 +5,89 @@ import { expectNoErrors, openPortal, screenTitle, watchErrors } from "./_helpers
  * The catalog: the screen a consumer arrives on, and the one that has to answer "what is here"
  * without anybody explaining it first.
  *
- * The assertions are about the *shape* of the answer — grouped by domain, one row per family,
- * search that narrows, a listing that opens — rather than about any particular API, because the
+ * The assertions are about the *shape* of the answer — browsable by domain, searchable across
+ * domains, a read-only listing that opens — rather than about any particular API, because the
  * estate this runs against is seeded differently from one machine to the next. An estate with
  * nothing published is a legitimate state and skips rather than fails.
+ *
+ * There used to be two of these screens under one title, one of them a client-side filter over the
+ * resource list. `/discover` is now an address on this one, and the first test asserts it.
  */
 
-const GROUP = ".discover-card";
-const ROW = ".discover-item";
+const CARD = "article.listing";
+/** Only the domains that hold something; the empty ones are drawn, disabled, on purpose. */
+const OPENABLE = ".domain-head:not([disabled])";
 
-test("the catalog opens by domain and every group folds", async ({ page }) => {
+test("the catalog browses by domain, and /discover arrives at the same screen", async ({ page }) => {
   const errors = watchErrors(page);
   await openPortal(page, "/discover");
   await expect(screenTitle(page)).toHaveText("Catalog");
 
-  const rows = page.locator(ROW);
-  if ((await rows.count()) === 0) {
+  const heads = page.locator(OPENABLE);
+  if ((await heads.count()) === 0) {
     // Empty is a legitimate answer, and the screen says so with something to do about it rather
     // than rendering a blank list.
-    await expect(page.locator(".empty")).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Nothing is published yet" })).toBeVisible();
     expectNoErrors(errors);
     return;
   }
 
-  const groups = page.locator(GROUP);
-  expect(await groups.count()).toBeGreaterThan(0);
-
-  const first = groups.first();
-  const head = first.locator(".discover-card-head");
+  // Closed until asked for: thirteen domains eagerly loading their contents is thirteen requests
+  // nobody asked for, so the fold is what actually fetches.
+  const head = heads.first();
+  await expect(head).toHaveAttribute("aria-expanded", "false");
+  await head.click();
   await expect(head).toHaveAttribute("aria-expanded", "true");
-  const before = await first.locator(ROW).count();
-  expect(before).toBeGreaterThan(0);
+  await expect(page.locator(`.domain-body ${CARD}`).first()).toBeVisible();
 
   await head.click();
   await expect(head).toHaveAttribute("aria-expanded", "false");
-  await expect(first.locator(ROW)).toHaveCount(0);
-
-  // And the fold is the reader's, not the screen's: it comes back.
-  await head.click();
-  await expect(first.locator(ROW)).toHaveCount(before);
+  await expect(page.locator(".domain-body")).toHaveCount(0);
 
   expectNoErrors(errors);
 });
 
-test("search narrows the list, and clearing it puts everything back", async ({ page }) => {
+test("search crosses the domains, and clearing it puts them back", async ({ page }) => {
   const errors = watchErrors(page);
-  await openPortal(page, "/discover");
+  await openPortal(page, "/catalog");
 
-  const rows = page.locator(ROW);
-  const all = await rows.count();
-  test.skip(all === 0, "nothing is published on this estate");
+  const heads = page.locator(OPENABLE);
+  test.skip((await heads.count()) === 0, "nothing is published on this estate");
 
-  const search = page.getByLabel("Search the catalog");
-  await search.fill("zzzz-nothing-matches-this");
-  await expect(rows).toHaveCount(0);
-  await expect(page.getByText("Nothing matches those filters.")).toBeVisible();
+  // Browsing is by domain; searching is across them, because somebody typing an operation id is
+  // asking a question the taxonomy has no opinion about.
+  await page.getByLabel("Search", { exact: true }).fill("zzzz-nothing-matches-this");
+  await expect(page.getByRole("heading", { name: "Nothing matches that" })).toBeVisible();
+  await expect(page.locator(".domain-list")).toHaveCount(0);
 
-  await page.getByRole("button", { name: "Clear them" }).click();
-  await expect(rows).toHaveCount(all);
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(page.locator(".domain-list")).toBeVisible();
 
   expectNoErrors(errors);
 });
 
-test("a catalog row says who owns it, where it answers, and opens a listing", async ({ page }) => {
+test("a card opens the read-only listing, not the publisher's editor", async ({ page }) => {
   const errors = watchErrors(page);
-  await openPortal(page, "/discover");
+  await openPortal(page, "/catalog");
 
-  const rows = page.locator(ROW);
-  test.skip((await rows.count()) === 0, "nothing is published on this estate");
+  const heads = page.locator(OPENABLE);
+  test.skip((await heads.count()) === 0, "nothing is published on this estate");
+  await heads.first().click();
 
-  const first = rows.first();
-  // The two facts a row carries before you open anything: whose it is, and what its address is.
-  await expect(first.locator(".di-owner-legend")).toContainText("Owner");
-  await expect(first.locator(".di-path")).not.toBeEmpty();
+  const card = page.locator(`.domain-body ${CARD}`).first();
+  await expect(card).toBeVisible();
+  await card.locator("a").first().click();
 
-  await first.locator(".di-name").click();
-  const dialog = page.getByRole("dialog").first();
-  await expect(dialog).toBeVisible();
-  // What it does, and where it answers — the two questions a listing exists for.
-  await expect(dialog.getByRole("button", { name: /operations/i })).toBeVisible();
-  await expect(dialog.getByRole("button", { name: /endpoints/i })).toBeVisible();
-  await dialog.getByRole("button", { name: /operations/i }).click();
+  await expect(screenTitle(page)).toHaveText("API");
+  // The consumer's questions, in the order they are asked — and none of the publisher's controls,
+  // which is the whole point of the catalogue opening a listing rather than a workspace.
+  for (const tab of ["Overview", "Getting started", "Try it", "Versions"]) {
+    await expect(page.getByRole("button", { name: tab, exact: true })).toBeVisible();
+  }
+  await expect(page.getByRole("button", { name: "Subscribe", exact: true })).toBeVisible();
+  // And it arrived at the catalogue's own address rather than at the owning application's
+  // workspace, which is the failure this consolidation was about.
+  expect(new URL(page.url()).pathname).toMatch(/^\/catalog\//);
 
   expectNoErrors(errors);
 });

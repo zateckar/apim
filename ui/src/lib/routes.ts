@@ -112,9 +112,9 @@ export const ROUTES: RouteDef[] = [
      * That segment used to be parsed off and thrown away, so every one of those rows landed on
      * Definition instead.
      *
-     * `/discover/:id` is deliberately **not** here. The catalog opens somebody else's API as a
-     * read-only listing rather than as the publisher's editor, and that listing is a dialog on the
-     * catalog itself — so an address that answered with the editor would contradict the screen.
+     * `/discover/:id` is deliberately **not** here. The catalog opens somebody else's API as the
+     * read-only listing at `/catalog/:resourceId` rather than as the publisher's editor, so an
+     * address under the catalogue that answered with the editor would contradict the screen.
      */
     patterns: [
       "/apis/:resourceId",
@@ -226,19 +226,20 @@ export const ROUTES: RouteDef[] = [
 
   // ------------------------------------------------------------------ the same for everybody
   {
-    id: "discover",
-    patterns: ["/discover"],
+    id: "catalog",
+    /**
+     * There were two catalogues. The shell drew its own cross-application list at `/discover` by
+     * filtering `/api/resources` in the browser, while this one asks `/api/catalog` — which is
+     * where the ranking, the facet counts, the Kafka topics and the honest `truncated` flag live.
+     * Two screens under one title, and only one of them implemented what the spec says a catalogue
+     * does. `/discover` is a bookmark now, and it costs one string here to keep it working.
+     */
+    patterns: ["/catalog", "/discover"],
     title: "Catalog",
-    purpose: "Every API in the estate you are allowed to see, whoever publishes it.",
+    purpose:
+      "Every API and Kafka topic you are allowed to see, what it does, and how to start calling it.",
     scope: "global",
     nav: { group: "Global", label: "Catalog" },
-  },
-  {
-    id: "catalog",
-    patterns: ["/catalog"],
-    title: "Catalog",
-    purpose: "Every API you are allowed to see, with what it does and how to start calling it.",
-    scope: "global",
     plainChrome: true,
   },
   {

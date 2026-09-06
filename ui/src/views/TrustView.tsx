@@ -8,7 +8,7 @@ import {
   type TlsExceptionRow,
   type User,
 } from "../api";
-import { Card, DangerZone, Field, Link, Notice, useAction, useAsync } from "../components";
+import { Card, DangerZone, TextField, Link, Notice, useAction, useAsync } from "../components";
 import { ALLOWED } from "../lib/capabilities";
 import { TrustAnchors } from "./TrustAnchors";
 
@@ -349,8 +349,8 @@ function UploadCertificate({
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
       <div className="row">
-        {owner ? <div className="field"><label>Application</label><input value={owner} readOnly/></div> : <Field label="Application" value={applicationId} onChange={setApplicationId} />}
-        <Field label="Name" value={name} onChange={setName} placeholder="orders-backend" />
+        {owner ? <div className="field"><label>Application</label><input value={owner} readOnly/></div> : <TextField label="Application" value={applicationId} onChange={setApplicationId} />}
+        <TextField label="Name" value={name} onChange={setName} placeholder="orders-backend" />
         <div className="field">
           <label>Environment</label>
           <input value={environment} readOnly />
@@ -573,13 +573,13 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
             ))}
           </select>
         </div>
-        <Field
+        <TextField
           label="Backend URL (blank = the whole pool)"
           value={backendUrl}
           onChange={setBackendUrl}
           placeholder="https://backend.internal:8443"
         />
-        <Field label="Expires in (days)" type="number" value={days} onChange={(next) => setDays(Number(next))} />
+        <TextField label="Expires in (days)" type="number" value={days} onChange={(next) => setDays(Number(next))} />
       </div>
 
       <div className="field">
@@ -597,7 +597,7 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
       )}
 
       {mode === "pin" && (
-        <Field
+        <TextField
           label="Pinned sha256 thumbprint (64 hex characters)"
           value={pinThumbprint}
           onChange={setPinThumbprint}

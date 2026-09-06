@@ -8,7 +8,7 @@ import {
   type SyntheticsSnapshot,
   type User,
 } from "../api";
-import { Notice, useAsync } from "../components";
+import { EmptyState, Link, Notice, Skeleton, useAsync } from "../components";
 import { formatAgo, formatDateTime, formatDateTimeShort } from "../lib/datetime";
 import { SyntheticsChart } from "./SyntheticsChart";
 
@@ -127,7 +127,7 @@ export function HealthView({ user }: { user: User }) {
         })}
       </div>
 
-      {health.loading && !snapshot && <div className="empty">Probing the estate…</div>}
+      {health.loading && !snapshot && <Skeleton rows={3} />}
 
       <Synthetics admin={user.isAdmin} />
 
@@ -257,11 +257,21 @@ function Synthetics({ admin }: { admin: boolean }) {
           </Notice>
         )}
         {!selected ? (
-          <div className="empty">
-            {history.loading ? "Loading the uptime history…" : "No gateway is registered in any environment yet."}
-          </div>
+          history.loading ? (
+            <Skeleton rows={2} />
+          ) : (
+            <EmptyState
+              title="No gateway is registered in any environment yet"
+              detail="An uptime strip is drawn per gateway, so there is nothing to draw until one exists. A gateway is added, given a hostname and issued a replica token on the Gateways screen."
+              action={<Link to="/gateways">Add a gateway →</Link>}
+            />
+          )
         ) : selected.monitors.length === 0 ? (
-          <div className="empty">No monitor in {selected.environment.toUpperCase()}.</div>
+          <EmptyState
+            title={`No monitor in ${selected.environment.toUpperCase()}`}
+            detail="Every gateway registered in this environment gets a monitor. This environment has one registered and nothing watching it yet."
+            action={<Link to="/gateways">Open Gateways →</Link>}
+          />
         ) : (
           <div className="uptime-bars">
             {selected.monitors.map((monitor) => (

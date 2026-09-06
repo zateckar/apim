@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Portal } from "../src/portal/Portal.tsx";
-import { nextVersion, versionedPath, editorTab } from "../src/portal/apis.tsx";
+import { nextVersion, versionedPath, versionRefusal, editorTab } from "../src/portal/apis.tsx";
 import { addressOf, navigable, ROUTES } from "../src/lib/routes.ts";
 import { portalVersion } from "../src/lib/changelog.ts";
 import { currentVersion, parseChangeLog } from "../../shared/changelog.ts";
@@ -165,6 +165,31 @@ describe("the portal shell", () => {
     expect(versionedPath("/checkout", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1/", "v1", "v2")).toBe("/checkout/v2");
+  });
+
+  test("a version identifier the API already has is refused before the request", () => {
+    // The dialog used to post it and let the control plane answer `API name and version already
+    // exist` — after the dialog had closed, on the way to a resource that was never created.
+    const existing = ["v1", "v2"];
+    expect(versionRefusal("Orders", "v3", existing)).toBeNull();
+    expect(versionRefusal("Orders", "v2", existing)).toContain(
+      "Orders already has a version called v2",
+    );
+    // The reason names the versions that are taken, so the next identifier can be chosen here
+    // rather than by dismissing the dialog and reading the list behind it.
+    expect(versionRefusal("Orders", "v2", existing)).toContain("v1, v2");
+    // Case-insensitively, and around whitespace: the version is a segment of the published
+    // address, so `V2` and `v2` are one version to anybody reading it.
+    expect(versionRefusal("Orders", "V2", existing)).not.toBeNull();
+    expect(versionRefusal("Orders", "  v2  ", existing)).not.toBeNull();
+    expect(versionRefusal("Orders", "V2", ["v1", "V2"])).toContain("called V2");
+    // An empty box is the `required` attribute's business, not a duplicate — and a first version
+    // has nothing to collide with.
+    expect(versionRefusal("Orders", "", existing)).toBeNull();
+    expect(versionRefusal("Orders", "   ", existing)).toBeNull();
+    expect(versionRefusal("Orders", "v1", [])).toBeNull();
+    // And the identifier the dialog prefills is one the guard accepts, so it never opens refused.
+    expect(versionRefusal("Orders", nextVersion(existing), existing)).toBeNull();
   });
 
   test("a link that names a panel opens that panel", () => {

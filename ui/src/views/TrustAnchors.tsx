@@ -11,7 +11,7 @@ import {
   Card,
   DangerZone,
   EmptyState,
-  Field,
+  TextField,
   Notice,
   Skeleton,
   StatusChip,
@@ -243,7 +243,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
               usually not what was meant.
             </Notice>
           )}
-          <Field
+          <TextField
             label="Name it"
             value={name}
             onChange={setName}

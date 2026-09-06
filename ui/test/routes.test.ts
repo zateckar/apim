@@ -74,9 +74,20 @@ describe("the route table", () => {
       // opened from rather than always claiming to be under APIs.
       expect(match.section, section).toBe(section);
     }
-    // The catalog is the exception, and on purpose: somebody else's API opens there as a read-only
-    // listing, so an address that answered with the publisher's editor would contradict the screen.
+    // The catalogue is the exception, and on purpose: somebody else's API opens there as a
+    // read-only listing, so an address under it that answered with the publisher's editor would
+    // contradict the screen. `/catalog/:id` is that listing; nothing hangs off `/discover`.
     expect(matchRoute("/discover/res_1").route).toBe(NOT_FOUND);
+    expect(matchRoute("/catalog/res_1").route.id).toBe("listing");
+  });
+
+  test("there is one catalogue, and the address the second one used still resolves to it", () => {
+    // The shell drew its own cross-application list at `/discover` while `/catalog` asked the
+    // search endpoint. Two screens, one title, and only one of them ranked, faceted or paged.
+    expect(matchRoute("/discover").route.id).toBe("catalog");
+    expect(matchRoute("/catalog").route.id).toBe("catalog");
+    expect(ROUTES.filter((route) => route.title === "Catalog")).toHaveLength(1);
+    expect(navigable(false).filter((route) => route.nav!.label === "Catalog")).toHaveLength(1);
   });
 
   test("an application-scoped address resolves the same with the prefix and without it", () => {

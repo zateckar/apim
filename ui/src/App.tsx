@@ -7,18 +7,15 @@ import { AccountView } from "./views/AccountView";
 import { ForcedPasswordChange, LoginView } from "./views/LoginView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
 import { UsersView, UserView } from "./views/UsersView";
-import { HomeView } from "./views/HomeView";
 import { HowView } from "./views/HowView";
-import { ApisView } from "./views/ApisView";
 import { ApiDetailView } from "./views/ApiDetailView";
 import { GatewayView } from "./views/GatewayView";
 import { GlobalPolicyView } from "./views/GlobalPolicyView";
 import { MarketListing } from "./views/MarketListing";
 import { MarketView } from "./views/MarketView";
 import { ProductsView } from "./views/ProductsView";
-import { PublishWizard } from "./views/PublishWizard";
 import { SubscribeWizard } from "./views/SubscribeWizard";
-import { SubscriptionsView, SubscriptionView } from "./views/SubscriptionsView";
+import { SubscriptionView } from "./views/SubscriptionView";
 import { TelemetryView } from "./views/TelemetryView";
 import { TrustView } from "./views/TrustView";
 import { AuditView } from "./views/AuditView";
@@ -153,13 +150,21 @@ function PasswordGate({ onChanged }: { onChanged: () => void }) {
 }
 
 
+/**
+ * The route table's own renderer, and the shell's fallback.
+ *
+ * `Portal` resolves the addresses it has a branded screen for — the dashboard, the catalogue of one
+ * application, the publish wizard, the subscription list, the API workspace — and calls this for
+ * everything else. So several ids the table declares have **no case here on purpose**: `home`,
+ * `apis`, `api-new` and `subscriptions` are answered by the shell before they arrive, and a second
+ * rendering of each is a second set of behaviour to keep true. The addresses still work; what is
+ * gone is the older screen behind them.
+ */
 export function Screen({ match, session }: { match: Match; session: Session }) {
   const { user, meta } = session;
   const { params } = match;
 
   switch (match.route.id) {
-    case "home":
-      return <HomeView session={session} />;
     case "how":
       return <HowView />;
 
@@ -169,15 +174,9 @@ export function Screen({ match, session }: { match: Match; session: Session }) {
       return <MarketListing resourceId={params.resourceId!} user={user} meta={meta} />;
     case "subscribe":
       return <SubscribeWizard resourceId={params.resourceId!} session={session} />;
-    case "subscriptions":
-      return <SubscriptionsView session={session} />;
     case "subscription":
       return <SubscriptionView subscriptionId={params.subscriptionId!} />;
 
-    case "apis":
-      return <ApisView user={user} meta={meta} />;
-    case "api-new":
-      return <PublishWizard session={session} />;
     case "api":
     case "api-tab":
       return (

@@ -10,7 +10,7 @@ import {
   Term,
 } from "../src/components.tsx";
 import { HowView } from "../src/views/HowView.tsx";
-import { Published, PublishWizard } from "../src/views/PublishWizard.tsx";
+import { Publish } from "../src/portal/apis.tsx";
 import { Granted } from "../src/views/SubscribeWizard.tsx";
 import { VersionWizard } from "../src/views/VersionWizard.tsx";
 import { ALLOWED, permit } from "../src/lib/capabilities.ts";
@@ -26,7 +26,16 @@ import type { MarketListingDetail, Meta, ResourceDetail } from "../src/api.ts";
  * that does not depend on a fetch: the affordances the plan's §9.4 rules are about. Anything that
  * needs a live control plane is asserted in `test/` against the real one instead — D30 rules out
  * pretending a browser was driven.
+ *
+ * The publish wizard reads `?kind=` in a lazy initialiser — that is how the shell's **Publish API**
+ * button opens it on MCP or A2A — and a lazy initialiser *does* run under a static render, so the
+ * one browser global it needs is stubbed rather than the screen changed to suit the test.
  */
+
+Object.defineProperty(globalThis, "location", {
+  configurable: true,
+  value: { search: "" },
+});
 
 const meta: Meta = {
   environments: [{ environment: "dev", instances: 1, liveInstances: 1 }],
@@ -211,16 +220,19 @@ describe("the components keep their promises", () => {
 
 describe("the wizards", () => {
   test("publishing has three steps and refuses to start empty-handed", () => {
-    const html = renderToStaticMarkup(<PublishWizard session={session} />);
-    expect(html).toContain("Definition");
-    expect(html).toContain("Routing");
-    expect(html).toContain("Review");
+    const html = renderToStaticMarkup(<Publish session={session as never} />);
+    for (const label of ["Identify", "Define", "Route and sell"]) {
+      expect(html, label).toContain(label);
+    }
     expect(html).toContain('class="stepper"');
-    // A fresh account, nothing typed: the primary control is disabled rather than producing a 400.
-    expect(html).toMatch(/<button disabled=""[^>]*>Next: where it answers<\/button>/);
-    // The application is the switcher's, by name rather than by id — "application_platform" is not a group
-    // anybody can go and find.
-    expect(html).toContain("Platform Application");
+    // A fresh form, nothing typed: the primary control is disabled rather than producing a 400.
+    expect(html).toContain("Next: Define");
+    expect(html).toMatch(/<button type="submit" class="btn primary" disabled=""/);
+    // And the reason is a sentence on the screen rather than a title attribute on the dead button.
+    expect(html).toContain("Still needed: A name");
+    // Everything past the first step is out of reach until the step before it is answered, and it is
+    // disabled rather than hidden — so the shape of what is being asked is visible from screen one.
+    expect(html.match(/class="step [^"]*"[^>]*disabled=""/g) ?? []).toHaveLength(2);
   });
 
   test("a new version is three steps, prefilled with the next identifier", () => {
@@ -260,26 +272,13 @@ describe("the wizards", () => {
   });
 });
 
+/**
+ * Publishing has no end *screen* to assert: it is one transaction, and the caller is returned to
+ * the API's workspace where the deployment is visible. What the wizard promises before the button —
+ * the address a consumer will call — is asserted above and in `test/publish.test.ts` against the
+ * same derivation the control plane validates with.
+ */
 describe("what a journey ends with", () => {
-  test("publishing ends with the address and four things to do next", () => {
-    const html = renderToStaticMarkup(
-      <Published resource={resource} environment="dev" host="*" basePath="/petstore/v1" />,
-    );
-    expect(html).toContain("petstore v1 is live in DEV");
-    // The address, because "it worked" without one is not an outcome anybody can use.
-    expect(html).toContain("/petstore/v1");
-    for (const next of [
-      "/apis/res_1/try",
-      "/apis/res_1/policies",
-      "/products",
-      "/apis/res_1/publish",
-    ]) {
-      expect(html, next).toContain(`href="${next}"`);
-    }
-    // And the one thing that is *not* done yet, said before somebody wonders why nobody subscribes.
-    expect(html).toContain("until it is in a");
-  });
-
   test("subscribing ends with the key, a call that works, and where to go", () => {
     const listing = {
       id: "res_1",

@@ -84,6 +84,27 @@ one-line purpose. See *Portal Route Map* in `openspec/project.md`.
 - WHEN it renders
 - THEN the *Not found* screen SHALL be shown with its own title and purpose
 
+#### Scenario: The shell has its own screen for an address
+
+- GIVEN an address the shell answers itself — the dashboard, one application's APIs, the publish
+  wizard, the list of subscriptions
+- WHEN it is opened
+- THEN the shell's screen SHALL render it, and there SHALL be exactly **one** rendering of it
+- AND the route table's renderer SHALL be the fallback for everything else, with no case of its own
+  for those ids
+- AND the reason SHALL be that a second screen on the same address is a second set of behaviour to
+  keep true, and the one nobody can reach is the one that quietly stops being true
+
+#### Scenario: The root address is opened
+
+- GIVEN `/`
+- WHEN it resolves
+- THEN it SHALL be the **selected application's** dashboard, for the selected environment
+- AND there SHALL be no separate estate-wide home screen
+- AND the reason SHALL be that the estate's own health is Health Status, which is a screen in the
+  Administration group and open to everybody, and two screens answering "how is it going" from
+  different scopes is how two numbers come to disagree
+
 ### Requirement: Every screen has a title and a one-line purpose
 
 The rule SHALL be enforced structurally rather than by review.

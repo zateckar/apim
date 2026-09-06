@@ -1,16 +1,9 @@
 import { useState } from "react";
-import type { Session } from "../App";
-import {
-  api,
-  type Application,
-  type Subscription,
-  type SubscriptionUsage,
-} from "../api";
+import { api, type Subscription, type SubscriptionUsage } from "../api";
 import {
   Card,
   DangerZone,
   EmptyState,
-  Field,
   Link,
   Notice,
   Skeleton,
@@ -19,165 +12,18 @@ import {
   useAction,
   useAsync,
 } from "../components";
-import { ALLOWED, permit } from "../lib/capabilities";
+import { ALLOWED } from "../lib/capabilities";
 import { subscriptionChip } from "../lib/status";
 
 /**
- * My subscriptions (plan §9.7).
+ * One subscription, on its own address.
  *
- * Applications live **inside** this screen rather than beside it: "my app, its keys, what it can
- * call" is one question, and v3 answered it across two cards on a screen also holding the owner's
- * products. Splitting owner from consumer is the whole point of §9.1's two hats.
+ * The *list* of subscriptions is the shell's own screen; this is the only thing under
+ * `ui/src/views/` that `/subscriptions/…` still reaches, because the keys, the entitlements and the
+ * spend are all here and none of them are on a list.
+ *
+ * One application's access to one product: its keys, what it may call, and what it has spent.
  */
-export function SubscriptionsView({ session }: { session: Session }) {
-  const applications = useAsync(() => api.get<{ items: Application[] }>("/api/applications"), []);
-  const subscriptions = useAsync(() => api.get<{ items: Subscription[] }>("/api/subscriptions"), []);
-
-  if (!applications.data || !subscriptions.data) return <Skeleton rows={6} />;
-  const apps = applications.data.items;
-  const subs = subscriptions.data.items;
-
-  return (
-    <>
-      <Notice kind="error">{applications.error ?? subscriptions.error}</Notice>
-
-      {apps.length === 0 ? (
-        <EmptyState
-          title="No applications yet"
-          detail="An application is the thing that calls an API — a service, a job, a mobile app. Keys belong to it, so revoking one stops that caller and nobody else."
-          action={<Link to="/catalog">Find an API to subscribe to →</Link>}
-        />
-      ) : (
-        apps.map((application) => (
-          <ApplicationCard
-            key={application.id}
-            application={application}
-            subscriptions={subs.filter((row) => row.applicationId === application.id)}
-            onChanged={() => {
-              applications.reload();
-              subscriptions.reload();
-            }}
-          />
-        ))
-      )}
-
-      <NewApplication applicationId={session.application} onCreated={applications.reload} />
-    </>
-  );
-}
-
-function ApplicationCard({
-  application,
-  subscriptions,
-  onChanged,
-}: {
-  application: Application;
-  subscriptions: Subscription[];
-  onChanged: () => void;
-}) {
-  const canDelete = permit("delete", application.capabilities, { application: application.applicationId });
-  const action = useAction();
-
-  return (
-    <Card
-      title={application.name}
-      hint={`Owned by ${application.applicationId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
-    >
-      <Notice kind="error">{action.error}</Notice>
-
-      {subscriptions.length === 0 ? (
-        <EmptyState
-          title="This application cannot call anything yet"
-          detail="It has no subscription, so it has no key. Subscribing it to a product is what gives it one."
-          action={<Link to="/catalog">Browse the catalog →</Link>}
-        />
-      ) : (
-        <table>
-          <thead>
-            <tr>
-              <th>Product</th>
-              <th>Environment</th>
-              <th>State</th>
-              <th>Key last rotated</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {subscriptions.map((subscription) => (
-              <tr key={subscription.id}>
-                <td>
-                  <Link to={`/subscriptions/${subscription.id}`}>
-                    <strong>{subscription.productName ?? subscription.productId}</strong>
-                  </Link>
-                </td>
-                <td>
-                  <span className="pill">{subscription.environment}</span>
-                </td>
-                <td>
-                  <StatusChip chip={subscriptionChip(subscription.state)} />
-                </td>
-                <td className="muted small">
-                  {subscription.keyRotatedAt
-                    ? new Date(subscription.keyRotatedAt).toLocaleDateString()
-                    : "never"}
-                </td>
-                <td className="right">
-                  <Link to={`/subscriptions/${subscription.id}`}>Keys and usage →</Link>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      )}
-
-      {/* Deleting an application takes its subscriptions with it, so the name is typed back. */}
-      <DangerZone
-        what={`Delete ${application.name}`}
-        name={application.name}
-        consequence="Every subscription it holds stops working at the next gateway poll, and the keys cannot be brought back."
-        permission={canDelete}
-        busy={action.busy}
-        error={action.error}
-        onConfirm={async () => {
-          const ok = await action.run(() => api.del(`/api/applications/${application.id}`));
-          if (ok) onChanged();
-        }}
-      />
-    </Card>
-  );
-}
-
-function NewApplication({ applicationId, onCreated }: { applicationId: string; onCreated: () => void }) {
-  const [name, setName] = useState("");
-  const action = useAction();
-  return (
-    <Card
-      title="Register an application"
-      hint="One per thing that calls: keys belong to an application, so a separate one per caller is what makes revoking one harmless to the rest."
-    >
-      <Notice kind="error">{action.error}</Notice>
-      <div className="row">
-        <Field label="Name" value={name} onChange={setName} placeholder="checkout-service" />
-        <button
-          disabled={action.busy || name.trim().length === 0}
-          onClick={async () => {
-            const ok = await action.run(() => api.post("/api/applications", { name, applicationId }));
-            if (ok) {
-              setName("");
-              onCreated();
-            }
-          }}
-        >
-          Register
-        </button>
-      </div>
-    </Card>
-  );
-}
-
-// --------------------------------------------------------------------------- one subscription
-
-/** One application's access to one product: its keys, what it may call, and what it has spent. */
 export function SubscriptionView({ subscriptionId }: { subscriptionId: string }) {
   const list = useAsync(() => api.get<{ items: Subscription[] }>("/api/subscriptions"), []);
   const usage = useAsync(
@@ -194,7 +40,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
     return (
       <EmptyState
         title="No such subscription"
-        detail="It may have been deleted, or you are on neither side of it — neither the application whose application holds the keys nor the application that publishes the product."
+        detail="It may have been deleted, or you are on neither side of it — neither the application that holds the keys nor the application that publishes the product."
         action={<Link to="/subscriptions">Back to my subscriptions →</Link>}
       />
     );
@@ -348,7 +194,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
                 : {
                     enabled: false,
                     reason:
-                      "You are on neither side of this subscription: it is not your application's application, and not your application's product.",
+                      "You are on neither side of this subscription: the application holding the keys is not yours, and neither is the product it calls.",
                   }
           }
           busy={action.busy}

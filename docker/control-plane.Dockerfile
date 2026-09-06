@@ -3,7 +3,7 @@
 # `oven/bun:1.4.1-alpine`, pinned exactly rather than to a floating minor `[P1-21]`. The same
 # version is pinned in `.github/workflows/{ci,images,perf}.yml` and in the gateway's Dockerfile, and
 # a Dockerfile that floated would make a reproducible build stop being one without anybody changing
-# a line. docs/deployment.md §1 names all five places, because they move together.
+# a line. README.md, "The two images", names all five places, because they move together.
 
 # ---------------------------------------------------------------- stage 1: the SPA
 FROM oven/bun:1.4.1-alpine AS ui

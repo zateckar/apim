@@ -785,7 +785,7 @@ $victimEnv = ".data/env/$victimName"
   "GATEWAY_CONFIG_CACHE=.data/dp-$victimName-config.json"
   "POLL_INTERVAL_SEC=2"
   # A gateway refuses to start unless the runtime's outbound queue is at least as wide as its own
-  # ceiling, so this throwaway one needs the pair too (docs/capacity-report.md).
+  # ceiling, so this throwaway one needs the pair too (reports/capacity-report.md).
   "MAX_CONCURRENT_REQUESTS=2048"
   "BUN_CONFIG_MAX_HTTP_REQUESTS=8192"
   ""

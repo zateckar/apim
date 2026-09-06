@@ -88,4 +88,4 @@ networks:
 # `.dockerignore` — a published image should not carry a toy HTTP server — so a service pointing at
 # one would be a service that cannot start. To exercise the whole product against something, run the
 # local stack from source: `pwsh -File scripts/stack.ps1 -Up`, which brings up four upstreams, the
-# control plane and four gateways. docs/walkthrough.md is the guided version.
+# control plane and four gateways. `pwsh -File scripts/demo.ps1` walks the journeys through it.

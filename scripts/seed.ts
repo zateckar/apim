@@ -19,7 +19,7 @@ const { instances } = seedBaseline(app);
 const shared = [
   "# written by scripts/seed.ts - Bun loads this automatically from the repository root",
   "# The local stack signs in through the development bypass: three named users, no passwords.",
-  "# A deployment sets AUTH_PROVIDERS=oidc or local,oidc instead - see docs/deployment.md.",
+  "# A deployment sets AUTH_PROVIDERS=oidc or local,oidc instead - see README.md.",
   "AUTH_PROVIDERS=dev",
   "PORT=8080",
   "PUBLIC_URL=http://localhost:8080",
@@ -46,7 +46,7 @@ const shared = [
   "# 2000 rps against a backend degraded to 4 s is 8000 requests held at once.",
   "MAX_CONCURRENT_REQUESTS=8192",
   "# The runtime's own outbound queue, which must not bind before the gateway's ceilings do.",
-  "# Left at its default, one slow backend delays every other route (docs/capacity-report.md).",
+  "# Left at its default, one slow backend delays every other route (reports/capacity-report.md).",
   "BUN_CONFIG_MAX_HTTP_REQUESTS=16384",
   "",
   "# v3 - validation and streaming. The memory blocking validation may hold at once: past it a",

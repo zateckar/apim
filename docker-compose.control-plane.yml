@@ -10,7 +10,7 @@
 #   docker compose -f docker-compose.control-plane.yml -f docker-compose.data-plane.yml up -d
 #
 # On separate hosts, run this file there and the gateway file here, and give the gateway a real
-# GATEWAY_CP_URL. docs/deployment.md §2 is the long version.
+# GATEWAY_CP_URL. README.md, "Compose, on a clean machine", is the long version.
 #
 # Bring it up in three steps — the middle one is the enrolment:
 #
@@ -82,7 +82,7 @@ services:
     # No `deploy.replicas` here, and it is not an omission. Design §13: one SQLite writer, so the
     # control plane is a single process by construction. It is also the plane that may be down —
     # gateways keep serving their last activated config while it is unreachable. Scale the gateway
-    # instead; docs/deployment.md §11 has the argument in full.
+    # instead; README.md, "What a Kubernetes chart would have to get right", has the argument in full.
 
 volumes:
   control-plane-data:

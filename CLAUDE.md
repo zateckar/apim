@@ -11,8 +11,14 @@ SQLite file. React + Vite for the portal.
 ## `openspec/` is the behavioural source of truth
 
 **Read `openspec/specs/<capability>/spec.md` before changing behaviour, and update it in the same
-change.** The specs — not this file, not the code comments, not `docs/` — say what the product
-does. `docs/` holds design history and rationale; `openspec/` holds the contract.
+change.** The specs — not this file, not the code comments, not `README.md` — say what the product
+does. `openspec/` is the only place a behaviour is stated; `README.md` is the operator's half
+(running, deploying, sizing, backup, upgrade, CI) and restates no contract the specs already hold.
+
+There is no `docs/` directory. The design history it held — the original architecture proposal,
+five plans, five reviews, the reuse analysis, the hand-test checklists — was removed in v1.2.0 and
+is in git. The `plan §…`, `design §…` and `[P1-14]`-style markers in the source cite it; keep
+writing that kind of citation for new decisions, naming the review or spec section it came from.
 
 - `openspec/project.md` — the system baseline: topology, route map, endpoint map, data model,
   canonical algorithms, constants, environment variables, and a **Capability Index** naming every
@@ -44,17 +50,21 @@ control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota ag
 data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
                 backend pool and breaker, response cache, stream registry, counters, trust store
 ui/             React + Vite SPA, served by the control plane
-                ui/src/portal/  the branded shell and its screens — this is the portal users see
-                ui/src/views/   the screens the shell composes
-                ui/src/lib/     routes · glossary · status · capabilities · attention
+                ui/src/App.tsx        signing in, and the session every screen is handed
+                ui/src/lib/routes.ts  the one route table: every address, title, purpose, nav entry
+                ui/src/screens.tsx    the one screen registry: route id → component
+                ui/src/portal/        the branded shell and the screens built for it
+                ui/src/views/         the plainer screens the shell embeds
+                ui/src/lib/           glossary · status · capabilities · attention · changelog
 docker/         one Dockerfile per plane; one docker-compose.<plane>.yml each, at the root
 tools/          the local upstreams (REST/SOAP/SSE/WebSocket, MCP, A2A) and the two load harnesses
 scripts/        seed · stack · demo · mint-instance · schedule-perf
 test/           bun test — control plane, data plane, shared
 ui/test/        bun test — the parts of the interface that are decisions rather than markup
 e2e/            Playwright — read-only smoke tests against a running stack
+reports/        generated measurements: perf and capacity
 openspec/       the behavioural source of truth (see above)
-docs/           design · deployment · walkthrough · plans and reviews · generated reports
+README.md       the operator's half — running, deploying, sizing, backup, upgrade, CI
 ```
 
 ## Domain vocabulary
@@ -93,6 +103,7 @@ bun run test:ui   # the interface's decision tables and source-level rules
 bun run test      # both, in that order
 bun run typecheck # both projects
 bun run test:e2e  # Playwright smoke tests against a running stack
+bun run build:ui  # enough on its own for a change to the interface — no stack cycle needed
 ```
 
 The smoke suite needs a browser once (`bunx playwright install chromium`) and a stack already up. It
@@ -111,8 +122,11 @@ the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSW
 - **One authorization rule.** You may change what your applications own, you may read everything,
   an administrator may change anything. Enforce it on the server on every request; the application
   picker in the browser is context, not proof.
-- **Every screen has a title and a one-line purpose**, taken from `ui/src/lib/routes.ts`. The
-  shell renders both, so a screen cannot exist without them.
+- **One route table and one screen registry.** `ui/src/lib/routes.ts` declares every address, its
+  title, its one-line purpose and its sidebar entry; `ui/src/screens.tsx` says which component
+  answers each route id. The shell renders the title and the purpose, so a screen cannot exist
+  without them, and it names no screen itself. A second place that resolves an address or chooses a
+  component is the defect this replaced — `ui/test/screens.test.ts` fails when one grows back.
 - **No colour written into a view**, no click handler a keyboard cannot reach, no empty state
   without an action, no `confirm()`, no delete of a named object outside a typed confirmation, no
   request whose error is never rendered. `ui/test/hygiene.test.ts` enforces these over the source.

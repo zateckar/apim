@@ -882,6 +882,9 @@ async function main(): Promise<void> {
     ).json()) as Record<string, unknown>;
 
     mkdirSync(".data/perf", { recursive: true });
+    // `reports/` is committed, so it is there in a checkout — but a harness that fails at the last
+    // line after forty minutes of measuring, because a directory was missing, is not worth risking.
+    mkdirSync("reports", { recursive: true });
     let previous: { at: string; results: Record<string, number> } | null = null;
     try {
       const history = (await Bun.file(".data/perf/history.jsonl").text())
@@ -896,7 +899,7 @@ async function main(): Promise<void> {
 
     const elapsedMs = Date.now() - startedMs;
     const markdown = report(results, profileName, world, telemetry, previous, startedAt, elapsedMs);
-    writeFileSync("docs/perf-report.md", markdown);
+    writeFileSync("reports/perf-report.md", markdown);
     writeFileSync(
       `.data/perf/${startedAt.replace(/[:.]/g, "-")}.json`,
       JSON.stringify({ startedAt, profile: profileName, results, telemetry }, null, 2),
@@ -911,7 +914,7 @@ async function main(): Promise<void> {
     );
 
     console.log("");
-    console.log(`[perf] wrote docs/perf-report.md (${Math.round(elapsedMs / 1000)}s)`);
+    console.log(`[perf] wrote reports/perf-report.md (${Math.round(elapsedMs / 1000)}s)`);
   } finally {
     world.stop();
   }

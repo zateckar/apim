@@ -24,7 +24,7 @@ ENV GATEWAY_CONFIG_CACHE=/var/lib/apim/config.json \
 # v3 made the gateway refuse to start unless BUN_CONFIG_MAX_HTTP_REQUESTS >= MAX_CONCURRENT_REQUESTS
 # precisely to catch the pairing an image that set neither would inherit: the runtime's default
 # outbound queue against the gateway's default ceiling, where one slow backend delays every other
-# route (docs/capacity-report.md). Raise them together or not at all.
+# route (reports/capacity-report.md). Raise them together or not at all.
 ENV MAX_CONCURRENT_REQUESTS=8192 \
     BUN_CONFIG_MAX_HTTP_REQUESTS=16384 \
     MAX_CONCURRENT_UPGRADES=1024 \

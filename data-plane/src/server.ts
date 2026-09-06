@@ -61,7 +61,7 @@ export interface DpConfig {
    * One JSON line per request on stdout. On by default, because a gateway that answers requests
    * without recording that it did is not operable — but `DP_ACCESS_LOG=off` exists because the
    * write is synchronous work on the request path and, unlike telemetry, it is the same cost per
-   * request whatever the body size. What it costs is measured in `docs/capacity-report.md` rather
+   * request whatever the body size. What it costs is measured in `reports/capacity-report.md` rather
    * than guessed at.
    *
    * Until now this was reachable only from code (`quiet`), which meant a gateway started as a
@@ -590,7 +590,7 @@ export function startDataPlane(dp: DataPlane) {
  * The runtime's own ceiling on concurrent outbound HTTP requests, per process, across every
  * origin. It applies whether or not anyone sets it, and its default is far below what a gateway
  * accepts — which makes it a single FIFO queue shared by every route, with no per-route fairness
- * and no shedding. Measured (`docs/capacity-report.md`): with the default, flooding one route
+ * and no shedding. Measured (`reports/capacity-report.md`): with the default, flooding one route
  * whose backend takes two seconds pushed an *unrelated* healthy route's median latency from
  * 0.56 ms to 1,990 ms. One slow backend became a total outage. With it raised above the gateway's
  * own ceiling, the same flood left the healthy route at 0.56 ms.

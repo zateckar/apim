@@ -45,5 +45,5 @@ jobs:
         with:
           name: perf-report
           path: |
-            docs/perf-report.md
+            reports/perf-report.md
             .data/perf/

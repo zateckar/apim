@@ -463,8 +463,9 @@ async function settle(ms = 1500): Promise<void> {
  */
 function regenerate(path: string): void {
   const input = JSON.parse(readFileSync(path, "utf8")) as ReportInput;
-  writeFileSync("docs/capacity-report.md", writeReport(input));
-  console.log(`[capacity] rewrote docs/capacity-report.md from ${path} (measured ${input.startedAt})`);
+  mkdirSync("reports", { recursive: true });
+  writeFileSync("reports/capacity-report.md", writeReport(input));
+  console.log(`[capacity] rewrote reports/capacity-report.md from ${path} (measured ${input.startedAt})`);
 }
 
 async function main(): Promise<void> {
@@ -964,7 +965,10 @@ async function main(): Promise<void> {
       console.log(`[capacity] --only=${only.join(",")}: no report written`);
       return;
     }
-    writeFileSync("docs/capacity-report.md", writeReport(input));
+    // `reports/` is committed, so it is there in a checkout — but a harness that fails at the last
+    // line after the better part of an hour, because a directory was missing, is not worth risking.
+    mkdirSync("reports", { recursive: true });
+    writeFileSync("reports/capacity-report.md", writeReport(input));
     mkdirSync(".data/capacity", { recursive: true });
     // Everything the report needs, so its wording can be revised without measuring again.
     writeFileSync(
@@ -981,7 +985,7 @@ async function main(): Promise<void> {
       }) + "\n",
     );
     console.log("");
-    console.log(`[capacity] wrote docs/capacity-report.md (${Math.round(elapsedMs / 1000)}s)`);
+    console.log(`[capacity] wrote reports/capacity-report.md (${Math.round(elapsedMs / 1000)}s)`);
   } finally {
     world.stop();
   }

@@ -17,6 +17,25 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.2.0 - 06.09.2026
+
+One route table behind the whole portal, and the links that quietly went to the wrong place now
+arrive.
+
+### Changed
+
+- Every screen says what it is for, in one line under its title.
+- Switching application keeps you on the screen you were reading. A screen that is the same for
+  everybody — Trust, the catalog, your account — stays put instead of sending you to a dashboard.
+- Health Status, Gateways and Telemetry no longer repeat their own title inside the page.
+
+### Fixed
+
+- A link that names a panel of an API's workspace opens that panel. What needs your attention about
+  a policy that will not compile, a missing route or a missing backend now lands where the fix is,
+  instead of on the definition every time.
+- **Try it from here instead**, at the end of subscribing, opens the playground.
+
 ## 1.1.0 - 05.09.2026
 
 The surfaces the Azure-backed predecessor had, rebuilt on our own control plane and our own

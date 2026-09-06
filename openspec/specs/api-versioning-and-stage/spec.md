@@ -1,0 +1,195 @@
+# api-versioning-and-stage Specification
+
+## Purpose
+
+Define versions, revisions, releases and promotion along the chain. Two tiers: **the contract is
+promoted, everything else is edited in place**. The data plane never learns that environments have
+an order. See *Release States* in `openspec/project.md`.
+
+## Requirements
+
+### Requirement: Two versions of an API are two resources
+
+#### Scenario: A new version is created
+
+- GIVEN an existing API
+- WHEN a new version is created
+- THEN a **new resource** SHALL be created carrying the same name and a different `apiVersion`
+- AND both SHALL be able to answer at once, because the version is a segment of the published
+  address
+- AND the new version SHALL open in its own workspace after creation
+
+#### Scenario: The next version is suggested
+
+- GIVEN a current version
+- WHEN the new-version dialog opens
+- THEN the next version SHALL be suggested, and the form pre-filled from the current API
+- AND the suggestion SHALL be editable, and validated against `API_VERSION_PATTERN`
+
+#### Scenario: A new version's definition is chosen
+
+- GIVEN the new-version dialog
+- WHEN the source is chosen
+- THEN it SHALL offer either cloning the current definition or importing a new one
+- AND the new resource SHALL carry the current one's summary, description, tags, documentation link
+  and icon across
+
+### Requirement: A revision is immutable; a release points at one
+
+#### Scenario: A definition changes
+
+- GIVEN an edited definition or an edited set of properties
+- WHEN it is saved
+- THEN a new `revision` SHALL be written with the next `rev`
+- AND nothing SHALL be served differently until that revision is released
+
+#### Scenario: A revision is listed
+
+- GIVEN a resource
+- WHEN its revisions are listed
+- THEN each SHALL show its number, when it was written, by whom, and — per environment — whether it
+  is live, was live, or has never been released there
+- AND a structural diff against the previous revision SHALL be available
+
+### Requirement: Promote only along the chain, and only what has already reached the fleet
+
+#### Scenario: A promotion is planned
+
+- GIVEN a revision and a target environment
+- WHEN the plan is computed
+- THEN it SHALL be permitted if the target is the first link of the chain, or if the revision has
+  **at some point** reached the predecessor
+- AND "at some point" rather than "currently" SHALL be what makes rollback work
+- AND reaching the fleet SHALL be read from `release.state` being `converged`, `superseded` or
+  `withdrawn`, which a database trigger makes sufficient
+
+#### Scenario: The chain is not satisfied
+
+- GIVEN a revision that has not reached the predecessor
+- WHEN the plan is computed
+- THEN a `chain` blocker SHALL be produced naming the predecessor, the target, the whole chain, and
+  the furthest point the revision has reached so far — or "nowhere"
+
+#### Scenario: The target lacks what only it can supply
+
+- GIVEN a target environment with no route, no backend binding or no gateway
+- WHEN the plan is computed
+- THEN a `no-route`, `no-binding` or `no-target` blocker SHALL be produced, each naming the
+  environment
+- AND route and binding SHALL **not** be seeded from the predecessor
+- AND the reason SHALL be that they are in the edited-in-place tier, and a TEST backend guessed from
+  DEV is exactly the mistake that tier prevents
+
+### Requirement: Merge policy per unit on promotion, and never propagate a removal
+
+#### Scenario: The predecessor carries a unit the target does not
+
+- GIVEN a unit present in the source environment and absent in the target
+- WHEN the plan is computed
+- THEN it SHALL be listed under **create**, with the source environment named
+
+#### Scenario: Both environments carry the same unit
+
+- GIVEN a unit present in both
+- WHEN the plan is computed
+- THEN the target's value SHALL be listed under **keep**, and the source's SHALL not overwrite it
+
+#### Scenario: The target carries a unit the predecessor does not
+
+- GIVEN a unit present only in the target
+- WHEN the plan is computed
+- THEN it SHALL be listed under **localOnly** and kept
+- AND a deletion upstream SHALL never propagate, because it is a local act per environment
+
+#### Scenario: The merge would be invalid
+
+- GIVEN a merged document that fails validation for the resource's kind
+- WHEN the plan is computed
+- THEN an `invalid-merge` blocker SHALL be produced, quoting the validation errors
+
+#### Scenario: The merged document has no authentication
+
+- GIVEN a merged document with no `auth.subscriptionKey`
+- WHEN the plan is computed
+- THEN a warning SHALL say this route is open to anyone who can reach the gateway
+- AND it SHALL be a warning, not a blocker, because an intentionally public route is a real case
+
+### Requirement: Confirm a promotion against the plan that was shown
+
+#### Scenario: A plan is reviewed and confirmed
+
+- GIVEN a dry-run plan
+- WHEN the promotion is confirmed
+- THEN the plan SHALL be re-computed, and its digest compared with the one that was shown
+- AND the digest SHALL cover only the plan's decided content — the resource, the revision, the two
+  environments, the created, kept and local-only units, and the blocker codes — so a second dry run
+  a minute later matches while a real change does not
+
+#### Scenario: The plan changed between review and confirmation
+
+- GIVEN a digest that no longer matches
+- WHEN the promotion is confirmed
+- THEN the release SHALL be marked `stale` and **nothing** SHALL be published
+- AND the chip SHALL read *Needs confirming*, with the underlying state and its meaning in the
+  tooltip
+
+#### Scenario: A release fails or goes stale
+
+- GIVEN a release that does not complete
+- WHEN it ends
+- THEN **no policy SHALL have changed**, because the seeded units are written inside the same
+  transaction that moves `release.state`
+
+### Requirement: Roll back by releasing an earlier revision again
+
+#### Scenario: A rollback is planned
+
+- GIVEN an environment whose live revision is newer than the one being released
+- WHEN the plan is computed
+- THEN it SHALL be marked as a rollback
+
+#### Scenario: A rollback would seed policy
+
+- GIVEN a rollback whose merge would create units from the predecessor
+- WHEN the plan is computed
+- THEN a warning SHALL say the merge seeds policy from the predecessor **as it is today**, not as it
+  was when that revision was current
+- AND the warning SHALL be shown before the rollback is confirmed
+
+#### Scenario: History is not rewritten
+
+- GIVEN a rollback
+- WHEN it completes
+- THEN it SHALL be a new release pointing at the older revision
+- AND the superseded release SHALL remain readable, because a rollback that erased its own cause is
+  a rollback nobody can explain
+
+### Requirement: Show the difference between two environments
+
+#### Scenario: Divergence is read
+
+- GIVEN a resource live in more than one environment
+- WHEN divergence is read
+- THEN it SHALL report which revision each environment serves, and how their per-environment state —
+  route, binding, policy units, gateways — differs
+- AND the reader SHALL be able to see this before deciding to promote
+
+### Requirement: Delete forward-first
+
+#### Scenario: A resource is deleted while a later environment still serves it
+
+- GIVEN a resource live in a later environment of the chain
+- WHEN deletion from an earlier one is attempted
+- THEN it SHALL be refused, naming the environment that still serves it
+- AND the reason SHALL be that deleting the source of a promotion chain leaves a downstream
+  environment serving something nothing can explain
+
+### Requirement: Promotion is invisible to the gateway
+
+#### Scenario: A gateway receives a promoted configuration
+
+- GIVEN a promotion into an environment
+- WHEN that environment's configuration document is built
+- THEN it SHALL contain the routes, policies and subscriptions of that environment and nothing about
+  the chain
+- AND the data plane SHALL never learn that environments have an order

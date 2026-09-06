@@ -304,6 +304,8 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET | `/api/logs` · `/api/logs/histogram` | ses |
 | GET | `/api/notifications` | ses |
 | GET | `/api/integrations` · `/api/integration-events` | ses |
+| POST | `/api/integration-events/:id/decision` | ses |
+| POST | `/api/applications/:id/integrations/:integration` | ses |
 
 ### Trust and certificates
 
@@ -330,6 +332,8 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | DELETE | `/api/playground/history/:id` | ses |
 | GET · POST | `/api/kafka/topics` | ses |
 | PATCH · DELETE | `/api/kafka/topics/:id` | ses |
+| POST | `/api/kafka/topics/:id/subscribe` | ses |
+| POST | `/api/kafka/topics/:id/playground` | ses |
 | GET | `/api/kafka/access` | ses |
 | DELETE | `/api/kafka/access/:id` | ses |
 

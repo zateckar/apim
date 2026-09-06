@@ -119,8 +119,8 @@ Modules named by more than one capability spec:
   shell renders. The only route table.
 - `ui/src/screens.tsx` — which component answers each route id. The only screen registry.
 - `ui/src/components.tsx` — the shared component vocabulary: the banner, the empty state, the two
-  field shapes, the section, the modal, the typed confirmation and the two async hooks. The only
-  one; `ui/src/portal/common.tsx` was the second and is gone.
+  field shapes, the section (`Panel`), the modal, the typed confirmation and the two async hooks.
+  The only one; `ui/src/portal/common.tsx` was the second and is gone.
 - `ui/src/portal/brand.css` — the visual system, shared verbatim with the predecessor portal.
 
 ## Capability Index
@@ -868,9 +868,11 @@ Enforced over the source by `ui/test/hygiene.test.ts`, not by review:
 - No empty state without an action — over the whole interface, because there is one `EmptyState`
   and no second component that takes bare children and escapes the rule.
 - **One shared component vocabulary**, in `ui/src/components.tsx`. No other module may export
-  `Notice`, `EmptyState`, `Field`, `Panel`, `Modal`, `DangerZone` or the async hooks, and no screen
-  may write `className="empty"`, `"notice"` or `"banner"` itself — that is how a second vocabulary
-  grows back.
+  `Notice`, `EmptyState`, `Field`, `Panel`, `Card`, `Modal`, `DangerZone` or the async hooks, and no
+  screen may write `className="empty"`, `"notice"`, `"banner"` or `"card"` itself — that is how a
+  second vocabulary grows back.
+- **One section shape**: `Panel` renders `.card` › optional `.card-head` › `.card-body`, and the
+  outer `.card` carries no padding of its own so the head's rule reaches both edges.
 - No `confirm()`, and no delete of a named object outside a typed confirmation (`DangerZone`).
 - No request whose error is never rendered: every `useAsync` / `useAction` error reaches the page.
 - Every `tone-*` class a view names must exist in the stylesheet.

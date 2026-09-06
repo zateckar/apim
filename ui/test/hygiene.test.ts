@@ -126,21 +126,28 @@ describe("interaction hygiene", () => {
   });
 
   /**
-   * The two boxes the rule above can be walked around, and the reason each is named here.
+   * The boxes the rule above can be walked around, and the reason each is named here.
    *
    * The branded screens used to have an `Empty` of their own that took bare children and carried no
    * action — the same box with the rule switched off, which is why half the interface was never
-   * covered. It is gone, and so is the `.notice` banner that duplicated `.banner`. Both come back
-   * the same way: somebody writes the class directly instead of reaching for the component. This is
-   * the test that notices.
+   * covered. It is gone, and so is the `.notice` banner that duplicated `.banner`. `.card` is here
+   * for a different reason: a hand-rolled `<section className="card">` with its own head and body
+   * is how the second section component was written seven times over, and each copy was free to get
+   * the padding wrong. All of them come back the same way — somebody writes the class directly
+   * instead of reaching for the component. This is the test that notices.
+   *
+   * `card` is matched as a whole class token rather than a word, so `kpi-card`, `policy-card`,
+   * `discover-card` and `health-env-card` — which are their own components, not sections — do not
+   * trip it.
    */
   const ONE_VOCABULARY = [
     { pattern: /className="[^"]*\bempty\b/g, use: "<EmptyState title detail action>" },
     { pattern: /className="[^"]*\bnotice\b/g, use: "<Notice kind>" },
     { pattern: /className="[^"]*\bbanner\b/g, use: "<Notice kind>" },
+    { pattern: /className="(?:[^"]*\s)?card(?:-head|-body)?(?:\s[^"]*)?"/g, use: "<Panel title>" },
   ];
 
-  test("the empty state and the banner are components, not classes anybody can write", () => {
+  test("the empty state, the banner and the section are components, not classes anybody can write", () => {
     const offenders: string[] = [];
     for (const file of sources) {
       // `components.tsx` is where those two classes are allowed to be written: it is the one place
@@ -264,7 +271,10 @@ describe("interaction hygiene", () => {
     // the other, `Empty` escaped the rule `EmptyState` is held to, and the same failed request was
     // a pastel box on one screen and a themed banner on the next. A second module comes back by
     // somebody exporting one of these names from somewhere else, which is what this looks for.
-    const SHARED = /\bexport function (Notice|EmptyState|Field|TextField|Panel|Modal|Status|DangerZone|Skeleton|Action|useAction|useAsync|OperationList)\b/;
+    //
+    // `Card` is on the list without being a component: it is the name the second section component
+    // had, and the one anybody would reach for when writing a third.
+    const SHARED = /\bexport function (Notice|EmptyState|Field|TextField|Panel|Card|Modal|Status|DangerZone|Skeleton|Action|useAction|useAsync|OperationList)\b/;
     const offenders: string[] = [];
     for (const file of sources) {
       const name = relative(SRC, file).replaceAll("\\", "/");

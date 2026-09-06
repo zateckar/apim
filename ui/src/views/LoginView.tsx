@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type AuthProviders } from "../api";
-import { Card, Notice, useAction, useAsync } from "../components";
+import { Panel, Notice, useAction, useAsync } from "../components";
 
 /**
  * Signing in (v5 plan §8).
@@ -21,13 +21,13 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
   if (providers.error || !providers.data) {
     return (
       <div className="login">
-        <Card title="Sign in">
+        <Panel title="Sign in">
           <Notice kind="error">{providers.error}</Notice>
           <p className="muted">
             The portal could not ask its own control plane how to sign in. Reload once it is
             answering.
           </p>
-        </Card>
+        </Panel>
       </div>
     );
   }
@@ -36,19 +36,19 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
   if (config.providers.length === 0) {
     return (
       <div className="login">
-        <Card title="Nobody can sign in">
+        <Panel title="Nobody can sign in">
           <p className="muted">
             This deployment has no sign-in method enabled. Set <code>AUTH_PROVIDERS</code> on the
             control plane and restart it.
           </p>
-        </Card>
+        </Panel>
       </div>
     );
   }
 
   return (
     <div className="login">
-      <Card title="Sign in" hint="The Integration Portal publishes, governs and serves APIs.">
+      <Panel title="Sign in" hint="The Integration Portal publishes, governs and serves APIs.">
         {config.providers.map((provider, index) => (
           <div key={provider} className="signin-method">
             {index > 0 && <div className="signin-or">or</div>}
@@ -59,7 +59,7 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
             {provider === "dev" && <DevUsers users={config.devUsers} onSignedIn={onSignedIn} />}
           </div>
         ))}
-      </Card>
+      </Panel>
     </div>
   );
 }
@@ -193,7 +193,7 @@ export function ForcedPasswordChange({
 
   return (
     <div className="login">
-      <Card
+      <Panel
         title="Choose a password"
         hint="Somebody else set the one you signed in with, so it cannot be the one you keep."
       >
@@ -244,7 +244,7 @@ export function ForcedPasswordChange({
           </button>
           .
         </p>
-      </Card>
+      </Panel>
     </div>
   );
 }

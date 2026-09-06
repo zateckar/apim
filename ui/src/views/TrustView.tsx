@@ -8,7 +8,7 @@ import {
   type TlsExceptionRow,
   type User,
 } from "../api";
-import { Card, DangerZone, TextField, Link, Notice, useAction, useAsync } from "../components";
+import { Panel, DangerZone, TextField, Link, Notice, useAction, useAsync } from "../components";
 import { ALLOWED } from "../lib/capabilities";
 import { TrustAnchors } from "./TrustAnchors";
 
@@ -99,7 +99,7 @@ function Certificates({ user, environment, applicationId }: { user: User; enviro
         </Notice>
       )}
 
-      <Card
+      <Panel
         title={`Certificates in ${environment}`}
         hint="Uploaded once, held encrypted under the KEK, and handed only to a live gateway instance over its own channel. The private key is never readable back through this API — not by you, not by an admin."
       >
@@ -146,7 +146,7 @@ function Certificates({ user, environment, applicationId }: { user: User; enviro
             }}
           />
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -431,7 +431,7 @@ function Exceptions({ user, environment }: { user: User; environment: string }) 
   return (
     <>
       <Notice kind="error">{exceptions.error}</Notice>
-      <Card
+      <Panel
         title={`TLS exceptions in ${environment}`}
         hint="Admin-only, expiring, and reasoned. They live here rather than inside a binding so that an owner cannot decide to stop verifying their own backend, and so that this list can be asked for at all."
       >
@@ -540,7 +540,7 @@ function Exceptions({ user, environment }: { user: User; environment: string }) 
             }}
           />
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -649,7 +649,7 @@ function Report() {
   return (
     <>
       <Notice kind="error">{report.error}</Notice>
-      <Card
+      <Panel
         title="Every backend we are not fully verifying"
         hint="Asked about the estate rather than about an API, because asking it per API means never asking it."
       >
@@ -690,9 +690,9 @@ function Report() {
             )}
           </tbody>
         </table>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Routes that identify callers by CN alone"
         hint="Accepted with acknowledgeCnOnly, which is the point: a common name is unique only within one issuer, so the blast radius is the breadth of the reverse proxy's client-CA bundle."
       >
@@ -719,7 +719,7 @@ function Report() {
             cannot be answered from here.
           </p>
         )}
-      </Card>
+      </Panel>
     </>
   );
 }

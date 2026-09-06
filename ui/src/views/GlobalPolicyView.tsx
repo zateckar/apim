@@ -8,7 +8,7 @@ import {
   type User,
   type ValidationCounters,
 } from "../api";
-import { Card, EnvironmentPicker, Link, Notice, useAction, useAsync } from "../components";
+import { Panel, EnvironmentPicker, Link, Notice, useAction, useAsync } from "../components";
 
 /**
  * The global policy tier (goal G2, deviation D18) — one environment's defaults, applied under
@@ -67,7 +67,7 @@ export function GlobalPolicyView({
         </Notice>
       )}
 
-      <Card>
+      <Panel>
         <div className="stats">
           <div className="stat">
             <span className="value">{policy.data?.affectedResources ?? 0}</span>
@@ -95,7 +95,7 @@ export function GlobalPolicyView({
           <span className="mono">cache</span> depends on what a particular response means; and{" "}
           <span className="mono">passthrough</span> changes what a route <em>is</em>.
         </p>
-      </Card>
+      </Panel>
 
       {/* Keyed for the same reason as the units below: the source list and the plan both belong to
           the environment being edited, and carrying either across a switch would be wrong. */}
@@ -107,7 +107,7 @@ export function GlobalPolicyView({
         reload={policy.reload}
       />
 
-      <Card title={`Global units in ${environment}`}>
+      <Panel title={`Global units in ${environment}`}>
         {attachable.map((unitKey) => {
           const catalogue = meta.policyUnits.find((unit) => unit.key === unitKey);
           return (
@@ -126,11 +126,11 @@ export function GlobalPolicyView({
             />
           );
         })}
-      </Card>
+      </Panel>
 
       <ValidationHealth environment={environment} />
 
-      <Card
+      <Panel
         title="Validation downgrades"
         hint="Every route in this environment not validating at the default, with the reason its owner gave. Downgrading is allowed; being on this list is the price (design section 5.1)."
       >
@@ -197,7 +197,7 @@ export function GlobalPolicyView({
             </ul>
           </>
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -236,7 +236,7 @@ function ValidationHealth({ environment }: { environment: string }) {
   const unchecked = totals.sampleDropped + totals.budgetShed + totals.unavailable;
 
   return (
-    <Card
+    <Panel
       title="Validation health"
       hint="Summed across the live gateways in this environment. The counters are per instance and reset when the control plane accepts a report, so this is recent activity rather than a lifetime total."
     >
@@ -306,7 +306,7 @@ function ValidationHealth({ environment }: { environment: string }) {
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -445,7 +445,7 @@ function CopyFrom({
   if (others.length === 0) return null;
 
   return (
-    <Card
+    <Panel
       title="Copy from another environment"
       hint="A copy, not a synchronisation: units this environment has and the source does not are left alone, because silently deleting a prod-only global would be the worse default."
     >
@@ -519,6 +519,6 @@ function CopyFrom({
           ))}
         </ul>
       )}
-    </Card>
+    </Panel>
   );
 }

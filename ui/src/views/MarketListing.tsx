@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type MarketListingDetail, type Meta, type User } from "../api";
 import {
-  Card,
+  Panel,
   EmptyState,
   EnvironmentPicker,
   Link,
@@ -180,7 +180,7 @@ function operationsLabel(kind: string): string {
 function Overview({ item }: { item: MarketListingDetail }) {
   return (
     <>
-      <Card title="What it is">
+      <Panel title="What it is">
         <p style={{ whiteSpace: "pre-wrap", marginTop: 0 }}>
           {item.description ?? <span className="muted">Nobody has written a description yet.</span>}
         </p>
@@ -200,9 +200,9 @@ function Overview({ item }: { item: MarketListingDetail }) {
             </a>
           </p>
         )}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Where it is live"
         hint="An environment appears here once a release has converged onto its gateways. One URL per gateway address: an on-premise deployment usually answers on both an internet and an intranet name, and which one you can reach depends on where you are calling from."
       >
@@ -243,10 +243,10 @@ function Overview({ item }: { item: MarketListingDetail }) {
           </div>
         ))}
         {item.endpoints.length === 0 && <p className="muted">No routes yet.</p>}
-      </Card>
+      </Panel>
 
       {item.a2a && (
-        <Card
+        <Panel
           title="Agent card"
           hint="The gateway serves this agent's card itself, with the URL rewritten to the gateway and the security scheme replaced by the subscription key — so a consumer who follows it reaches us rather than the origin."
         >
@@ -269,11 +269,11 @@ function Overview({ item }: { item: MarketListingDetail }) {
               )}
             </dd>
           </dl>
-        </Card>
+        </Panel>
       )}
 
       {item.mcp && (
-        <Card title="MCP server">
+        <Panel title="MCP server">
           <dl className="kv">
             <dt>Protocol</dt>
             <dd className="mono">{item.mcp.protocolVersion}</dd>
@@ -283,17 +283,17 @@ function Overview({ item }: { item: MarketListingDetail }) {
               {item.mcp.serverInfo.version ? ` ${item.mcp.serverInfo.version}` : ""}
             </dd>
           </dl>
-        </Card>
+        </Panel>
       )}
 
-      <Card title="Recent traffic" hint="From the telemetry the gateways already report.">
+      <Panel title="Recent traffic" hint="From the telemetry the gateways already report.">
         <Sparkline points={item.traffic.map((entry) => entry.requests)} />
         <p className="muted" style={{ marginBottom: 0 }}>
           {item.traffic.reduce((sum, entry) => sum + entry.requests, 0)} requests across{" "}
           {item.traffic.length} retained window{item.traffic.length === 1 ? "" : "s"} ·{" "}
           {item.subscriberCount} subscriber{item.subscriberCount === 1 ? "" : "s"}
         </p>
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -301,18 +301,18 @@ function Overview({ item }: { item: MarketListingDetail }) {
 function Operations({ item }: { item: MarketListingDetail }) {
   if (item.operations.length === 0) {
     return (
-      <Card>
+      <Panel>
         <p className="muted">
           No contract has been imported yet, so there is nothing to list. Import a definition from
           the API's own page.
         </p>
-      </Card>
+      </Panel>
     );
   }
 
   if (item.kind === "mcp") {
     return (
-      <Card
+      <Panel
         title="Tools"
         hint="Each tool's input schema is enforced by the gateway before the server is reached, so a malformed call is a JSON-RPC error rather than a server problem."
       >
@@ -333,13 +333,13 @@ function Operations({ item }: { item: MarketListingDetail }) {
             )}
           </div>
         ))}
-      </Card>
+      </Panel>
     );
   }
 
   if (item.kind === "a2a") {
     return (
-      <Card title="Skills" hint="What the agent's card says it can do.">
+      <Panel title="Skills" hint="What the agent's card says it can do.">
         {item.operations.map((operation) => (
           <div className="unit" key={operation.id}>
             <header>
@@ -364,12 +364,12 @@ function Operations({ item }: { item: MarketListingDetail }) {
             )}
           </div>
         ))}
-      </Card>
+      </Panel>
     );
   }
 
   return (
-    <Card title="Operations" hint="From this API's own definition — the same one validation uses.">
+    <Panel title="Operations" hint="From this API's own definition — the same one validation uses.">
       <table>
         <thead>
           <tr>
@@ -401,14 +401,14 @@ function Operations({ item }: { item: MarketListingDetail }) {
           ))}
         </tbody>
       </table>
-    </Card>
+    </Panel>
   );
 }
 
 function GettingStarted({ item }: { item: MarketListingDetail }) {
   return (
     <>
-      <Card title="1 · Subscribe" hint="A key belongs to an application, and an application belongs to your application.">
+      <Panel title="1 · Subscribe" hint="A key belongs to an application, and an application belongs to your application.">
         <p>
           {item.products.length === 1
             ? "Subscribe through this product:"
@@ -424,9 +424,9 @@ function GettingStarted({ item }: { item: MarketListingDetail }) {
           ))}
           {item.products.length === 0 && <li className="muted">Not in any product yet.</li>}
         </ul>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="2 · Call it"
         hint="Built from the live route and the credential this route actually requires, so it works as pasted once you substitute the key."
       >
@@ -445,14 +445,14 @@ function GettingStarted({ item }: { item: MarketListingDetail }) {
             There is nothing to subscribe to yet, so the key above is hypothetical.
           </p>
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
 
 function Versions({ item }: { item: MarketListingDetail }) {
   return (
-    <Card
+    <Panel
       title="Versions"
       hint="A breaking change is a new version rather than a new revision, and both stay callable until one is retired."
     >
@@ -483,7 +483,7 @@ function Versions({ item }: { item: MarketListingDetail }) {
           ))}
         </tbody>
       </table>
-    </Card>
+    </Panel>
   );
 }
 

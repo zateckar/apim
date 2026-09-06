@@ -4,7 +4,7 @@
 // surface for the same API.
 
 import { useMemo, useState } from 'react';
-import { Skeleton } from '../../components';
+import { Panel, Skeleton } from '../../components';
 import * as I from '../icons';
 import {
   extractOperations,
@@ -20,21 +20,16 @@ import type { WsdlParseResult } from '../lib/wsdl';
 // half-loaded editor look fully loaded. Same for a failed definition load.
 function OperationsShell({ state, onRetry }: { state: 'loading' | 'error'; onRetry?: () => void }) {
   return (
-    <div className="card" data-testid={state === 'loading' ? 'operations-loading' : 'operations-error'}>
-      <div className="card-head">
-        <h3>Operations</h3>
-      </div>
-      <div className="card-body">
-        {state === 'loading'
-          ? <Skeleton rows={3} />
-          : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', fontSize: 12.5, color: 'var(--fg-muted)' }}>
-              <span>Couldn’t load the definition, so operations are unavailable.</span>
-              {onRetry && <button type="button" className="btn sm" onClick={onRetry}>Retry</button>}
-            </div>
-          )}
-      </div>
-    </div>
+    <Panel title="Operations">
+      {state === 'loading'
+        ? <Skeleton rows={3} />
+        : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, justifyContent: 'space-between', fontSize: 12.5, color: 'var(--fg-muted)' }}>
+            <span>Couldn’t load the definition, so operations are unavailable.</span>
+            {onRetry && <button type="button" className="btn sm" onClick={onRetry}>Retry</button>}
+          </div>
+        )}
+    </Panel>
   );
 }
 
@@ -50,27 +45,27 @@ export function OperationsCard({ doc, loading, error, onRetry }: { doc: unknown;
     // (definition missing/unparseable) keeps the old hide-yourself behavior.
     if (doc) {
       return (
-        <div className="card" data-testid="operations-none">
-          <div className="card-head"><h3>Operations</h3></div>
-          <div className="card-body" style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
+        <Panel title="Operations">
+          <div style={{ fontSize: 12.5, color: 'var(--fg-muted)' }}>
             This definition declares no operations (<span className="mono">paths</span> is empty).
           </div>
-        </div>
+        </Panel>
       );
     }
     return null;
   }
   return (
-    <div className="card">
-      <div className="card-head">
-        <h3>Operations</h3>
+    <Panel
+      title="Operations"
+      flush
+      actions={
         <span style={{ fontSize: 11.5, color: 'var(--fg-subtle)' }}>
           {ops.length} {ops.length === 1 ? 'operation' : 'operations'}
         </span>
-      </div>
-      <div className="card-body" style={{ padding: 0 }}>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {ops.map((op, i) => {
+      }
+    >
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {ops.map((op, i) => {
             const key = `${op.method}:${op.path}:${i}`;
             const expanded = expandedKey === key;
             return (
@@ -103,9 +98,8 @@ export function OperationsCard({ doc, loading, error, onRetry }: { doc: unknown;
               </li>
             );
           })}
-        </ul>
-      </div>
-    </div>
+      </ul>
+    </Panel>
   );
 }
 
@@ -243,16 +237,17 @@ export function WsdlServicesCard({ wsdl, loading, error, onRetry }: { wsdl: Wsdl
   if (!wsdl || !wsdl.ok) return null;
   if (!wsdl.operations || wsdl.operations.length === 0) return null;
   return (
-    <div className="card">
-      <div className="card-head">
-        <h3>Operations</h3>
+    <Panel
+      title="Operations"
+      flush
+      actions={
         <span style={{ fontSize: 11.5, color: 'var(--fg-subtle)' }}>
           {wsdl.operations.length} {wsdl.operations.length === 1 ? 'operation' : 'operations'}
         </span>
-      </div>
-      <div className="card-body" style={{ padding: 0 }}>
-        <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-          {wsdl.operations.map((op, i) => (
+      }
+    >
+      <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+        {wsdl.operations.map((op, i) => (
             <li
               key={op.name}
               className="op-row-toggle"
@@ -277,8 +272,7 @@ export function WsdlServicesCard({ wsdl, loading, error, onRetry }: { wsdl: Wsdl
               </div>
             </li>
           ))}
-        </ul>
-      </div>
-    </div>
+      </ul>
+    </Panel>
   );
 }

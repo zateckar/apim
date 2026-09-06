@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { Session } from "./App";
-import { Card, Link, OperationList, Panel } from "./components";
+import { Link, OperationList, Panel } from "./components";
 import type { Match } from "./lib/routes";
 import { Publish, Editor } from "./portal/apis";
 import { Catalog } from "./portal/catalog";
@@ -156,12 +156,12 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
 
   // ------------------------------------------------------------------ and the address that is not
   "not-found": () => (
-    <Card>
+    <Panel>
       <p className="muted">
         Nothing in the portal answers to that address. <Link to="/">Go back to the dashboard</Link>,
         or read <Link to="/how">How this works</Link>.
       </p>
-    </Card>
+    </Panel>
   ),
 };
 

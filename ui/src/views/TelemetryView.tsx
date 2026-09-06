@@ -8,7 +8,7 @@ import {
   type TelemetrySummary,
   type TelemetryTotals,
 } from "../api";
-import { Card, EnvironmentPicker, Notice, Pill, StackedBars, useAsync } from "../components";
+import { Panel, EnvironmentPicker, Notice, Pill, StackedBars, useAsync } from "../components";
 
 /**
  * G4: gateway telemetry, in the control plane.
@@ -133,7 +133,7 @@ export function TelemetryView({ meta }: { meta: Meta }) {
       <Notice kind="error">{summary.error}</Notice>
 
       {summary.data && (
-        <Card title={`${environment} · last ${sinceMin} minutes`}>
+        <Panel title={`${environment} · last ${sinceMin} minutes`}>
           <Totals totals={summary.data.totals} />
           <p className="hint">
             Error rate {(summary.data.totals.errorRate * 100).toFixed(1)}%. A gateway rejection
@@ -167,10 +167,10 @@ export function TelemetryView({ meta }: { meta: Meta }) {
               </div>
             </>
           )}
-        </Card>
+        </Panel>
       )}
 
-      <Card title="By API">
+      <Panel title="By API">
         <Notice kind="error">{resources.error}</Notice>
         <table>
           <thead>
@@ -207,9 +207,9 @@ export function TelemetryView({ meta }: { meta: Meta }) {
             )}
           </tbody>
         </table>
-      </Card>
+      </Panel>
 
-      <Card title="By consumer">
+      <Panel title="By consumer">
         <Notice kind="error">{consumers.error}</Notice>
         <table>
           <thead>
@@ -240,9 +240,9 @@ export function TelemetryView({ meta }: { meta: Meta }) {
             )}
           </tbody>
         </table>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="By gateway"
         hint="Rate limiting is per instance (design section 5.7), so how traffic is spread across the fleet is what decides the effective ceiling."
       >
@@ -288,7 +288,7 @@ export function TelemetryView({ meta }: { meta: Meta }) {
           are shown rather than assumed to be zero: silent truncation would read as "that traffic
           did not happen".
         </p>
-      </Card>
+      </Panel>
     </>
   );
 }

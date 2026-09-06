@@ -1,4 +1,4 @@
-import { Card, Link, Term } from "../components";
+import { Panel, Link, Term } from "../components";
 import { define, GLOSSARY, type GlossaryEntry } from "../lib/glossary";
 
 /**
@@ -101,7 +101,7 @@ const GROUP_LABEL: Record<GlossaryEntry["group"], string> = {
 export function HowView() {
   return (
     <>
-      <Card
+      <Panel
         title="The one thing worth knowing first"
         hint="Almost every surprise in this portal comes from getting this backwards."
       >
@@ -121,9 +121,9 @@ export function HowView() {
           The practical consequence: a key that works in DEV will not work in PROD, and a rate limit
           you set in DEV is not the one PROD is running. Both are deliberate.
         </p>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="The six things you can do here"
         hint="Each one is a guided flow that checks every step against the same rules the server would."
       >
@@ -150,9 +150,9 @@ export function HowView() {
             </div>
           ))}
         </div>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Every word this portal uses"
         hint="The same definitions the tooltips show — hover any underlined word anywhere in the portal."
       >
@@ -184,7 +184,7 @@ export function HowView() {
             </div>
           );
         })}
-      </Card>
+      </Panel>
     </>
   );
 }

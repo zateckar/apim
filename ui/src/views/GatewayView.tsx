@@ -1,5 +1,5 @@
 import { api, type EnvironmentsView, type FleetHealth, type Meta, type User } from "../api";
-import { Card, Digest, Notice, Pill, useAsync } from "../components";
+import { Panel, Digest, Notice, Pill, useAsync } from "../components";
 
 /**
  * Health Status: what each environment's gateway is *doing*. Nothing on this screen changes the
@@ -22,7 +22,7 @@ function Fleet({ environment }: { environment: string }) {
   const fleet = health.data;
 
   return (
-    <Card title={environment.toUpperCase()}>
+    <Panel title={environment.toUpperCase()}>
       <div className="row wrap">
         {/* "In sync" counts every replica that has not been revoked, not only the ones answering.
             Counting only the live ones let a killed replica improve the headline (finding 10).
@@ -145,7 +145,7 @@ function Fleet({ environment }: { environment: string }) {
           )}
         </tbody>
       </table>
-    </Card>
+    </Panel>
   );
 }
 
@@ -153,7 +153,7 @@ function Fleet({ environment }: { environment: string }) {
 function RateLimitArithmetic({ chain }: { chain: string[] }) {
   const environments = useAsync(() => api.get<EnvironmentsView>("/api/environments"), []);
   return (
-    <Card title="How a rate limit adds up">
+    <Panel title="How a rate limit adds up">
       <p className="hint">
         Rate limiting is per replica and needs no coordination (design section 5.7), so the fleet
         ceiling is <code>calls x replicas</code>:
@@ -173,7 +173,7 @@ function RateLimitArithmetic({ chain }: { chain: string[] }) {
           </li>
         ))}
       </ul>
-    </Card>
+    </Panel>
   );
 }
 
@@ -200,14 +200,14 @@ export function GatewayView({ meta, user }: { meta: Meta; user: User }) {
       {environments.data?.items.map((item) => (
         <div key={item.environment}>
           {!item.hasTarget ? (
-            <Card title={item.environment}>
+            <Panel title={item.environment}>
               <Notice kind="warn">
                 This environment has no gateway, so nothing published to it is served.
                 {user.isAdmin
                   ? " Add one on the Gateways screen."
                   : " An administrator adds one on the Gateways screen."}
               </Notice>
-            </Card>
+            </Panel>
           ) : (
             <Fleet environment={item.environment} />
           )}

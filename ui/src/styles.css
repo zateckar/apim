@@ -51,15 +51,18 @@ a { color: var(--accent-ink); }
 .page-head h2 { margin: 0; font-size: 21px; }
 .page-head p { margin: 4px 0 0; color: var(--muted); }
 
+/* A section's padding is its head's and its body's, never the card's own. This rule used to carry
+   `padding: 18px 20px` for a second section component that put its children straight into `.card`;
+   the bare selector is global, so that padding also landed on every branded panel and inset the
+   head's bottom rule from the edges it was drawn to divide. The component is one now, and so is
+   this. `margin-bottom` stays: outside the portal — the sign-in screen — nothing else supplies it. */
 .card {
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius);
-  padding: 18px 20px;
   margin-bottom: 16px;
 }
-.card > h3 { margin: 0 0 4px; font-size: 15px; }
-.card > .hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+.card-body > .hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
 
 .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; }
 .field { display: flex; flex-direction: column; gap: 5px; min-width: 180px; flex: 1; }
@@ -119,8 +122,11 @@ tbody tr:last-child td { border-bottom: none; }
    of them with light-mode backgrounds written as hex. `Notice` renders `.banner` now, whose four
    tones are CSS variables, so a warning looks the same on every screen and in both themes. */
 
+/* The sign-in screen is the one place a section renders outside the shell, so `.native-portal`'s
+   head and body padding does not reach it and it asks for its own. */
 .login { max-width: 420px; margin: 12vh auto; }
-.login .card { padding: 26px; }
+.login .card-head { padding: 20px 26px; }
+.login .card-body { padding: 26px; }
 .login button { width: 100%; margin-top: 8px; text-align: left; }
 
 .unit { border: 1px solid var(--line); border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px; }

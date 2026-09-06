@@ -1,5 +1,5 @@
 import { api } from "../api";
-import { Card, Notice, useAsync } from "../components";
+import { Panel, Notice, useAsync } from "../components";
 
 interface AuditRow {
   id: string;
@@ -21,7 +21,7 @@ export function AuditView() {
         is here is what happened.
       </p>
       <Notice kind="error">{audit.error}</Notice>
-      <Card>
+      <Panel>
         <table>
           <thead>
             <tr>
@@ -50,7 +50,7 @@ export function AuditView() {
             ))}
           </tbody>
         </table>
-      </Card>
+      </Panel>
     </>
   );
 }

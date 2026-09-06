@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type MarketCard, type MarketFacets, type Meta, type User } from "../api";
-import { Card, Link, Notice, useAsync } from "../components";
+import { Panel, Link, Notice, useAsync } from "../components";
 
 /**
  * The Catalog (goal G6) — the marketplace, and for most people the front door.
@@ -67,7 +67,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
         {facets.data ? ` ${facets.data.total} listed.` : ""}
       </p>
 
-      <Card>
+      <Panel>
         <div className="row wrap">
           {/* Each label names its own control. They used to sit beside one, which reads the same
               and is not the same: a screen reader announced three unlabelled fields. */}
@@ -130,7 +130,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
             />
           )}
         </div>
-      </Card>
+      </Panel>
 
       <Notice kind="error">{listing.error}</Notice>
       {/* The facets are the filter bar above; if they failed, the bar is empty rather than wrong,
@@ -140,7 +140,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
       {listing.loading && items.length === 0 && <p className="muted">Searching…</p>}
 
       {!listing.loading && items.length === 0 && (
-        <Card>
+        <Panel>
           {filtered ? (
             <>
               <h3>Nothing matches that</h3>
@@ -169,7 +169,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
               </p>
             </>
           )}
-        </Card>
+        </Panel>
       )}
 
       {filtered ? (

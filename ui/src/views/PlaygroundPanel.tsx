@@ -11,7 +11,7 @@ import {
   type PlaygroundResponse,
 } from "../api";
 import {
-  Card,
+  Panel,
   EmptyState,
   Link,
   Notice,
@@ -233,16 +233,16 @@ function Console({
       ))}
 
       {form.streaming && (
-        <Card
+        <Panel
           title="This is a streaming route"
           hint="The console cannot hold a stream open, so here is the line that does work."
         >
           <div className="pre">{form.streaming.command}</div>
-        </Card>
+        </Panel>
       )}
 
       {form.needsSubscription && (
-        <Card title="You need a subscription to call this">
+        <Panel title="You need a subscription to call this">
           <p className="muted">
             This API requires a <Term name="key" /> in{" "}
             <span className="mono">
@@ -256,10 +256,10 @@ function Console({
           ) : (
             <Link to={`/catalog/${resourceId}/subscribe`}>Subscribe an application to try this →</Link>
           )}
-        </Card>
+        </Panel>
       )}
 
-      <Card>
+      <Panel>
         <div className="row wrap" style={{ marginBottom: 12 }}>
           <div className="field">
             <label htmlFor="pg-operation">Operation</label>
@@ -412,7 +412,7 @@ function Console({
         <p className="muted small" style={{ marginTop: 8 }}>
           {form.note}
         </p>
-      </Card>
+      </Panel>
 
       {result && <ResultCard result={result} />}
 
@@ -440,7 +440,7 @@ function ResultCard({ result }: { result: PlaygroundResponse }) {
           : "stop";
 
   return (
-    <Card title="Response">
+    <Panel title="Response">
       {response.error ? (
         // An outcome, not an error banner: the call happened, and this is what happened (§5.3).
         <Notice kind="error">{response.error}</Notice>
@@ -495,7 +495,7 @@ function ResultCard({ result }: { result: PlaygroundResponse }) {
           )}
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -531,7 +531,7 @@ function History({
   if (!history.data || history.data.items.length === 0) return null;
 
   return (
-    <Card
+    <Panel
       title="Your calls"
       hint={`The last ${history.data.cap} you made, across every environment, kept for ${history.data.retentionDays} days. Nobody else can see them.`}
     >
@@ -601,7 +601,7 @@ function History({
         There is no replay button: loading an entry fills the form, and sending it is an ordinary
         call with its own audit entry.
       </p>
-    </Card>
+    </Panel>
   );
 }
 

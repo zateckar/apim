@@ -8,7 +8,7 @@ import {
   type TrustAnchorRow,
 } from "../api";
 import {
-  Card,
+  Panel,
   DangerZone,
   EmptyState,
   TextField,
@@ -84,7 +84,7 @@ export function TrustAnchors({
         </Notice>
       )}
 
-      <Card
+      <Panel
         title={`Authorities trusted in ${environment.toUpperCase()}`}
         hint={anchors.data.note}
       >
@@ -118,7 +118,7 @@ export function TrustAnchors({
           At most {anchors.data.maxAnchors} authorities per <Term name="environment" />. Each one is
           a set of backends somebody has decided to believe, so the list is meant to be short.
         </p>
-      </Card>
+      </Panel>
 
       <Register environment={environment} onRegistered={anchors.reload} />
       <CopyFrom meta={meta} environment={environment} onCopied={anchors.reload} />
@@ -195,7 +195,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
   const registerAction = useAction();
 
   return (
-    <Card
+    <Panel
       title={`Register an authority for ${environment.toUpperCase()}`}
       hint="Paste the certificate authority's certificate in PEM form. It is parsed and shown to you before anything is stored."
     >
@@ -285,7 +285,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
           Read this certificate
         </button>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -316,7 +316,7 @@ function CopyFrom({
   const candidates = (source.data?.items ?? []).filter((row) => row.live);
 
   return (
-    <Card
+    <Panel
       title="Copy an authority from another environment"
       hint="Trusting a certificate authority in PROD is a PROD decision, so nothing arrives here by being promoted. This copies what you pick, after showing you what it would do."
     >
@@ -455,6 +455,6 @@ function CopyFrom({
           )}
         </span>
       </div>
-    </Card>
+    </Panel>
   );
 }

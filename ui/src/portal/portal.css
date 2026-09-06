@@ -170,6 +170,12 @@
 .native-modal .card-body {
   padding: 22px;
 }
+/* A table that should reach the card's own edges rather than float inside its padding. Specific
+   enough to beat both the rule above and the narrow-screen override below it. */
+.native-portal .card-body.flush,
+.native-modal .card-body.flush {
+  padding: 0;
+}
 .native-portal p,
 .native-modal p {
   line-height: 1.6;

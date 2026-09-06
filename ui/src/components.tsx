@@ -118,13 +118,54 @@ export function Notice({
   );
 }
 
-export function Card({ title, hint, children }: { title?: string; hint?: string; children: ReactNode }) {
+/**
+ * A titled section of a screen: the estate's only one.
+ *
+ * There were two of these as well, and unlike the other pairs they were not merely two names.
+ * `Panel` wrapped its children in `.card-head` and `.card-body`; `Card` put them straight into
+ * `.card`, which is why `styles.css` gave the bare `.card` selector a padding of its own. Both
+ * selectors were global and both stylesheets were loaded, so **every `Panel` in the portal carried
+ * that padding as well as its head's and its body's** — the head's bottom rule was inset twenty
+ * pixels from the card it was supposed to divide, and `overflow: hidden` hid the evidence. Nobody
+ * could have found that in a diff; it took looking at a screen.
+ *
+ * One shape now — `.card` › optional `.card-head` › `.card-body` — so the outer element carries no
+ * padding of its own, the rule reaches both edges, and a section looks the same in the branded
+ * shell and in a `plainChrome` screen. `hint` sits at the top of the body rather than in the head,
+ * because a hint here is often a whole sentence and the head is a bar with actions in it.
+ */
+export function Panel({
+  title,
+  hint,
+  actions,
+  className,
+  flush,
+  children,
+}: {
+  title?: string;
+  /** One line under the title saying what the section is for. */
+  hint?: string;
+  /** The controls that belong to this section, drawn at the far end of its head. */
+  actions?: ReactNode;
+  /** An extra class on the section, for the few that the stylesheet styles by name. */
+  className?: string;
+  /** The body carries no padding, for a table that should reach the card's own edges. */
+  flush?: boolean;
+  children: ReactNode;
+}) {
   return (
-    <div className="card">
-      {title && <h3>{title}</h3>}
-      {hint && <p className="hint">{hint}</p>}
-      {children}
-    </div>
+    <section className={className ? `card ${className}` : "card"}>
+      {(title || actions) && (
+        <div className="card-head">
+          {title && <h3>{title}</h3>}
+          {actions}
+        </div>
+      )}
+      <div className={flush ? "card-body flush" : "card-body"}>
+        {hint && <p className="hint">{hint}</p>}
+        {children}
+      </div>
+    </section>
   );
 }
 
@@ -532,34 +573,6 @@ export function useAction() {
 }
 
 // ------------------------------------------------------------------ moved in from portal/common
-
-/**
- * A titled section, with somewhere to put the controls that belong to it.
- *
- * `Card` above is the same idea in the plainer chrome, and the two have not been merged: `Card`
- * puts its children straight into `.card` while this wraps them in `.card-body`, so folding one
- * into the other would re-pad seventy-nine screens that nobody would have looked at afterwards.
- * Use `Panel` in the branded shell and `Card` in a `plainChrome` screen.
- */
-export function Panel({
-  title,
-  children,
-  actions,
-}: {
-  title: string;
-  children: ReactNode;
-  actions?: ReactNode;
-}) {
-  return (
-    <section className="card">
-      <div className="card-head">
-        <h3>{title}</h3>
-        {actions}
-      </div>
-      <div className="card-body">{children}</div>
-    </section>
-  );
-}
 
 /**
  * A raw workflow state as a chip: what an operation, a subscription or a grant is currently doing.

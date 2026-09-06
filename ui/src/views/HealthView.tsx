@@ -8,7 +8,7 @@ import {
   type SyntheticsSnapshot,
   type User,
 } from "../api";
-import { EmptyState, Link, Notice, Skeleton, useAsync } from "../components";
+import { EmptyState, Link, Notice, Panel, Skeleton, useAsync } from "../components";
 import { formatAgo, formatDateTime, formatDateTimeShort } from "../lib/datetime";
 import { SyntheticsChart } from "./SyntheticsChart";
 
@@ -157,12 +157,8 @@ export function HealthView({ user }: { user: User }) {
 function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }) {
   if (items.length === 0) return null;
   return (
-    <section className="card health-group">
-      <div className="card-head">
-        <h3>{title}</h3>
-      </div>
-      <div className="card-body">
-        <div className="health-rows">
+    <Panel title={title} className="health-group">
+      <div className="health-rows">
           {items.map((item) => {
             const tone = STATUS_TONE[item.status];
             return (
@@ -190,9 +186,8 @@ function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }
               </div>
             );
           })}
-        </div>
       </div>
-    </section>
+    </Panel>
   );
 }
 
@@ -217,9 +212,10 @@ function Synthetics({ admin }: { admin: boolean }) {
   const selected = groups.find((group) => group.environment === environment) ?? groups[0] ?? null;
 
   return (
-    <section className="card synthetics-panel">
-      <div className="card-head">
-        <h3>Gateway uptime</h3>
+    <Panel
+      title="Gateway uptime"
+      className="synthetics-panel"
+      actions={
         <div className="synthetics-controls">
           <div className="tabs flat synthetics-env-tabs" role="group" aria-label="Environment">
             {groups.map((group) => (
@@ -246,9 +242,9 @@ function Synthetics({ admin }: { admin: boolean }) {
             ))}
           </div>
         </div>
-      </div>
-      <div className="card-body">
-        {history.error && <Notice kind="error">{history.error}</Notice>}
+      }
+    >
+      {history.error && <Notice kind="error">{history.error}</Notice>}
         {snapshot?.simulated && (
           <Notice kind="warn">
             These strips are <strong>simulated</strong>. Nothing was checked — the history is
@@ -279,8 +275,7 @@ function Synthetics({ admin }: { admin: boolean }) {
             ))}
           </div>
         )}
-      </div>
-    </section>
+    </Panel>
   );
 }
 

@@ -7,7 +7,7 @@ import {
   type User,
 } from "../api";
 import {
-  Card,
+  Panel,
   DangerZone,
   EmptyState,
   TextField,
@@ -51,7 +51,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
 
   return (
     <>
-      <Card
+      <Panel
         title="Everybody this portal knows"
         hint="An account arrives here the first time somebody signs in through the identity provider. You do not create those."
       >
@@ -144,7 +144,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
             </tbody>
           </table>
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -214,7 +214,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
 
   return (
     <>
-      <Card title={row.displayName}>
+      <Panel title={row.displayName}>
         <Notice kind="error">{action.error}</Notice>
         {action.message && <Notice kind="ok">{action.message}</Notice>}
         <dl className="kv">
@@ -248,9 +248,9 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
         </dl>
 
         {!managed && <EditLocal row={row} onSave={patch} busy={action.busy} />}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="What they can do"
         hint="Administrator means every application, plus gateways, global policy, the trust store, the audit log and this directory."
       >
@@ -292,9 +292,9 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           </button>
         </div>
         {row.note && <Notice kind="warn">{row.note}</Notice>}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Applications"
         hint="An application granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
       >
@@ -359,9 +359,9 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           onGranted={reload}
         />
         <Notice kind="error">{applications.error}</Notice>
-      </Card>
+      </Panel>
 
-      <Card title="Where they are signed in">
+      <Panel title="Where they are signed in">
         {row.sessions.length === 0 ? (
           <p className="muted">Nowhere right now.</p>
         ) : (
@@ -386,11 +386,11 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             </button>
           </>
         )}
-      </Card>
+      </Panel>
 
       {!managed && <ResetPassword userId={row.id} name={row.displayName} onDone={reload} />}
 
-      <Card
+      <Panel
         title="Disable this account"
         hint="Accounts are never deleted here: the audit log, every revision and every release name one, and history that points at nobody is worse than an account nobody uses."
       >
@@ -421,7 +421,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             onConfirm={() => patch({ disabled: true }, "Disabled, and signed out everywhere.")}
           />
         )}
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -514,7 +514,7 @@ function ResetPassword({
   const [password, setPassword] = useState("");
   const action = useAction();
   return (
-    <Card
+    <Panel
       title="Set a password"
       hint="Every session they have is ended, and they must choose a different one at their next sign-in."
     >
@@ -539,6 +539,6 @@ function ResetPassword({
           Set it
         </button>
       </div>
-    </Card>
+    </Panel>
   );
 }

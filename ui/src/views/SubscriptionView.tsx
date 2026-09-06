@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type Subscription, type SubscriptionUsage } from "../api";
 import {
-  Card,
+  Panel,
   DangerZone,
   EmptyState,
   Link,
@@ -67,16 +67,16 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
       </div>
 
       {asPublisher ? (
-        <Card title="Keys">
+        <Panel title="Keys">
           <p className="muted">
             This subscription's keys belong to the application that owns {subscription.applicationName}.
             You publish {subscription.productName}, which lets you see that they are calling it and
             lets you stop them — it does not let you read or replace their credentials, because a
             rotated key would break their caller at a moment of your choosing.
           </p>
-        </Card>
+        </Panel>
       ) : (
-      <Card
+      <Panel
         title="Keys"
         hint="Two at once, so a key can be replaced without a moment where neither works: create the second, move your callers, then rotate the first."
       >
@@ -137,10 +137,10 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
             Replace the primary key
           </button>
         </div>
-      </Card>
+      </Panel>
       )}
 
-      <Card
+      <Panel
         title="What it has spent"
         hint="Quota is counted across the whole fleet and aggregated on the gateways' poll, so this is the number the gateway is enforcing against."
       >
@@ -175,9 +175,9 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
           </table>
         )}
         {usage.data && <p className="muted small">{usage.data.note}</p>}
-      </Card>
+      </Panel>
 
-      <Card title={asPublisher ? "Withdraw their access" : "Stop using it"}>
+      <Panel title={asPublisher ? "Withdraw their access" : "Stop using it"}>
         <DangerZone
           what={asPublisher ? "Withdraw this subscription" : "Revoke this subscription"}
           name={subscription.applicationName ?? subscription.id}
@@ -204,7 +204,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
             if (ok) list.reload();
           }}
         />
-      </Card>
+      </Panel>
     </>
   );
 }

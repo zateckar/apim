@@ -130,11 +130,13 @@ the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSW
   component is the defect this replaced — `ui/test/screens.test.ts` fails when one grows back.
 - **One component vocabulary.** `ui/src/components.tsx` is the only shared component module: the
   banner (`Notice`), the empty state (`EmptyState`), the labelled slot (`Field`) and the labelled
-  input (`TextField`), the section, the modal, the typed confirmation and the two async hooks. There
-  used to be a second one in `portal/common.tsx` whose `Field`, `Notice`, `Empty` and `useWork`
-  overlapped these and were not interchangeable; which one a screen got was an accident of when it
-  was written. `ui/test/hygiene.test.ts` fails when a second module exports one of those names, or
-  when a screen writes `className="empty"`, `"notice"` or `"banner"` instead of using the component.
+  input (`TextField`), the section (`Panel`), the modal, the typed confirmation and the two async
+  hooks. There used to be a second one in `portal/common.tsx` whose `Field`, `Notice`, `Empty` and
+  `useWork` overlapped these and were not interchangeable; which one a screen got was an accident of
+  when it was written. `Panel` and `Card` were the worst of them — two shapes, not just two names,
+  and the padding one needed landed on every instance of the other through a global bare selector.
+  `ui/test/hygiene.test.ts` fails when a second module exports one of those names, or when a screen
+  writes `className="empty"`, `"notice"`, `"banner"` or `"card"` instead of using the component.
 - **No colour written into a view**, no click handler a keyboard cannot reach, no empty state
   without an action, no `confirm()`, no delete of a named object outside a typed confirmation, no
   request whose error is never rendered. `ui/test/hygiene.test.ts` enforces these over the source.

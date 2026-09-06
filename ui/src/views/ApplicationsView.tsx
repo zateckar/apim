@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type ApplicationDetail, type ApplicationRow, type User } from "../api";
 import {
-  Card,
+  Panel,
   DangerZone,
   EmptyState,
   TextField,
@@ -33,7 +33,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
 
   return (
     <>
-      <Card
+      <Panel
         title="Who owns what"
         hint="Every API, product and application belongs to exactly one application. Being in that application is what lets you change them."
       >
@@ -93,10 +93,10 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
             }}
           />
         )}
-      </Card>
+      </Panel>
 
       {user.isAdmin && unmappedGroups.length > 0 && (
-        <Card
+        <Panel
           title="Groups nothing here is mapped to"
           hint="Your identity provider put somebody in these. The portal matched them to no application, so they granted nothing."
         >
@@ -115,7 +115,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
               </li>
             ))}
           </ul>
-        </Card>
+        </Panel>
       )}
     </>
   );
@@ -187,7 +187,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
 
   return (
     <>
-      <Card title={application.name}>
+      <Panel title={application.name}>
         <Notice kind="error">{action.error}</Notice>
         {action.message && <Notice kind="ok">{action.message}</Notice>}
         <dl className="kv">
@@ -204,9 +204,9 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
           )}
         </dl>
         {user.isAdmin && <EditApplication application={application} onSaved={detail.reload} />}
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Who is in it"
         hint="A membership granted here survives a directory that has never heard of this application. One that came from a group comes back whenever that group still contains the person."
       >
@@ -255,10 +255,10 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
             </tbody>
           </table>
         )}
-      </Card>
+      </Panel>
 
       {user.isAdmin && (
-        <Card title="Delete this application">
+        <Panel title="Delete this application">
           {total > 0 ? (
             <p className="muted">
               It still owns {total} thing(s). Move or withdraw those first — deleting an application must
@@ -278,7 +278,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
               }}
             />
           )}
-        </Card>
+        </Panel>
       )}
     </>
   );

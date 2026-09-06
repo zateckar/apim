@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type FleetHealth, type GatewayRow } from "../api";
-import { Card, DangerZone, TextField, Notice, Pill, useAction, useAsync } from "../components";
+import { Panel, DangerZone, TextField, Notice, Pill, useAction, useAsync } from "../components";
 import { ALLOWED } from "../lib/capabilities";
 
 /**
@@ -107,7 +107,7 @@ function AddGateway({
   }
 
   return (
-    <Card title={`New gateway in ${environment}`}>
+    <Panel title={`New gateway in ${environment}`}>
       <Notice kind="error">{action.error}</Notice>
       <TextField label="Name" value={name} onChange={setName} />
       <p className="hint">
@@ -166,7 +166,7 @@ function AddGateway({
         gateway that did not exist when it was published — each API arrives here when somebody
         decides it belongs.
       </p>
-    </Card>
+    </Panel>
   );
 }
 
@@ -182,7 +182,7 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
     (row.label ?? "") !== label;
 
   return (
-    <Card
+    <Panel
       title={`${row.name}${row.label ? ` · ${row.label}` : ""}`}
       hint={CATEGORY_LABELS[row.category] ?? row.category}
     >
@@ -283,7 +283,7 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
           if (ok) onChanged();
         }}
       />
-    </Card>
+    </Panel>
   );
 }
 

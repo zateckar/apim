@@ -136,15 +136,31 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - GIVEN two components that did the same job under the same name
 - WHEN they are merged
 - THEN one name SHALL survive per concept: `Notice` for every banner, `EmptyState` for every empty
-  state, `useAction` for every async action, `Field` for a labelled slot
+  state, `useAction` for every async action, `Field` for a labelled slot, `Panel` for every titled
+  section of a screen
 - AND a genuinely different component SHALL get a **different name** rather than a merged prop set —
   `TextField`, the labelled text input, is not the labelled slot and never was
 - AND `Notice` SHALL render the themed `.banner` tones, with `role="alert"` on an error
 
+#### Scenario: A section of a screen is drawn
+
+- GIVEN any titled section, in the branded shell or in a `plainChrome` view
+- WHEN it renders
+- THEN it SHALL be a `Panel`, and its shape SHALL be `.card` › optional `.card-head` › `.card-body`
+- AND the outer `.card` SHALL carry no padding of its own, so the head's rule reaches both edges of
+  the section it divides
+- AND a section whose body should reach those edges — a table, a list of rows — SHALL say so with
+  `flush` rather than an inline `padding: 0`
+- AND the reason SHALL be that there were two section components under two names and two shapes:
+  `Panel` wrapped its children in a head and a body, `Card` put them straight into `.card`, and
+  because both bare selectors were global and both stylesheets loaded, the padding `Card` needed
+  landed on **every** `Panel` as well — insetting each head's bottom rule twenty pixels from the
+  card it was drawn to divide, invisibly, under `overflow: hidden`
+
 #### Scenario: A screen writes a shared class directly
 
-- GIVEN a `className` naming `empty`, `notice` or `banner` in any file other than the component
-  module itself
+- GIVEN a `className` naming `empty`, `notice`, `banner`, `card`, `card-head` or `card-body` in any
+  file other than the component module itself
 - WHEN the source is scanned
 - THEN it SHALL fail
 - AND the reason SHALL be that this is how a second vocabulary grows back: not by adding a module,

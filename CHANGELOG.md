@@ -17,6 +17,17 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.2.2 - 06.09.2026
+
+Every section of every screen is the same box, drawn the same way.
+
+### Fixed
+
+- The line under a section's heading reaches both edges of the section it divides, instead of
+  stopping twenty pixels short on each side. It was drawn that way on every panel in the portal.
+- Sections that hold a table or a list of rows — Operations on an API, Traffic by API on the
+  dashboard — let it reach the edges rather than floating it inside the padding.
+
 ## 1.2.1 - 06.09.2026
 
 One catalog instead of two, and the same box in the same place on every screen.

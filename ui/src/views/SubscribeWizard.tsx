@@ -7,7 +7,7 @@ import {
   type MarketListingDetail,
 } from "../api";
 import {
-  Card,
+  Panel,
   EmptyState,
   TextField,
   Link,
@@ -102,7 +102,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
             />
           )}
           {step === 1 && (
-            <Card
+            <Panel
               title="Which environment?"
               hint="Keys are per environment, so a DEV key never works in PROD. That is deliberate: a test caller cannot reach production by accident."
             >
@@ -162,7 +162,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
                   Next: review the terms
                 </button>
               </div>
-            </Card>
+            </Panel>
           )}
           {step === 2 && (
             <ReviewTerms
@@ -199,7 +199,7 @@ function ChooseApplication({
   const action = useAction();
 
   return (
-    <Card
+    <Panel
       title="Which application will call this?"
       hint="An application is the thing that makes the calls — a service, a job, a mobile app. Keys belong to it, so revoking one stops that caller and nobody else."
     >
@@ -255,7 +255,7 @@ function ChooseApplication({
         </button>
         {!value && <span className="action-reason">Choose or create the application that will call.</span>}
       </div>
-    </Card>
+    </Panel>
   );
 }
 
@@ -287,7 +287,7 @@ function ReviewTerms({
   const quota = document.quota as { calls: number; periodSec: number } | undefined;
 
   return (
-    <Card title="What you are agreeing to" hint="Read from what the gateway is actually running here, not from a default.">
+    <Panel title="What you are agreeing to" hint="Read from what the gateway is actually running here, not from a default.">
       <Notice kind="error">{action.error}</Notice>
       {/* Without the effective policy the limits below would read "None set here", which is a
           claim rather than a gap. Say which it is before somebody agrees to it. */}
@@ -360,7 +360,7 @@ function ReviewTerms({
           Subscribe
         </button>
       </div>
-    </Card>
+    </Panel>
   );
 }
 
@@ -385,7 +385,7 @@ export function Granted({
     : "<the API's address>";
 
   return (
-    <Card title="Your key">
+    <Panel title="Your key">
       <Notice kind="warn">
         This is the only time the key is shown. After this it is encrypted at rest and can only be
         recovered through a reveal, which is audited.
@@ -398,6 +398,6 @@ export function Granted({
         <Link to={`/subscriptions/${subscriptionId}`}>Manage this subscription</Link>
         <Link to="/catalog">Find another API</Link>
       </div>
-    </Card>
+    </Panel>
   );
 }

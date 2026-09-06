@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { api, type ModelDiff, type RevisionDiff, type RevisionList, type RevisionRow } from "../api";
 import {
-  Card,
+  Panel,
   Digest,
   EmptyState,
   Notice,
@@ -86,7 +86,7 @@ export function RevisionsPanel({
 
   return (
     <>
-      <Card
+      <Panel
         title="Revisions"
         hint="One upload of the definition each, newest first. A revision becomes immutable the moment it is released."
       >
@@ -179,7 +179,7 @@ export function RevisionsPanel({
         {list.data.nextCursor && (
           <p className="muted small">Older revisions exist; this page shows the most recent.</p>
         )}
-      </Card>
+      </Panel>
 
       {compare && (
         <DiffCard
@@ -332,7 +332,7 @@ function RollBackCard({
   const confirm = useAction();
 
   return (
-    <Card
+    <Panel
       title={`Roll ${environment.toUpperCase()} back to revision ${revision.rev}`}
       hint="A rollback is a release of an older revision. Nothing is deleted, and the revision that was live stays in this list."
     >
@@ -400,7 +400,7 @@ function RollBackCard({
           </div>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -464,7 +464,7 @@ function DiffCard({
   const toRev = revisions.find((revision) => revision.id === to);
 
   return (
-    <Card
+    <Panel
       title={`What changed in revision ${toRev?.rev ?? "?"}`}
       hint="Compared over the normalized contract, so a reformatted or converted document shows as no change."
     >
@@ -489,7 +489,7 @@ function DiffCard({
       {diff.error && <Notice kind="error">{diff.error}</Notice>}
       {!diff.data && !diff.error && <Skeleton rows={4} />}
       {diff.data && <DiffBody diff={diff.data} />}
-    </Card>
+    </Panel>
   );
 }
 
@@ -656,7 +656,7 @@ function Correct({
   );
 
   return (
-    <Card
+    <Panel
       title="Correct the newest revision"
       hint="Replaces the definition of a revision that has never been released, keeping its number. Anything already published is untouched."
     >
@@ -691,7 +691,7 @@ function Correct({
         </button>
         {permission.reason && <span className="action-reason">{permission.reason}</span>}
       </div>
-    </Card>
+    </Panel>
   );
 }
 

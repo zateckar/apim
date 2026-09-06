@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { api, type Me, type SessionView } from "../api";
-import { Card, EmptyState, Link, Notice, Term, useAction, useAsync } from "../components";
+import { Panel, EmptyState, Link, Notice, Term, useAction, useAsync } from "../components";
 
 /**
  * Your own account (v5 plan §8).
@@ -16,7 +16,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
 
   return (
     <>
-      <Card title="Who you are here">
+      <Panel title="Who you are here">
         <dl className="kv">
           <dt>Name</dt>
           <dd>{user.name}</dd>
@@ -44,9 +44,9 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
             )}
           </dd>
         </dl>
-      </Card>
+      </Panel>
 
-      <Card
+      <Panel
         title="Your applications"
         hint="Being in an application is what lets you publish and change what it owns. It is not a label."
       >
@@ -118,11 +118,11 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
             membership in your realm, and that the portal is reading that one.
           </Notice>
         )}
-      </Card>
+      </Panel>
 
       {user.provider === "local" && <ChangePassword onChanged={reload} />}
 
-      <Card
+      <Panel
         title="Where you are signed in"
         hint="One row per browser. If you do not recognise one, end it — and then change your password."
       >
@@ -134,7 +134,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
             reload();
           }}
         />
-      </Card>
+      </Panel>
     </>
   );
 }
@@ -238,7 +238,7 @@ function ChangePassword({ onChanged }: { onChanged: () => void }) {
   const ready = current.length > 0 && next.length > 0 && next === again;
 
   return (
-    <Card
+    <Panel
       title="Change your password"
       hint="Every other browser you are signed in on is signed out. This one stays."
     >
@@ -295,6 +295,6 @@ function ChangePassword({ onChanged }: { onChanged: () => void }) {
           {action.busy ? "Saving…" : "Change it"}
         </button>
       </form>
-    </Card>
+    </Panel>
   );
 }

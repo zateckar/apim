@@ -3,7 +3,7 @@ import type { Session } from "../App";
 import { api, type Product, type Resource, type Subscription } from "../api";
 import {
   Action,
-  Card,
+  Panel,
   EmptyState,
   TextField,
   Link,
@@ -98,7 +98,7 @@ function ProductCard({
     members.some((id) => !product.members.some((member) => member.id === id));
 
   return (
-    <Card
+    <Panel
       title={product.name}
       hint={`Owned by ${product.applicationId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
     >
@@ -185,7 +185,7 @@ function ProductCard({
           </p>
         </>
       )}
-    </Card>
+    </Panel>
   );
 }
 
@@ -203,7 +203,7 @@ function NewProduct({
   const action = useAction();
 
   return (
-    <Card
+    <Panel
       title="Create a product"
       hint="Bundle the APIs a consumer would want together. One subscription, one key, every API in it."
     >
@@ -244,6 +244,6 @@ function NewProduct({
           Create
         </button>
       </div>
-    </Card>
+    </Panel>
   );
 }

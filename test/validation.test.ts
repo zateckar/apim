@@ -267,9 +267,21 @@ describe("warning observes without changing anything", () => {
         downgradeReason: "the baseline this test compares against",
       },
     });
+    // Every header name, and every value except the two that cannot be equal across two separate
+    // requests: `x-request-id` is per request by definition, and `date` is the backend's own clock
+    // at one-second resolution, so a baseline and an observation a few hundred milliseconds apart
+    // differ whenever they happen to straddle a second. That is what made this test fail
+    // intermittently under a full-suite run and never on its own, where the gap is far shorter.
+    // The two values are blanked rather than dropped, so a warning mode that stopped emitting
+    // either header is still caught.
+    const comparable = (response: Response) =>
+      [...response.headers]
+        .map(([name, value]) => [name, name === "x-request-id" || name === "date" ? "" : value])
+        .sort();
+
     const baseline = await post(off, { sku: "nope", qty: 1 });
     const baselineBody = await baseline.text();
-    const baselineHeaders = [...baseline.headers].filter(([name]) => name !== "x-request-id").sort();
+    const baselineHeaders = comparable(baseline);
     off.stop();
 
     const warning = await world({
@@ -285,9 +297,7 @@ describe("warning observes without changing anything", () => {
       expect(await observed.text()).toBe(baselineBody);
       // Not one header differs: warning mode that added a header would be a behaviour change, and
       // a consumer cannot be asked to tolerate one from an observation.
-      expect([...observed.headers].filter(([name]) => name !== "x-request-id").sort()).toEqual(
-        baselineHeaders,
-      );
+      expect(comparable(observed)).toEqual(baselineHeaders);
       expect(warning.backend.requests).toHaveLength(1);
 
       // It was counted, though. Observation that records nothing is not observation.

@@ -793,8 +793,13 @@ would otherwise fail at the first request instead.
   editing; a three-step `.stepper` for the publish wizard.
 - Chip variants: bare `.chip` (neutral), `.ok`, `.warn`, `.err`, `.info`, `.violet`, `.accent` —
   driven by the tone vocabulary above, never by a colour written into a view.
-- Responsive breakpoint `1100px`; below it the two-column shell collapses to a single column and
-  the sidebar becomes a toggled drawer.
+- Two responsive breakpoints: at `1000px` the sidebar narrows, the page head stacks and the
+  breadcrumb is dropped; at `700px` the sidebar becomes an off-canvas drawer behind the topbar's
+  menu button and every two-column grid collapses to one.
+- Colour is defined once, as `oklch` custom properties with a light and a dark set:
+  `--bg` · `--surface` · `--border` · `--fg` (with `-muted`, `-subtle`, `-faint`) · `--accent` ·
+  `--ok` · `--warn` · `--err` · `--info` · `--violet`, each with a `-soft` companion. Typefaces are
+  `--font-sans` (Inter Tight) and `--font-mono` (JetBrains Mono).
 
 ## Interface House Rules
 

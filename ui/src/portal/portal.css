@@ -127,6 +127,14 @@
   letter-spacing: -0.7px;
   margin: 4px 0;
 }
+/* The one line under the title, from the route table. Held to a readable measure rather than the
+   width of the window: a purpose that runs the length of a wide screen is a purpose nobody reads. */
+.native-page-purpose {
+  margin: 0;
+  max-width: 68ch;
+  font-size: 13px;
+  color: var(--fg-muted);
+}
 .eyebrow {
   font-size: 12px;
   color: var(--fg-muted);

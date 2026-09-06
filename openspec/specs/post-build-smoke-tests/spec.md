@@ -85,7 +85,10 @@ something belongs in `test/`, against a control plane the test owns.
 - GIVEN the portal
 - WHEN the shell spec runs
 - THEN the sidebar SHALL be visible, and each navigable section SHALL be opened and asserted to
-  render its title
+  render its title **and its one-line purpose**
+- AND the sections SHALL be read from the rendered sidebar rather than listed in the spec, so a
+  screen that leaves the shell makes this spec shorter instead of failing on an address nobody
+  offers any more
 
 #### Scenario: The API workspace is exercised
 

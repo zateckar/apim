@@ -1,14 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import {
-  ADMIN_NAV,
-  APPLICATION_NAV,
-  GLOBAL_NAV,
-  Portal,
-  parsePath,
-} from "../src/portal/Portal.tsx";
-import { nextVersion, versionedPath } from "../src/portal/apis.tsx";
-import { ROUTES } from "../src/lib/routes.ts";
+import { Portal } from "../src/portal/Portal.tsx";
+import { nextVersion, versionedPath, editorTab } from "../src/portal/apis.tsx";
+import { addressOf, navigable, ROUTES } from "../src/lib/routes.ts";
 import { portalVersion } from "../src/lib/changelog.ts";
 import { currentVersion, parseChangeLog } from "../../shared/changelog.ts";
 import type { Meta, User } from "../src/api.ts";
@@ -16,14 +10,14 @@ import type { Meta, User } from "../src/api.ts";
 const SOURCE = await Bun.file(new URL("../../CHANGELOG.md", import.meta.url)).text();
 
 /**
- * The portal shell, and the one property that cannot be checked by looking at it (reuse analysis
- * §"Portal reuse"): every screen the route table declares navigable is reachable from the sidebar.
+ * The portal shell, and the one property that cannot be checked by looking at it: every screen the
+ * route table declares navigable is reachable from the sidebar.
  *
  * The shell was rewritten around the application picker while `lib/routes.ts` kept the screens, so
  * "it renders" and "you can get there" stopped being the same statement — Telemetry, Global policy,
- * Trust and Your account each existed, answered on their address, and were linked from nowhere.
- * A screen may leave the shell, but it has to leave through `COVERED_ELSEWHERE` rather than by
- * being forgotten.
+ * Trust and Your account each existed, answered on their address, and were linked from nowhere. The
+ * sidebar is drawn from the table now, so that particular drift is gone by construction; what this
+ * file checks is that the drawing really happened, and that authority still narrows it.
  *
  * `renderToStaticMarkup` runs no effects, so nothing here depends on a control plane; the theme
  * is read from `localStorage` in a lazy initialiser, which does run, and is stubbed for it.
@@ -80,148 +74,86 @@ function sessionFor(user: User) {
   };
 }
 
-function shellFor(user: User): { html: string; hrefs: Set<string> } {
-  const html = renderToStaticMarkup(
-    <Portal session={sessionFor(user) as never} path="/application_platform/dashboard" />,
-  );
+function shellFor(user: User, path = "/application_platform/dashboard") {
+  const html = renderToStaticMarkup(<Portal session={sessionFor(user) as never} path={path} />);
   return {
     html,
     hrefs: new Set([...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1]!)),
   };
 }
 
-/**
- * The navigable routes the sidebar deliberately does not link, and what stands in for each. An
- * entry here is a decision; a route that is merely missing is a bug this file reports.
- */
-const COVERED_ELSEWHERE = [
-  {
-    id: "home",
-    why: "the shell opens on the selected application's Dashboard, which answers the same question about the application rather than about the estate",
-  },
-  {
-    id: "catalog",
-    why: "linked as Catalog at /discover, which is the same cross-application Workspace listing",
-  },
-  {
-    id: "apis",
-    why: "an application-scoped tab: /:applicationId/apis, because an API belongs to exactly one application",
-  },
-  {
-    id: "products",
-    why: "an application-scoped tab: /:applicationId/products",
-  },
-  {
-    id: "subscriptions",
-    why: "an application-scoped tab: /:applicationId/subscriptions, scoped to the consuming application",
-  },
-];
-
 describe("the portal shell", () => {
   const asAdmin = shellFor(admin);
 
-  test("every navigable route is reachable, or is covered on purpose", () => {
-    const missing = ROUTES.filter(
-      (route) =>
-        route.nav &&
-        !asAdmin.hrefs.has(route.pattern) &&
-        !COVERED_ELSEWHERE.some((row) => row.id === route.id),
-    ).map((route) => `${route.id} (${route.pattern})`);
+  test("every navigable route is linked, at the address the table gives it", () => {
+    const missing = navigable(true)
+      .filter((route) => !asAdmin.hrefs.has(addressOf(route, "application_platform")))
+      .map((route) => `${route.id} (${addressOf(route, "application_platform")})`);
     expect(missing).toEqual([]);
   });
 
-  test("the coverage exemptions have not gone stale", () => {
-    for (const row of COVERED_ELSEWHERE) {
-      const route = ROUTES.find((entry) => entry.id === row.id);
-      expect(route, row.id).toBeDefined();
-      expect(route!.nav, `${row.id} is no longer navigable, so the exemption says nothing`).toBeTruthy();
+  test("the sidebar links nothing the table does not declare navigable", () => {
+    // The other direction, and the one that used to fail silently: a hand-written entry beside the
+    // table is a screen with no title, no purpose and no test holding it to either.
+    const declared = new Set(navigable(true).map((route) => addressOf(route, "application_platform")));
+    const linked = [...asAdmin.html.matchAll(/class="nav-item[^"]*" href="([^"]*)"/g)].map(
+      (match) => match[1]!,
+    );
+    expect(linked.length).toBeGreaterThan(8);
+    for (const href of linked) expect(declared, href).toContain(href);
+  });
+
+  test("every group the sidebar draws carries its label", () => {
+    for (const route of navigable(true)) expect(asAdmin.html, route.id).toContain(route.nav!.label);
+    for (const title of ["API", "Kafka", "Other", "Global", "Administration"]) {
+      expect(asAdmin.html, title).toContain(`nav-group-title">${title}`);
     }
   });
 
-  test("both global groups render every entry they declare", () => {
-    for (const [tab, label] of [...GLOBAL_NAV, ...ADMIN_NAV]) {
-      expect(asAdmin.hrefs, tab).toContain(`/${tab}`);
-      expect(asAdmin.html, tab).toContain(label);
-    }
-  });
-
-  test("the application tabs hang off the selected application", () => {
-    for (const group of APPLICATION_NAV)
-      for (const [tab] of group.items)
-        expect(asAdmin.hrefs, tab).toContain(`/application_platform/${tab}`);
-  });
-
-  test("the administration group is exactly the route table's gated screens", () => {
-    // Two lists that have to agree, held together here rather than by hoping: a screen marked
-    // `adminOnly` and then linked in the group every member sees is a 403 with a label on it.
-    const gated = ROUTES.filter(
-      (route) =>
-        route.nav && route.adminOnly && !COVERED_ELSEWHERE.some((row) => row.id === route.id),
-    )
-      .map((route) => route.pattern)
-      .sort();
-    expect(ADMIN_NAV.map(([tab]) => `/${tab}`).sort()).toEqual(gated);
-  });
-
-  test("nothing gated leaks into the group every member sees", () => {
-    for (const [tab] of GLOBAL_NAV) {
-      // Some global tabs are the shell's own sections rather than routes; those cannot be gated.
-      const route = ROUTES.find((entry) => entry.pattern === `/${tab}`);
-      expect(route?.adminOnly ?? false, tab).toBe(false);
+  test("an application screen hangs off the selected application; a global one does not", () => {
+    for (const route of navigable(true)) {
+      const href = addressOf(route, "application_platform");
+      if (route.scope === "application") expect(href, route.id).toStartWith("/application_platform/");
+      else expect(href, route.id).not.toStartWith("/application_platform/");
     }
   });
 
   test("a member is offered no administration group and no admin-only screen", () => {
     const asMember = shellFor(member);
     expect(asMember.html).not.toContain("Administration");
-    for (const [tab] of ADMIN_NAV) expect(asMember.hrefs, tab).not.toContain(`/${tab}`);
-    // The screens that are not admin-only stay: the shell hides authority, not the portal.
-    for (const [tab] of GLOBAL_NAV) expect(asMember.hrefs, tab).toContain(`/${tab}`);
-  });
-
-  test("an API address resolves to that API, in either shape", () => {
-    const apps = [{ id: "application_platform" }];
-    // What the shell writes.
-    expect(parsePath("/application_platform/apis/res_1", apps)).toEqual({
-      applicationId: "application_platform",
-      section: "apis",
-      resourceId: "res_1",
-    });
-    // What the route table, a certificate's "Used by" link and an old bookmark write. This used to
-    // resolve to the *list* with the id dropped, so the link looked like it worked and did not.
-    expect(parsePath("/apis/res_1", apps)).toMatchObject({
-      applicationId: null,
-      section: "apis",
-      resourceId: "res_1",
-    });
-    for (const section of ["mcp", "a2a", "discover"])
-      expect(parsePath(`/${section}/res_1`, apps).resourceId, section).toBe("res_1");
-  });
-
-  test("the addresses that are not an API are still not an API", () => {
-    const apps = [{ id: "application_platform" }];
-    // `/apis/new` is the publish route, and `publish` is the shell's own. Both open the wizard:
-    // the older address used to land on the API list with the wizard nowhere in sight.
-    expect(parsePath("/apis/new", apps).resourceId).toBeNull();
-    expect(parsePath("/apis/new", apps).section).toBe("publish");
-    expect(parsePath("/application_platform/apis/new", apps).section).toBe("publish");
-    expect(parsePath("/application_platform/apis/publish", apps).resourceId).toBeNull();
-    // A section that never carries a resource id keeps its second segment out of it — under the
-    // shell's application-scoped shape as much as the older one.
-    expect(parsePath("/users/usr_1", apps).resourceId).toBeNull();
-    expect(parsePath("/users/usr_1", apps).section).toBe("users");
-    for (const path of ["/subscriptions/sub_1", "/certificates/cert_1"]) {
-      expect(parsePath(path, apps).resourceId, path).toBeNull();
-      expect(
-        parsePath(`/application_platform${path}`, apps).resourceId,
-        path,
-      ).toBeNull();
+    for (const route of ROUTES) {
+      if (route.adminOnly) expect(asMember.hrefs, route.id).not.toContain(addressOf(route, null));
     }
-    // No application prefix, no section: the dashboard.
-    expect(parsePath("/", apps).section).toBe("dashboard");
-    expect(parsePath("/application_platform", apps).section).toBe("dashboard");
-    // A query string does not become a segment.
-    expect(parsePath("/apis/res_1?environment=dev", apps).resourceId).toBe("res_1");
+    // The screens that are not admin-only stay: the shell hides authority, not the portal.
+    for (const route of navigable(false)) {
+      expect(asMember.hrefs, route.id).toContain(addressOf(route, "application_platform"));
+    }
+  });
+
+  test("the title and the purpose both come from the table, on every screen", () => {
+    // The house rule is structural: a screen cannot exist without either, because the shell — not
+    // the screen — renders them, and it has only the table to read them from.
+    for (const [path, id] of [
+      ["/application_platform/apis", "apis"],
+      ["/application_platform/apis/res_1", "api"],
+      ["/subscriptions/sub_1", "subscription"],
+      ["/trust", "trust"],
+    ] as const) {
+      const route = ROUTES.find((entry) => entry.id === id)!;
+      const html = shellFor(admin, path).html;
+      expect(html, path).toContain(`<h1>${route.title}</h1>`);
+      // React escapes text nodes, so a purpose with an apostrophe in it is not a substring as authored.
+      expect(html, path).toContain(route.purpose.replaceAll("'", "&#x27;"));
+    }
+  });
+
+  test("one subscription's screen says Subscription, not Subscriptions", () => {
+    // The singular is the whole point: the plural here would mean the id was dropped and the reader
+    // is looking at the list of everything instead of the one thing they asked for.
+    expect(shellFor(admin, "/subscriptions/sub_1").html).toContain("<h1>Subscription</h1>");
+    expect(shellFor(admin, "/application_platform/subscriptions").html).toContain(
+      "<h1>Subscriptions</h1>",
+    );
   });
 
   test("the next version identifier follows the series, and gets its own path", () => {
@@ -233,6 +165,19 @@ describe("the portal shell", () => {
     expect(versionedPath("/checkout", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1/", "v1", "v2")).toBe("/checkout/v2");
+  });
+
+  test("a link that names a panel opens that panel", () => {
+    // What the control plane writes into an attention row, and what the subscribe wizard writes at
+    // the end of it. Every one of these used to be parsed off the address and thrown away.
+    expect(editorTab("policy")).toBe("policies");
+    expect(editorTab("routing")).toBe("properties");
+    expect(editorTab("publish")).toBe("properties");
+    expect(editorTab("try")).toBe("playground");
+    expect(editorTab("revisions")).toBe("revisions");
+    // A panel nobody has is ignored rather than left blank, and so is no panel at all.
+    expect(editorTab("nonsense")).toBe("definition");
+    expect(editorTab(null)).toBe("definition");
   });
 
   test("the top bar names the build, and the name comes from the change log", () => {

@@ -184,7 +184,10 @@ export function GatewayView({ meta, user }: { meta: Meta; user: User }) {
     <>
       <header className="page">
         <div>
-          <h2>Health Status</h2>
+          {/* Named for what it shows rather than for the screen it sits on: the shell already
+              renders "Health Status" above it, and a second heading with the same words reads as
+              the page having started over. This is the detail underneath the summary. */}
+          <h2>What each replica is running</h2>
           <p className="muted">
             Each environment is served by one or more gateways, with any number of replicas behind
             each one's proxy. A replica keeps serving through a control-plane outage from its

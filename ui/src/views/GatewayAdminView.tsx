@@ -39,9 +39,10 @@ export function GatewayAdminView() {
 
   return (
     <>
+      {/* No heading: the shell renders the screen's title and its one-line purpose from the route
+          table, and repeating the title here reads as the page having started over. */}
       <header className="page">
         <div>
-          <h2>Gateways</h2>
           <p className="muted">
             Each environment is served by one or more gateways, every one published under its
             proxy's hostname with as many replicas behind it as the load needs. An API says which

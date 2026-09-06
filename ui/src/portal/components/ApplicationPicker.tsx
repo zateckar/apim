@@ -11,7 +11,7 @@ import * as I from "../icons";
  * server re-derives what you may do from the session on every request, and this list only ever
  * offers applications you are a member of (or, for an administrator, all of them).
  *
- * Names are uppercased in CSS rather than in the string. Teams register `EAI`, `Skoda Auto` and
+ * Names are uppercased in CSS rather than in the string. Applications register as `EAI`, `Skoda Auto` and
  * `mvis`, and a picker that showed all three as written reads as three different kinds of thing;
  * the underlying value keeps its own case so search and routing are unaffected.
  */

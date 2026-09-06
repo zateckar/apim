@@ -12,12 +12,11 @@ import {
 import { HowView } from "../src/views/HowView.tsx";
 import { Publish } from "../src/portal/apis.tsx";
 import { Granted } from "../src/views/SubscribeWizard.tsx";
-import { VersionWizard } from "../src/views/VersionWizard.tsx";
 import { ALLOWED, permit } from "../src/lib/capabilities.ts";
 import { GLOSSARY, REQUIRED_TERMS } from "../src/lib/glossary.ts";
 import { releaseChip } from "../src/lib/status.ts";
 import type { AttentionRow } from "../../shared/attention.ts";
-import type { MarketListingDetail, Meta, ResourceDetail } from "../src/api.ts";
+import type { MarketListingDetail, Meta } from "../src/api.ts";
 
 /**
  * What the components promise, rendered.
@@ -67,44 +66,6 @@ const session = {
   reload: () => {},
   me: { user, applications: [], mustChangePassword: false, claimsStale: false, unmappedGroups: [] },
 };
-
-const resource = {
-  id: "res_1",
-  kind: "rest",
-  name: "petstore",
-  applicationId: "application_platform",
-  apiVersion: "v1",
-  family: "application_platform/petstore",
-  lifecycle: "active",
-  sunsetAt: null,
-  updatedAt: "2026-01-01T00:00:00Z",
-  etag: "W/\"abc\"",
-  capabilities: ["read", "update", "delete", "publish", "policy"],
-  summary: null,
-  description: null,
-  tags: [],
-  docsUrl: null,
-  icon: null,
-  visibility: "listed",
-  discoveryUrl: null,
-  versions: [{ id: "res_1", apiVersion: "v1", lifecycle: "active", sunsetAt: null, current: true }],
-  revisions: [
-    {
-      id: "rev_1",
-      rev: 3,
-      version_digest: "sha256:abc",
-      original_format: "openapi-3.0",
-      frozen_at: null,
-      created_by: "u1",
-      created_at: "2026-01-01T00:00:00Z",
-    },
-  ],
-  routes: [],
-  bindings: [],
-  releases: [],
-  products: [],
-  attention: [],
-} satisfies ResourceDetail;
 
 /** React escapes text nodes, so a definition with an apostrophe in it is not a substring as authored. */
 function escapeHtml(text: string): string {
@@ -235,41 +196,12 @@ describe("the wizards", () => {
     expect(html.match(/class="step [^"]*"[^>]*disabled=""/g) ?? []).toHaveLength(2);
   });
 
-  test("a new version is three steps, prefilled with the next identifier", () => {
-    const html = renderToStaticMarkup(
-      <VersionWizard resource={resource} meta={meta} canPublish={ALLOWED} />,
-    );
-    expect(html).toContain("The new version");
-    expect(html).toContain("What to carry over");
-    expect(html).toContain('value="v2"');
-    // It says what a version *is*, at the moment somebody is deciding whether they want one.
-    expect(html).toContain("Both versions serve at the same time");
-  });
-
-  test("a version identifier already in use is refused before the request", () => {
-    const taken = {
-      ...resource,
-      apiVersion: "v1",
-      versions: [
-        { id: "res_1", apiVersion: "v1", lifecycle: "active", sunsetAt: null, current: true },
-        { id: "res_2", apiVersion: "v2", lifecycle: "active", sunsetAt: null, current: false },
-      ],
-    } satisfies ResourceDetail;
-    const html = renderToStaticMarkup(
-      <VersionWizard resource={taken} meta={meta} canPublish={ALLOWED} />,
-    );
-    expect(html).toContain("already has a version called v2");
-    expect(html).toContain("disabled");
-  });
-
-  test("a caller who cannot publish sees the control and the reason, not a missing screen", () => {
-    const refused = permit("publish", ["read"], { application: "Orders" });
-    const html = renderToStaticMarkup(
-      <VersionWizard resource={resource} meta={meta} canPublish={refused} />,
-    );
-    // Step 1 is reachable; the refusal lands on the control that would act.
-    expect(html).toContain("The new version");
-  });
+  /**
+   * A new version used to be a wizard of its own at `/apis/:id/version`. It is a dialog on the API
+   * workspace now (`NewVersion` in `portal/apis.tsx`), opened from the screen it copies — so what is
+   * left to assert here is the identifier it prefills and the path it derives, which is what the two
+   * versions serving at once actually depend on. Both are asserted in `portal.test.tsx`.
+   */
 });
 
 /**

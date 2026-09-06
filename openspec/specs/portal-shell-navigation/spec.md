@@ -6,6 +6,9 @@ Define the shell every screen lives in: the two-column layout, the application-s
 space, the sidebar, the topbar, and the rule that a screen cannot exist without a title and a
 one-line purpose. See *Portal Route Map* in `openspec/project.md`.
 
+Every address, every title, every purpose and every sidebar entry come from **one table**, and one
+registry says which component answers each of them. The shell resolves nothing on its own.
+
 ## Requirements
 
 ### Requirement: Render a two-column shell around every screen
@@ -15,8 +18,10 @@ one-line purpose. See *Portal Route Map* in `openspec/project.md`.
 - GIVEN a signed-in user
 - WHEN any screen renders
 - THEN it SHALL sit inside a dark branded sidebar and a light main column
-- AND the main column SHALL carry a topbar, then a page head with an eyebrow and an `h1`, then the
-  screen's content
+- AND the main column SHALL carry a topbar, then a page head with an eyebrow, an `h1` and the
+  screen's one-line purpose, then the screen's content
+- AND a screen SHALL render no heading of its own repeating that title, because a second heading
+  with the same words reads as the page having started over
 
 #### Scenario: The viewport narrows
 
@@ -78,22 +83,33 @@ one-line purpose. See *Portal Route Map* in `openspec/project.md`.
 - AND ordering SHALL be computed from the table rather than maintained by hand, so a table somebody
   appends to keeps working
 
+#### Scenario: An address names a panel within a screen
+
+- GIVEN `/apis/:resourceId/:tab` — what the control plane writes into an attention row, so that the
+  row about a policy that will not compile opens the policy panel
+- WHEN it is matched
+- THEN the workspace SHALL open on the named panel
+- AND a panel name the workspace does not have SHALL be ignored rather than left blank
+- AND a tab segment that is parsed off the address and discarded SHALL be treated as a defect,
+  because every such row then lands the reader on the first panel and looks as though it worked
+
 #### Scenario: Nothing matches
 
 - GIVEN an address that matches no pattern
 - WHEN it renders
 - THEN the *Not found* screen SHALL be shown with its own title and purpose
 
-#### Scenario: The shell has its own screen for an address
+#### Scenario: A screen is chosen for a matched address
 
-- GIVEN an address the shell answers itself — the dashboard, one application's APIs, the publish
-  wizard, the list of subscriptions
-- WHEN it is opened
-- THEN the shell's screen SHALL render it, and there SHALL be exactly **one** rendering of it
-- AND the route table's renderer SHALL be the fallback for everything else, with no case of its own
-  for those ids
-- AND the reason SHALL be that a second screen on the same address is a second set of behaviour to
-  keep true, and the one nobody can reach is the one that quietly stops being true
+- GIVEN any matched route
+- WHEN the shell renders it
+- THEN the component SHALL come from **one** registry keyed by route id, and there SHALL be exactly
+  one rendering of any address
+- AND the registry SHALL cover the table exactly — no route without a screen, and no screen without
+  a route — and a test SHALL assert that in both directions
+- AND the shell SHALL name no screen itself, neither by importing one nor by branching on the
+  address, because a second place that chooses a screen is a second set of behaviour to keep true
+  and the one nobody can reach is the one that quietly stops being true
 
 #### Scenario: The root address is opened
 
@@ -120,7 +136,7 @@ The rule SHALL be enforced structurally rather than by review.
 
 #### Scenario: A workspace is open
 
-- GIVEN an address whose third segment names a resource
+- GIVEN an address that names one API, under any of the four listings it can be opened from
 - WHEN the head renders
 - THEN the title SHALL be *API workspace*, and the eyebrow SHALL be the application's display name
 
@@ -129,9 +145,9 @@ The rule SHALL be enforced structurally rather than by review.
 - GIVEN one subscription's address and the list of subscriptions
 - WHEN each head renders
 - THEN the detail SHALL be titled *Subscription* and the list *Subscriptions*
-- AND the title SHALL therefore come from the matched route rather than the section, because the
-  section alone cannot tell the two apart and a reader who saw the plural would conclude their link
-  had taken them to the wrong place
+- AND the title SHALL come from the matched route and from nowhere else — never from a second map
+  keyed by section, which cannot tell the two apart and leaves a reader who saw the plural
+  concluding their link had taken them to the wrong place
 
 ### Requirement: Scope the shell to one application at a time
 
@@ -140,9 +156,13 @@ The rule SHALL be enforced structurally rather than by review.
 - GIVEN the application picker
 - WHEN a different application is selected
 - THEN the choice SHALL be remembered in `localStorage`
-- AND the address SHALL move to the **same section** under the new application, so switching
+- AND a screen that belongs to an application SHALL stay open under the new one, so switching
   applications while comparing two of them does not throw the reader back to a dashboard every time
-- AND a section that does not exist under the new application SHALL fall back to the dashboard
+- AND a screen that is the same for everybody SHALL NOT move, because it is not about the
+  application that changed
+- AND a screen showing one *object* — an API's workspace, one subscription — SHALL fall back to the
+  new application's dashboard, because that object belongs to the application that was selected and
+  its id would not resolve under another
 
 #### Scenario: The picker is populated
 
@@ -175,6 +195,13 @@ The rule SHALL be enforced structurally rather than by review.
   Global policy · Trust · Audit) SHALL be shown only to an administrator
 - AND the group of surrounding systems SHALL be labelled *External systems* rather than
   *Integrations*, which reads as a development slug for the thing this portal is
+- AND every entry SHALL be derived from the route table's own `nav` grouping, with no second list
+  of labels beside it — a screen leaves the navigation by losing its `nav` and in no other way
+- AND every screen the table marks admin-only SHALL be in the Administration group and every screen
+  in that group SHALL be admin-only, so a gated screen cannot be listed where a member would press
+  it and receive a refusal
+- AND the gate SHALL be on the **link**: the control plane refuses what it must on every request,
+  and a screen that is open to everybody with an admin-only panel inside it says so itself
 
 #### Scenario: The user footer renders
 

@@ -621,11 +621,14 @@ export function Publish({ session: s }: { session: Session }) {
 }
 export function Editor({
   id,
+  tab,
   session: s,
   operations,
   tick,
 }: {
   id: string;
+  /** The panel to open on, from `/apis/:id/:tab`. `?tab=` is read when the address carries none. */
+  tab?: string;
   session: Session;
   operations: any[];
   tick: number;
@@ -643,6 +646,7 @@ export function Editor({
           key={`${id}:${s.environment}:${data.data.resource.etag}`}
           data={data.data}
           session={s}
+          tab={tab}
           refresh={data.reload}
           operations={operations.filter((o) => o.resourceId === id)}
           tick={tick}
@@ -666,7 +670,7 @@ function editPermission(d: any): Permission {
     : { enabled: false, reason: d.resource.editReason ?? "Only the owning application may change this." };
 }
 
-/** The workspace's panels, in reading order. Also the allowlist `?tab=` is checked against. */
+/** The workspace's panels, in reading order. Also the allowlist an asked-for tab is checked against. */
 const EDITOR_TABS = [
   "definition",
   "properties",
@@ -678,26 +682,50 @@ const EDITOR_TABS = [
   "history",
 ];
 
+/**
+ * What the control plane calls a panel, in the attention rows it writes: `/apis/:id/policy` for a
+ * policy that will not compile, `/apis/:id/routing` for an API with no route, `/apis/:id/publish`
+ * for one with no backend. Those names are older than this workspace and name a *problem* rather
+ * than a panel, so they are translated here rather than renamed at the source — a stored href is
+ * somebody's open tab.
+ */
+const ASKED_FOR: Record<string, string> = {
+  policy: "policies",
+  routing: "properties",
+  publish: "properties",
+  // "Try it from here instead" at the end of the subscribe wizard, which is the playground.
+  try: "playground",
+};
+
+/** The panel an address asks for, or `definition`. A tab nobody has is ignored, never left blank. */
+export function editorTab(asked: string | null | undefined): string {
+  if (!asked) return "definition";
+  const named = ASKED_FOR[asked] ?? asked;
+  return EDITOR_TABS.includes(named) ? named : "definition";
+}
+
 function EditorForm({
   data: d,
   session: s,
+  tab: asked,
   refresh,
   operations,
   tick,
 }: {
   data: any;
   session: Session;
+  tab?: string;
   refresh: () => void;
   operations: any[];
   tick: number;
 }) {
   const w = useWork(),
-    // `?tab=` is how a link lands on the right panel: the dashboard's traffic table opens the Logs
-    // tab, an attention row opens Policies. A tab nobody has is ignored rather than left blank.
-    [tab, setTab] = useState(() => {
-      const asked = new URLSearchParams(location.search).get("tab");
-      return asked && EDITOR_TABS.includes(asked) ? asked : "definition";
-    }),
+    // How a link lands on the right panel: the dashboard's traffic table opens the Logs tab, an
+    // attention row opens Policies. The address may name it as a segment — `/apis/:id/policy`,
+    // which is what the control plane writes — or as `?tab=`, which is what the screens here write.
+    [tab, setTab] = useState(() =>
+      editorTab(asked ?? new URLSearchParams(location.search).get("tab")),
+    ),
     [description, setDescription] = useState(d.resource.description ?? ""),
     [docsUrl, setDocsUrl] = useState(d.resource.docsUrl ?? ""),
     [pool, setPool] = useState<PoolEntry[]>(() =>

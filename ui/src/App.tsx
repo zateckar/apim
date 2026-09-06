@@ -1,24 +1,15 @@
-import { Portal } from './portal/Portal';
 import { useState } from "react";
 import { api, type AuthProviders, type Me, type Meta, type User } from "./api";
-import { Card, Link, Notice, useAsync, usePath } from "./components";
-import { type Match } from "./lib/routes";
-import { AccountView } from "./views/AccountView";
+import { Notice, useAsync, usePath } from "./components";
+import { Portal } from "./portal/Portal";
 import { ForcedPasswordChange, LoginView } from "./views/LoginView";
-import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
-import { UsersView, UserView } from "./views/UsersView";
-import { HowView } from "./views/HowView";
-import { ApiDetailView } from "./views/ApiDetailView";
-import { GatewayView } from "./views/GatewayView";
-import { GlobalPolicyView } from "./views/GlobalPolicyView";
-import { MarketListing } from "./views/MarketListing";
-import { MarketView } from "./views/MarketView";
-import { ProductsView } from "./views/ProductsView";
-import { SubscribeWizard } from "./views/SubscribeWizard";
-import { SubscriptionView } from "./views/SubscriptionView";
-import { TelemetryView } from "./views/TelemetryView";
-import { TrustView } from "./views/TrustView";
-import { AuditView } from "./views/AuditView";
+
+/**
+ * Signing in, and the session every screen is handed. Nothing here routes and nothing here draws a
+ * screen: `lib/routes.ts` says what the addresses are, `screens.tsx` says which component answers
+ * one, and `portal/Portal.tsx` draws the frame. This file decides only whether there is anybody to
+ * draw it for.
+ */
 
 export interface Application {
   id: string;
@@ -29,7 +20,7 @@ export interface Application {
 }
 
 /**
- * What every screen is given (plan §9.1). Two pieces of it are *context* rather than data:
+ * What every screen is given. Two pieces of it are *context* rather than data:
  *
  *  - `application` — which application a create action belongs to, and what "mine" means in a list. A user in one
  *    application never sees a menu, only a label, because there is no choice to make.
@@ -77,39 +68,32 @@ export function App() {
   const [application, setApplication] = useState<string | null>(null);
 
   if (me.loading) return <div className="main">Loading…</div>;
-  if (me.error) {
-    return (
-      <div className="main">
-        <Notice kind="error">{me.error}</Notice>
-        <p className="muted">
-          The portal could not reach its own API. Reload once the control plane is answering.
-        </p>
-      </div>
-    );
-  }
+  if (me.error) return <Unreachable error={me.error} />;
   if (!signedIn) return <LoginView onSignedIn={me.reload} />;
   if (mustChangePassword) return <PasswordGate onChanged={me.reload} />;
 
   if (meta.loading) return <div className="main">Loading…</div>;
-  if (meta.error || !meta.data) {
-    // Without `/api/meta` there is no environment chain and no kind list, so every screen below
-    // would render half-built. Better to say which call failed than to look merely empty.
+  // Without `/api/meta` there is no environment chain and no kind list, so every screen below would
+  // render half-built. Better to say which call failed than to look merely empty.
+  if (meta.error || !meta.data) return <Unreachable error={meta.error} />;
+
+  if (applications.loading) return <div className="main">Loading applications…</div>;
+  if (applications.error) {
     return (
       <div className="main">
-        <Notice kind="error">{meta.error}</Notice>
-        <p className="muted">
-          The portal could not reach its own API. Reload once the control plane is answering.
-        </p>
+        <Notice kind="error">{applications.error}</Notice>
       </div>
     );
   }
 
-  if (applications.loading) return <div className="main">Loading applications…</div>;
-  if (applications.error) return <div className="main"><Notice kind="error">{applications.error}</Notice></div>;
   const user = me.data!.user!;
   const chain = meta.data.chain;
   const known = applications.data?.items ?? [];
-  const mine = user.isAdmin ? known.map(row => row.id) : user.applications.length > 0 ? user.applications : known.filter((row) => row.mine).map((row) => row.id);
+  const mine = user.isAdmin
+    ? known.map((row) => row.id)
+    : user.applications.length > 0
+      ? user.applications
+      : known.filter((row) => row.mine).map((row) => row.id);
 
   const session: Session = {
     user,
@@ -124,7 +108,19 @@ export function App() {
     me: me.data!,
   };
 
-  return <Portal session={session} path={path}/>;
+  return <Portal session={session} path={path} />;
+}
+
+/** The portal could not reach its own API. Says which call failed, rather than looking empty. */
+function Unreachable({ error }: { error: string | null }) {
+  return (
+    <div className="main">
+      <Notice kind="error">{error}</Notice>
+      <p className="muted">
+        The portal could not reach its own API. Reload once the control plane is answering.
+      </p>
+    </div>
+  );
 }
 
 /**
@@ -148,92 +144,3 @@ function PasswordGate({ onChanged }: { onChanged: () => void }) {
     </>
   );
 }
-
-
-/**
- * The route table's own renderer, and the shell's fallback.
- *
- * `Portal` resolves the addresses it has a branded screen for — the dashboard, the catalogue of one
- * application, the publish wizard, the subscription list, the API workspace — and calls this for
- * everything else. So several ids the table declares have **no case here on purpose**: `home`,
- * `apis`, `api-new` and `subscriptions` are answered by the shell before they arrive, and a second
- * rendering of each is a second set of behaviour to keep true. The addresses still work; what is
- * gone is the older screen behind them.
- */
-export function Screen({ match, session }: { match: Match; session: Session }) {
-  const { user, meta } = session;
-  const { params } = match;
-
-  switch (match.route.id) {
-    case "how":
-      return <HowView />;
-
-    case "catalog":
-      return <MarketView user={user} meta={meta} />;
-    case "listing":
-      return <MarketListing resourceId={params.resourceId!} user={user} meta={meta} />;
-    case "subscribe":
-      return <SubscribeWizard resourceId={params.resourceId!} session={session} />;
-    case "subscription":
-      return <SubscriptionView subscriptionId={params.subscriptionId!} />;
-
-    case "api":
-    case "api-tab":
-      return (
-        <ApiDetailView
-          resourceId={params.resourceId!}
-          tab={params.tab ?? "overview"}
-          user={user}
-          meta={meta}
-          environment={session.environment}
-          onEnvironment={session.setEnvironment}
-        />
-      );
-    case "products":
-      return <ProductsView session={session} />;
-
-    case "fleet":
-      return <GatewayView meta={meta} user={user} />;
-    case "telemetry":
-      return <TelemetryView meta={meta} />;
-    case "global-policy":
-      return (
-        <GlobalPolicyView
-          meta={meta}
-          user={user}
-          environment={session.environment}
-          onEnvironment={session.setEnvironment}
-        />
-      );
-    case "trust":
-      return <TrustView meta={meta} user={user} environment={session.environment} />;
-    case "audit":
-      return <AuditView />;
-
-    case "account":
-      return <AccountView me={session.me} reload={session.reload} />;
-    case "users":
-      return <UsersView user={user} canCreate={meta.authProviders.includes("local")} />;
-    case "user":
-      return <UserView userId={params.userId!} me={user} />;
-    case "applications":
-      return <ApplicationsView user={user} unmappedGroups={session.me.unmappedGroups ?? []} />;
-    case "application":
-      return <ApplicationView applicationId={params.applicationId!} user={user} />;
-
-    default:
-      return <NotFound />;
-  }
-}
-
-function NotFound() {
-  return (
-    <Card>
-      <p className="muted">
-        Nothing in the portal answers to that address. <Link to="/">Go back to Home</Link>, or read{" "}
-        <Link to="/how">How this works</Link>.
-      </p>
-    </Card>
-  );
-}
-

@@ -151,11 +151,6 @@ describe("interaction hygiene", () => {
       why: "one entry of the caller's own console history — it removes a record, not a thing anybody depends on",
     },
     {
-      file: "views/PolicyEditor.tsx",
-      endpoint: "/policy/units/",
-      why: "detaching a policy unit, which re-attaches with the same click",
-    },
-    {
       file: "views/GlobalPolicyView.tsx",
       endpoint: "/api/policy/global/units/",
       why: "detaching a global policy unit, which re-attaches with the same click",

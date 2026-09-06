@@ -93,8 +93,12 @@ implementation work and brownfield reconstruction.
 
 - GIVEN a future change is planned or reviewed
 - WHEN engineers consult the repository
-- THEN `openspec/` SHALL be the first place to check for the expected system behaviour
-- AND `docs/` SHALL be understood as design history and rationale, not as contract
+- THEN `openspec/` SHALL be the **only** place that states the expected system behaviour
+- AND `README.md` SHALL carry the operator's half — running, deploying, sizing, backing up and
+  upgrading — and SHALL NOT restate a contract `openspec/` already holds, because a contract stated
+  twice is a contract that drifts
+- AND design history SHALL live in git rather than in a directory of documents beside the specs,
+  because a plan kept alongside a contract is read as though it were one
 
 ### Requirement: Carry no vocabulary from a superseded platform
 

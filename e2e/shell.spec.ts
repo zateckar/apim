@@ -36,6 +36,9 @@ test("every application tab in the sidebar opens a screen that renders", async (
   for (const tab of tabs) {
     await page.goto(tab.href);
     await expect(screenTitle(page), tab.href).not.toBeEmpty();
+    // And its one-line purpose, which comes from the same table as the title — so a screen that
+    // reached the sidebar without one fails here rather than shipping with a blank line under it.
+    await expect(page.locator(".native-page-purpose"), tab.href).not.toBeEmpty();
     // Not a blank page pretending to be a screen: the shell's main region has something in it.
     await expect(page.locator("main.native-content"), tab.href).not.toBeEmpty();
   }

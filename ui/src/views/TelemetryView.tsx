@@ -101,9 +101,10 @@ export function TelemetryView({ meta }: { meta: Meta }) {
 
   return (
     <>
+      {/* No heading: the shell renders the screen's title and its one-line purpose from the route
+          table, and repeating the title here reads as the page having started over. */}
       <header className="page">
         <div>
-          <h2>Telemetry</h2>
           <p className="muted">
             Counted on each gateway, reported on the config poll it was already making, and
             aggregated per minute. Retained {meta.telemetryRetentionHours} hours.

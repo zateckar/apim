@@ -20,11 +20,24 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 
 #### Scenario: A link lands on a specific panel
 
-- GIVEN an address carrying `?tab=<name>`
+- GIVEN an address carrying `?tab=<name>`, which the portal's own screens write, or
+  `/apis/:resourceId/<name>`, which the control plane writes into an attention row
 - WHEN the workspace opens
 - THEN that panel SHALL be selected, provided the name is one of the eight
 - AND a name that is not SHALL be ignored, opening the definition rather than a blank panel
 - AND this SHALL be how the dashboard's traffic table opens Logs and an attention row opens Policies
+
+#### Scenario: An attention row names a problem rather than a panel
+
+- GIVEN an attention href of `/apis/:id/policy`, `/apis/:id/routing` or `/apis/:id/publish` — names
+  older than this workspace, which say what is wrong rather than which panel fixes it
+- WHEN the workspace opens
+- THEN `policy` SHALL open **Policies**, and `routing` and `publish` SHALL open **Properties**,
+  which is where the route, the gateways and the backend pool are
+- AND the translation SHALL happen in the portal rather than by renaming the control plane's hrefs,
+  because a stored href is somebody's open tab
+- AND an address whose panel segment is parsed off and discarded SHALL be treated as a defect: every
+  such row then lands on the definition, and looks as though the link worked
 
 #### Scenario: The environment is switched
 

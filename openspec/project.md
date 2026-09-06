@@ -85,17 +85,20 @@ control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota ag
 data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
                 backend pool and breaker, response cache, stream registry, counters, trust store
 ui/             React + Vite SPA, served by the control plane
-                ui/src/portal/  the branded shell and its screens — this is the portal users see
-                ui/src/views/   the screens the shell composes
-                ui/src/lib/     routes · glossary · status · capabilities · attention · datetime
+                ui/src/App.tsx      signing in, and the session every screen is handed
+                ui/src/screens.tsx  which component answers which route id
+                ui/src/portal/      the branded shell and the screens built for it
+                ui/src/views/       the plainer screens the shell embeds
+                ui/src/lib/         routes · glossary · status · capabilities · attention · datetime
 docker/         one Dockerfile per plane; one docker-compose.<plane>.yml each, at the root
 tools/          the local upstreams (REST/SOAP/SSE/WebSocket, MCP, A2A) and the two load harnesses
 scripts/        seed · stack · demo · mint-instance · schedule-perf
 test/           bun test — control plane, data plane, shared
 ui/test/        bun test — the parts of the interface that are decisions rather than markup
 e2e/            Playwright — read-only smoke tests against a running stack
-openspec/       the behavioural source of truth
-docs/           design · deployment · walkthrough · plans and reviews · generated reports
+reports/        generated measurements: perf and capacity
+openspec/       the behavioural source of truth, and the only one
+README.md       the operator's half — running, deploying, sizing, backup, upgrade, CI
 CHANGELOG.md    the portal's version and what changed in it — see release-notes-and-changelog
 ```
 
@@ -111,7 +114,9 @@ Modules named by more than one capability spec:
 - `control-plane/src/config-build.ts` — the environment's configuration document, built from the
   database.
 - `control-plane/src/attention.ts` — what needs somebody's attention, across every capability.
-- `ui/src/lib/routes.ts` — every screen, with the title and one-line purpose the shell renders.
+- `ui/src/lib/routes.ts` — every address, with the title, one-line purpose and sidebar entry the
+  shell renders. The only route table.
+- `ui/src/screens.tsx` — which component answers each route id. The only screen registry.
 - `ui/src/portal/brand.css` — the visual system, shared verbatim with the predecessor portal.
 
 ## Capability Index
@@ -166,66 +171,75 @@ Modules named by more than one capability spec:
 
 ## Portal Route Map
 
-Two shapes reach the router, and both resolve.
+**One table**, in `ui/src/lib/routes.ts`, and one registry beside it in `ui/src/screens.tsx` saying
+which component answers each `id`. Nothing else in the interface resolves an address or chooses a
+screen; `ui/test/screens.test.ts` holds the two lists to each other in both directions.
 
-**The branded shell** writes application-scoped addresses:
+Each entry carries `id`, `patterns`, `title`, `purpose`, `scope`, and optionally `nav`, `adminOnly`
+and `plainChrome`. Matching is longest-literal-prefix-first over every declared pattern, so
+`/apis/new` is the publish wizard and not the API whose id is `new`.
 
-```
-/:applicationId/<section>[/:resourceId]
-```
+`scope` decides the address shape. An `application` screen hangs off the selected application and
+the sidebar writes it as `/:applicationId/<canonical>`; a `global` screen is the same for everybody.
+**Both resolve with the prefix and without it**: a leading segment that names a known application is
+stripped, and what is left is matched identically either way — so a bookmark, an attention row or a
+"Used by" link written before the shell became application-scoped reaches the same screen.
 
-`section` is one of the navigation entries below; an omitted section is `dashboard`. A section
-whose third segment names an API rather than a tab: `apis`, `mcp`, `a2a`, `discover`.
+The first pattern is canonical — the one the sidebar writes. The rest are addresses somebody
+already has, kept because losing one costs a working link.
 
-Sidebar groups, in order:
+| Route | Addresses | Title | Scope | Nav group |
+|---|---|---|---|---|
+| `dashboard` | `/dashboard` · `/` | Dashboard | application | Overview |
+| `apis` | `/apis` | APIs | application | API |
+| `mcp` | `/mcp` | MCP Servers | application | API |
+| `a2a` | `/a2a` | A2A Agents | application | API |
+| `api` | `/apis/:resourceId` · `/apis/:resourceId/:tab` · `/mcp/:resourceId` · `/a2a/:resourceId` | API workspace | application | — |
+| `publish` | `/publish` · `/apis/new` | Publish an API | application | — |
+| `products` | `/products` | Products | application | API |
+| `subscriptions` | `/subscriptions` | Subscriptions | application | API |
+| `subscription` | `/subscriptions/:subscriptionId` | Subscription | application | — |
+| `approvals` | `/approvals` | Approvals | application | API |
+| `kafka` | `/kafka` | Kafka Topics | application | Kafka |
+| `kafka-proxy` | `/kafka-proxy` | Kafka REST Proxy | application | Kafka |
+| `certificates` | `/certificates` | Certificates | application | Other |
+| `integrations` | `/integrations` | External systems | application | Other |
+| `mail` | `/mail` | Mail | application | Other |
+| `activity` | `/activity` | Activity | application | Other |
+| `discover` | `/discover` | Catalog | global | Global |
+| `catalog` | `/catalog` | Catalog | global | — |
+| `listing` | `/catalog/:resourceId` | API | global | — |
+| `subscribe` | `/catalog/:resourceId/subscribe` | Subscribe | global | — |
+| `fixme` | `/fixme` | FixMe diagnostics | global | Global |
+| `how` | `/how` | How this works | global | Global |
+| `account` | `/account` | Your account | global | Global |
+| `fleet` | `/fleet` · `/health` | Health Status | global | Administration |
+| `gateways` | `/gateways` | Gateways | global | Administration |
+| `applications` | `/applications` | Applications | global | Administration |
+| `application` | `/applications/:applicationId` | Application | global | — |
+| `users` | `/users` | People | global | Administration |
+| `user` | `/users/:userId` | Account | global | — |
+| `telemetry` | `/telemetry` | Telemetry | global | Administration |
+| `global-policy` | `/policy` | Global policy | global | Administration |
+| `trust` | `/trust` | Trust | global | Administration |
+| `audit` | `/audit` | Audit | global | Administration |
+| `not-found` | *(no match)* | Not found | global | — |
 
-- **API** — `apis` (APIs) · `mcp` (MCP Servers) · `a2a` (A2A Agents) · `products` (Products) ·
-  `subscriptions` (Subscriptions) · `approvals` (Approvals)
-- **Kafka** — `kafka` (Kafka Topics) · `kafka-proxy` (Kafka REST Proxy)
-- **Other** — `certificates` (Certificates) · `integrations` (External systems) · `mail` (Mail) ·
-  `activity` (Activity)
-- **Global** — `/discover` (Catalog) · `/fixme` (FixMe diagnostics) · `/how` (How this works) ·
-  `/account` (Your account)
-- **Administration**, shown only to an administrator — `/fleet` (Health Status) · `/gateways`
-  (Gateways) · `/applications` (Applications) · `/users` (People) · `/telemetry` (Telemetry) ·
-  `/policy` (Global policy) · `/trust` (Trust) · `/audit` (Audit)
+Sidebar groups are drawn in the order **Overview · API · Kafka · Other · Global · Administration**,
+entirely from this table's `nav` field — there is no second list of labels. A screen leaves the
+navigation by losing its `nav` and in no other way.
 
-**The route table** in `ui/src/lib/routes.ts` is the second shape and the authority on titles.
-Every entry carries `id`, `pattern`, `title`, `purpose`, `section` and optionally `nav` and
-`adminOnly`. Matching is longest-literal-prefix-first, so `/apis/new` is the publish wizard and
-not the API whose id is `new`.
+`adminOnly` gates the **link**, not the screen: every screen marked with it is in the Administration
+group and every screen in that group is marked with it, so a member is never offered a control that
+will refuse them. Authority itself is enforced by the control plane on every request, and a screen
+that is open to everybody with an admin-only panel inside it — Health Status — says so itself.
 
-| Pattern | Title | Section |
-|---|---|---|
-| `/` | Home | home |
-| `/catalog` | Catalog | use |
-| `/catalog/:resourceId` | API | detail |
-| `/catalog/:resourceId/subscribe` | Subscribe | detail |
-| `/subscriptions` | My subscriptions | use |
-| `/subscriptions/:subscriptionId` | Subscription | detail |
-| `/apis` | My APIs | publish |
-| `/apis/new` | Publish an API | detail |
-| `/apis/:resourceId` | API | detail |
-| `/apis/:resourceId/:tab` | API | detail |
-| `/products` | My products | publish |
-| `/fleet` | Health Status | operate (admin) |
-| `/gateways` | Gateways | operate (admin) |
-| `/telemetry` | Telemetry | operate (admin) |
-| `/policy` | Global policy | operate (admin) |
-| `/trust` | Trust | operate (admin) |
-| `/users` | People | operate (admin) |
-| `/users/:userId` | Account | detail |
-| `/applications` | Applications | operate (admin) |
-| `/applications/:applicationId` | Application | detail |
-| `/audit` | Audit | operate (admin) |
-| `/account` | Your account | account |
-| `/how` | How this works | help |
-| *(no match)* | Not found | detail |
+`plainChrome` marks a screen written before the branded shell, which brings no table styling of its
+own; the shell wraps it in `.native-legacy`. It is a styling fact, not a to-do list.
 
-`section` classifies a screen by **capability, not inventory**: "Publish APIs" applies to an
-application that has published nothing, or nobody could publish a first API. Only `operate` is
-gated, and a non-admin who deep-links into one of its screens gets the screen with every control
-disabled and one line naming who can change it.
+`/apis/:resourceId/:tab` names a panel of the workspace. The control plane writes those addresses
+into attention rows — `policy`, `routing`, `publish` — and the workspace translates them to its own
+panel names. A panel it does not have is ignored rather than left blank.
 
 ## Control-Plane Endpoint Map
 

@@ -102,20 +102,29 @@ export function parsePath(
 ): { applicationId: string | null; section: string; resourceId: string | null } {
   const parts = path.split("?")[0]!.split("/").filter(Boolean);
   const known = applications.find((a) => a.id === parts[0]);
-  if (known)
-    return {
-      applicationId: known.id,
-      section: parts[1] ?? "dashboard",
-      resourceId: parts[2] && parts[2] !== "publish" ? parts[2] : null,
-    };
-  const section = parts[0] ?? "dashboard";
+  // Both shapes carry the same two segments after the application, so read them once.
+  const [head, tail] = known ? [parts[1], parts[2]] : [parts[0], parts[1]];
+  // `/apis/new` is the route table's address for the publish wizard and `publish` is the shell's
+  // own; they are one screen. Resolving only the second left "Publish an API" on How this works
+  // landing on the API *list*, which is the same failure as a dropped resource id.
+  const section =
+    head === undefined
+      ? "dashboard"
+      : head === "apis" && tail === "new"
+        ? "publish"
+        : head;
   return {
-    applicationId: null,
+    applicationId: known?.id ?? null,
     section,
-    // `/apis/new` is the publish route, not an API called "new".
+    // A section that never names an API keeps its second segment out of the resource id — under
+    // the shell's shape as much as the older one. Without the guard on both, `/:app/certificates/:id`
+    // and `/:app/subscriptions/:id` opened the API workspace for something that is not an API.
     resourceId:
-      RESOURCE_SECTIONS.includes(section) && parts[1] && parts[1] !== "new"
-        ? parts[1]
+      RESOURCE_SECTIONS.includes(section) &&
+      tail &&
+      tail !== "new" &&
+      tail !== "publish"
+        ? tail
         : null,
   };
 }
@@ -375,7 +384,16 @@ export function Portal({
               tick={tick}
             />
           ) : section === "subscriptions" ? (
-            <Subscriptions session={effective} tick={tick} />
+            matchRoute(path).route.id === "subscription" ? (
+              // One subscription's own screen: its keys, what it may call and what it has spent.
+              // The branded list carries none of that, and `Withdraw it →` on Products links
+              // straight here — so the id has to survive rather than fall back to the list.
+              <div className="native-legacy">
+                <Screen match={matchRoute(path)} session={effective} />
+              </div>
+            ) : (
+              <Subscriptions session={effective} tick={tick} />
+            )
           ) : section === "approvals" ? (
             <Approvals session={effective} tick={tick} />
           ) : section === "products" ? (

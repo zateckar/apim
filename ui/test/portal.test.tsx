@@ -200,12 +200,23 @@ describe("the portal shell", () => {
 
   test("the addresses that are not an API are still not an API", () => {
     const apps = [{ id: "application_platform" }];
-    // `/apis/new` is the publish route, and `publish` is the shell's own.
+    // `/apis/new` is the publish route, and `publish` is the shell's own. Both open the wizard:
+    // the older address used to land on the API list with the wizard nowhere in sight.
     expect(parsePath("/apis/new", apps).resourceId).toBeNull();
+    expect(parsePath("/apis/new", apps).section).toBe("publish");
+    expect(parsePath("/application_platform/apis/new", apps).section).toBe("publish");
     expect(parsePath("/application_platform/apis/publish", apps).resourceId).toBeNull();
-    // A section that never carries a resource id keeps its second segment out of it.
+    // A section that never carries a resource id keeps its second segment out of it — under the
+    // shell's application-scoped shape as much as the older one.
     expect(parsePath("/users/usr_1", apps).resourceId).toBeNull();
     expect(parsePath("/users/usr_1", apps).section).toBe("users");
+    for (const path of ["/subscriptions/sub_1", "/certificates/cert_1"]) {
+      expect(parsePath(path, apps).resourceId, path).toBeNull();
+      expect(
+        parsePath(`/application_platform${path}`, apps).resourceId,
+        path,
+      ).toBeNull();
+    }
     // No application prefix, no section: the dashboard.
     expect(parsePath("/", apps).section).toBe("dashboard");
     expect(parsePath("/application_platform", apps).section).toBe("dashboard");

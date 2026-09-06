@@ -114,6 +114,40 @@ Modules named by more than one capability spec:
 - `ui/src/lib/routes.ts` — every screen, with the title and one-line purpose the shell renders.
 - `ui/src/portal/brand.css` — the visual system, shared verbatim with the predecessor portal.
 
+## Capability Index
+
+| Capability | What it governs |
+|---|---|
+| `spec-governance` | The rule that binds all of this. Read it first. |
+| `runtime-configuration` | Configuration, boot validation, ceilings, the two configuration files |
+| `auth-and-access` | Providers, sessions, the one authorization rule, audit, refusal shape |
+| `portal-shell-navigation` | The shell, the two address shapes, the sidebar, the topbar |
+| `frontend-visual-system` | Tokens, tone vocabulary, and the rules `ui/test/hygiene.test.ts` enforces |
+| `control-plane-surface` | Durable operations, the reconciler, jobs, artifacts, retention |
+| `data-plane-gateway` | The poll, fail-static, the pipeline order, limits, rate limit, quota, cache |
+| `workspace-api-catalog` | My APIs, the Catalog, visibility, facets, search, ownership |
+| `api-publish-flow` | The three-step wizard and what a publish creates |
+| `api-edit-properties` | The eight workspace panels, the definition, the description, the docs link |
+| `api-policy-controls` | The closed vocabulary, the two tiers, the effective document |
+| `api-subscription-management` | Products, subscriptions, approval, keys, usage |
+| `api-versioning-and-stage` | Versions, revisions, releases, promotion, rollback, divergence |
+| `api-testing-playground` | Calling a published API from the portal |
+| `request-logs` | Per-request access logs, from ELK or the mock |
+| `ai-gateway-mcp-a2a` | The two RPC variants and the rewritten agent card |
+| `backend-integration-surface` | The backend pool, the breaker, named backend-auth schemes |
+| `app-certificates` | The client identity the estate presents, and renewal in place |
+| `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
+| `dashboard-health` | Health Status, uptime, telemetry, the application dashboard, FixMe |
+| `kafka-workspace` | Topics, access requests, the HTTP proxy |
+| `kafka-playground` | Producing one message and reading recent ones |
+| `integrations-and-mocks` | The six surrounding systems and the durable outbox |
+| `skonet-integration` | Approval requests and the decision that comes back |
+| `leanix-integration` | Business metadata this portal quotes rather than owns |
+| `notifications-and-mail` | The bell and the mailbox, as one query with two renderings |
+| `platform-administration` | People, applications, gateways, replicas, audit |
+| `release-notes-and-changelog` | `CHANGELOG.md`, the portal's version, and the modal |
+| `post-build-smoke-tests` | The read-only Playwright pass over a running stack |
+
 ## Domain Vocabulary
 
 | Term | Meaning |
@@ -838,7 +872,7 @@ To recreate the system, implement in this order. The capability specs follow the
 10. Versions and promotion — `api-versioning-and-stage`
 11. The playground and per-request logs — `api-testing-playground`, `request-logs`
 12. Health, telemetry and the dashboard — `dashboard-health`
-13. Certificates and the trust store — `app-certificates`
+13. Certificates and the trust store — `app-certificates`, `trust-store`
 14. The RPC variants — `ai-gateway-mcp-a2a`
 15. Kafka — `kafka-workspace`, `kafka-playground`
 16. The surrounding systems — `integrations-and-mocks`, `skonet-integration`,

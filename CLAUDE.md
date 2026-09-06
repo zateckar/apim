@@ -14,9 +14,10 @@ SQLite file. React + Vite for the portal.
 change.** The specs — not this file, not the code comments, not `docs/` — say what the product
 does. `docs/` holds design history and rationale; `openspec/` holds the contract.
 
-- `openspec/project.md` — the system baseline: topology, route map, endpoint map, canonical
-  algorithms, constants, environment variables. Capability specs reference its sections by title
-  rather than restating them.
+- `openspec/project.md` — the system baseline: topology, route map, endpoint map, data model,
+  canonical algorithms, constants, environment variables, and a **Capability Index** naming every
+  spec directory in one line each. Start there when you do not yet know which capability owns a
+  behaviour; capability specs reference its sections by title rather than restating them.
 - `openspec/specs/<capability>/spec.md` — one file per capability, in OpenSpec format:
   `## Purpose`, then `## Requirements`, then `### Requirement: <imperative sentence>` each
   followed by one or more `#### Scenario: <name>` written as `GIVEN / WHEN / THEN / AND` bullets

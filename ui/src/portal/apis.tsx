@@ -2,7 +2,7 @@ import { PolicyForm } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { LogsPanel } from "../views/LogsPanel";
 import { RevisionsPanel } from "../views/RevisionsPanel";
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { Session } from "../App";
 import { api, type Locality } from "../api";
 import { go, useAsync } from "../components";
@@ -288,7 +288,27 @@ export function versionedPath(basePath: string, current: string, next: string): 
   return `${trimmed}/${next}`;
 }
 
+/**
+ * Publishing, in three questions rather than one screen of eighteen fields.
+ *
+ * The order is the order the answers depend on each other: what this thing *is* decides its
+ * address, the address is what the definition is served under, and only then is there something to
+ * route and something to sell. A single long form let somebody paste a definition and choose a
+ * backend before they had decided what the API was called, and then re-do both when the name
+ * changed the path.
+ *
+ * A step is reachable only when every step before it is answered, and the reason a step is not
+ * reachable is on the screen rather than in a disabled button's tooltip. Going *back* is always
+ * allowed — nothing is submitted until the last step.
+ */
+const PUBLISH_STEPS = [
+  { key: "identify", label: "Identify" },
+  { key: "define", label: "Define" },
+  { key: "route", label: "Route and sell" },
+] as const;
+
 export function Publish({ session: s }: { session: Session }) {
+  const [step, setStep] = useState(0);
   const w = useWork(),
     products = useAsync(
       () => api.get<{ items: any[] }>("/api/products"),
@@ -316,11 +336,64 @@ export function Publish({ session: s }: { session: Session }) {
   // localities means.
   const [gateways, setGateways] = useState<string[] | null>(null);
   const selected = gateways ?? localities.map((l) => l.name);
+
+  /** What is still missing from a step, in one sentence, or `null` when it is answered. */
+  function missing(at: number): string | null {
+    if (at === 0) {
+      if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(name))
+        return "A name: 2–61 lowercase letters, digits or hyphens. It is the middle of the address.";
+      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(apiVersion))
+        return "A version. It is the last segment of the address, so both versions can answer at once.";
+      if (!domain) return "A domain. It is the first segment of the address and how the catalog is browsed.";
+      return null;
+    }
+    if (at === 1) {
+      if (source === "url" && !url.trim()) return "The URL to import the definition from.";
+      if (source !== "url" && !spec.trim()) return "A definition — paste one, or upload a file.";
+      return null;
+    }
+    if (!backendUrl.trim()) return "Somewhere to forward to in DEV.";
+    if (selected.length === 0) return "At least one gateway to answer on.";
+    if (!productId && !productName.trim())
+      return "A product. Consumers subscribe to products, never directly to an API.";
+    return null;
+  }
+  // The furthest step whose predecessors are all answered. Everything past it is disabled rather
+  // than hidden, so the shape of what is being asked is visible from the first screen.
+  const reachable = PUBLISH_STEPS.findIndex((_, at) => missing(at) !== null);
+  const furthest = reachable === -1 ? PUBLISH_STEPS.length - 1 : reachable;
+  const at = Math.min(step, furthest);
+  const last = PUBLISH_STEPS.length - 1;
+  const blocked = missing(at);
+
   return (
     <Panel title="Publish to DEV">
+      <div className="stepper">
+        {PUBLISH_STEPS.map((entry, index) => (
+          <Fragment key={entry.key}>
+            {index > 0 && <span className="sep" />}
+            <button
+              type="button"
+              className={`step ${index === at ? "active" : index < at ? "done" : ""}`}
+              aria-current={index === at ? "step" : undefined}
+              disabled={index > furthest}
+              onClick={() => setStep(index)}
+            >
+              <span className="n">{index + 1}</span>
+              {entry.label}
+            </button>
+          </Fragment>
+        ))}
+      </div>
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          // Enter on any step but the last advances rather than publishing: a form that submits
+          // from the middle is how somebody publishes an API they had not finished describing.
+          if (at !== last) {
+            if (!blocked) setStep(at + 1);
+            return;
+          }
           void w.run(async () => {
             const body: any = {
               applicationId: s.application,
@@ -350,152 +423,197 @@ export function Publish({ session: s }: { session: Session }) {
         }}
       >
         <ErrorNotice error={w.error ?? products.error} />
-        <div className="native-form-grid">
-          <Field label="API name">
-            <input
-              required
-              pattern="[a-z0-9][a-z0-9-]{1,60}"
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-            />
-          </Field>
-          <Field label="Type">
-            <select value={kind} onChange={(e) => setKind(e.target.value)}>
-              {["rest", "soap", "mcp", "a2a"].map((k) => (
-                <option key={k} value={k}>
-                  {k.toUpperCase()}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <Field label="Version">
-            <input
-              required
-              pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
-              value={apiVersion}
-              onChange={(e) => setApiVersion(e.target.value)}
-            />
-          </Field>
-          <Field label="Product">
-            <select
-              value={productId}
-              onChange={(e) => setProduct(e.target.value)}
-            >
-              <option value="">Create a product</option>
-              {products.data?.items
-                .filter(
-                  (p) =>
-                    p.applicationId === s.application &&
-                    p.lifecycle === "active",
-                )
-                .map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.name}
-                  </option>
-                ))}
-            </select>
-          </Field>
-          {!productId && (
-            <Field label="New product name">
-              <input
-                required
-                value={productName}
-                onChange={(e) => setProductName(e.target.value)}
-              />
-            </Field>
-          )}
-          <Field label="DEV backend URL">
-            <input
-              type="url"
-              required
-              value={backendUrl}
-              onChange={(e) => setBackend(e.target.value)}
-            />
-          </Field>
-          <DomainPicker
-            domain={domain}
-            subdomain={subdomain}
-            onChange={(next) => {
-              setDomain(next.domain);
-              setSubdomain(next.subdomain);
-            }}
-          />
-        </div>
-        <GatewayPicker
-          localities={localities}
-          selected={selected}
-          environment={first}
-          onChange={setGateways}
-        />
-        <PathPreview
-          localities={localities}
-          selected={selected}
-          path={
-            domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
-          }
-        />
-        <p className="muted">
-          The domain is the first segment of the address and the version is the last, which is
-          what makes the catalog browsable by domain and a URL legible without looking anything up.
-        </p>
-        <DescriptionField
-          value={description}
-          onChange={setDescription}
-          rows={6}
-        />
-        <Field label="Documentation link">
-          <input
-            type="url"
-            placeholder="https://wiki.example/teams/…"
-            value={docsUrl}
-            onChange={(e) => setDocsUrl(e.target.value)}
-          />
-          <span className="hint">
-            One page a consumer can open for the rest of the story. Optional, and changeable later.
-          </span>
-        </Field>
-        <Field label="Definition source">
-          <select value={source} onChange={(e) => setSource(e.target.value)}>
-            <option value="text">Upload or paste definition</option>
-            <option value="url">Import from URL</option>
-          </select>
-        </Field>
-        {source === "url" ? (
-          <Field label="Definition or discovery URL">
-            <input
-              required
-              type="url"
-              value={url}
-              onChange={(e) => setUrl(e.target.value)}
-            />
-          </Field>
-        ) : (
+
+        {at === 0 && (
           <>
-            <input
-              aria-label="Upload API definition"
-              type="file"
-              accept=".json,.yaml,.yml,.xml,.wsdl"
-              onChange={(e) => {
-                const file = e.target.files?.[0];
-                if (file) void w.run(async () => setSpec(await file.text()));
-              }}
+            <div className="native-form-grid">
+              <Field label="API name">
+                <input
+                  autoFocus
+                  pattern="[a-z0-9][a-z0-9-]{1,60}"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
+              </Field>
+              <Field label="Type">
+                <select value={kind} onChange={(e) => setKind(e.target.value)}>
+                  {["rest", "soap", "mcp", "a2a"].map((k) => (
+                    <option key={k} value={k}>
+                      {k.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+              </Field>
+              <Field label="Version">
+                <input
+                  pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+                  value={apiVersion}
+                  onChange={(e) => setApiVersion(e.target.value)}
+                />
+              </Field>
+              <DomainPicker
+                domain={domain}
+                subdomain={subdomain}
+                onChange={(next) => {
+                  setDomain(next.domain);
+                  setSubdomain(next.subdomain);
+                }}
+              />
+            </div>
+            <PathPreview
+              localities={localities}
+              selected={selected}
+              path={
+                domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
+              }
             />
-            <CodeMirror
-              aria-label="API definition"
-              value={spec}
-              extensions={[yaml()]}
-              minHeight="260px"
-              onChange={setSpec}
+            <p className="muted">
+              The domain is the first segment of the address and the version is the last, which is
+              what makes the catalog browsable by domain and a URL legible without looking anything
+              up. Everything on this step is part of the address, which is why it is asked first.
+            </p>
+          </>
+        )}
+
+        {at === 1 && (
+          <>
+            <Field label="Definition source">
+              <select value={source} onChange={(e) => setSource(e.target.value)}>
+                <option value="text">Upload or paste definition</option>
+                <option value="url">Import from URL</option>
+              </select>
+            </Field>
+            {source === "url" ? (
+              <Field
+                label={
+                  kind === "mcp" || kind === "a2a"
+                    ? "Discovery URL"
+                    : "Definition URL"
+                }
+              >
+                <input
+                  type="url"
+                  value={url}
+                  onChange={(e) => setUrl(e.target.value)}
+                />
+              </Field>
+            ) : (
+              <>
+                <input
+                  aria-label="Upload API definition"
+                  type="file"
+                  accept=".json,.yaml,.yml,.xml,.wsdl"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) void w.run(async () => setSpec(await file.text()));
+                  }}
+                />
+                <CodeMirror
+                  aria-label="API definition"
+                  value={spec}
+                  extensions={[yaml()]}
+                  minHeight="260px"
+                  onChange={setSpec}
+                />
+              </>
+            )}
+            <DescriptionField
+              value={description}
+              onChange={setDescription}
+              rows={6}
+            />
+            <Field label="Documentation link">
+              <input
+                type="url"
+                placeholder="https://wiki.example/teams/…"
+                value={docsUrl}
+                onChange={(e) => setDocsUrl(e.target.value)}
+              />
+              <span className="hint">
+                One page a consumer can open for the rest of the story. Optional, and changeable
+                later.
+              </span>
+            </Field>
+          </>
+        )}
+
+        {at === 2 && (
+          <>
+            <div className="native-form-grid">
+              <Field label="DEV backend URL">
+                <input
+                  type="url"
+                  value={backendUrl}
+                  onChange={(e) => setBackend(e.target.value)}
+                />
+              </Field>
+              <Field label="Product">
+                <select value={productId} onChange={(e) => setProduct(e.target.value)}>
+                  <option value="">Create a product</option>
+                  {products.data?.items
+                    .filter(
+                      (p) => p.applicationId === s.application && p.lifecycle === "active",
+                    )
+                    .map((p) => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}
+                      </option>
+                    ))}
+                </select>
+              </Field>
+              {!productId && (
+                <Field label="New product name">
+                  <input
+                    value={productName}
+                    onChange={(e) => setProductName(e.target.value)}
+                  />
+                </Field>
+              )}
+            </div>
+            <GatewayPicker
+              localities={localities}
+              selected={selected}
+              environment={first}
+              onChange={setGateways}
+            />
+            <PathPreview
+              localities={localities}
+              selected={selected}
+              path={
+                domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
+              }
             />
           </>
         )}
+
+        {/* The reason the next step is out of reach, as a sentence, on the screen. A disabled
+            button whose reason lives in a `title` is a button nobody can read on a phone. */}
+        {blocked && <p className="muted">Still needed: {blocked}</p>}
+
         <div className="native-actions">
-          <button className="btn primary" disabled={w.busy || !s.application}>
-            {w.busy ? "Publishing…" : "Publish to DEV"}
-          </button>
-          <span className="muted">
-            Deployment runs automatically. Progress appears in Activity.
-          </span>
+          {at > 0 && (
+            <button type="button" className="btn" onClick={() => setStep(at - 1)}>
+              Back
+            </button>
+          )}
+          {at < last ? (
+            <button type="submit" className="btn primary" disabled={Boolean(blocked)}>
+              Next: {PUBLISH_STEPS[at + 1]!.label}
+            </button>
+          ) : (
+            <button
+              type="submit"
+              className="btn primary"
+              disabled={w.busy || !s.application || Boolean(blocked)}
+            >
+              {w.busy ? "Publishing…" : "Publish to DEV"}
+            </button>
+          )}
+          {at === last && (
+            <span className="muted">
+              Deployment runs automatically. Progress appears in Activity.
+            </span>
+          )}
         </div>
       </form>
     </Panel>

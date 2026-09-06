@@ -183,6 +183,12 @@
   font-weight: 600;
   color: var(--fg-muted);
 }
+/* Helper text under a control, mirroring `.field .hint` in the shared stylesheet — the shell's
+   fields carry their own class, so the brand rule does not reach them. */
+.native-field .hint {
+  font-size: 11.5px;
+  color: var(--fg-subtle);
+}
 .native-portal input:not([type="checkbox"]),
 .native-portal select,
 .native-portal textarea,

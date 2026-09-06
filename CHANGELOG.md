@@ -17,6 +17,28 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.2.3 - 06.09.2026
+
+Every state on every screen says what it means, in one set of colours.
+
+### Changed
+
+- Subscriptions, Approvals, Kafka and Activity name a state by what it means to you rather than by
+  the word in the database. A change on its way out says **Rolling out** instead of "waiting for
+  gateways", a request nobody has decided says **Awaiting approval** instead of "pending", and a new
+  topic says **Creating** instead of "provisioning". Hovering any of them still shows the underlying
+  value and a sentence explaining it.
+- Those four screens now use the same status colours as the rest of the portal: in progress reads as
+  in progress, finished as finished, and history as history. Eleven states that all looked identical
+  are now told apart at a glance.
+
+### Fixed
+
+- **Subscriptions** no longer shows a request that is waiting for its publisher as **Revoked**. A
+  pending request said the publisher had taken your access away while it was still sitting in their
+  approvals queue.
+- Status chips follow the dark theme instead of staying pale boxes on a dark page.
+
 ## 1.2.2 - 06.09.2026
 
 Every section of every screen is the same box, drawn the same way.

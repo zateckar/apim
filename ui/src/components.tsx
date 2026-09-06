@@ -3,7 +3,7 @@ import { ApiError } from "./api";
 import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow } from "./lib/attention";
 import { define } from "./lib/glossary";
 import type { Permission } from "./lib/capabilities";
-import type { Chip as StatusChipModel } from "./lib/status";
+import { operationChip, type Chip as StatusChipModel } from "./lib/status";
 
 /** Minimal pushState navigation (design section 14 keeps the SPA's routing style). */
 let navigator: (to: string) => void = () => {};
@@ -575,22 +575,6 @@ export function useAction() {
 // ------------------------------------------------------------------ moved in from portal/common
 
 /**
- * A raw workflow state as a chip: what an operation, a subscription or a grant is currently doing.
- *
- * `StatusChip` above draws a `lib/status.ts` model, which is the one that names a state by what it
- * means to the reader. This one maps the column value straight through, and is for the states that
- * vocabulary does not cover yet.
- */
-export function Status({ value }: { value: string }) {
-  const tone = ["complete", "active", "ready"].includes(value)
-    ? "ok"
-    : ["rejected", "blocked"].includes(value)
-      ? "err"
-      : "neutral";
-  return <span className={`chip ${tone}`}>{value.replaceAll("-", " ")}</span>;
-}
-
-/**
  * A modal dialog. Native `<dialog>`, so Escape, the backdrop and the focus trap are the browser's
  * rather than ours — and focus goes back where it came from on close, which is the part hand-rolled
  * modals forget.
@@ -668,7 +652,7 @@ export function OperationList({ items }: { items: any[] }) {
                 `${new Date(operation.createdAt).toLocaleString()} · ${operation.resourceName ?? ""}`}
             </small>
           </div>
-          <Status value={operation.state} />
+          <StatusChip chip={operationChip(operation.state)} />
         </div>
       ))}
     </div>

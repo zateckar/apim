@@ -72,12 +72,25 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 #### Scenario: A state is shown
 
-- GIVEN any lifecycle, release, subscription or instance state
+- GIVEN any lifecycle, release, operation, subscription, Kafka topic, Kafka grant, integration
+  event or instance state
 - WHEN it is rendered as a chip
-- THEN the label and the tone SHALL come from `ui/src/lib/status.ts`
+- THEN the label and the tone SHALL come from `ui/src/lib/status.ts`, drawn by `StatusChip`
 - AND the tone SHALL be one of `live`, `wait`, `stop`, `past`, `warn`, `neutral`
 - AND the underlying column value SHALL remain available as the chip's `title`, so nobody debugging
   is left guessing what it maps to
+- AND there SHALL be exactly one chip producer: no component may take a raw state string and choose
+  a class from it
+
+#### Scenario: A state is named for the reader, not for the column
+
+- GIVEN a state whose column value is the machine's phrasing — `waiting-for-gateways`, `converged`,
+  `provisioning`
+- WHEN it renders
+- THEN the label SHALL say what it means to the reader — *Rolling out*, *Live*, *Creating*
+- AND the label SHALL NOT be the column value with the hyphens swapped for spaces
+- AND the reason SHALL be that a reader watching their own change go out is asking "is it out there
+  yet", and `waiting for gateways` answers a question the reconciler asked, not the one they did
 
 #### Scenario: A state has no news
 
@@ -86,12 +99,23 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - THEN **no chip** SHALL be shown
 - AND the reason SHALL be that a chip on every row means nothing
 
+#### Scenario: A state nobody has decided yet
+
+- GIVEN a subscription or Kafka grant that is `pending`, or an integration event that is
+  `awaiting-decision`
+- WHEN it renders
+- THEN its tone SHALL be `wait`, never `stop`
+- AND the reason SHALL be that a request still sitting in its publisher's queue is not a request
+  that was refused, and colouring it as one tells the consumer they were turned down
+
 #### Scenario: A new state is added
 
 - GIVEN a new value in any status domain
 - WHEN the test suite runs
 - THEN the vocabulary SHALL be asserted **total** over `STATUS_DOMAINS`, so a state cannot ship
   without a word for it
+- AND each domain's states SHALL be declared as an iterable `as const` list in `shared/types.ts`,
+  because a list that cannot be iterated cannot be checked for totality
 
 #### Scenario: A view names a tone class
 

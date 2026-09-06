@@ -348,6 +348,24 @@ ul.plain li { padding: 3px 0; }
   --stop-bg: #fef3f2; --stop-ink: #b42318;
   --warn-ink: #b54708;
   --past-bg: #f2f4f7; --past-ink: #667085;
+  --neutral-bg: #eef0f3; --neutral-ink: #475467;
+}
+
+/* The same six tones on a dark surface, taken from `brand.css`'s themed pairs rather than invented
+   here — this is a re-pointing of the scale, not a second palette.
+
+   It exists because the scale above was six hardcoded light-mode hex values, so every status chip
+   stayed a near-white pill when the portal went dark. That was survivable while `StatusChip` drew
+   Trust, Products and the revision list; it stopped being survivable when the workflow states —
+   subscriptions, approvals, Kafka, activity — came onto the same scale from a component whose
+   `.chip ok|err|neutral` classes had followed the theme all along. */
+:root[data-theme="dark"] {
+  --live-bg: var(--ok-soft); --live-ink: var(--ok);
+  --wait-bg: var(--info-soft); --wait-ink: var(--info);
+  --stop-bg: var(--err-soft); --stop-ink: var(--err);
+  --warn-bg: var(--warn-soft); --warn-ink: var(--warn);
+  --past-bg: var(--bg-muted); --past-ink: var(--fg-subtle);
+  --neutral-bg: var(--bg-muted); --neutral-ink: var(--fg-muted);
 }
 
 .chip-status {
@@ -360,7 +378,7 @@ ul.plain li { padding: 3px 0; }
 .chip-status.tone-stop { background: var(--stop-bg); color: var(--stop-ink); }
 .chip-status.tone-warn { background: var(--warn-bg); color: var(--warn-ink); }
 .chip-status.tone-past { background: var(--past-bg); color: var(--past-ink); }
-.chip-status.tone-neutral { background: #eef0f3; color: #475467; }
+.chip-status.tone-neutral { background: var(--neutral-bg); color: var(--neutral-ink); }
 
 /* A domain word carries its definition. Dotted rather than solid, so it does not read as a link. */
 abbr.term {

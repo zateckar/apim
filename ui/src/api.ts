@@ -1,5 +1,6 @@
 import type { AttentionRow } from "../../shared/attention.ts";
 import type { ModelDiff } from "../../shared/diff.ts";
+import type { SubscriptionState } from "../../shared/types.ts";
 
 export type { AttentionRow, ModelDiff };
 
@@ -500,7 +501,8 @@ export interface Subscription {
   productId: string;
   applicationId: string;
   environment: string;
-  state: string;
+  /** One of the seven `SUBSCRIPTION_STATES`, so `subscriptionChip` is total over it. */
+  state: SubscriptionState;
   applicationName?: string;
   productName?: string;
   keyRotatedAt: string | null;

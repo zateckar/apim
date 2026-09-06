@@ -16,7 +16,7 @@ export const LIFECYCLES = ["active", "deprecated", "retired"] as const;
 export type Lifecycle = (typeof LIFECYCLES)[number];
 
 /**
- * Enumerable, not just a union: the UI's status vocabulary is asserted **total** over these two
+ * Enumerable, not just a union: the UI's status vocabulary is asserted **total** over these
  * lists (plan §9.4), and a list you cannot iterate cannot be checked for totality.
  *
  * `stale` is the plan digest moving between dry run and confirmation (design section 6.3).
@@ -39,7 +39,72 @@ export type ReleaseState = (typeof RELEASE_STATES)[number];
  */
 export const REACHED_FLEET_STATES: ReleaseState[] = ["converged", "superseded", "withdrawn"];
 
-export type SubscriptionState = "active" | "revoked";
+/**
+ * What a durable operation is doing (`control-plane-surface` §"an operation moves through states").
+ *
+ * `applying` is the phase inside the apply transaction: the spec names it, and the reconciler
+ * passes through it without persisting a row, because the transaction that would write it is the
+ * one doing the work. It is listed anyway — the vocabulary has to have a word ready for a state
+ * the contract promises, or the day it is persisted the portal shows a blank chip.
+ *
+ * `superseded` is likewise never written today, only defended against: several queries read
+ * `state <> 'superseded'` so a later change to the same API can overtake an earlier one.
+ */
+export const OPERATION_STATES = [
+  "queued",
+  "applying",
+  "retrying",
+  "blocked",
+  "waiting-for-gateways",
+  "complete",
+  "superseded",
+] as const;
+export type OperationState = (typeof OPERATION_STATES)[number];
+
+/**
+ * A consumer's access to a product, from asking to losing it.
+ *
+ * `cancelled` is the consumer withdrawing their own request before it was decided; `rejected` is
+ * the publisher declining it. Both end the request and neither is `revoked`, which is access that
+ * existed and was taken away.
+ */
+export const SUBSCRIPTION_STATES = [
+  "pending",
+  "activating",
+  "active",
+  "revoking",
+  "revoked",
+  "rejected",
+  "cancelled",
+] as const;
+export type SubscriptionState = (typeof SUBSCRIPTION_STATES)[number];
+
+/** A simulated Kafka topic: the broker confirms it before it can be produced to. */
+export const KAFKA_TOPIC_STATES = ["provisioning", "ready", "deleted"] as const;
+export type KafkaTopicState = (typeof KAFKA_TOPIC_STATES)[number];
+
+/** One application's access to one topic. The same seven steps as a subscription. */
+export const KAFKA_GRANT_STATES = SUBSCRIPTION_STATES;
+export type KafkaGrantState = SubscriptionState;
+
+/**
+ * An outbox entry for one of the six simulated external systems.
+ *
+ * Three terminal states rather than one, because they are three different facts: `delivered` is
+ * the system accepted it, `completed` is FixMe's diagnostics running to the end, and
+ * `awaiting-decision` is SkoNET holding it for a person — which then becomes `approved` or
+ * `rejected` (`skonet-integration` §"a request settles in awaiting-decision").
+ */
+export const INTEGRATION_EVENT_STATES = [
+  "queued",
+  "retrying",
+  "delivered",
+  "completed",
+  "awaiting-decision",
+  "approved",
+  "rejected",
+] as const;
+export type IntegrationEventState = (typeof INTEGRATION_EVENT_STATES)[number];
 
 export type PolicyOrigin = "local" | "seeded";
 

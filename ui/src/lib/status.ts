@@ -1,4 +1,19 @@
-import { LIFECYCLES, RELEASE_STATES, type Lifecycle, type ReleaseState } from "../../../shared/types.ts";
+import {
+  INTEGRATION_EVENT_STATES,
+  KAFKA_GRANT_STATES,
+  KAFKA_TOPIC_STATES,
+  LIFECYCLES,
+  OPERATION_STATES,
+  RELEASE_STATES,
+  SUBSCRIPTION_STATES,
+  type IntegrationEventState,
+  type KafkaGrantState,
+  type KafkaTopicState,
+  type Lifecycle,
+  type OperationState,
+  type ReleaseState,
+  type SubscriptionState,
+} from "../../../shared/types.ts";
 
 /**
  * One status vocabulary (plan §9.4).
@@ -65,10 +80,120 @@ export function releasedInChip(state: "live" | "previously" | "never"): Chip {
   }
 }
 
-export function subscriptionChip(state: string): Chip {
-  return state === "active"
-    ? { label: "Active", tone: "live", title: "its keys work" }
-    : { label: "Revoked", tone: "stop", title: "revoked — its keys no longer work, and it cannot be un-revoked" };
+/**
+ * What a durable operation is doing, for the reader watching their own change go out.
+ *
+ * The question behind every one of these is "is it out there yet, and if not is it stuck". So the
+ * three that are still moving are `wait` and say what is being waited on, `blocked` is `stop`
+ * because it has given up and needs a person, and only `complete` is `live`.
+ *
+ * Deliberately not "Publishing": an operation is a publish, a configure, a promote **or** a
+ * subscribe, and three quarters of those are not publishing anything.
+ */
+export function operationChip(state: OperationState): Chip {
+  switch (state) {
+    case "queued":
+      return { label: "Queued", tone: "wait", title: "queued — accepted, waiting its turn behind this API's earlier changes" };
+    case "applying":
+      return { label: "Applying", tone: "wait", title: "applying — the control plane is writing the change now" };
+    case "retrying":
+      return { label: "Retrying", tone: "wait", title: "retrying — an attempt failed and it is being tried again, further apart each time" };
+    case "blocked":
+      return { label: "Blocked", tone: "stop", title: "blocked — five attempts failed, so it stopped trying; the error is on the row" };
+    case "waiting-for-gateways":
+      return { label: "Rolling out", tone: "wait", title: "waiting-for-gateways — applied here, waiting for every gateway in the environment to pick it up" };
+    case "complete":
+      return { label: "Done", tone: "live", title: "complete — every gateway in the environment has the change" };
+    case "superseded":
+      return { label: "Replaced", tone: "past", title: "superseded — a later change to the same API overtook this one" };
+  }
+}
+
+/**
+ * A consumer's access to a product.
+ *
+ * Only `active` is `live`, because only `active` means the keys work — and that is the whole
+ * question. `pending` used to render as **Revoked**: the old two-branch version treated everything
+ * that was not `active` as revoked, so a request nobody had decided yet looked like one that had
+ * been taken away.
+ */
+export function subscriptionChip(state: SubscriptionState): Chip {
+  switch (state) {
+    case "pending":
+      return { label: "Awaiting approval", tone: "wait", title: "pending — the publisher has not decided yet, and the keys do not work until they do" };
+    case "activating":
+      return { label: "Activating", tone: "wait", title: "activating — approved, waiting for the gateways to start accepting the keys" };
+    case "active":
+      return { label: "Active", tone: "live", title: "active — its keys work" };
+    case "revoking":
+      return { label: "Revoking", tone: "wait", title: "revoking — withdrawn here, waiting for the gateways to stop accepting the keys" };
+    case "revoked":
+      return { label: "Revoked", tone: "stop", title: "revoked — its keys no longer work, and it cannot be un-revoked" };
+    case "rejected":
+      return { label: "Rejected", tone: "stop", title: "rejected — the publisher declined the request; asking again means a new request" };
+    case "cancelled":
+      return { label: "Cancelled", tone: "past", title: "cancelled — the consumer withdrew the request before it was decided" };
+  }
+}
+
+/** A simulated Kafka topic. `ready` is the broker having confirmed it, not the row existing. */
+export function kafkaTopicChip(state: KafkaTopicState): Chip {
+  switch (state) {
+    case "provisioning":
+      return { label: "Creating", tone: "wait", title: "provisioning — the simulated broker has not confirmed the topic yet" };
+    case "ready":
+      return { label: "Ready", tone: "live", title: "ready — the topic exists and can be produced to and consumed from" };
+    case "deleted":
+      return { label: "Deleted", tone: "past", title: "deleted — the topic and its simulated messages are gone" };
+  }
+}
+
+/**
+ * One application's access to one topic. The same seven steps as a subscription, and the same
+ * tones — but the words are about access rather than keys, because a grant has no keys.
+ */
+export function kafkaGrantChip(state: KafkaGrantState): Chip {
+  switch (state) {
+    case "pending":
+      return { label: "Awaiting approval", tone: "wait", title: "pending — the topic's owner has not decided yet" };
+    case "activating":
+      return { label: "Activating", tone: "wait", title: "activating — approved, waiting for the simulated broker to apply the access" };
+    case "active":
+      return { label: "Active", tone: "live", title: "active — this application can produce to and consume from the topic" };
+    case "revoking":
+      return { label: "Revoking", tone: "wait", title: "revoking — withdrawn here, waiting for the simulated broker to remove the access" };
+    case "revoked":
+      return { label: "Revoked", tone: "stop", title: "revoked — the access is gone, and it cannot be un-revoked" };
+    case "rejected":
+      return { label: "Rejected", tone: "stop", title: "rejected — the topic's owner declined the request; asking again means a new request" };
+    case "cancelled":
+      return { label: "Cancelled", tone: "past", title: "cancelled — the requester withdrew it before the owner decided" };
+  }
+}
+
+/**
+ * One call to one of the six simulated external systems.
+ *
+ * `awaiting-decision` is the only one that is about a person rather than a machine, and it is the
+ * one the Approvals screen is filtering for — so it says what is being waited on and who by.
+ */
+export function integrationEventChip(state: IntegrationEventState): Chip {
+  switch (state) {
+    case "queued":
+      return { label: "Queued", tone: "wait", title: "queued — waiting for the simulated external system to be called" };
+    case "retrying":
+      return { label: "Retrying", tone: "wait", title: "retrying — the call failed and is being tried again, further apart each time" };
+    case "delivered":
+      return { label: "Delivered", tone: "live", title: "delivered — the simulated external system accepted it" };
+    case "completed":
+      return { label: "Completed", tone: "live", title: "completed — the simulated diagnostics ran every step to the end" };
+    case "awaiting-decision":
+      return { label: "Awaiting decision", tone: "wait", title: "awaiting-decision — simulated SkoNET is holding this for the publisher to approve or reject" };
+    case "approved":
+      return { label: "Approved", tone: "live", title: "approved — the publisher granted the access, and provisioning followed" };
+    case "rejected":
+      return { label: "Rejected", tone: "stop", title: "rejected — the publisher declined, and nothing was provisioned" };
+  }
 }
 
 export function instanceChip(instance: { revoked: boolean; stale: boolean; inSync?: boolean }): Chip {
@@ -89,5 +214,9 @@ export const STATUS_DOMAINS = {
   release: RELEASE_STATES,
   lifecycle: LIFECYCLES,
   releasedIn: ["live", "previously", "never"] as const,
-  subscription: ["active", "revoked"] as const,
+  subscription: SUBSCRIPTION_STATES,
+  operation: OPERATION_STATES,
+  kafkaTopic: KAFKA_TOPIC_STATES,
+  kafkaGrant: KAFKA_GRANT_STATES,
+  integrationEvent: INTEGRATION_EVENT_STATES,
 };

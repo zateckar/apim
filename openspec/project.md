@@ -660,11 +660,26 @@ person reading a list wants *Live*. The column value stays available as the chip
 | release | converged → **Live** `live` · pending/converging → **Publishing** `wait` · superseded → **Replaced** `past` · withdrawn → **Withdrawn** `past` · failed → **Failed** `stop` · stale → **Needs confirming** `stop` |
 | lifecycle | active → *(no chip)* · deprecated → **Deprecated** `warn` · retired → **Retired** `stop` |
 | releasedIn | live → **Live** `live` · previously → **Was live** `past` · never → **Never** `neutral` |
-| subscription | active → **Active** `live` · revoked → **Revoked** `stop` |
+| operation | queued → **Queued** `wait` · applying → **Applying** `wait` · retrying → **Retrying** `wait` · blocked → **Blocked** `stop` · waiting-for-gateways → **Rolling out** `wait` · complete → **Done** `live` · superseded → **Replaced** `past` |
+| subscription | pending → **Awaiting approval** `wait` · activating → **Activating** `wait` · active → **Active** `live` · revoking → **Revoking** `wait` · revoked → **Revoked** `stop` · rejected → **Rejected** `stop` · cancelled → **Cancelled** `past` |
+| kafkaTopic | provisioning → **Creating** `wait` · ready → **Ready** `live` · deleted → **Deleted** `past` |
+| kafkaGrant | the seven subscription states, worded about access rather than keys |
+| integrationEvent | queued → **Queued** `wait` · retrying → **Retrying** `wait` · delivered → **Delivered** `live` · completed → **Completed** `live` · awaiting-decision → **Awaiting decision** `wait` · approved → **Approved** `live` · rejected → **Rejected** `stop` |
 | instance | revoked → **Revoked** `stop` · stale → **Not reporting** `stop` · out of sync → **Catching up** `wait` · else **Healthy** `live` |
 
+The state lists themselves are `as const` arrays in `shared/types.ts` — `RELEASE_STATES`,
+`OPERATION_STATES`, `SUBSCRIPTION_STATES`, `KAFKA_TOPIC_STATES`, `KAFKA_GRANT_STATES`,
+`INTEGRATION_EVENT_STATES` — because a list you cannot iterate cannot be checked for totality.
+
 A test iterates `STATUS_DOMAINS` and asserts the vocabulary is **total** over every state, so a
-new state cannot ship without a word for it.
+new state cannot ship without a word for it. It also asserts no label is the column value with the
+hyphens swapped for spaces: `waiting-for-gateways` is a phrase from the reconciler, and the reader
+watching their own change go out wants *Rolling out*. `awaiting-decision` is the one state where
+that swap lands on the right words anyway, and the test names it as the exception.
+
+There is no second chip producer. A component that took a raw state string and mapped it to
+`.chip ok|err|neutral` used to sit beside `StatusChip`; every state it covered has a `lib/status.ts`
+function now, and `hygiene.test.ts` refuses a module exporting `Status` so it cannot come back.
 
 ### Date, Time and Duration Formatting
 

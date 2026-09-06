@@ -272,8 +272,9 @@ describe("interaction hygiene", () => {
     // a pastel box on one screen and a themed banner on the next. A second module comes back by
     // somebody exporting one of these names from somewhere else, which is what this looks for.
     //
-    // `Card` is on the list without being a component: it is the name the second section component
-    // had, and the one anybody would reach for when writing a third.
+    // `Card` and `Status` are on the list without being components any more: they are the names the
+    // second section component and the raw-column-value chip had, and the ones anybody would reach
+    // for when writing them again.
     const SHARED = /\bexport function (Notice|EmptyState|Field|TextField|Panel|Card|Modal|Status|DangerZone|Skeleton|Action|useAction|useAsync|OperationList)\b/;
     const offenders: string[] = [];
     for (const file of sources) {

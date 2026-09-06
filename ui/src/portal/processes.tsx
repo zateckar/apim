@@ -9,10 +9,16 @@ import {
   Modal,
   Notice,
   Panel,
-  Status,
+  StatusChip,
   useAction,
   useAsync,
 } from "../components";
+import {
+  integrationEventChip,
+  kafkaGrantChip,
+  kafkaTopicChip,
+  subscriptionChip,
+} from "../lib/status";
 import { DomainPicker } from "./apis";
 
 export function SubscribeDialog({
@@ -42,7 +48,7 @@ export function SubscribeDialog({
     <Modal title="Subscribe to a product" close={close}>
       {result ? (
         <>
-          <Status value={result.state} />
+          <StatusChip chip={subscriptionChip(result.state)} />
           <p>
             Your request has been recorded. Approval and gateway activation
             progress appear in Subscriptions.
@@ -158,7 +164,7 @@ export function Subscriptions({
               <small>
                 {s.applicationName(r.applicationId)} · {r.purpose}
               </small>
-              <Status value={r.state} />
+              <StatusChip chip={subscriptionChip(r.state)} />
             </div>
             <div className="native-actions">
               {r.state === "active" &&
@@ -295,7 +301,7 @@ export function Approvals({
                 {e.kind} · {s.applicationName(e.payload.consumer)}
               </strong>
               <p>{e.payload.purpose}</p>
-              <Status value={e.state} />
+              <StatusChip chip={integrationEventChip(e.state)} />
             </div>
             {e.state === "awaiting-decision" && (
               <button
@@ -412,7 +418,7 @@ export function Integrations({
                 <strong>
                   {e.integration} · {e.kind}
                 </strong>{" "}
-                <Status value={e.state} />
+                <StatusChip chip={integrationEventChip(e.state)} />
               </summary>
               <pre>
                 {JSON.stringify(
@@ -489,7 +495,7 @@ export function Kafka({
                     ? `${t.domain}${t.subdomain ? ` / ${t.subdomain}` : ""}`
                     : "no domain yet"}
                 </small>
-                <Status value={t.state} />
+                <StatusChip chip={kafkaTopicChip(t.state)} />
               </div>
               <button
                 className="btn"
@@ -546,7 +552,7 @@ export function Kafka({
                     ? a.purpose
                     : `${s.applicationName(a.application_id)} · ${a.purpose}`}
                 </small>
-                <Status value={a.state} />
+                <StatusChip chip={kafkaGrantChip(a.state)} />
               </div>
               {["active", "pending", "activating"].includes(a.state) && (
                 <DangerZone

@@ -58,6 +58,9 @@ gateways — with nothing Azure-shaped carried across.
 
 - Deleting an application no longer refuses forever because the portal's own LeanIX lookup counted
   as something the application still owns.
+- A link to one subscription opens that subscription — its keys, what it may call and what it has
+  spent — instead of the list of all of them with the name dropped.
+- **Publish an API** on How this works opens the wizard rather than the list of APIs.
 
 ## 1.0.0 - 04.09.2026
 

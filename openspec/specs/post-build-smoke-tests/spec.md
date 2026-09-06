@@ -95,6 +95,16 @@ something belongs in `test/`, against a control plane the test owns.
 - AND the reason SHALL be that each panel is lazily rendered, so a broken import or a fetch that
   throws on one is invisible until somebody clicks it
 
+#### Scenario: An address is written somewhere other than the sidebar
+
+- GIVEN an address a screen links to rather than the sidebar — the publish wizard's route-table
+  address, one subscription's own address
+- WHEN the suite runs
+- THEN it SHALL open each and assert the **title of the screen it expected to arrive at**
+- AND the reason SHALL be that the failure mode looks like success: the link is there, the route
+  exists, and the reader lands on a list with their id dropped, which reads as "there is nothing
+  here" rather than as a broken link
+
 #### Scenario: A user's first application publishes nothing
 
 - GIVEN membership ordering that puts a consuming application first

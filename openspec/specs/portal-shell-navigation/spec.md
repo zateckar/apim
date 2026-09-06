@@ -53,6 +53,22 @@ one-line purpose. See *Portal Route Map* in `openspec/project.md`.
 - AND a shape that resolved only the first SHALL be treated as a defect, because it renders the
   *list* with the id silently dropped, which looks like the link worked and did not
 
+#### Scenario: A segment names something that is not an API
+
+- GIVEN `/subscriptions/:subscriptionId` or `/certificates/:certificateId`, under either shape
+- WHEN it is parsed
+- THEN the second segment SHALL NOT be read as a resource id
+- AND the API workspace SHALL NOT open for something that is not an API
+- AND the address SHALL reach that thing's own screen rather than the list it belongs to
+
+#### Scenario: One screen has two addresses
+
+- GIVEN `/apis/new`, which the route table and the *How this works* screen write, and
+  `/:applicationId/publish`, which the shell writes
+- WHEN either is parsed
+- THEN both SHALL resolve to the publish wizard
+- AND resolving only the shell's own SHALL be treated as the same defect as a dropped id
+
 #### Scenario: A pattern could match two routes
 
 - GIVEN `/apis/new` and `/apis/:resourceId`
@@ -86,6 +102,15 @@ The rule SHALL be enforced structurally rather than by review.
 - GIVEN an address whose third segment names a resource
 - WHEN the head renders
 - THEN the title SHALL be *API workspace*, and the eyebrow SHALL be the application's display name
+
+#### Scenario: A detail address and its list share a section
+
+- GIVEN one subscription's address and the list of subscriptions
+- WHEN each head renders
+- THEN the detail SHALL be titled *Subscription* and the list *Subscriptions*
+- AND the title SHALL therefore come from the matched route rather than the section, because the
+  section alone cannot tell the two apart and a reader who saw the plural would conclude their link
+  had taken them to the wrong place
 
 ### Requirement: Scope the shell to one application at a time
 

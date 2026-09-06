@@ -103,6 +103,15 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - AND never anybody else's
 - AND in neither case any key material
 
+#### Scenario: One subscription is opened
+
+- GIVEN a subscription named by its own address
+- WHEN it renders
+- THEN it SHALL be that subscription's own screen — its keys, what it may call, and what it has
+  spent — rather than the list it belongs to
+- AND the reason SHALL be that none of those three are on the list, so falling back to the list
+  reads as "there is nothing here" to a reader who followed a link to a specific thing
+
 ### Requirement: Keys belong to the consumer alone
 
 #### Scenario: A key is revealed

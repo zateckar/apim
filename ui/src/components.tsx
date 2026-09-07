@@ -4,6 +4,7 @@ import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow }
 import { define } from "./lib/glossary";
 import type { Permission } from "./lib/capabilities";
 import { operationChip, type Chip as StatusChipModel } from "./lib/status";
+import { formatDateTime } from "./lib/datetime";
 
 /** Minimal pushState navigation (design section 14 keeps the SPA's routing style). */
 let navigator: (to: string) => void = () => {};
@@ -34,6 +35,7 @@ export function Link({ to, children, className }: { to: string; children: ReactN
       href={to}
       className={className}
       onClick={(event) => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
         event.preventDefault();
         go(to);
       }}
@@ -649,7 +651,7 @@ export function OperationList({ items }: { items: any[] }) {
             </strong>
             <small>
               {operation.error ??
-                `${new Date(operation.createdAt).toLocaleString()} · ${operation.resourceName ?? ""}`}
+                `${formatDateTime(operation.createdAt)} · ${operation.resourceName ?? ""}`}
             </small>
           </div>
           <StatusChip chip={operationChip(operation.state)} />

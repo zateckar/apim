@@ -2,7 +2,8 @@ import { PolicyForm } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { LogsPanel } from "../views/LogsPanel";
 import { RevisionsPanel } from "../views/RevisionsPanel";
-import { Fragment, useState } from "react";
+import { Fragment, useState, useId } from "react";
+import { EditorView } from "@codemirror/view";
 import type { Session } from "../App";
 import { api, type Locality } from "../api";
 import {
@@ -398,7 +399,7 @@ export function Publish({ session: s }: { session: Session }) {
   const blocked = missing(at);
 
   return (
-    <Panel title="Publish to DEV">
+    <Panel title={`Publish to ${first.toUpperCase()}`}>
       <div className="stepper">
         {PUBLISH_STEPS.map((entry, index) => (
           <Fragment key={entry.key}>
@@ -752,6 +753,7 @@ function EditorForm({
   operations: any[];
   tick: number;
 }) {
+  const tabId = useId();
   // The link in the chain before this one, which is where an unpublished API is promoted from.
   // `null` at the head of the chain, where there is nothing before it and the answer is to publish.
   const previousEnvironment = s.meta.chain[s.meta.chain.indexOf(s.environment) - 1] ?? null;
@@ -832,6 +834,7 @@ function EditorForm({
     <>
       <Panel
         title={d.resource.name}
+        className="api-workspace"
         actions={
           <div className="native-actions">
             {/* The documentation link, where somebody looking at the API is: the description says
@@ -881,7 +884,7 @@ function EditorForm({
         {d.resource.editReason && (
           <Notice kind="warn">{d.resource.editReason}</Notice>
         )}
-        <p>
+        <p className="workspace-summary">
           {s.applicationName(d.resource.applicationId)} ·{" "}
           {d.resource.kind.toUpperCase()} · {d.resource.apiVersion} ·{" "}
           {d.resource.domain
@@ -906,17 +909,34 @@ function EditorForm({
             </select>
           </Field>
         )}
-        <div className="seg">
+        <div className="workspace-tabs" role="tablist" aria-label="API workspace panels">
           {EDITOR_TABS.map((t) => (
             <button
               className={tab === t ? "active" : ""}
+              type="button"
+              role="tab"
+              id={`${tabId}-${t}`}
+              aria-selected={tab === t}
+              aria-controls={`${tabId}-panel`}
+              tabIndex={tab === t ? 0 : -1}
               key={t}
               onClick={() => setTab(t)}
+              onKeyDown={(event) => {
+                const index = EDITOR_TABS.indexOf(t);
+                const next = event.key === "ArrowRight" ? (index + 1) % EDITOR_TABS.length
+                  : event.key === "ArrowLeft" ? (index + EDITOR_TABS.length - 1) % EDITOR_TABS.length
+                  : event.key === "Home" ? 0 : event.key === "End" ? EDITOR_TABS.length - 1 : null;
+                if (next === null) return;
+                event.preventDefault();
+                setTab(EDITOR_TABS[next]!);
+                (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
+              }}
             >
-              {t}
+              {t.charAt(0).toUpperCase() + t.slice(1)}
             </button>
           ))}
         </div>
+        <div role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`} tabIndex={0}>
         <Notice kind="error">{w.error}</Notice>
         {!d.published && (
           <EmptyState
@@ -948,7 +968,7 @@ function EditorForm({
           <>
             <CodeMirror
               value={spec}
-              extensions={[yaml()]}
+              extensions={[yaml(), EditorView.lineWrapping]}
               minHeight="340px"
               editable={d.resource.canEdit && !!d.settings}
               onChange={setSpec}
@@ -962,7 +982,8 @@ function EditorForm({
           </>
         )}
         {tab === "properties" && (
-          <div className="native-form-grid">
+          <div className="workspace-properties">
+            <Panel title="Catalog information">
             <DescriptionField
               value={description}
               onChange={setDescription}
@@ -983,6 +1004,8 @@ function EditorForm({
                 the link.
               </span>
             </Field>
+            </Panel>
+            <Panel title={`Backends · ${s.environment.toUpperCase()}`}>
             {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
                 second one appears only when somebody asks for it. */}
             <div className="native-pool">
@@ -990,8 +1013,9 @@ function EditorForm({
                 {s.environment.toUpperCase()} backends
               </span>
               {pool.map((entry, index) => (
-                <div className="native-actions" key={index}>
+                <div className="backend-row" key={index}>
                   <input
+                    type="url"
                     aria-label={`Backend ${index + 1} URL`}
                     disabled={!d.resource.canEdit}
                     value={entry.url}
@@ -1072,6 +1096,9 @@ function EditorForm({
                 spread per instance rather than across the fleet.
               </p>
             ) : null}
+            </Panel>
+            <Panel title={`Published address · ${s.environment.toUpperCase()}`}>
+            <div className="native-form-grid">
             <DomainPicker
               domain={domain}
               subdomain={subdomain}
@@ -1081,6 +1108,7 @@ function EditorForm({
                 setSubdomain(nextTaxonomy.subdomain);
               }}
             />
+            </div>
             <Field label="Public path">
               {/* Derived, not typed: the domain is the first segment of the address, so a path
                   somebody could edit freely is a path that could contradict the catalog. */}
@@ -1108,6 +1136,7 @@ function EditorForm({
               addressed directly.
             </p>
             <Notice kind="error">{certificates.error}</Notice>
+            </Panel>
           </div>
         )}
         {tab === "policies" && (
@@ -1127,7 +1156,7 @@ function EditorForm({
               certificate={certificate}
               onCertificate={setCertificate}
             />
-            <details>
+            <details className="workspace-advanced">
               <summary>Advanced settings</summary>
               <CodeMirror
                 value={policy}
@@ -1185,7 +1214,7 @@ function EditorForm({
         )}
         {tab === "history" && <OperationList items={operations} />}{" "}
         {["definition", "properties", "policies"].includes(tab) && (
-          <div className="native-actions">
+          <div className="native-actions workspace-save">
             <button
               className="btn primary"
               disabled={w.busy || !d.resource.canEdit || !d.published || !domain}
@@ -1251,6 +1280,7 @@ function EditorForm({
             ) : null}
           </div>
         )}
+        </div>
       </Panel>
       {/* Only where there is progress to report. On somebody else's long-published API this used
           to read "No changes yet. Publish an API to get started." (finding 8). */}

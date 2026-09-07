@@ -9,11 +9,15 @@ import {
   Notice,
   Panel,
   Skeleton,
+  StatusChip,
+  Link,
   go,
   useAction,
   useAsync,
 } from "../components";
 import { permit, type Permission } from "../lib/capabilities";
+import { lifecycleChip } from "../lib/status";
+import type { Lifecycle } from "../../../shared/types";
 import { DOMAINS } from "../../../shared/domains";
 import { command, listAll } from "./client";
 import * as I from "./icons";
@@ -231,11 +235,13 @@ export function Catalog({
     <>
       <Panel
         title={title}
+        className="workspace-catalog"
         actions={
-          <div className="search">
+          <div className="catalog-search">
             <input
               aria-label="Search this application's APIs"
-              placeholder="Search by name, domain or description…"
+              type="search"
+              placeholder="Search APIs…"
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -351,17 +357,14 @@ function CatalogRow({
   }
 
   return (
-    // `workspace-row` is what keeps Delete and Change owner hidden until the row is hovered or
-    // focused: they are the two actions nobody is looking for while browsing, and the two that
-    // must never be a stray click away.
+    // Management actions stay discoverable on touch as well as with a mouse; deletion still
+    // requires the typed confirmation (workspace-api-catalog, deletion requirement).
     <div className={`discover-item workspace-row ${toneClassOf(family.kind)}`}>
-      <span className="di-type-legend">{legendOf(family.kind)}</span>
-      <span className="di-owner-legend">Owner · {s.applicationName(family.applicationId)}</span>
       <div className="di-meta">
         <div className="di-title">
-          <button className="di-name" onClick={() => open()}>
+          <Link className="di-name" to={`/${family.applicationId}/${editorSection}/${version.id}`}>
             {family.name}
-          </button>
+          </Link>
           <KindBadge kind={family.kind} />
         </div>
         <div className="s">
@@ -370,7 +373,7 @@ function CatalogRow({
               ? `${family.domain}${family.subdomain ? ` / ${family.subdomain}` : ""}`
               : "no domain yet"}
           </span>
-          {version.lifecycle !== "active" && <span className="di-tag">{version.lifecycle}</span>}
+          <StatusChip chip={lifecycleChip(version.lifecycle as Lifecycle)} />
           {version.environments.size === 0 && <span className="di-tag">not published</span>}
         </div>
         <div className="discover-description" data-empty={description ? undefined : ""}>

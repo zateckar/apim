@@ -1,0 +1,147 @@
+# Integration Portal
+
+An API management platform in two tiers, built on our own control plane and our own gateways.
+There is no Azure API Management anywhere in this system: the control plane owns every decision,
+and a fleet of data-plane gateways polls it, applies one complete configuration document, and
+never decides anything.
+
+TypeScript on [Bun](https://bun.sh), no runtime dependencies in the two planes, one embedded
+SQLite file. React + Vite for the portal.
+
+## `openspec/` is the behavioural source of truth
+
+**Read `openspec/specs/<capability>/spec.md` before changing behaviour, and update it in the same
+change.** The specs — not this file, not the code comments, not `README.md` — say what the product
+does. `openspec/` is the only place a behaviour is stated; `README.md` is the operator's half
+(running, deploying, sizing, backup, upgrade, CI) and restates no contract the specs already hold.
+
+There is no `docs/` directory. The design history it held — the original architecture proposal,
+five plans, five reviews, the reuse analysis, the hand-test checklists — was removed in v1.2.0 and
+is in git. The `plan §…`, `design §…` and `[P1-14]`-style markers in the source cite it; keep
+writing that kind of citation for new decisions, naming the review or spec section it came from.
+
+- `openspec/project.md` — the system baseline: topology, route map, endpoint map, data model,
+  canonical algorithms, constants, environment variables, and a **Capability Index** naming every
+  spec directory in one line each. Start there when you do not yet know which capability owns a
+  behaviour; capability specs reference its sections by title rather than restating them.
+- `openspec/specs/<capability>/spec.md` — one file per capability, in OpenSpec format:
+  `## Purpose`, then `## Requirements`, then `### Requirement: <imperative sentence>` each
+  followed by one or more `#### Scenario: <name>` written as `GIVEN / WHEN / THEN / AND` bullets
+  using RFC 2119 `SHALL`.
+- `openspec/specs/spec-governance/spec.md` is the rule that binds all of it. Spec drift is a
+  defect: if the code and the spec disagree, the change is not finished.
+
+When you add a materially new capability, add a new spec directory rather than stretching an
+existing one. When you delete behaviour, delete its requirement.
+
+Provenance note: these specs were ported from an earlier Azure-APIM-backed portal. Anything that
+described Azure — ARM, `apisByTags`, APIM revisions, policy XML, Key Vault, tag-derived
+applications, gateway ids like `azurews` — was removed rather than translated. If you find an
+Azure-shaped concept in a spec, that is a porting bug; fix the spec.
+
+## Layout
+
+```
+shared/         policy vocabulary · config contract · telemetry · JSON Schema · XSD · XML · SOAP
+                routing · operation matching · MCP · A2A · quota · attention · structural diff
+control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota aggregation,
+                config build, artifact compiler, discovery, catalog search, certificates,
+                trust anchors, the playground, the dashboard, authentication and the directory
+data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
+                backend pool and breaker, response cache, stream registry, counters, trust store
+ui/             React + Vite SPA, served by the control plane
+                ui/src/App.tsx        signing in, and the session every screen is handed
+                ui/src/lib/routes.ts  the one route table: every address, title, purpose, nav entry
+                ui/src/screens.tsx    the one screen registry: route id → component
+                ui/src/components.tsx the one component vocabulary, shared by both chromes
+                ui/src/portal/        the branded shell and the screens built for it
+                ui/src/views/         the plainer screens the shell embeds
+                ui/src/lib/           glossary · status · capabilities · attention · changelog
+docker/         one Dockerfile per plane; one docker-compose.<plane>.yml each, at the root
+tools/          the local upstreams (REST/SOAP/SSE/WebSocket, MCP, A2A) and the two load harnesses
+scripts/        seed · stack · demo · mint-instance · schedule-perf
+test/           bun test — control plane, data plane, shared
+ui/test/        bun test — the parts of the interface that are decisions rather than markup
+e2e/            Playwright — read-only smoke tests against a running stack
+reports/        generated measurements: perf and capacity
+openspec/       the behavioural source of truth (see above)
+README.md       the operator's half — running, deploying, sizing, backup, upgrade, CI
+```
+
+## Domain vocabulary
+
+Use these words. They are the ones the specs, the schema and the UI all use.
+
+| Term | Meaning |
+|---|---|
+| **Application** | The publishing *and* consuming identity, with developer memberships. There are no "teams". An application owns APIs, products, certificates and Kafka topics. |
+| **Resource** | A published thing: a REST API, a SOAP API, an MCP server or an A2A agent. `kind` distinguishes them. |
+| **Product** | An owner-application's explicit bundle of its own APIs. Subscriptions are to products, never directly to an API. |
+| **Subscription** | A consumer application's access to a publisher's product in one environment, with purpose, approval state and two keys. |
+| **Environment** | A stage of the promotion chain — `dev`, `test`, `prod` by default. |
+| **Gateway** | A named data-plane deployment within an environment (`managed`, `onprem`). An environment may hold several. |
+| **Instance / replica** | One running process behind a gateway, identified by a minted token. |
+| **Operation** | One durable business action (publish, configure, promote, subscribe) with `queued → applying → waiting-for-gateways → complete`. |
+| **Policy unit** | One entry from the closed native vocabulary in `shared/policy.ts`. Not XML. |
+
+## Commands
+
+```bash
+bun install
+```
+
+```bash
+pwsh -File scripts/stack.ps1 -Up -Rebuild
+```
+
+Seeds the database and starts the whole estate; the portal is at <http://localhost:8080>.
+`-Status` and `-Down` do the obvious things. **`-Up` does not return** — background it and confirm
+with `-Status`; configuration changes need a `-Down` / `-Up` cycle.
+
+```bash
+bun test          # control plane, data plane, shared
+bun run test:ui   # the interface's decision tables and source-level rules
+bun run test      # both, in that order
+bun run typecheck # both projects
+bun run test:e2e  # Playwright smoke tests against a running stack
+bun run build:ui  # enough on its own for a change to the interface — no stack cycle needed
+```
+
+The smoke suite needs a browser once (`bunx playwright install chromium`) and a stack already up. It
+signs in through `dev` or `local` — never OIDC — and is **read-only**: it navigates and asserts,
+and nothing in it publishes, promotes, subscribes or deletes, because the stack it runs against is
+usually shared. Behaviour that has to change something belongs in `test/`, against a control plane
+the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSWORD`.
+
+## House rules
+
+- **No runtime dependencies in `control-plane/` or `data-plane/`.** Bun's standard library and
+  `shared/` only. The UI may take browser dependencies.
+- **No Azure.** No ARM shapes, no policy XML, no APIM revision semantics, no Key Vault. The six
+  external systems (Kafka, SkoNET, email, LdapWS, FixMe, LeanIX) and ELK log search are native
+  interfaces with mock implementations behind them; the UI marks simulated results as simulated.
+- **One authorization rule.** You may change what your applications own, you may read everything,
+  an administrator may change anything. Enforce it on the server on every request; the application
+  picker in the browser is context, not proof.
+- **One route table and one screen registry.** `ui/src/lib/routes.ts` declares every address, its
+  title, its one-line purpose and its sidebar entry; `ui/src/screens.tsx` says which component
+  answers each route id. The shell renders the title and the purpose, so a screen cannot exist
+  without them, and it names no screen itself. A second place that resolves an address or chooses a
+  component is the defect this replaced — `ui/test/screens.test.ts` fails when one grows back.
+- **One component vocabulary.** `ui/src/components.tsx` is the only shared component module: the
+  banner (`Notice`), the empty state (`EmptyState`), the labelled slot (`Field`) and the labelled
+  input (`TextField`), the section (`Panel`), the modal, the typed confirmation and the two async
+  hooks. There used to be a second one in `portal/common.tsx` whose `Field`, `Notice`, `Empty` and
+  `useWork` overlapped these and were not interchangeable; which one a screen got was an accident of
+  when it was written. `Panel` and `Card` were the worst of them — two shapes, not just two names,
+  and the padding one needed landed on every instance of the other through a global bare selector.
+  `ui/test/hygiene.test.ts` fails when a second module exports one of those names, or when a screen
+  writes `className="empty"`, `"notice"`, `"banner"` or `"card"` instead of using the component.
+- **No colour written into a view**, no click handler a keyboard cannot reach, no empty state
+  without an action, no `confirm()`, no delete of a named object outside a typed confirmation, no
+  request whose error is never rendered. `ui/test/hygiene.test.ts` enforces these over the source.
+- **The visual system lives in `ui/src/portal/brand.css`** and is shared with the predecessor
+  portal. Prefer an existing class over a new one; if you need a new component, check whether the
+  stylesheet already has it.
+- Match the surrounding code's comment density and idiom. The comments here explain *why* a
+  decision was made, usually citing a design section or a review finding; keep that habit.

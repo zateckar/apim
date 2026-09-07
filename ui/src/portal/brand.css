@@ -1979,7 +1979,7 @@ a { color: inherit; text-decoration: none; }
    action and a hover-only one at that. */
 .workspace-row-delete,
 .workspace-row-change-owner {
-  opacity: 0;
+  opacity: 1;
   transition: opacity 0.12s ease;
   margin-left: 6px;
   align-self: center;
@@ -2154,6 +2154,7 @@ a { color: inherit; text-decoration: none; }
   font-size: 11px; font-weight: 700;
 }
 .discover-card-head .meta { flex: 1; min-width: 0; }
+.discover-card-head .meta { display: flex; align-items: baseline; gap: 8px; }
 /* Domain name in the card head — rendered uppercase via CSS rather
    than transforming the data, so the underlying `domain.name`
    ('IT' / 'Sales' / 'Business Support') stays canonical for
@@ -2245,6 +2246,7 @@ a { color: inherit; text-decoration: none; }
    the kind badge can pin to the opposite (right) edge. It's the card's
    dominant element — bolder + larger than the supporting metadata. */
 .discover-item .di-title .di-name {
+  text-align: left;
   flex: 1 1 auto; min-width: 0;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   font-size: 14px; font-weight: 700; letter-spacing: -0.01em;
@@ -3734,3 +3736,70 @@ a { color: inherit; text-decoration: none; }
 /* Kafka HTTP proxy rows in the Catalog — the kproxy badge hue as border. */
 .discover-item.t-kproxy { border-color: oklch(0.55 0.19 350); }
 .discover-item.t-kproxy .di-type-legend { color: oklch(0.55 0.19 350); }
+
+/* API UX review: shared foundations stay here, so both chromes use the same tokens. */
+.native-portal :is(button, a, input, select, textarea, summary):focus-visible,
+.native-modal :is(button, a, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+.native-portal .sidebar .brand .name { color: var(--accent); }
+.native-portal .sidebar .nav-item.active { color: var(--accent); background: var(--accent-soft); }
+.native-portal .sidebar nav { display: block; }
+.native-portal .sidebar .nav-section { margin: 0; }
+.native-portal .sidebar .nav-section:has(> .nav-group-title) { margin-top: 16px; padding-top: 0; }
+.native-portal .sidebar .nav-group-title { margin: 0 12px 6px; }
+.native-portal .card-head { flex-wrap: wrap; }
+.native-portal .card-head > * { min-width: 0; }
+.native-portal .empty p { max-width: 65ch; margin: 10px auto 16px; }
+.native-portal .empty a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.native-portal .native-legacy .card-body:has(> table) { overflow-x: auto; }
+.native-portal .native-legacy :is(button.small, a.small) { display: inline-flex; align-items: center; min-height: 32px; padding: 5px 8px; }
+.native-portal .native-legacy .field { min-width: min(180px, 100%); }
+.native-portal .catalog-search { flex: 0 1 320px; }
+.native-portal .catalog-search input { width: 100%; }
+.native-portal .workspace-catalog .discover-item { border: 1px solid var(--border-strong); padding: 18px; gap: 24px; }
+.native-portal .workspace-catalog .discover-description { background: transparent; padding: 0; margin-top: 6px; }
+.native-portal .workspace-catalog .discover-items { padding: 12px 0 0; gap: 12px; }
+.native-portal .workspace-catalog .di-title .api-kind-badge { margin-left: 0; }
+.native-portal .workspace-catalog .di-title .di-name { flex: 0 1 auto; color: var(--accent); overflow-wrap: anywhere; white-space: normal; }
+.native-portal .workspace-catalog .di-name:hover { text-decoration: underline; text-underline-offset: 3px; }
+.native-portal .workspace-catalog .discover-card-head .swatch { background: var(--bg-muted); color: var(--fg-muted); }
+.native-portal .workspace-catalog :is(.workspace-row-delete, .workspace-row-change-owner) { min-width: 32px; min-height: 32px; }
+.native-portal .api-workspace .workspace-summary { margin: 0 0 20px; overflow-wrap: anywhere; }
+.workspace-tabs { display: flex; overflow-x: auto; gap: 4px; padding: 4px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-muted); }
+.workspace-tabs button { flex: 1 0 auto; min-height: 40px; padding: 8px 12px; border-radius: var(--r-sm); color: var(--fg-muted); font-weight: 600; }
+.workspace-tabs button:hover { background: var(--surface); color: var(--fg); }
+.workspace-tabs button.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-sm); }
+.native-portal .api-workspace [role="tabpanel"] { min-width: 0; }
+.native-portal .api-workspace [role="tabpanel"] > .cm-theme { min-width: 0; }
+.native-portal .api-workspace .cm-editor { margin-top: 0; }
+.native-portal .api-workspace .workspace-properties .card { box-shadow: none; margin-bottom: 20px; }
+.native-portal .api-workspace .workspace-properties .card-head { padding: 14px 20px; background: var(--bg-subtle); }
+.native-portal .api-workspace .workspace-properties .card-head h3 { font-size: 14px; }
+.native-portal .api-workspace .native-field:last-child { margin-bottom: 0; }
+.backend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
+.native-portal .backend-row input[type="url"] { flex: 1 1 260px; font-family: var(--font-mono); font-size: 12px; }
+.native-portal .backend-row input[type="number"] { width: 85px; }
+.native-portal .api-workspace .native-pool { margin-bottom: 20px; }
+.native-portal .api-workspace .url-list { padding-left: 0; overflow-wrap: anywhere; }
+.native-portal .api-workspace .policy-editor { padding: 16px; }
+.native-portal .api-workspace .policy-order { margin-top: 0; }
+.native-portal .api-workspace .policy-card-title { display: flex; flex-wrap: wrap; gap: 4px 8px; }
+.native-portal .api-workspace .policy-card-actions .icon-btn { width: 36px; height: 36px; }
+.workspace-advanced { margin: 20px 0; }
+.workspace-advanced summary { padding: 10px 0; cursor: pointer; color: var(--fg-muted); }
+.native-portal .api-workspace .workspace-save { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 24px; }
+@media (max-width: 1000px) {
+  .native-portal .workspace-catalog .discover-item { align-items: flex-start; flex-direction: column; gap: 16px; }
+  .native-portal .workspace-catalog .di-meta { width: 100%; }
+}
+@media (max-width: 700px) {
+  .native-portal .catalog-search { flex-basis: 100%; }
+  .native-portal .api-workspace > .card-head { align-items: flex-start; }
+  .native-portal .api-workspace .workspace-properties .card-body { padding: 14px; }
+  .workspace-tabs { gap: 2px; }
+  .workspace-tabs button { min-height: 44px; }
+  .native-portal .workspace-catalog .version-env-picker { flex-wrap: wrap; max-width: 100%; }
+  .native-portal .api-workspace .policy-card { align-items: flex-start; flex-wrap: wrap; }
+}

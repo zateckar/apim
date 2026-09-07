@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { DISABLED_KEY, disabledUnits } from "../../../shared/policy";
 import { Field, Modal, Notice } from "../components";
+import * as I from "./icons";
 
 /**
  * The policy editor: one card per attached unit, an **Add policy** picker for the rest, and a form
@@ -495,7 +496,7 @@ function PolicyCard({
             aria-label={`${enabled ? "Switch off" : "Switch on"} ${unit.title}`}
             onClick={onToggle}
           >
-            ⏻
+            <I.Power size={16} />
           </button>
           <button
             type="button"
@@ -504,7 +505,7 @@ function PolicyCard({
             aria-label={`${open ? "Close" : "Edit"} ${unit.title}`}
             onClick={onOpen}
           >
-            {open ? "▴" : "✎"}
+            {open ? <I.ChevDown size={16} /> : <I.Edit size={16} />}
           </button>
           <button
             type="button"
@@ -514,7 +515,7 @@ function PolicyCard({
             aria-label={`Remove ${unit.title}`}
             onClick={onRemove}
           >
-            ✕
+            <I.X size={16} />
           </button>
         </div>
       </div>

@@ -14,6 +14,7 @@ import {
 import type { Permission } from "../lib/capabilities";
 import { blockedBecause, first } from "../lib/capabilities";
 import { releasedInChip } from "../lib/status";
+import { formatDateTime } from "../lib/datetime";
 
 /**
  * Revisions (G3, plan §7).
@@ -107,7 +108,7 @@ export function RevisionsPanel({
                 <td>
                   <strong>rev {revision.rev}</strong>
                   <div className="muted small">
-                    {new Date(revision.createdAt).toLocaleDateString()} · {revision.createdBy}
+                    {formatDateTime(revision.createdAt)} · {revision.createdBy}
                   </div>
                 </td>
                 <td>

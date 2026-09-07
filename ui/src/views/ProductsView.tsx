@@ -24,7 +24,76 @@ import { subscriptionChip } from "../lib/status";
  * the screen: a key issued per API would have to be reissued every time a bundle changed, so the
  * key belongs to the bundle. That makes "what is in this product" the decision an owner is really
  * making here, and "who has subscribed" the consequence they need to see beside it.
+ *
+ * That decision used to be made in a `<select multiple>`, on both the edit and the create form.
+ * It is a checkbox list now, and the reason is the sentence the screen itself prints underneath:
+ * removing an API takes it away from every subscriber at the next gateway poll. A multi-select
+ * clears the whole selection on any un-modified click, shows the selection in a grey that all but
+ * disappears when the control is not focused, and offers no way to tell "nothing is in this
+ * product" from "I have just lost what was" — so the one control in the portal whose slip is felt
+ * by other people's running code was the one that slipped most easily.
  */
+
+/** One row of the members picker, shared by the edit and the create form. */
+function MemberPicker({
+  id,
+  label,
+  resources,
+  selected,
+  disabled,
+  onChange,
+}: {
+  id: string;
+  label: string;
+  resources: Resource[];
+  selected: string[];
+  disabled?: boolean;
+  onChange: (next: string[]) => void;
+}) {
+  if (resources.length === 0) {
+    return (
+      <p className="muted">
+        This application publishes nothing yet, so there is nothing to bundle. Publish an API first
+        and it appears here.
+      </p>
+    );
+  }
+  return (
+    <div className="pick-list" role="group" aria-labelledby={id}>
+      <div className="pick-list-head">
+        <strong id={id}>
+          <Term name="api">{label}</Term>
+        </strong>
+        <span className="muted small">
+          {selected.length} of {resources.length} selected
+        </span>
+      </div>
+      <div className="pick-list-scroll">
+        {resources.map((resource) => {
+          const on = selected.includes(resource.id);
+          return (
+            <label key={resource.id} className="pick-option">
+              <input
+                type="checkbox"
+                checked={on}
+                disabled={disabled}
+                onChange={() =>
+                  onChange(on ? selected.filter((r) => r !== resource.id) : [...selected, resource.id])
+                }
+              />
+              <span className="pick-option-body">
+                <span>
+                  <strong>{resource.name}</strong>
+                  <span className="muted"> {resource.apiVersion}</span>
+                </span>
+              </span>
+            </label>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
 export function ProductsView({ session }: { session: Session }) {
   const products = useAsync(() => api.get<{ items: Product[] }>("/api/products"), []);
   const resources = useAsync(() => api.get<{ items: Resource[] }>("/api/resources?application=mine"), []);
@@ -49,7 +118,14 @@ export function ProductsView({ session }: { session: Session }) {
         <EmptyState
           title="No products yet"
           detail="Until an API is in a product, nobody can subscribe to it — a subscription is to a product, never to an API directly."
-          action={<a href="#new-product">Create the first one →</a>}
+          action={
+            <button
+              className="btn sm"
+              onClick={() => document.getElementById("new-product-name")?.focus()}
+            >
+              Create the first one
+            </button>
+          }
         />
       ) : (
         shown.map((product) => (
@@ -100,38 +176,29 @@ function ProductCard({
   return (
     <Panel
       title={product.name}
-      hint={`Owned by ${product.applicationId}. ${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
+      // It used to open "Owned by application_platform" — a raw id, and a redundant one: the
+      // screen only lists products the selected application owns, so the answer was always the
+      // application named in the picker two inches away.
+      hint={`${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
     >
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
 
-      <div className="field">
-        <label htmlFor={`members-${product.id}`}>
-          <Term name="api">APIs</Term> in this product
-        </label>
-        <select
-          id={`members-${product.id}`}
-          multiple
-          size={Math.min(6, Math.max(3, resources.length))}
-          value={members}
-          disabled={!canEdit.enabled}
-          onChange={(event) =>
-            setMembers(Array.from(event.target.selectedOptions).map((option) => option.value))
-          }
-        >
-          {resources.map((resource) => (
-            <option key={resource.id} value={resource.id}>
-              {resource.name} {resource.apiVersion}
-            </option>
-          ))}
-        </select>
-      </div>
+      <MemberPicker
+        id={`members-${product.id}`}
+        label="APIs in this product"
+        resources={resources}
+        selected={members}
+        disabled={!canEdit.enabled}
+        onChange={setMembers}
+      />
       <p className="muted small">
         Every subscriber's key works for every API in here, immediately. Removing one takes it away
         from every subscriber at the next gateway poll.
       </p>
       <Action
         permission={canEdit}
+        className="primary"
         busy={action.busy || !dirty}
         onClick={async () => {
           const ok = await action.run(
@@ -144,7 +211,7 @@ function ProductCard({
         Save what is in this product
       </Action>
 
-      <h4 style={{ marginTop: 20, marginBottom: 6, fontSize: 13 }}>Who has subscribed</h4>
+      <h4 className="section-sub">Who has subscribed</h4>
       {subscriptions.length === 0 ? (
         <p className="muted small">
           Nobody yet. It appears in the <Link to="/catalog">Catalog</Link> for anybody allowed to see
@@ -172,7 +239,10 @@ function ProductCard({
                     <StatusChip chip={subscriptionChip(subscription.state)} />
                   </td>
                   <td className="right">
-                    <Link to={`/subscriptions/${subscription.id}`}>Withdraw it →</Link>
+                    {/* It said "Withdraw it →" and did not withdraw anything: it opens the
+                        subscription, where withdrawing is one of several things you can do. A
+                        control names what it does. */}
+                    <Link to={`/subscriptions/${subscription.id}`}>Open →</Link>
                   </td>
                 </tr>
               ))}
@@ -181,7 +251,7 @@ function ProductCard({
           <p className="muted small">
             You publish this product, so you can withdraw anybody's access to it — an abusive or
             compromised caller is yours to stop, without finding an administrator first. You cannot
-            see or replace their keys: those belong to the application that owns the application.
+            see or replace their keys: those belong to the application that holds the subscription.
           </p>
         </>
       )}
@@ -208,27 +278,23 @@ function NewProduct({
       hint="Bundle the APIs a consumer would want together. One subscription, one key, every API in it."
     >
       <Notice kind="error">{action.error}</Notice>
-      <div className="row">
-        <TextField label="Name" value={name} onChange={setName} placeholder="orders-product" />
-        <div className="field">
-          <label htmlFor="new-product-members">APIs to include</label>
-          <select
-            id="new-product-members"
-            multiple
-            size={Math.min(4, Math.max(2, resources.length))}
-            value={selected}
-            onChange={(event) =>
-              setSelected(Array.from(event.target.selectedOptions).map((option) => option.value))
-            }
-          >
-            {resources.map((resource) => (
-              <option key={resource.id} value={resource.id}>
-                {resource.name} {resource.apiVersion}
-              </option>
-            ))}
-          </select>
-        </div>
+      <TextField
+        inputId="new-product-name"
+        label="Name"
+        value={name}
+        onChange={setName}
+        placeholder="orders-product"
+      />
+      <MemberPicker
+        id="new-product-members"
+        label="APIs to include"
+        resources={resources}
+        selected={selected}
+        onChange={setSelected}
+      />
+      <div className="native-actions">
         <button
+          className="btn primary"
           disabled={action.busy || name.trim().length === 0}
           onClick={async () => {
             const ok = await action.run(() =>
@@ -241,7 +307,7 @@ function NewProduct({
             }
           }}
         >
-          Create
+          Create product
         </button>
       </div>
     </Panel>

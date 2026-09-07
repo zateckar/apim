@@ -212,14 +212,18 @@ export function TextField({
   onChange,
   placeholder,
   type = "text",
+  inputId,
 }: {
   label: string;
   value: string | number;
   onChange: (next: string) => void;
   placeholder?: string;
   type?: "text" | "number";
+  /** A stable id, for the rare caller that has to move the caret here from somewhere else. */
+  inputId?: string;
 }) {
-  const id = useId();
+  const generated = useId();
+  const id = inputId ?? generated;
   return (
     <div className="field">
       <label htmlFor={id}>{label}</label>
@@ -371,8 +375,12 @@ export function Action({
 }) {
   return (
     <span className="action">
+      {/* `btn` is not the caller's to remember. It defaulted to no class at all, so both callers
+          rendered a bare user-agent button: the danger zone's confirmation and the products
+          screen's save were the only two controls in the portal that were not house buttons. The
+          caller adds the modifier — `danger`, `primary` — and the base is always here. */}
       <button
-        className={className}
+        className={`btn ${className}`.trim()}
         disabled={!permission.enabled || busy}
         title={permission.reason ?? undefined}
         onClick={onClick}

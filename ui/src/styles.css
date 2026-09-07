@@ -272,16 +272,21 @@ td.upstream { color: var(--danger); }
 .domain-chevron { margin-left: auto; color: var(--muted); }
 .domain-body { padding: 0 18px 14px; }
 
-/* Which gateways an API answers on, and the URLs that produces. */
-.gateway-picker {
+/* Picking several things out of a short list: a bordered box, a head that counts what is ticked,
+   and one checkbox per row with as much description beside it as the row needs. Written for the
+   gateways an API answers on; it is also what "the APIs in this product" is, so it is named for
+   the shape rather than for the first thing that had it. */
+.pick-list {
   border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px;
   margin: 12px 0; display: flex; flex-direction: column; gap: 8px;
 }
-.gateway-picker-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
-.gateway-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
-.gateway-option input:disabled { cursor: default; }
-.gateway-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
-.gateway-option-body > span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pick-list-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+.pick-option { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.pick-option input:disabled { cursor: default; }
+.pick-option-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pick-option-body > span { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+/* Long lists scroll rather than pushing the save button off the screen. */
+.pick-list-scroll { max-height: 240px; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
 .url-list { list-style: none; padding: 0; margin: 10px 0; display: flex; flex-direction: column; gap: 6px; }
 .url-list li { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .endpoint-block { margin-bottom: 14px; }

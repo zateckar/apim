@@ -173,8 +173,8 @@ export function GatewayPicker({
     );
   }
   return (
-    <div className="gateway-picker">
-      <div className="gateway-picker-head">
+    <div className="pick-list">
+      <div className="pick-list-head">
         <strong>Gateways</strong>
         <span className="muted small">
           {selected.length} of {localities.length} selected · {environment.toUpperCase()}
@@ -185,7 +185,7 @@ export function GatewayPicker({
         // The last one standing cannot be unticked; the reason is on the line below the list.
         const locked = on && selected.length === 1;
         return (
-          <label key={locality.name} className="gateway-option">
+          <label key={locality.name} className="pick-option">
             <input
               type="checkbox"
               checked={on}
@@ -198,7 +198,7 @@ export function GatewayPicker({
                 )
               }
             />
-            <span className="gateway-option-body">
+            <span className="pick-option-body">
               <span>
                 <strong>{locality.name}</strong>
                 {locality.label ? <span className="muted"> · {locality.label}</span> : null}
@@ -1050,6 +1050,16 @@ function EditorForm({
               <span className="lbl">
                 {s.environment.toUpperCase()} backends
               </span>
+              {/* The weight column names itself once, above the rows. Each input carries an
+                  `aria-label`, so a screen reader always knew what the box was for; a sighted
+                  reader saw an unexplained `1` in a narrow box next to a URL. */}
+              {rule === "round-robin" && (
+                <div className="backend-row backend-row-head" aria-hidden="true">
+                  <span className="hint">Address</span>
+                  <span className="hint">Share</span>
+                  <span />
+                </div>
+              )}
               {pool.map((entry, index) => (
                 <div className="backend-row" key={index}>
                   <input
@@ -1311,15 +1321,21 @@ function EditorForm({
                 Nothing to save: this API is not in {s.environment.toUpperCase()}.
               </span>
             ) : !domain ? (
-              /* The blocker is a field on another panel, so the reason carries the way there.
-                 It used to say "choose a domain on the properties tab first" and leave the reader
-                 to find it — a disabled button explaining itself by naming somewhere else is only
-                 half an explanation. */
+              /* The blocker is one field, and this Save is shared by three panels — so the reason
+                 has to know which one the reader is looking at. It used to say "choose a domain on
+                 the properties tab first" from every one of them, including from Properties, where
+                 the field is a few centimetres up the same screen. */
               <span className="muted">
-                <button type="button" className="linklike" onClick={() => setTab("properties")}>
-                  Choose a domain
-                </button>{" "}
-                first — it is the first segment of the address.
+                {tab === "properties" ? (
+                  "Choose a domain above first — it is the first segment of the address."
+                ) : (
+                  <>
+                    <button type="button" className="linklike" onClick={() => setTab("properties")}>
+                      Choose a domain
+                    </button>{" "}
+                    first — it is the first segment of the address.
+                  </>
+                )}
               </span>
             ) : null}
           </div>

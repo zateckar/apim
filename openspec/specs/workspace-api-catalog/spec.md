@@ -10,7 +10,7 @@ They are two lists because they answer two questions, and each is exactly one sc
 
 ## Requirements
 
-### Requirement: List an application's own published things
+### Requirement: List what an application publishes and what it may call
 
 #### Scenario: The APIs section is opened
 
@@ -18,11 +18,36 @@ They are two lists because they answer two questions, and each is exactly one sc
 - WHEN the APIs, MCP Servers or A2A Agents section renders
 - THEN it SHALL list that application's resources of that kind, with the name, the kind, the
   version, the lifecycle chip and where each version is live
+- AND it SHALL also list the resources of that kind that the application reaches through a
+  subscription in the `active` or `activating` state
+- AND the four states that are neither SHALL contribute nothing, because a rejected request is not
+  access to an API
 - AND the list SHALL be scoped to the selected application, not to the whole estate
 
-#### Scenario: The application publishes nothing yet
+#### Scenario: A subscribed row is told from an owned one
 
-- GIVEN an application with no resources
+- GIVEN a row for a resource the selected application does not publish
+- WHEN it renders
+- THEN it SHALL carry a `subscribed` tag naming the publishing application, the products the access
+  comes through and the environments it covers
+- AND it SHALL offer none of the owner's actions, because they are never this reader's to take and
+  two permanently disabled buttons on every such row are furniture rather than an explanation
+- AND only the versions a subscription actually reaches SHALL be offered in its version picker
+- AND the reason SHALL be that an application's own APIs and the ones it calls are both "the APIs we
+  work with", and a list holding only the first put half of a team's daily estate on another screen,
+  filed under the product that sells it
+
+#### Scenario: The list holds both kinds
+
+- GIVEN a list with at least one owned row and at least one subscribed row
+- WHEN it renders
+- THEN a filter SHALL be offered over all, published-here and subscribed, each with its count
+- AND the filter SHALL NOT be offered when the list is entirely one of them, because a control that
+  cannot change what is shown is a control that operates nothing
+
+#### Scenario: The application has nothing yet
+
+- GIVEN an application with no resources and no subscription reaching one
 - WHEN the list renders
 - THEN an empty state SHALL be shown naming the next action — publishing a first API
 - AND the section SHALL still be present, because sections follow capability rather than inventory
@@ -32,8 +57,9 @@ They are two lists because they answer two questions, and each is exactly one sc
 - GIVEN a row in the application's own list
 - WHEN the name is activated
 - THEN the API **workspace** SHALL open — the publisher's editor
-- AND a card in the cross-application Catalog SHALL instead open the read-only listing at
-  `/catalog/:resourceId`
+- AND a subscribed row SHALL instead open the read-only listing at `/catalog/:resourceId`, because
+  the editor would open — everyone may read everything — and then refuse every control on it
+- AND a card in the cross-application Catalog SHALL open that same read-only listing
 
 ### Requirement: Offer the catalogue as one screen
 

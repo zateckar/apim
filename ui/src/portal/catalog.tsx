@@ -26,7 +26,7 @@ import { VersionEnvPicker } from "./components/VersionEnvPicker";
 import { DescriptionMarkdown } from "./components/DescriptionMarkdown";
 
 /**
- * What one application publishes: its APIs, its MCP servers, its A2A agents.
+ * What one application publishes, and what it may call: its APIs, its MCP servers, its A2A agents.
  *
  * This screen used to have a second setting, `discover`, which drew the same rows for the whole
  * estate and was the shell's Catalog. It is not any more. The catalogue is `views/MarketView`, at
@@ -41,6 +41,12 @@ import { DescriptionMarkdown } from "./components/DescriptionMarkdown";
  *
  *  - **Grouped by domain, not by application.** People look for an API by what it does. The
  *    publishing team is incidental, and it is already on the row.
+ *  - **Two kinds of row, told apart on the row.** An application's own APIs and the ones it merely
+ *    subscribes to are both "the APIs I work with", and the list used to hold only the first — so
+ *    the half of the estate a team calls every day was on a different screen, filed under the
+ *    product that sells it. A subscribed row carries the publisher's name and a `subscribed` tag,
+ *    has none of the owner's actions, and opens the catalogue's read-only listing rather than an
+ *    editor that would refuse every edit.
  *  - **One card per family, not per version.** `orders v1` and `orders v2` are one API with two
  *    contracts. The version picker on the right chooses between them, and the chevrons beside it
  *    re-evaluate against whichever one is chosen.
@@ -65,6 +71,20 @@ interface ResourceRow {
   etag: string;
 }
 
+/** Only the three fields this screen reads; the subscriptions screen owns the rest. */
+interface SubscriptionRow {
+  applicationId: string;
+  productId: string;
+  environment: string;
+  state: string;
+}
+
+interface ProductRow {
+  id: string;
+  name: string;
+  members: Array<{ id: string }>;
+}
+
 interface Version {
   apiVersion: string;
   id: string;
@@ -87,6 +107,27 @@ interface Family {
 }
 
 const OTHER = "Other";
+
+/** How this application reaches one resource it does not own. */
+interface Reach {
+  /** The products the subscription is to. A resource can be sold by more than one. */
+  products: string[];
+  /** The environments a subscription covers — keys are per environment, so this is where it works. */
+  environments: Set<string>;
+}
+
+/**
+ * Which rows the list is showing.
+ *
+ * `all` is the default because the question "what do we work with" spans both, and the tag on the
+ * row answers "which is this" without the reader touching a control.
+ */
+const SHOWING = {
+  all: "All",
+  ours: "Published here",
+  theirs: "Subscribed",
+} as const;
+type Showing = keyof typeof SHOWING;
 
 /** What one row is called, on each of the three screens this component draws. */
 const NOUNS: Record<string, { one: string; many: string }> = {
@@ -183,38 +224,84 @@ export function Catalog({
   tick: number;
 }) {
   const [search, setSearch] = useState("");
+  const [showing, setShowing] = useState<Showing>("all");
   const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
 
   const data = useAsync(() => listAll<ResourceRow>("/api/resources"), [tick]);
+  // Two more calls, because a subscription names a product and a product names the APIs in it, and
+  // neither side of that carries the other. Both are small and both are already cached by the
+  // screens beside this one.
+  const subscriptions = useAsync(
+    () => api.get<{ items: SubscriptionRow[] }>("/api/subscriptions"),
+    [tick],
+  );
+  const products = useAsync(() => api.get<{ items: ProductRow[] }>("/api/products"), [tick]);
+
+  /** Resource id → how this application reaches it, for every resource it does not publish. */
+  const reach = useMemo(() => {
+    const byId = new Map((products.data?.items ?? []).map((product) => [product.id, product]));
+    const found = new Map<string, Reach>();
+    for (const subscription of subscriptions.data?.items ?? []) {
+      if (subscription.applicationId !== s.application) continue;
+      // `active` works now and `activating` is approved and on its way. The four that are neither
+      // are the subscriptions screen's business: a rejected request is not access to an API, and a
+      // row for one here would be a listing of things you cannot call.
+      if (subscription.state !== "active" && subscription.state !== "activating") continue;
+      const product = byId.get(subscription.productId);
+      if (!product) continue;
+      for (const member of product.members ?? []) {
+        const entry = found.get(member.id) ?? { products: [], environments: new Set<string>() };
+        if (!entry.products.includes(product.name)) entry.products.push(product.name);
+        entry.environments.add(subscription.environment);
+        found.set(member.id, entry);
+      }
+    }
+    return found;
+  }, [subscriptions.data, products.data, s.application]);
 
   const families = useMemo(() => {
     // `apis` means REST and SOAP, not "everything": MCP servers and A2A agents have their own
     // sidebar entries, and listing them here too put the same API under two headings.
     const rows = (data.data?.items ?? []).filter((row) => {
-      if (row.applicationId !== s.application) return false;
+      // Somebody else's version is here only if a subscription reaches that exact version, so the
+      // picker offers the contracts this application may call and not the ones it may not.
+      if (row.applicationId !== s.application && !reach.has(row.id)) return false;
       if (section === "mcp") return row.kind === "mcp";
       if (section === "a2a") return row.kind === "a2a";
       if (section === "apis") return row.kind === "rest" || row.kind === "soap";
       return true;
     });
     return toFamilies(rows);
-  }, [data.data, section, s.application]);
+  }, [data.data, section, s.application, reach]);
+
+  const ours = useMemo(
+    () => families.filter((family) => family.applicationId === s.application),
+    [families, s.application],
+  );
+  const theirs = families.length - ours.length;
 
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
-    if (!term) return families;
-    return families.filter((family) => {
+    const scoped =
+      showing === "ours"
+        ? ours
+        : showing === "theirs"
+          ? families.filter((family) => family.applicationId !== s.application)
+          : families;
+    if (!term) return scoped;
+    return scoped.filter((family) => {
       const haystack = [
         family.name,
         family.domain ?? "",
         family.subdomain ?? "",
+        s.applicationName(family.applicationId),
         ...family.versions.map((version) => `${version.apiVersion} ${version.description ?? ""}`),
       ]
         .join(" ")
         .toLowerCase();
       return haystack.includes(term);
     });
-  }, [families, search]);
+  }, [families, ours, search, showing, s]);
 
   // Filters are applied *before* bucketing, so a group's count is truthful and an emptied group
   // disappears instead of standing there saying zero.
@@ -234,7 +321,7 @@ export function Catalog({
       }));
   }, [filtered]);
 
-  const filtering = Boolean(search.trim());
+  const filtering = Boolean(search.trim()) || showing !== "all";
   // One component draws three screens, so every noun on it is a variable. It used to say "API"
   // throughout — the MCP Servers screen offered a box placeholdered "Search APIs…" and an empty
   // state that told a reader with no MCP server to go and publish an API.
@@ -250,36 +337,69 @@ export function Catalog({
         title={filtering ? `${filtered.length} of ${count(families.length)}` : count(families.length)}
         className="workspace-catalog"
         actions={
-          <div className="catalog-search">
-            <input
-              aria-label={`Search this application's ${noun.many}`}
-              type="search"
-              placeholder={`Search ${noun.many}…`}
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-            />
-          </div>
+          <>
+            {/* Offered only when there is something on both sides of it. A three-way filter over a
+                list that is entirely one of the three is a control that operates nothing. */}
+            {ours.length > 0 && theirs > 0 && (
+              <div className="seg catalog-scope" role="group" aria-label={`Which ${noun.many} to show`}>
+                {(Object.keys(SHOWING) as Showing[]).map((option) => (
+                  <button
+                    key={option}
+                    className={showing === option ? "active" : ""}
+                    aria-pressed={showing === option}
+                    onClick={() => setShowing(option)}
+                  >
+                    {SHOWING[option]}{" "}
+                    {option === "all" ? families.length : option === "ours" ? ours.length : theirs}
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="catalog-search">
+              <input
+                aria-label={`Search this application's ${noun.many}`}
+                type="search"
+                placeholder={`Search ${noun.many}…`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+            </div>
+          </>
         }
       >
-        <Notice kind="error">{data.error}</Notice>
+        <Notice kind="error">{data.error ?? subscriptions.error ?? products.error}</Notice>
 
         {data.loading && !data.data ? (
           <Skeleton rows={4} />
         ) : groups.length === 0 ? (
           filtering ? (
             <EmptyState
-              title={`Nothing here matches “${search.trim()}”`}
-              detail={`The search covers the name, the domain and each version's description within ${s.applicationName(s.application)}'s own list. The estate-wide catalogue searches the contract itself.`}
+              title={
+                search.trim()
+                  ? `Nothing here matches “${search.trim()}”`
+                  : showing === "ours"
+                    ? `${s.applicationName(s.application)} publishes no ${noun.many}`
+                    : `${s.applicationName(s.application)} subscribes to no ${noun.many}`
+              }
+              detail={`The search covers the name, the domain, the publisher and each version's description, across what ${s.applicationName(s.application)} publishes and what it subscribes to. The estate-wide catalogue searches the contract itself.`}
               action={
-                <button className="btn sm" onClick={() => setSearch("")}>
-                  Clear the search
+                <button
+                  className="btn sm"
+                  onClick={() => {
+                    setSearch("");
+                    setShowing("all");
+                  }}
+                >
+                  Clear the filters
                 </button>
               }
             />
           ) : (
             <EmptyState
-              title={`${s.applicationName(s.application)} has published no ${noun.many} yet`}
-              detail="Publishing takes a definition, an address and a backend to forward to, and puts the result in the first environment of the chain."
+              title={`${s.applicationName(s.application)} has no ${noun.many} yet`}
+              detail={`Nothing published, and no subscription that reaches ${
+                section === "apis" ? "one" : `an ${noun.one}`
+              } somebody else publishes. Publishing takes a definition, an address and a backend to forward to, and puts the result in the first environment of the chain.`}
               action={
                 <button className="btn sm" onClick={() => go(`/${s.application}/publish`)}>
                   {/* All three are read letter-first — "an API", "an MCP server", "an A2A agent" —
@@ -322,6 +442,7 @@ export function Catalog({
                             key={family.key}
                             family={family}
                             session={s}
+                            reach={reach}
                             onChanged={data.reload}
                           />
                         ))}
@@ -341,10 +462,12 @@ export function Catalog({
 function CatalogRow({
   family,
   session: s,
+  reach,
   onChanged,
 }: {
   family: Family;
   session: Session;
+  reach: ReadonlyMap<string, Reach>;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState(family.versions[0]!.apiVersion);
@@ -358,27 +481,47 @@ function CatalogRow({
   // `delete` — a member who may change it may also decide it is somebody else's to change.
   const canTransfer = permit("edit", version.capabilities, owner);
   const editorSection = family.kind === "mcp" ? "mcp" : family.kind === "a2a" ? "a2a" : "apis";
+  const ours = family.applicationId === s.application;
+  const via = ours ? undefined : reach.get(version.id);
 
   /**
-   * Where the name and the chevrons lead: the workspace, because every row here belongs to the
-   * selected application. A chevron additionally says *which environment* it should open on. The
-   * read-only listing is what the catalogue offers for somebody else's API, at `/catalog/:id`.
+   * Where the name and the chevrons lead.
+   *
+   * The workspace for a row this application owns, on the environment the chevron names. The
+   * catalogue's read-only listing for one it merely subscribes to — the editor would open, because
+   * you may read everything, and then refuse every control on it.
    */
   function open(environment?: string) {
     if (environment) s.setEnvironment(environment);
-    go(`/${family.applicationId}/${editorSection}/${version.id}`);
+    go(ours ? `/${family.applicationId}/${editorSection}/${version.id}` : `/catalog/${version.id}`);
   }
+  const href = ours ? `/${family.applicationId}/${editorSection}/${version.id}` : `/catalog/${version.id}`;
 
   return (
     // Management actions stay discoverable on touch as well as with a mouse; deletion still
     // requires the typed confirmation (workspace-api-catalog, deletion requirement).
-    <div className={`discover-item workspace-row ${toneClassOf(family.kind)}`}>
+    <div className={`discover-item workspace-row ${toneClassOf(family.kind)}`} data-ours={ours ? "" : undefined}>
       <div className="di-meta">
         <div className="di-title">
-          <Link className="di-name" to={`/${family.applicationId}/${editorSection}/${version.id}`}>
+          <Link className="di-name" to={href}>
             {family.name}
           </Link>
           <KindBadge kind={family.kind} />
+          {/* Whose it is, said once and only when it is not obvious. Every row used to belong to
+              the selected application, so naming the owner would have been noise on all of them;
+              now half of them can be somebody else's and the reader has to be able to tell. */}
+          {via && (
+            <span
+              className="di-tag"
+              title={`Published by ${s.applicationName(family.applicationId)}. ${
+                s.applicationName(s.application)
+              } calls it through ${via.products.join(", ")} in ${[...via.environments]
+                .map((environment) => environment.toUpperCase())
+                .join(", ")}.`}
+            >
+              subscribed
+            </span>
+          )}
         </div>
         <div className="s">
           <span className="di-path">
@@ -386,6 +529,7 @@ function CatalogRow({
               ? `${family.domain}${family.subdomain ? ` / ${family.subdomain}` : ""}`
               : "no domain yet"}
           </span>
+          {via && <span className="di-path">by {s.applicationName(family.applicationId)}</span>}
           <StatusChip chip={lifecycleChip(version.lifecycle as Lifecycle)} />
           {version.environments.size === 0 && <span className="di-tag">not published</span>}
         </div>
@@ -405,7 +549,11 @@ function CatalogRow({
         hideVersion={family.kind === "mcp" || family.kind === "a2a"}
         onSelectVersion={setSelected}
         onSelectEnvironment={(environment) => open(environment)}
+        // No owner's actions on somebody else's API. Disabled-with-a-reason is what the rest of
+        // the portal does when a control is yours-but-not-now; these are never yours, and two
+        // permanently dead buttons on every subscribed row is furniture, not an explanation.
         trailing={
+          !ours ? null : (
           <>
             <button
               className="icon-btn workspace-row-change-owner"
@@ -434,6 +582,7 @@ function CatalogRow({
               <I.Trash size={14} />
             </button>
           </>
+          )
         }
       />
       {transferring && (

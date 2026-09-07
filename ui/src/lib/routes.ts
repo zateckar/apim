@@ -82,7 +82,8 @@ export const ROUTES: RouteDef[] = [
     id: "apis",
     patterns: ["/apis"],
     title: "APIs",
-    purpose: "The REST and SOAP APIs this application publishes, and where each version is live.",
+    purpose:
+      "The REST and SOAP APIs this application publishes or subscribes to, and where each version is live.",
     scope: "application",
     nav: { group: "API", label: "APIs" },
   },
@@ -90,7 +91,8 @@ export const ROUTES: RouteDef[] = [
     id: "mcp",
     patterns: ["/mcp"],
     title: "MCP Servers",
-    purpose: "The MCP servers this application publishes, and the tools each one offers.",
+    purpose:
+      "The MCP servers this application publishes or subscribes to, and the tools each one offers.",
     scope: "application",
     nav: { group: "API", label: "MCP Servers" },
   },
@@ -98,7 +100,8 @@ export const ROUTES: RouteDef[] = [
     id: "a2a",
     patterns: ["/a2a"],
     title: "A2A Agents",
-    purpose: "The A2A agents this application publishes, and the skills each one advertises.",
+    purpose:
+      "The A2A agents this application publishes or subscribes to, and the skills each one advertises.",
     scope: "application",
     nav: { group: "API", label: "A2A Agents" },
   },

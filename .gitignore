@@ -17,3 +17,4 @@ existing-portal-example/
 # minted gateway token per instance. `.env.example` is committed and neither of these ever is.
 .env
 .secrets/
+reports/

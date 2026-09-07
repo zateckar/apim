@@ -514,7 +514,19 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
     id: row.id,
     kind: row.kind,
     name: row.name,
-    title: model?.title ?? row.name,
+    /*
+     * The name the publisher chose, not the definition's `info.title`.
+     *
+     * This preferred `model.title`, so an API registered as `pet2` whose OpenAPI document says
+     * "SKODA LLM" was headed one way in its owner's list and the other way in the catalogue —
+     * two names for one thing, and the one the catalogue used was whatever the uploaded file
+     * happened to carry. workspace-api-catalog requires the opposite: the two screens "SHALL
+     * differ only in what they let the reader do".
+     *
+     * The definition's title is still indexed for search (`search.ts`, weight 6), so looking for
+     * "SKODA LLM" still finds this API. It is a search term, not the API's name.
+     */
+    title: row.name,
     apiVersion: row.api_version,
     icon: row.icon,
     summary: row.summary ?? firstSentence(model?.description) ?? null,

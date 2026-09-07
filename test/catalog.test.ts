@@ -226,7 +226,11 @@ describe("what a caller can see", () => {
       (item) => item.id === api.resourceId,
     )!;
     expect(card.kind).toBe("rest");
-    expect(card.title).toBe("Pet inventory");
+    // The name the publisher registered, not the definition's `info.title` — the catalogue and the
+    // owner's own list head an API the same way. The document's title is still what `?q=` matched
+    // on the line above, which is the role it keeps.
+    expect(card.title).toBe("pet-inventory");
+    expect(card.name).toBe("pet-inventory");
     expect(card.apiVersion).toBe("v1");
     expect(card.icon).toBe("🐾");
     expect(card.summary).toBe("Everything about the pets we hold");

@@ -327,9 +327,10 @@ function ListingCard({ item, onTag }: { item: MarketCard; onTag: (tag: string) =
           <Link to={`/catalog/${item.id}`}>
             <strong>{item.title}</strong>
           </Link>
-          <div className="muted mono">
-            {item.name} · {item.apiVersion}
-          </div>
+          {/* Version only. This carried the name as well, which read as a second fact while the
+              heading above was the definition's title; now that the heading *is* the name, the
+              two lines would have said it twice. */}
+          <div className="muted mono">{item.apiVersion}</div>
           {/* Where it is filed, so a search result read outside its domain section still says
               which part of the estate it belongs to. */}
           <div className="muted small">

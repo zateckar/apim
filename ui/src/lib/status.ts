@@ -136,6 +136,48 @@ export function subscriptionChip(state: SubscriptionState): Chip {
   }
 }
 
+/**
+ * One of a subscription's two keys, by its age.
+ *
+ * The chip says the age rather than the word "ok", because the age is the number somebody is
+ * deciding on and "ok" is a number they would then have to go and find. The deadline is in the
+ * title, where the reader looks once they care.
+ *
+ * `null` for a slot nobody has minted yet: there is no key, so there is nothing to be old.
+ */
+export function subscriptionKeyChip(key: {
+  which: string;
+  status: "absent" | "ok" | "ageing" | "expired";
+  ageDays: number | null;
+  mintedAt: string | null;
+  expiresAt: string | null;
+  expiredAt: string | null;
+}): Chip | null {
+  const minted = key.mintedAt ? `minted ${key.mintedAt.slice(0, 10)}` : "minted before this was recorded";
+  switch (key.status) {
+    case "absent":
+      return null;
+    case "expired":
+      return {
+        label: "Expired",
+        tone: "stop",
+        title: `expired — retired on ${key.expiredAt?.slice(0, 10) ?? "an unrecorded date"}, and the gateway no longer accepts it. Rotating this slot mints a replacement.`,
+      };
+    case "ageing":
+      return {
+        label: `${key.ageDays} days`,
+        tone: "warn",
+        title: `${minted}, and stops working on ${key.expiresAt?.slice(0, 10) ?? "an unknown date"} — soon enough to plan the rotation with the teams that call you.`,
+      };
+    case "ok":
+      return {
+        label: key.ageDays === null ? "In use" : `${key.ageDays} days`,
+        tone: "live",
+        title: `${minted}${key.expiresAt ? `, and stops working on ${key.expiresAt.slice(0, 10)}` : ""}.`,
+      };
+  }
+}
+
 /** A simulated Kafka topic. `ready` is the broker having confirmed it, not the row existing. */
 export function kafkaTopicChip(state: KafkaTopicState): Chip {
   switch (state) {

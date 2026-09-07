@@ -121,7 +121,7 @@ describe("the components keep their promises", () => {
 
   test("an attention row shows its severity, its sentence and the screen that fixes it", () => {
     const html = renderToStaticMarkup(
-      <AttentionList rows={[row(), row({ code: "key-older-than-90-days", severity: "info" })]} truncated={3} />,
+      <AttentionList rows={[row(), row({ code: "key-ageing", severity: "info" })]} truncated={3} />,
     );
     expect(html).toContain("Not working");
     expect(html).toContain("Worth knowing");

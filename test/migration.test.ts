@@ -3,7 +3,7 @@ import { Database } from "bun:sqlite";
 import { copyFileSync, existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { openDb } from "../control-plane/src/db.ts";
+import { MIGRATIONS, openDb } from "../control-plane/src/db.ts";
 import { CONFIG_VERSION } from "../shared/config-doc.ts";
 import { makeCp, makeDp, poll, serveCp } from "./helpers.ts";
 
@@ -56,7 +56,9 @@ describe("migrations", () => {
       const versions = db
         .query("SELECT version FROM schema_version ORDER BY version")
         .all() as Array<{ version: number }>;
-      expect(versions.map((v) => v.version)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]);
+      // Every declared migration ran and was recorded, in order — read from the declaration rather
+      // than written out, so adding one does not require editing an assertion that is not about it.
+      expect(versions.map((v) => v.version)).toEqual(MIGRATIONS.map((m) => m.version));
 
       // schema-007 gives the catalogue its taxonomy and the gateway its published hostname.
       const upgradedColumns = (db.query("PRAGMA table_info(resource)").all() as Array<{ name: string }>)
@@ -307,7 +309,7 @@ describe("migrations", () => {
       expect(counts(second)).toEqual(after);
       expect(
         (second.query("SELECT COUNT(*) AS n FROM schema_version").get() as { n: number }).n,
-      ).toBe(8);
+      ).toBe(MIGRATIONS.length);
     } finally {
       second.close();
       rmSync(dir, { recursive: true, force: true });

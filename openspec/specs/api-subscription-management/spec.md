@@ -167,14 +167,37 @@ who may see a key, and what each side of the relationship is allowed to do to th
 
 #### Scenario: A rotation is asked for in the portal
 
-- GIVEN the dialog that reveals a subscription's keys
+- GIVEN the panel that shows a subscription's keys
 - WHEN rotation is offered there
-- THEN it SHALL ask for confirmation before rotating, naming what stops working
+- THEN it SHALL offer **both** slots, because the primary is the key every consumer was issued on
+  day one and a portal that can only rotate the secondary can never replace it
+- AND it SHALL ask for confirmation before rotating a slot that holds a key, naming what stops
+  working
+- AND minting a slot that is empty SHALL NOT ask, because nothing stops working
 - AND the confirmation SHALL NOT require the object's name to be typed, because nothing is being
   deleted
+- AND the panel SHALL state the sequence — rotate the idle slot, move the callers, then rotate the
+  other — because doing it in the other order is an outage
 - AND the reason SHALL be that rotation is irreversible and stops every caller holding the old key
-  at once, and that this is the dialog people open in order to *read* a key — so a single unguarded
+  at once, and that this is the panel people open in order to *read* a key — so a single unguarded
   click sat beside the value they came for
+
+#### Scenario: The same keys panel is reached two ways
+
+- GIVEN the subscription's own screen and the subscriptions list's keys dialog
+- WHEN either shows keys
+- THEN both SHALL render the same component
+- AND the reason SHALL be that they had drifted: one offered both rotations and the other only the
+  secondary, and neither showed an age — so which capabilities a reader got depended on which
+  screen they happened to open
+
+#### Scenario: A key is read
+
+- GIVEN the keys panel
+- WHEN it is opened
+- THEN no key material SHALL be fetched
+- AND revealing SHALL be a deliberate action per subscription, because every reveal is audited
+  against the reader's name and opening a screen is not asking
 
 #### Scenario: A rotated key reaches the fleet
 
@@ -182,6 +205,48 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - WHEN the environment's configuration document is next built
 - THEN it SHALL carry the sha256 of each **active** key
 - AND plaintext keys SHALL never leave the control plane
+
+### Requirement: A key has an age, and it stops working when it is old enough
+
+#### Scenario: Each slot is dated separately
+
+- GIVEN a subscription with two keys
+- WHEN either is minted or rotated
+- THEN that slot's minting time SHALL be recorded, and the other slot's SHALL be left alone
+- AND the reason SHALL be that one date for the pair answers "when was this subscription last
+  touched" and was being read as "how old is this key" — which is exactly wrong after a secondary
+  rotation, the move that leaves the primary old being the one that resets the only clock watching
+  it
+
+#### Scenario: A key passes the warning age
+
+- GIVEN a key older than `SUBSCRIPTION_KEY_WARN_DAYS` (365 by default)
+- WHEN the subscription is read
+- THEN the slot SHALL report `ageing`, and the portal SHALL raise the `key-ageing` attention item
+- AND the key SHALL keep working, because the gap between warning and expiry is the runway a
+  consumer needs to coordinate a rotation with the teams that call them
+
+#### Scenario: A key passes the expiry age
+
+- GIVEN a key older than `SUBSCRIPTION_KEY_EXPIRE_DAYS` (600 by default)
+- WHEN the expiry job next runs
+- THEN that slot SHALL be marked expired, once, with one audit entry naming the slot and its age
+- AND the slot SHALL leave the environment's configuration document, so the gateway refuses the key
+  without ever having heard of an expiry
+- AND the subscription SHALL remain in the document with its other keys, or with none, rather than
+  being dropped from it — the entry is what telemetry, quota and the logs name the caller by, and
+  dropping it would turn "this key is dead" into an anonymous `401`
+- AND the portal SHALL raise the `key-expired` attention item as a blocker
+- AND rotating the slot SHALL clear the mark, because the new key is not the old one
+- AND a subscription that is not `active` SHALL be left alone, because its keys stopped mattering
+  for another reason and an expiry date would claim they died of old age
+
+#### Scenario: An administrator changes the policy
+
+- GIVEN the two thresholds
+- WHEN they are set through `SUBSCRIPTION_KEY_WARN_DAYS` and `SUBSCRIPTION_KEY_EXPIRE_DAYS`
+- THEN the warning age SHALL be clamped to no more than the expiry age, because a warning nobody
+  can act on before the key dies is not a warning
 
 ### Requirement: Revoking is final
 
@@ -192,6 +257,37 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN its keys SHALL stop working once the fleet applies the next configuration
 - AND it SHALL NOT be un-revokable — a new subscription is the way back
 - AND the chip SHALL say so: "revoked — its keys no longer work, and it cannot be un-revoked"
+
+#### Scenario: A request is withdrawn before it is decided
+
+- GIVEN a `pending` subscription
+- WHEN the consumer ends it
+- THEN it SHALL become `cancelled` rather than `revoking`
+- AND the portal SHALL say "cancel this request", not "withdraw access", because nothing was
+  granted and so nothing is being taken away
+
+### Requirement: Offer the actions the subscription's state actually has
+
+#### Scenario: A subscription is listed in any state
+
+- GIVEN a subscription in one of the seven states
+- WHEN its row is rendered
+- THEN the row SHALL offer the actions that state permits, or say what is being waited on
+- AND `pending` SHALL offer to cancel the request, `active` its keys and revocation, `activating`
+  revocation and a note that the gateways have not started accepting the keys
+- AND `revoking` SHALL say the gateways have not stopped accepting the keys yet, and offer nothing,
+  because the request is already in flight
+- AND the three terminal states SHALL offer to subscribe again and nothing else
+- AND the reason SHALL be that the list rendered exactly one button — Revoke — for three states and
+  nothing at all for the other four, so a row in a terminal state looked like one the portal had
+  forgotten about
+
+#### Scenario: Ending a subscription is offered when there is something to end
+
+- GIVEN a subscription that is `revoking`, `revoked`, `rejected` or `cancelled`
+- WHEN its own screen offers to end it
+- THEN the control SHALL be disabled, and SHALL say which of those it is
+- AND it SHALL NOT say "already revoked" for a state that is not revoked
 
 ### Requirement: Show a consumer what they have spent
 

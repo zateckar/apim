@@ -35,7 +35,11 @@ export const ATTENTION_CODES = [
   // a subscription's own health
   "quota-80",
   "quota-exhausted",
-  "key-older-than-90-days",
+  // Was `key-older-than-90-days`, when 90 was a constant in `attention.ts`. The threshold is the
+  // estate's own now (`SUBSCRIPTION_KEY_WARN_DAYS`), and a code naming a number it no longer uses
+  // is a wire format that lies — so the code names the condition and the sentence carries the days.
+  "key-ageing",
+  "key-expired",
   "subscribed-api-deprecated",
   "subscribed-api-retired",
   // the estate
@@ -70,7 +74,10 @@ export const ATTENTION_SEVERITY: Record<AttentionCode, AttentionSeverity> = {
   "certificate-expiring": "warning",
   "quota-80": "warning",
   "quota-exhausted": "blocker",
-  "key-older-than-90-days": "info",
+  // An ageing key is a deadline rather than hygiene now — ignored, it stops working — so it warns.
+  // An expired one is already refusing its caller's requests, which is what `blocker` means here.
+  "key-ageing": "warning",
+  "key-expired": "blocker",
   "subscribed-api-deprecated": "warning",
   "subscribed-api-retired": "blocker",
   "gateway-stale": "warning",

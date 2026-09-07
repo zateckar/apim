@@ -25,7 +25,7 @@ interface Migration {
   foreignKeysOff?: boolean;
 }
 
-const MIGRATIONS: Migration[] = [
+export const MIGRATIONS: Migration[] = [
   { version: 1, name: "initial", file: "schema.sql" },
   { version: 2, name: "v2", file: "schema-002.sql", foreignKeysOff: true },
   { version: 3, name: "v3", file: "schema-003.sql" },
@@ -47,6 +47,7 @@ const MIGRATIONS: Migration[] = [
     // Rebuilds `target`, which `gateway_instance` and `applied` reference.
     foreignKeysOff: true,
   },
+  { version: 9, name: "a subscription's two keys have two ages", file: "schema-009.sql" },
 ];
 
 /**

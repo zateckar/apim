@@ -20,6 +20,7 @@ import {
   kafkaTopicChip,
   subscriptionChip,
 } from "../lib/status";
+import { SubscriptionKeys } from "../views/SubscriptionKeys";
 import { DomainPicker } from "./apis";
 
 export function SubscribeDialog({
@@ -117,6 +118,26 @@ export function SubscribeDialog({
     </Modal>
   );
 }
+/**
+ * Whether the signed-in person is on the *consumer* side of this subscription.
+ *
+ * Only that side has keys. The publisher can see the row and can end the relationship; they cannot
+ * read or replace the consumer's credentials, because a rotation of somebody else's key is an
+ * outage at a moment of your choosing. The server enforces this — `/reveal` and `/rotate` both
+ * check the consuming application — and this is only what stops the button being offered.
+ */
+function mine(s: Session, row: { applicationId: string }): boolean {
+  return s.user.isAdmin || s.user.applications.includes(row.applicationId);
+}
+
+/** The product's name if the products call has landed, and its id — never nothing — if it has not. */
+function productName(
+  products: { data?: { items: any[] } | null },
+  row: { productId: string },
+): string {
+  return products.data?.items.find((p) => p.id === row.productId)?.name ?? row.productId;
+}
+
 export function Subscriptions({
   session: s,
   tick,
@@ -138,9 +159,8 @@ export function Subscriptions({
       [resourceId, tick],
     ),
     w = useAction();
-  const [key, setKey] = useState<any>(null),
-    [withdraw, setWithdraw] = useState<any>(null),
-    [rotating, setRotating] = useState(false);
+  const [keyId, setKeyId] = useState<string | null>(null),
+    [withdraw, setWithdraw] = useState<any>(null);
   const rows = (data.data?.items ?? []).filter(
     (r) =>
       r.environment === s.environment &&
@@ -152,6 +172,7 @@ export function Subscriptions({
           )
         : r.applicationId === s.application),
   );
+  const keyRow = rows.find((r) => r.id === keyId);
   return (
     // The heading says how many and where, not "Subscriptions" again under an `<h1>Subscriptions`.
     // Where matters more here than anywhere else in the portal: a subscription is to a product in
@@ -167,36 +188,37 @@ export function Subscriptions({
                   was reachable from the publisher's Products screen and from nowhere on the
                   consumer's own list. */}
               <Link to={`/subscriptions/${r.id}`}>
-                <strong>
-                  {products.data?.items.find((p) => p.id === r.productId)?.name ??
-                    r.productId}
-                </strong>
+                <strong>{productName(products, r)}</strong>
               </Link>
               <small>
                 {s.applicationName(r.applicationId)} · {r.purpose}
               </small>
               <StatusChip chip={subscriptionChip(r.state)} />
             </div>
+            {/* What you can do to a subscription depends on which of the seven states it is in,
+                and the list used to render exactly one button — Revoke — for three of them and
+                nothing at all for the other four. A row in a terminal state looked like a row the
+                portal had forgotten about. Every state now either offers its own action or says
+                what is being waited on. */}
             <div className="native-actions">
-              {r.state === "active" &&
-                (s.user.isAdmin ||
-                  s.user.applications.includes(r.applicationId)) && (
-                  <button
-                    className="btn"
-                    onClick={() =>
-                      void w.run(async () =>
-                        setKey({
-                          id: r.id,
-                          ...(await api.post<any>(
-                            `/api/subscriptions/${r.id}/reveal`,
-                          )),
-                        }),
-                      )
-                    }
-                  >
-                    Show keys
+              {r.state === "revoking" && (
+                <small>Withdrawn — waiting for the gateways to stop accepting the keys.</small>
+              )}
+              {r.state === "activating" && (
+                <small>Approved — waiting for the gateways to start accepting the keys.</small>
+              )}
+              {r.state === "pending" && <small>Waiting on the publisher's decision.</small>}
+              {["revoked", "rejected", "cancelled"].includes(r.state) &&
+                mine(s, r) && (
+                  <button className="btn" onClick={() => go("/catalog")}>
+                    Subscribe again
                   </button>
                 )}
+              {r.state === "active" && mine(s, r) && (
+                <button className="btn" onClick={() => setKeyId(r.id)}>
+                  Keys
+                </button>
+              )}
               {["pending", "active", "activating"].includes(r.state) && (
                 <button
                   className="btn"
@@ -220,83 +242,49 @@ export function Subscriptions({
           }
         />
       )}
-      {key && (
-        <Modal
-          title="Subscription keys"
-          close={() => {
-            setKey(null);
-            setRotating(false);
-          }}
-        >
-          <p>Keep these credentials private.</p>
-          <Field label="Primary key">
-            <input readOnly value={key.primaryKey ?? ""} />
-          </Field>
-          <Field label="Secondary key">
-            <input readOnly value={key.secondaryKey ?? ""} />
-          </Field>
-          <Notice kind="error">{w.error}</Notice>
-          {/* Rotation is not reversible and it is not local: the old secondary stops working for
-              every caller holding it, at once. This dialog is the one people open to *read* a key,
-              so a single unguarded click beside the value they came for was the wrong shape. It
-              asks first — not a typed confirmation, because nothing is being deleted, but not one
-              click either. */}
-          {rotating ? (
-            <div className="native-actions">
-              <span className="muted small">
-                Every caller using the current secondary key stops working immediately. The primary
-                key is untouched, so rotate the secondary, move callers onto it, then rotate the
-                primary.
-              </span>
-              <button className="btn" disabled={w.busy} onClick={() => setRotating(false)}>
-                Keep it
-              </button>
-              <button
-                className="btn danger"
-                disabled={w.busy}
-                onClick={() =>
-                  void w.run(async () => {
-                    await api.post(`/api/subscriptions/${key.id}/rotate`, {
-                      which: "secondary",
-                    });
-                    setRotating(false);
-                    setKey({
-                      id: key.id,
-                      ...(await api.post<any>(
-                        `/api/subscriptions/${key.id}/reveal`,
-                      )),
-                    });
-                  })
-                }
-              >
-                Rotate it
-              </button>
-            </div>
-          ) : (
-            <div className="native-actions">
-              <button className="btn" disabled={w.busy} onClick={() => setRotating(true)}>
-                Rotate secondary key
-              </button>
-            </div>
-          )}
+      {keyRow && (
+        // The same panel the subscription's own screen shows. It used to be a second, smaller
+        // implementation: it revealed both keys the moment you opened it, showed neither one's age,
+        // and could rotate only the secondary — so the primary, the key everyone was actually
+        // issued on day one, could not be replaced from the screen most people open.
+        //
+        // The row is looked up by id rather than held, so a rotation's reload refreshes the ages
+        // under the reader without remounting the panel and throwing away the key it just minted.
+        <Modal title="Subscription keys" close={() => setKeyId(null)}>
+          <SubscriptionKeys subscription={keyRow} onChanged={data.reload} />
         </Modal>
       )}
       {withdraw && (
-        <Modal title="Withdraw access" close={() => setWithdraw(null)}>
+        // A request nobody has decided yet is not access being withdrawn, and the dialog said it
+        // was: "Withdraw access", "This application will lose access to the product" — of a
+        // subscription whose keys have never worked. The three words that differ follow the state.
+        <Modal
+          title={withdraw.state === "pending" ? "Cancel this request" : "Withdraw access"}
+          close={() => setWithdraw(null)}
+        >
           <p>
-            Withdraw {s.applicationName(withdraw.applicationId)} access to{" "}
-            {products.data?.items.find((p) => p.id === withdraw.productId)
-              ?.name ?? withdraw.productId}
-            ? Gateway access is removed automatically.
+            {withdraw.state === "pending" ? (
+              <>
+                Withdraw {s.applicationName(withdraw.applicationId)}'s request for{" "}
+                {productName(products, withdraw)}? The publisher will no longer see it. Asking again
+                means a new request.
+              </>
+            ) : (
+              <>
+                Withdraw {s.applicationName(withdraw.applicationId)} access to{" "}
+                {productName(products, withdraw)}? Gateway access is removed automatically.
+              </>
+            )}
           </p>
           <Notice kind="error">{w.error}</Notice>
           <DangerZone
-            what="Withdraw subscription"
-            name={
-              products.data?.items.find((p) => p.id === withdraw.productId)
-                ?.name ?? withdraw.productId
+            what={withdraw.state === "pending" ? "Cancel this request" : "Withdraw subscription"}
+            name={productName(products, withdraw)}
+            consequence={
+              withdraw.state === "pending"
+                ? "The request is withdrawn before it was decided, and cannot be un-cancelled."
+                : "This application will lose access to the product, at the next gateway poll, and cannot be un-revoked."
             }
-            consequence="This application will lose access to the product."
             permission={{ enabled: true, reason: "" }}
             busy={w.busy}
             error={w.error}

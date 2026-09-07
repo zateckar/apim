@@ -1,5 +1,6 @@
 import { runOperations } from "./operations.ts";
 import { runIntegrationEvents } from "./integrations.ts";
+import { runKeyExpiry } from "./key-expiry.ts";
 import type { App } from "./router.ts";
 import { newId, nowIso, type DB } from "./db.ts";
 import { writeAudit } from "./audit.ts";
@@ -240,6 +241,10 @@ function reconcile(app: App, payload: ReconcilePayload): string {
 /** Runs every queued job once. Returns how many ran. */
 export function runDueJobs(app: App): number {
   runIntegrationEvents(app);
+  // Before the operations pass reads the fleet's digests, not after: retiring a key changes the
+  // environment's configuration document, and running it afterwards would leave one whole cycle in
+  // which the control plane had decided a key was dead and the gateways had not been told.
+  runKeyExpiry(app);
   runOperations(app);
   const { db } = app;
   db.run("UPDATE job SET state='queued' WHERE state='running' AND updated_at<?", [new Date(Date.now()-60000).toISOString()]);

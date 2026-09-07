@@ -496,6 +496,18 @@ export interface Application {
   capabilities: string[];
 }
 
+export interface SubscriptionKey {
+  which: "primary" | "secondary";
+  /** Null when the slot is empty. A key that does not exist has no age and no deadline. */
+  mintedAt: string | null;
+  ageDays: number | null;
+  /** Projected, not promised: the estate's policy may be changed and the date moves with it. */
+  expiresAt: string | null;
+  /** Recorded, unlike `expiresAt` — this one is a thing that happened. */
+  expiredAt: string | null;
+  status: "absent" | "ok" | "ageing" | "expired";
+}
+
 export interface Subscription {
   id: string;
   productId: string;
@@ -505,7 +517,16 @@ export interface Subscription {
   state: SubscriptionState;
   applicationName?: string;
   productName?: string;
+  /** When either key was last rotated — "when was this last touched", not "how old is the key". */
   keyRotatedAt: string | null;
+  /**
+   * The two slots, each with its own age and deadline.
+   *
+   * Two entries, always, so the secondary's absence is a state rather than a missing row: a
+   * subscription has a secondary only once somebody has rotated into it, and `status: "absent"` is
+   * how the screen knows to offer minting one rather than showing an age of zero.
+   */
+  keys?: SubscriptionKey[];
   /**
    * Which side of it you are. A subscription has two, and the same row means "our application
    * calls their product" to one application and the reverse to the other — so a list that did not say

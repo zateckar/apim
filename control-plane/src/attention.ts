@@ -546,6 +546,11 @@ interface SubscriptionRow {
   product_id: string;
   created_at: string;
   key_rotated_at: string | null;
+  primary_key_at: string | null;
+  secondary_key_at: string | null;
+  secondary_key_enc: string | null;
+  primary_key_expired_at: string | null;
+  secondary_key_expired_at: string | null;
   application_name: string;
   product_name: string;
 }
@@ -560,6 +565,8 @@ export function consumerSubscriptions(app: App, scope: Scope): SubscriptionRow[]
   return app.db
     .query<SubscriptionRow, string[]>(
       `SELECT s.id, s.environment, s.state, s.product_id, s.created_at, s.key_rotated_at,
+              s.primary_key_at, s.secondary_key_at, s.secondary_key_enc,
+              s.primary_key_expired_at, s.secondary_key_expired_at,
               a.name AS application_name, p.name AS product_name
          FROM subscription s
          JOIN application a ON a.id = s.application_id
@@ -717,17 +724,46 @@ export function consumerAttention(app: App, scope: Scope): AttentionRow[] {
       );
     }
 
-    const keyAgeMs = now - Date.parse(subscription.key_rotated_at ?? subscription.created_at);
-    if (keyAgeMs > KEY_AGE_DAYS * 86_400_000) {
-      rows.push(
-        row(
-          "key-older-than-90-days",
-          subject,
-          `This subscription's key is ${Math.floor(keyAgeMs / 86_400_000)} days old. Rotating gives you a second key first, so nothing breaks while callers move across.`,
-          href,
-          subscription.environment,
-        ),
-      );
+    // Per slot, and against the estate's own thresholds rather than a constant. The old rule read
+    // `key_rotated_at`, which is written by a rotation of *either* key — so rotating the secondary,
+    // the very move that leaves the primary old, silenced the warning about the primary.
+    const expireDays = app.config.subscriptionKeyExpireDays;
+    const warnDays = app.config.subscriptionKeyWarnDays;
+    for (const which of ["primary", "secondary"] as const) {
+      const present =
+        which === "primary" ? true : subscription.secondary_key_enc !== null;
+      if (!present) continue;
+      const expiredAt =
+        which === "primary"
+          ? subscription.primary_key_expired_at
+          : subscription.secondary_key_expired_at;
+      if (expiredAt !== null) {
+        rows.push(
+          row(
+            "key-expired",
+            subject,
+            `This subscription's ${which} key expired on ${day(expiredAt)} and the gateway no longer accepts it. Rotate it to mint a replacement — the other key is unaffected.`,
+            href,
+            subscription.environment,
+          ),
+        );
+        continue;
+      }
+      const mintedAt =
+        (which === "primary" ? subscription.primary_key_at : subscription.secondary_key_at) ??
+        subscription.created_at;
+      const ageDays = Math.floor((now - Date.parse(mintedAt)) / 86_400_000);
+      if (ageDays >= warnDays) {
+        rows.push(
+          row(
+            "key-ageing",
+            subject,
+            `This subscription's ${which} key is ${ageDays} days old and stops working at ${expireDays}. Rotating gives you a second key first, so nothing breaks while callers move across.`,
+            href,
+            subscription.environment,
+          ),
+        );
+      }
     }
   }
 

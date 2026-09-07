@@ -749,6 +749,8 @@ variable, never a silent downgrade.
 | `OIDC_DISPLAY_NAME` | `Single sign-on` | the sign-in button's label |
 | `INSTANCE_STALE_AFTER_SEC` | `30` | when a replica reads as unhealthy on a screen |
 | `INSTANCE_ABANDONED_AFTER_SEC` | `900` | when a silent replica stops holding convergence open |
+| `SUBSCRIPTION_KEY_WARN_DAYS` | `365` | key age at which the portal starts asking for a rotation; clamped to the expiry |
+| `SUBSCRIPTION_KEY_EXPIRE_DAYS` | `600` | key age at which the slot leaves the configuration document and the gateway refuses it |
 | `MAX_SPEC_BYTES` | `5 MiB` | |
 | `TELEMETRY_FLUSH_INTERVAL_SEC` | `10` | |
 | `TELEMETRY_RETENTION_HOURS` | `48` | |

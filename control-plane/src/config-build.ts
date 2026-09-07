@@ -66,6 +66,8 @@ interface SubscriptionRow {
   product_name: string;
   primary_key_enc: string;
   secondary_key_enc: string | null;
+  primary_key_expired_at: string | null;
+  secondary_key_expired_at: string | null;
 }
 
 export function policyFor(db: DB, resourceId: string, environment: string): PolicyDocument {
@@ -386,7 +388,8 @@ export function buildSubscriptions(db: DB, kek: Buffer, environment: string): Co
     .query<SubscriptionRow, [string]>(
       `SELECT s.id, s.product_id, s.application_id,
               a.name AS application_name, p.name AS product_name,
-              s.primary_key_enc, s.secondary_key_enc
+              s.primary_key_enc, s.secondary_key_enc,
+              s.primary_key_expired_at, s.secondary_key_expired_at
          FROM subscription s
          JOIN application a ON a.id = s.application_id
          JOIN product p     ON p.id = s.product_id
@@ -398,7 +401,19 @@ export function buildSubscriptions(db: DB, kek: Buffer, environment: string): Co
   return rows.map((row) => ({
     id: row.id,
     // Hashes, not keys: the data plane only needs the mapping, so plaintext never leaves here.
-    keyHashes: [row.primary_key_enc, row.secondary_key_enc]
+    //
+    // An expired slot is left out, and that is the whole of the enforcement — the gateway has never
+    // heard of an expiry and needs no code for it, because a key it was not given is a key it does
+    // not know. `key-expiry.ts` decides when; this only reads the mark, so the document stays a
+    // function of the database rather than of the database and the clock.
+    //
+    // Both slots expired leaves the subscription in the document with no keys at all. That is
+    // deliberate: the entry is what telemetry, quota and the logs name the caller by, and dropping
+    // it would turn a refused call from "this subscription's keys are dead" into an anonymous 401.
+    keyHashes: [
+      row.primary_key_expired_at === null ? row.primary_key_enc : null,
+      row.secondary_key_expired_at === null ? row.secondary_key_enc : null,
+    ]
       .filter((v): v is string => typeof v === "string" && v.length > 0)
       .map((enc) => hashKey(decrypt(enc, kek))),
     productId: row.product_id,

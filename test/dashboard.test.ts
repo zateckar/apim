@@ -8,6 +8,7 @@ import {
 } from "../shared/attention.ts";
 import { emptyBuckets, windowStartOf, type TelemetryReport } from "../shared/telemetry.ts";
 import { makeCp, poll, publishApi, startBackend, type TestCp } from "./helpers.ts";
+import { runDueJobs } from "../control-plane/src/jobs.ts";
 
 /**
  * G2: one endpoint, blocks per hat, and one evaluator behind every "this needs attention" row.
@@ -678,19 +679,33 @@ describe("a subscription's own health", () => {
     expect(codes(dash)).not.toContain("quota-exhausted");
   });
 
-  test("a key nobody has rotated in ninety days", async () => {
+  test("a key nobody has rotated past the warn threshold, and one past the deadline", async () => {
     const api = await publishApi(cp, { backendUrl: backend.url });
-    cp.app.db.run("UPDATE subscription SET created_at = ? WHERE id = ?", [
-      iso(-100 * DAY),
-      api.subscriptionId!,
-    ]);
-    const dash = await dashboard(api.clara);
-    const row = find(dash, "key-older-than-90-days")!;
-    expect(row.severity).toBe("info");
-    expect(row.detail).toContain("100 days old");
+    const age = (days: number) =>
+      cp.app.db.run(
+        "UPDATE subscription SET created_at = ?, primary_key_at = ? WHERE id = ?",
+        [iso(-days * DAY), iso(-days * DAY), api.subscriptionId!],
+      );
+
+    // Past `SUBSCRIPTION_KEY_WARN_DAYS` (365) and short of the deadline: a warning, and it says
+    // both numbers, because "old" without "and it stops at" is not a deadline.
+    age(400);
+    const warned = find(await dashboard(api.clara), "key-ageing")!;
+    expect(warned.severity).toBe("warning");
+    expect(warned.detail).toContain("400 days old");
+    expect(warned.detail).toContain("600");
     // The reason it is safe to do: rotation gives a second key first.
-    expect(row.detail).toContain("second key");
-    expect(dash.consumer.subscriptions[0]!.keyAgeDays).toBe(100);
+    expect(warned.detail).toContain("second key");
+    expect((await dashboard(api.clara)).consumer.subscriptions[0]!.keyAgeDays).toBe(400);
+
+    // Past `SUBSCRIPTION_KEY_EXPIRE_DAYS` (600) the job retires the slot, and the row becomes a
+    // blocker because the caller's requests are already being refused.
+    age(700);
+    runDueJobs(cp.app);
+    const expired = find(await dashboard(api.clara), "key-expired")!;
+    expect(expired.severity).toBe("blocker");
+    expect(expired.detail).toContain("no longer accepts it");
+    expect(codes(await dashboard(api.clara))).not.toContain("key-ageing");
   });
 
   test("an API you subscribe to that is deprecated, then retired", async () => {

@@ -68,6 +68,29 @@ export type OperationState = (typeof OPERATION_STATES)[number];
  * the publisher declining it. Both end the request and neither is `revoked`, which is access that
  * existed and was taken away.
  */
+/**
+ * How old a subscription key may get.
+ *
+ * Two numbers, and they mean different things. `warn` is when the portal starts saying so — on the
+ * subscription, on the dashboard's attention list and in the owner's mail. `expire` is when the key
+ * stops working: it is dropped from the environment's configuration document, so the gateway that
+ * has never heard of an expiry simply does not know the key and answers `401`.
+ *
+ * The gap between them is the runway. It is deliberately most of a year by default, because the
+ * remedy — rotate the idle slot, move callers across, rotate the other — is work somebody has to
+ * schedule with the teams that call them, and a warning that arrives a fortnight before the key
+ * dies is an outage with extra steps.
+ *
+ * Neither is stored on the row. They are read at request time and applied to the key's own minting
+ * date, so an administrator who changes the policy changes it for the keys that already exist. A
+ * stored `expires_at` would apply the new number to keys minted afterwards and leave the estate
+ * holding two answers about the same deadline.
+ */
+export const SUBSCRIPTION_KEY_DEFAULTS = {
+  warnDays: 365,
+  expireDays: 600,
+} as const;
+
 export const SUBSCRIPTION_STATES = [
   "pending",
   "activating",

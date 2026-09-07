@@ -30,7 +30,65 @@ interface SubscriptionRow {
   primary_key_enc: string;
   secondary_key_enc: string | null;
   key_rotated_at: string | null;
+  primary_key_at: string | null;
+  secondary_key_at: string | null;
+  primary_key_expired_at: string | null;
+  secondary_key_expired_at: string | null;
   created_at: string;
+}
+
+export interface KeyState {
+  which: "primary" | "secondary";
+  /** Null for a secondary slot nobody has rotated into yet: there is no key, so there is no age. */
+  mintedAt: string | null;
+  ageDays: number | null;
+  expiresAt: string | null;
+  expiredAt: string | null;
+  /** `ok` · `ageing` past the warn threshold · `expired` once the gateway has stopped taking it. */
+  status: "absent" | "ok" | "ageing" | "expired";
+}
+
+/**
+ * Each key's own age and deadline.
+ *
+ * The deadline is computed here rather than stored, so that lowering the estate's policy moves the
+ * date on keys that already exist — see `key-expiry.ts`. It is therefore a projection and not a
+ * promise, which is why the expiring itself *is* recorded: `expiredAt` is what happened,
+ * `expiresAt` is what is expected to.
+ */
+function keyStatesOf(ctx: Ctx, row: SubscriptionRow): KeyState[] {
+  const warnDays = ctx.app.config.subscriptionKeyWarnDays;
+  const expireDays = ctx.app.config.subscriptionKeyExpireDays;
+  const now = Date.now();
+  const slot = (
+    which: "primary" | "secondary",
+    present: boolean,
+    mintedAtRaw: string | null,
+    expiredAt: string | null,
+  ): KeyState => {
+    if (!present) {
+      return { which, mintedAt: null, ageDays: null, expiresAt: null, expiredAt: null, status: "absent" };
+    }
+    // A row from before migration 9 has no per-slot date; the subscription's own creation is the
+    // oldest the key can be, so it understates the age rather than inventing one.
+    const mintedAt = mintedAtRaw ?? row.created_at;
+    const parsed = Date.parse(mintedAt);
+    const ageDays = Number.isNaN(parsed) ? 0 : Math.floor(Math.max(0, now - parsed) / 86_400_000);
+    return {
+      which,
+      mintedAt,
+      ageDays,
+      expiresAt: Number.isNaN(parsed)
+        ? null
+        : new Date(parsed + expireDays * 86_400_000).toISOString(),
+      expiredAt,
+      status: expiredAt !== null ? "expired" : ageDays >= warnDays ? "ageing" : "ok",
+    };
+  };
+  return [
+    slot("primary", true, row.primary_key_at, row.primary_key_expired_at),
+    slot("secondary", row.secondary_key_enc !== null, row.secondary_key_at, row.secondary_key_expired_at),
+  ];
 }
 
 /**
@@ -57,6 +115,12 @@ function subscriptionView(
     purpose: row.purpose, requestedBy: row.requested_by, decisionBy: row.decision_by, decisionAt: row.decision_at,
     keyRotatedAt: row.key_rotated_at,
     createdAt: row.created_at,
+    // One entry per slot rather than one date for the pair. `key_rotated_at` answers "when was this
+    // subscription last touched"; it was being read as "how old is the key", which is exactly wrong
+    // after a secondary rotation — the move that leaves the primary old is the one that reset the
+    // only clock watching it. The thresholds travel with the dates because they are policy the
+    // reader cannot otherwise see, and an administrator may have changed them.
+    keys: keyStatesOf(ctx, row),
     viewerIs: asConsumer ? "consumer" : can(ctx.user, applications.productApplication) ? "publisher" : "other",
     // The consumer's own capabilities are the ordinary ones. A publisher gets `delete` and nothing
     // else: they may end the relationship, and may not reach into it and rotate somebody else's
@@ -389,10 +453,13 @@ export function createSubscription(
     const id = newId("sub");
     try {
       ctx.app.db.transaction(() => {
+        // `primary_key_at` is the key's own clock, and it starts here. It is set explicitly rather
+        // than left to fall back on `created_at` so that a key minted now and a key inherited from
+        // before migration 9 are told apart by whether the column is null.
         ctx.app.db.run(`INSERT INTO subscription
-          (id,product_id,application_id,environment,state,primary_key_enc,created_at,purpose,requested_by,decision_by,decision_at)
-          VALUES (?,?,?,?,?,?,?,?,?,?,?)`,
-          [id,product.id,application.id,environment,state,encrypt(mintSubscriptionKey(environment),ctx.app.kek),nowIso(),purpose,user.id,own?user.id:null,own?nowIso():null]);
+          (id,product_id,application_id,environment,state,primary_key_enc,primary_key_at,created_at,purpose,requested_by,decision_by,decision_at)
+          VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`,
+          [id,product.id,application.id,environment,state,encrypt(mintSubscriptionKey(environment),ctx.app.kek),nowIso(),nowIso(),purpose,user.id,own?user.id:null,own?nowIso():null]);
         if (!own) requestApproval(ctx.app,application.id,product.application_id,id,"subscription",purpose);
         else emitIntegration(ctx.app,application.id,"email","subscription.approved",id,{subject:"Own-product access approved",body:purpose});
         writeAudit(ctx.app.db,{actor:user.id,action:"subscription.create",subject:`subscription:${id}`,outcome:"ok",detail:{productId:product.id,applicationId:application.id,environment,state,purpose}});
@@ -440,11 +507,17 @@ function registerSubscriptionRoutes(router: Router): void {
     }
     const key = mintSubscriptionKey(row.environment);
     const column = which === "primary" ? "primary_key_enc" : "secondary_key_enc";
-    ctx.app.db.run(`UPDATE subscription SET ${column} = ?, key_rotated_at = ? WHERE id = ?`, [
-      encrypt(key, ctx.app.kek),
-      nowIso(),
-      row.id,
-    ]);
+    const mintedAt = which === "primary" ? "primary_key_at" : "secondary_key_at";
+    // Rotating is how a slot comes back from expiry: the new key is not the old one, so the mark
+    // that retired the old one has nothing left to describe. `key_rotated_at` is still written,
+    // because it answers a question the per-slot dates do not — when was this subscription last
+    // touched at all — and the dashboard and the audit trail both read it.
+    const expiredAt =
+      which === "primary" ? "primary_key_expired_at" : "secondary_key_expired_at";
+    ctx.app.db.run(
+      `UPDATE subscription SET ${column} = ?, ${mintedAt} = ?, ${expiredAt} = NULL, key_rotated_at = ? WHERE id = ?`,
+      [encrypt(key, ctx.app.kek), nowIso(), nowIso(), row.id],
+    );
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "subscription.rotate",

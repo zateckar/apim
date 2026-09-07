@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { MAX_QUOTA_ENTRIES } from "../../shared/quota.ts";
 import { TELEMETRY_DEFAULTS } from "../../shared/telemetry.ts";
+import { SUBSCRIPTION_KEY_DEFAULTS } from "../../shared/types.ts";
 import { DEFAULT_ARTIFACT_MAX_BYTES } from "./artifacts.ts";
 import {
   checkEgress,
@@ -186,6 +187,9 @@ export interface CpConfig {
   instanceStaleAfterSec: number;
   /** When a silent replica stops holding the environment's convergence open. See `fleetApplied`. */
   instanceAbandonedAfterSec: number;
+  /** When a subscription key is complained about, and when the gateway stops accepting it. */
+  subscriptionKeyWarnDays: number;
+  subscriptionKeyExpireDays: number;
   maxSpecBytes: number;
   integrations: Integrations;
   targets: TargetDef[];
@@ -483,6 +487,17 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
     // above the staleness threshold: that one answers "is this healthy right now" for a screen,
     // and a fleet must not be abandoned mid-rolling-restart. See `fleetApplied`.
     instanceAbandonedAfterSec: intFromEnv("INSTANCE_ABANDONED_AFTER_SEC", 900),
+    // When a subscription key is complained about, and when it stops working. See
+    // `SUBSCRIPTION_KEY_DEFAULTS`. A warn threshold at or past the expiry would be a deadline with
+    // no notice, so it is clamped below it rather than trusted.
+    subscriptionKeyExpireDays: intFromEnv(
+      "SUBSCRIPTION_KEY_EXPIRE_DAYS",
+      SUBSCRIPTION_KEY_DEFAULTS.expireDays,
+    ),
+    subscriptionKeyWarnDays: Math.min(
+      intFromEnv("SUBSCRIPTION_KEY_WARN_DAYS", SUBSCRIPTION_KEY_DEFAULTS.warnDays),
+      intFromEnv("SUBSCRIPTION_KEY_EXPIRE_DAYS", SUBSCRIPTION_KEY_DEFAULTS.expireDays),
+    ),
     maxSpecBytes: intFromEnv("MAX_SPEC_BYTES", 5 * 1024 * 1024),
     integrations: readIntegrations(integrationsFile),
     targets: readTargets(targetsFile),

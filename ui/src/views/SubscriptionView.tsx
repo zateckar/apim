@@ -1,5 +1,5 @@
-import { useState } from "react";
 import { api, type Subscription, type SubscriptionUsage } from "../api";
+import { SubscriptionKeys } from "./SubscriptionKeys";
 import {
   Panel,
   DangerZone,
@@ -16,6 +16,14 @@ import { ALLOWED } from "../lib/capabilities";
 import { subscriptionChip } from "../lib/status";
 
 /**
+ * The states that still have something to end, which is what `DELETE /api/subscriptions/:id`
+ * accepts: a request can be cancelled, an approved or live one revoked. `revoking` is already on
+ * its way out and the three terminal states are over, so for those the control plane returns the
+ * row unchanged — a button that reported success and changed nothing.
+ */
+const ENDABLE = ["pending", "activating", "active"];
+
+/**
  * One subscription, on its own address.
  *
  * The *list* of subscriptions is the shell's own screen; this is the only thing under
@@ -30,7 +38,6 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
     () => api.get<SubscriptionUsage>(`/api/subscriptions/${subscriptionId}/usage`),
     [subscriptionId],
   );
-  const [shown, setShown] = useState<{ label: string; value: string } | null>(null);
   const action = useAction();
 
   if (list.error) return <Notice kind="error">{list.error}</Notice>;
@@ -50,6 +57,9 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
   // reach inside it, so the keys card is absent rather than present-and-refusing: every control on
   // it would 403, and a row of buttons that all fail teaches the opposite of the rule.
   const asPublisher = subscription.viewerIs === "publisher";
+  // A request nobody has decided yet is cancelled, not revoked: nothing was granted, so nothing is
+  // being taken away, and the two words mean different things to whoever reads the audit later.
+  const pending = subscription.state === "pending";
 
   return (
     <>
@@ -78,65 +88,9 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
       ) : (
       <Panel
         title="Keys"
-        hint="Two at once, so a key can be replaced without a moment where neither works: create the second, move your callers, then rotate the first."
+        hint="Two at once, so a key can be replaced without a moment where neither works: issue the second, move your callers, then rotate the first."
       >
-        <Notice kind="error">{action.error}</Notice>
-        {shown && (
-          <>
-            <Notice kind="warn">
-              {shown.label} — copy it now. It is encrypted at rest and every reveal is audited.
-            </Notice>
-            <div className="pre">{shown.value}</div>
-          </>
-        )}
-        <div className="inline">
-          <button
-            className="ghost"
-            disabled={action.busy || subscription.state !== "active"}
-            onClick={() =>
-              action.run(async () => {
-                const revealed = await api.post<{ primaryKey: string }>(
-                  `/api/subscriptions/${subscription.id}/reveal`,
-                );
-                setShown({ label: "Primary key", value: revealed.primaryKey });
-              })
-            }
-          >
-            Reveal the primary key
-          </button>
-          <button
-            className="ghost"
-            disabled={action.busy || subscription.state !== "active"}
-            onClick={() =>
-              action.run(async () => {
-                const rotated = await api.post<{ key: string }>(
-                  `/api/subscriptions/${subscription.id}/rotate`,
-                  { which: "secondary" },
-                );
-                setShown({ label: "New secondary key", value: rotated.key });
-                list.reload();
-              })
-            }
-          >
-            Issue a secondary key
-          </button>
-          <button
-            className="ghost"
-            disabled={action.busy || subscription.state !== "active"}
-            onClick={() =>
-              action.run(async () => {
-                const rotated = await api.post<{ key: string }>(
-                  `/api/subscriptions/${subscription.id}/rotate`,
-                  { which: "primary" },
-                );
-                setShown({ label: "New primary key", value: rotated.key });
-                list.reload();
-              })
-            }
-          >
-            Replace the primary key
-          </button>
-        </div>
+        <SubscriptionKeys subscription={subscription} onChanged={list.reload} />
       </Panel>
       )}
 
@@ -177,18 +131,35 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
         {usage.data && <p className="muted small">{usage.data.note}</p>}
       </Panel>
 
-      <Panel title={asPublisher ? "Withdraw their access" : "Stop using it"}>
+      <Panel title={asPublisher ? "Withdraw their access" : pending ? "Withdraw the request" : "Stop using it"}>
         <DangerZone
-          what={asPublisher ? "Withdraw this subscription" : "Revoke this subscription"}
+          what={
+            pending
+              ? "Cancel this request"
+              : asPublisher
+                ? "Withdraw this subscription"
+                : "Revoke this subscription"
+          }
           name={subscription.applicationName ?? subscription.id}
           consequence={
-            asPublisher
-              ? "Their keys stop working at the next gateway poll and cannot be brought back. They are not told, beyond the calls failing — and the audit log records that you did it."
-              : "The keys stop working at the next gateway poll and cannot be brought back; subscribing again issues new ones."
+            pending
+              ? "The request is withdrawn before the publisher decided it, and cannot be un-cancelled. Asking again means a new request."
+              : asPublisher
+                ? "Their keys stop working at the next gateway poll and cannot be brought back. They are not told, beyond the calls failing — and the audit log records that you did it."
+                : "The keys stop working at the next gateway poll and cannot be brought back; subscribing again issues new ones."
           }
           permission={
-            subscription.state !== "active"
-              ? { enabled: false, reason: "This subscription is already revoked." }
+            // Six of the seven states can be ended, one way or another — and the button used to
+            // read "already revoked" at all of them, including `pending`, where nothing had been
+            // granted to revoke, and `revoking`, where the request is in flight and not yet done.
+            !ENDABLE.includes(subscription.state)
+              ? {
+                  enabled: false,
+                  reason:
+                    subscription.state === "revoking"
+                      ? "This subscription is being revoked — the gateways have not stopped accepting its keys yet."
+                      : `This subscription is ${subscriptionChip(subscription.state).label.toLowerCase()}, so there is nothing left to end.`,
+                }
               : (subscription.capabilities ?? []).includes("delete")
                 ? ALLOWED
                 : {

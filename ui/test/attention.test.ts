@@ -61,7 +61,14 @@ describe("attention rendering", () => {
   });
 
   test("blockers come first and empty groups are not rendered", () => {
-    const groups = bySeverity([row("key-older-than-90-days"), row("no-route"), row("no-auth-policy")]);
+    // One code per severity, deliberately out of order: an ageing key is a warning, a missing
+    // route stops the API answering at all, and no concurrency ceiling is worth knowing and
+    // nothing more.
+    const groups = bySeverity([
+      row("key-ageing"),
+      row("no-route"),
+      row("no-concurrency-ceiling"),
+    ]);
     expect(groups.map((group) => group.severity)).toEqual(["blocker", "warning", "info"]);
     expect(bySeverity([row("no-route")]).map((group) => group.severity)).toEqual(["blocker"]);
     expect(bySeverity([])).toEqual([]);

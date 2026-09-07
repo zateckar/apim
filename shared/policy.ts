@@ -419,8 +419,28 @@ export interface PolicyDocument {
   [operationUnit: string]: unknown;
 }
 
-export const DEFAULT_TIMEOUT_MS = 30_000;
-export const MAX_TIMEOUT_MS = 120_000;
+/**
+ * The default is **120 s because that is what the APIM this platform replaces enforced**, and a
+ * migrated API whose timeout is not restated has to behave the way it behaved before. It is not a
+ * recommendation: a route that knows its backend should set its own, and most should set a much
+ * smaller one.
+ *
+ * The ceiling is 240 s **to accommodate legacy backends** — synchronous batch and mainframe-fronting
+ * services whose slowest legitimate call runs into minutes and which cannot be made to answer
+ * faster or to answer asynchronously. It is deliberately only twice the default rather than open:
+ * `timeoutMs` bounds the whole upstream exchange, and a waiting request is a *held* request — a
+ * client socket, an upstream socket and a slot, kept for the full timeout when a backend stops
+ * answering. `lintDocument` does that arithmetic on every route with no `concurrency` unit, and at
+ * these values the warning it prints is worth acting on rather than reading past: attach a
+ * concurrency ceiling to any route that raises its timeout, so one slow backend sheds instead of
+ * consuming the instance every other API on the gateway is sharing.
+ *
+ * A call that legitimately runs longer than four minutes is not a request-response call. The
+ * streaming lane is where it belongs: `passthrough.maxConnectionSec` allows 86 400 s, and
+ * `timeoutMs` does not bound a passthrough stream.
+ */
+export const DEFAULT_TIMEOUT_MS = 120_000;
+export const MAX_TIMEOUT_MS = 240_000;
 /** Deviation D8: JS RegExp backtracks where design section 5.6 assumed RE2. */
 export const MAX_PATTERN_LENGTH = 200;
 export const PATTERN_VALUE_MAX_BYTES = 1024;

@@ -557,9 +557,15 @@ POLICY_UNITS = auth.subscriptionKey · auth.basic · auth.jwt · auth.introspect
   apply — turning a policy off and losing its configuration are different things. It is subtracted
   in the control plane, in `activeDocument`, so a disabled unit never reaches the wire and no
   gateway has to know the concept exists.
-- Bounds: `DEFAULT_TIMEOUT_MS = 30_000`, `MAX_TIMEOUT_MS = 120_000`,
+- Bounds: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_TIMEOUT_MS = 240_000`,
   `MAX_PATTERN_LENGTH = 200`, `PATTERN_VALUE_MAX_BYTES = 1024`,
   `MAX_ROUTE_IN_FLIGHT = 100_000`.
+  The two timeouts are migration constraints rather than engineering preferences: 120 s is what the
+  APIM this platform replaces enforced, so an API brought across without restating its timeout
+  behaves as it did before, and 240 s is the headroom legacy backends were given — synchronous
+  batch and mainframe-fronting services that cannot answer faster or asynchronously. Both are high
+  enough that `concurrency` stops being optional in practice; see the note on `timeoutMs` in
+  `shared/policy.ts`.
 
 Unknown unit keys and unknown fields are **rejected**, so nothing passes through unread. The
 control plane validates on write; the data plane interprets.

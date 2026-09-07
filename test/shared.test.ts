@@ -2,7 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { canonicalJson, digestOf } from "../shared/canonical.ts";
 import { hashSubscriptionKey } from "../shared/keys.ts";
 import { canonicalIp, effectiveClientIp, ipInCidr } from "../shared/net.ts";
-import { lintPattern, validateDocument, validateUnit } from "../shared/policy.ts";
+import {
+  DEFAULT_TIMEOUT_MS,
+  lintDocument,
+  lintPattern,
+  MAX_TIMEOUT_MS,
+  validateDocument,
+  validateUnit,
+} from "../shared/policy.ts";
 import {
   joinBackend,
   hostKey,
@@ -44,6 +51,27 @@ describe("policy validator", () => {
         scope: "route",
       }),
     ).toEqual([]);
+  });
+
+  /*
+   * Both numbers are contractual rather than incidental. The default is the timeout the APIM this
+   * platform replaces enforced, so a migrated API that does not restate it keeps behaving as it
+   * did; the ceiling is the room legacy backends were given above it.
+   */
+  test("the timeout bounds are the migrated ones: 120s by default, 240s at most", () => {
+    expect(DEFAULT_TIMEOUT_MS).toBe(120_000);
+    expect(MAX_TIMEOUT_MS).toBe(240_000);
+    expect(validateUnit("timeoutMs", MAX_TIMEOUT_MS)).toEqual([]);
+    expect(validateUnit("timeoutMs", MAX_TIMEOUT_MS + 1)).toEqual([
+      "timeoutMs: expected an integer between 1 and 240000",
+    ]);
+    expect(validateUnit("timeoutMs", 0)).toHaveLength(1);
+  });
+
+  test("the lint states the default's own arithmetic, which is what most routes run on", () => {
+    // 200 calls a second × 120 s. Four times what the old 30 s default parked, which is the reason
+    // the comment on the constant tells anyone raising a timeout to attach a concurrency ceiling.
+    expect(lintDocument({})[0]).toContain("24000 requests held at once");
   });
 
   test("an unknown unit key is rejected: the vocabulary is closed", () => {

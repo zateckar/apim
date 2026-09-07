@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { DISABLED_KEY, disabledUnits } from "../../../shared/policy";
+import {
+  DEFAULT_TIMEOUT_MS,
+  DISABLED_KEY,
+  disabledUnits,
+  MAX_TIMEOUT_MS,
+} from "../../../shared/policy";
 import { Field, Modal, Notice } from "../components";
 import * as I from "./icons";
 
@@ -1061,15 +1066,24 @@ function UnitForm({
   if (unitKey === "timeoutMs") {
     return (
       <>
+        {/* Both bounds come from the vocabulary rather than being retyped here. The fallback was a
+            literal `30000` that stayed behind when the default moved, and there was no `max` at
+            all, so the ceiling was something you discovered from a 400 after saving. */}
         <Field label="Backend timeout (milliseconds)">
           <input
             type="number"
             min={1}
-            value={typeof value === "number" ? value : 30000}
+            max={MAX_TIMEOUT_MS}
+            value={typeof value === "number" ? value : DEFAULT_TIMEOUT_MS}
             onChange={(e) => onChange(num(e.target.value))}
           />
         </Field>
-        <p className="muted">The whole upstream exchange, retries included.</p>
+        <p className="muted">
+          The whole upstream exchange, retries included. Defaults to{" "}
+          {DEFAULT_TIMEOUT_MS / 1000}s — what the APIM this replaces enforced — and cannot exceed{" "}
+          {MAX_TIMEOUT_MS / 1000}s. Raising it holds a slot and two sockets for longer when a
+          backend stops answering, so attach a concurrency ceiling alongside it.
+        </p>
       </>
     );
   }

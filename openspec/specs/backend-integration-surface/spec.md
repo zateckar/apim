@@ -100,6 +100,19 @@ presents. Backends live in `binding`, per environment, **never in policy**.
 - THEN the request SHALL be failed with the timeout reported as such, distinguishable from an error
   the backend returned
 
+#### Scenario: The bounds are questioned
+
+- GIVEN `DEFAULT_TIMEOUT_MS` and `MAX_TIMEOUT_MS`
+- WHEN either is changed
+- THEN the default SHALL remain the timeout the predecessor APIM enforced, because an API migrated
+  without restating its timeout SHALL behave as it did before
+- AND the ceiling SHALL remain high enough for the legacy backends the estate has to carry —
+  synchronous batch and mainframe-fronting services that cannot answer faster or asynchronously
+- AND raising either SHALL be weighed against what a waiting request holds: a client socket, an
+  upstream socket and a slot, for the whole timeout, on every instance
+- AND a call that legitimately runs longer than the ceiling SHALL use the streaming lane, which
+  `timeoutMs` does not bound, rather than a larger ceiling
+
 ### Requirement: Implement backend credentials as named schemes
 
 Policy SHALL select a scheme by name; the gateway SHALL implement it; every reference SHALL resolve

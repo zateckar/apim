@@ -984,7 +984,18 @@ a { color: inherit; text-decoration: none; }
   font-weight: 600; font-size: 11px;
   font-family: var(--font-mono);
 }
-.app-picker-btn .meta { flex: 1; text-align: left; min-width: 0; }
+/* Two stacked lines, not two inline spans. Both of these held a name and a LeanIX id as bare
+   `<span>`s, so they ran together into `EAILeanIX: LX-eai` and then wrapped out of the sidebar.
+   `min-width: 0` is what lets the ellipsis below actually engage inside a flex row. */
+.app-picker-btn .meta,
+.app-picker-menu .opt .meta {
+  flex: 1;
+  min-width: 0;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
 /* App display names are uppercased uniformly so the picker reads
    the same regardless of how the backend stored each name (some
    teams register `EAI`, others `Skoda Auto`, others `mvis`). The
@@ -992,8 +1003,22 @@ a { color: inherit; text-decoration: none; }
 .app-picker-btn .meta .t { font-size: 13px; font-weight: 600; color: var(--fg); text-transform: uppercase; letter-spacing: 0.02em; }
 .app-picker-btn .meta .s { font-size: 11px; color: var(--fg-subtle); }
 .app-picker-btn .meta .app-leanix,
-.app-picker-menu .opt .app-leanix { font-size: 10.5px; color: var(--fg-subtle); font-family: var(--font-mono); margin-top: 1px; }
-.app-picker-btn .chev { color: var(--fg-subtle); }
+.app-picker-menu .opt .app-leanix { font-size: 10.5px; color: var(--fg-subtle); font-family: var(--font-mono); }
+/* A provisioned application is named by its identity-provider group, so the names are as long as
+   whatever the directory calls them and the sidebar is a fixed width. One line each, clipped. */
+.app-picker-btn .meta .t,
+.app-picker-btn .meta .app-leanix,
+.app-picker-menu .opt .n,
+.app-picker-menu .opt .app-leanix {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* The swatch and the tick are fixed furniture: a long name squeezes the text, never them. */
+.app-picker-btn .swatch,
+.app-picker-menu .opt .swatch { flex: 0 0 auto; }
+.app-picker-btn .chev { color: var(--fg-subtle); flex: 0 0 auto; }
 
 .app-picker-menu {
   position: absolute;
@@ -1021,7 +1046,9 @@ a { color: inherit; text-decoration: none; }
   display: grid; place-items: center;
   font-size: 10px; font-family: var(--font-mono); font-weight: 600;
 }
-.app-picker-menu .opt .n { font-size: 12.5px; font-weight: 500; text-transform: uppercase; letter-spacing: 0.02em; }
+/* Explicit `color`: `.opt` is a `<button>`, so without it the name inherits the UA's button
+   colour and the options read faint next to the closed button's `.t`. */
+.app-picker-menu .opt .n { font-size: 12.5px; font-weight: 500; color: var(--fg); text-transform: uppercase; letter-spacing: 0.02em; }
 .app-picker-menu .opt .s { font-size: 11px; color: var(--fg-subtle); }
 
 .nav-section { padding: 10px 12px 4px; }

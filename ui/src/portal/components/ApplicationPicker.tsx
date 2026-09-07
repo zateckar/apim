@@ -119,7 +119,9 @@ export function ApplicationPicker({
               }}
             >
               <span className="swatch">{initialsOf(application.name)}</span>
-              <span style={{ flex: 1, minWidth: 0 }}>
+              {/* The same two-line `meta` the closed button uses, so a name and its LeanIX id stack
+                  the same way in both places rather than depending on which one you are looking at. */}
+              <span className="meta">
                 <span className="n">{application.name}</span>
                 {application.leanixId && <span className="app-leanix">LeanIX: {application.leanixId}</span>}
               </span>

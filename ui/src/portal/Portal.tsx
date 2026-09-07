@@ -203,7 +203,14 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                   }
                 >
                   <I.Plus />
-                  Publish API
+                  {/* The button already carries the section into the wizard as `?kind=`; saying
+                      "Publish API" while doing so put the wrong noun on two of the three screens
+                      it appears on. The dashboard is the general case and keeps the general word. */}
+                  {section === "mcp"
+                    ? "Publish MCP server"
+                    : section === "a2a"
+                      ? "Publish A2A agent"
+                      : "Publish API"}
                 </button>
               )}
             </div>

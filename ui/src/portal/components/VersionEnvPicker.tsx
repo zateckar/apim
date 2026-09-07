@@ -106,33 +106,36 @@ export function VersionEnvPicker({
             <I.ChevDown size={12} />
           </span>
         </span>
-      ) : (
-        <label
-          className="version-picker"
-          data-multi={many ? "true" : "false"}
-          title={many ? "Choose a version" : "Only one version is published"}
-        >
+      ) : many ? (
+        <label className="version-picker" data-multi="true" title="Choose a version">
           <span className="version-picker-value">{selectedVersion || "(no version)"}</span>
-          {/* Present but hidden when there is one version, so the picker's width — and therefore
-              where the chevrons start — is identical on every row. */}
-          <span className="version-picker-chev" data-hidden={many ? undefined : "true"} aria-hidden="true">
+          <span className="version-picker-chev" aria-hidden="true">
             <I.ChevDown size={12} />
           </span>
-          {many && (
-            <select
-              className="version-picker-select"
-              value={selectedVersion}
-              aria-label="API version"
-              onChange={(event) => onSelectVersion(event.target.value)}
-            >
-              {versions.map((version) => (
-                <option key={version} value={version}>
-                  {version || "(no version)"}
-                </option>
-              ))}
-            </select>
-          )}
+          <select
+            className="version-picker-select"
+            value={selectedVersion}
+            aria-label="API version"
+            onChange={(event) => onSelectVersion(event.target.value)}
+          >
+            {versions.map((version) => (
+              <option key={version} value={version}>
+                {version || "(no version)"}
+              </option>
+            ))}
+          </select>
         </label>
+      ) : (
+        // One version is a fact, not a choice, so it is not a `label` — a `label` wrapping no
+        // control is a promise of something to operate that this row does not have. The chevron
+        // stays in the markup, hidden, so the picker's width — and therefore where the environment
+        // chevrons start — is identical on every row.
+        <span className="version-picker" data-multi="false" title="Only one version is published">
+          <span className="version-picker-value">{selectedVersion || "(no version)"}</span>
+          <span className="version-picker-chev" data-hidden="true" aria-hidden="true">
+            <I.ChevDown size={12} />
+          </span>
+        </span>
       )}
       <div className="env-buttons">
         {chain.map((environment, index) => {

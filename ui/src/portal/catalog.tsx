@@ -88,6 +88,13 @@ interface Family {
 
 const OTHER = "Other";
 
+/** What one row is called, on each of the three screens this component draws. */
+const NOUNS: Record<string, { one: string; many: string }> = {
+  apis: { one: "API", many: "APIs" },
+  mcp: { one: "MCP server", many: "MCP servers" },
+  a2a: { one: "A2A agent", many: "A2A agents" },
+};
+
 /**
  * Descending by version, comparing the numbers inside rather than the strings around them, so
  * `v10` sorts above `v9`. Anything without a number falls back to reverse-lexicographic, which is
@@ -228,20 +235,26 @@ export function Catalog({
   }, [filtered]);
 
   const filtering = Boolean(search.trim());
-  const title =
-    section === "mcp" ? "MCP servers" : section === "a2a" ? "A2A agents" : "Published APIs";
+  // One component draws three screens, so every noun on it is a variable. It used to say "API"
+  // throughout — the MCP Servers screen offered a box placeholdered "Search APIs…" and an empty
+  // state that told a reader with no MCP server to go and publish an API.
+  const noun = NOUNS[section] ?? NOUNS.apis!;
+  const count = (n: number) => `${n} ${n === 1 ? noun.one : noun.many}`;
 
   return (
     <>
       <Panel
-        title={title}
+        // The heading says the one thing the shell's title and purpose cannot: how many there are,
+        // and — while a search is narrowing them — how many of how many. Naming the section again
+        // here is what it used to do, and the reader had just read that in the `<h1>` above it.
+        title={filtering ? `${filtered.length} of ${count(families.length)}` : count(families.length)}
         className="workspace-catalog"
         actions={
           <div className="catalog-search">
             <input
-              aria-label="Search this application's APIs"
+              aria-label={`Search this application's ${noun.many}`}
               type="search"
-              placeholder="Search APIs…"
+              placeholder={`Search ${noun.many}…`}
               value={search}
               onChange={(event) => setSearch(event.target.value)}
             />
@@ -265,11 +278,13 @@ export function Catalog({
             />
           ) : (
             <EmptyState
-              title={`${s.applicationName(s.application)} has published nothing here yet`}
+              title={`${s.applicationName(s.application)} has published no ${noun.many} yet`}
               detail="Publishing takes a definition, an address and a backend to forward to, and puts the result in the first environment of the chain."
               action={
                 <button className="btn sm" onClick={() => go(`/${s.application}/publish`)}>
-                  Publish an API
+                  {/* All three are read letter-first — "an API", "an MCP server", "an A2A agent" —
+                      so the article is a constant rather than a fourth field on the noun. */}
+                  Publish an {noun.one}
                 </button>
               }
             />
@@ -295,9 +310,7 @@ export function Catalog({
                     <span className="swatch">{group.name.slice(0, 2).toUpperCase()}</span>
                     <span className="meta">
                       <span className="n">{group.name}</span>
-                      <span className="s">
-                        {group.families.length} {group.families.length === 1 ? "API" : "APIs"}
-                      </span>
+                      <span className="s">{count(group.families.length)}</span>
                     </span>
                     <I.ChevDown size={14} className={`chev ${open ? "rot" : ""}`} />
                   </button>

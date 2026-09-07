@@ -465,13 +465,27 @@ function visibleResources(ctx: Ctx): { rows: ResourceRow[]; ceilingHit: boolean 
   return { rows: all.filter((row) => isVisible(ctx, row)), ceilingHit: all.length >= RANK_CEILING };
 }
 
+/**
+ * In promotion-chain order — the same reason the facets are, one screen up: dev → test → prod is
+ * how the estate is read, and the whole point of the row of environment pills on a catalogue card
+ * is to show how far along the chain something has got. `SELECT DISTINCT` returns whatever order
+ * the rows happen to be in, which put `dev · prod · test` on the card and left a reader to work
+ * out that the middle one is the last stage. An environment outside the configured chain still
+ * appears, at the end, because dropping it would understate where an API is live.
+ */
 function liveEnvironments(ctx: Ctx, resourceId: string): string[] {
-  return ctx.app.db
+  const live = ctx.app.db
     .query<{ environment: string }, [string]>(
       "SELECT DISTINCT environment FROM release WHERE resource_id = ? AND state = 'converged'",
     )
     .all(resourceId)
     .map((entry) => entry.environment);
+  const chain = ctx.app.config.promotionChain;
+  const rank = (environment: string) => {
+    const index = chain.indexOf(environment);
+    return index === -1 ? chain.length : index;
+  };
+  return live.sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
 }
 
 // --------------------------------------------------------------------------- projections

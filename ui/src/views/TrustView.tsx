@@ -8,7 +8,16 @@ import {
   type TlsExceptionRow,
   type User,
 } from "../api";
-import { Panel, DangerZone, TextField, Link, Notice, useAction, useAsync } from "../components";
+import {
+  Panel,
+  DangerZone,
+  EmptyState,
+  TextField,
+  Link,
+  Notice,
+  useAction,
+  useAsync,
+} from "../components";
 import { ALLOWED } from "../lib/capabilities";
 import { TrustAnchors } from "./TrustAnchors";
 
@@ -100,41 +109,57 @@ function Certificates({ user, environment, applicationId }: { user: User; enviro
       )}
 
       <Panel
-        title={`Certificates in ${environment}`}
+        title={`Certificates in ${environment.toUpperCase()}`}
         hint="Uploaded once, held encrypted under the KEK, and handed only to a live gateway instance over its own channel. The private key is never readable back through this API — not by you, not by an admin."
       >
-        <table>
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Subject</th>
-              <th>Issuer</th>
-              <th>Expires</th>
-              <th>Thumbprint</th>
-              <th>Used by</th>
-              <th />
-            </tr>
-          </thead>
-          <tbody>
-            {items.map((row) => (
-              <CertificateRowView key={row.id} row={row} user={user} reload={certificates.reload} />
-            ))}
-            {items.length === 0 && (
+        {/* An empty table used to be seven column headings over one grey sentence in a `<td>`. The
+            headings name columns that are not there, and the sentence is an empty state written
+            out longhand without the one thing an empty state owes the reader: what to do next. */}
+        {items.length === 0 ? (
+          <EmptyState
+            title={`No client certificates in ${environment.toUpperCase()}`}
+            detail="A binding only needs one if its backend asks for mutual TLS. Uploading it here is what makes it available to choose on a backend."
+            action={
+              <button className="ghost small" onClick={() => setUploading(true)}>
+                Upload a certificate
+              </button>
+            }
+          />
+        ) : (
+          <table>
+            <thead>
               <tr>
-                <td colSpan={7} className="muted">
-                  No client certificates in {environment}. A binding only needs one if its backend
-                  asks for mutual TLS.
-                </td>
+                <th>Name</th>
+                <th>Subject</th>
+                <th>Issuer</th>
+                <th>Expires</th>
+                <th>Thumbprint</th>
+                <th>Used by</th>
+                <th />
               </tr>
-            )}
-          </tbody>
-        </table>
+            </thead>
+            <tbody>
+              {items.map((row) => (
+                <CertificateRowView
+                  key={row.id}
+                  row={row}
+                  user={user}
+                  reload={certificates.reload}
+                />
+              ))}
+            </tbody>
+          </table>
+        )}
 
-        <div className="inline" style={{ marginTop: 12 }}>
-          <button className="ghost small" onClick={() => setUploading(!uploading)}>
-            {uploading ? "Cancel" : "Upload a certificate"}
-          </button>
-        </div>
+        {/* With rows above, the button is how you add another; with none, the empty state already
+            offered it and this would be the same control twice on one card. */}
+        {(items.length > 0 || uploading) && (
+          <div className="inline" style={{ marginTop: 12 }}>
+            <button className="ghost small" onClick={() => setUploading(!uploading)}>
+              {uploading ? "Cancel" : "Upload a certificate"}
+            </button>
+          </div>
+        )}
         {uploading && (
           <UploadCertificate
             owner={applicationId}

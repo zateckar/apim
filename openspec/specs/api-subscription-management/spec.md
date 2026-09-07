@@ -23,6 +23,17 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN the product SHALL contain only that application's own APIs
 - AND the product name SHALL be unique across the estate
 
+#### Scenario: What is in a product is chosen
+
+- GIVEN the owner editing or creating a product
+- WHEN the membership control renders
+- THEN it SHALL be a list of checkboxes, one per candidate API, with a count of how many are ticked
+- AND it SHALL NOT be a `<select multiple>`
+- AND the reason SHALL be that removing an API takes it away from every subscriber at the next
+  gateway poll, while a multi-select clears its entire selection on any un-modified click, renders
+  the selection in a grey that all but disappears when the control is not focused, and offers the
+  reader nothing that distinguishes "this product is empty" from "I have just lost what was in it"
+
 #### Scenario: A product is deleted
 
 - GIVEN a product with active subscriptions
@@ -153,6 +164,17 @@ who may see a key, and what each side of the relationship is allowed to do to th
   untouched
 - AND the reason SHALL be that two slots are what makes a rotation possible without an outage
 - AND rotating a subscription that is not active SHALL be refused with `409`
+
+#### Scenario: A rotation is asked for in the portal
+
+- GIVEN the dialog that reveals a subscription's keys
+- WHEN rotation is offered there
+- THEN it SHALL ask for confirmation before rotating, naming what stops working
+- AND the confirmation SHALL NOT require the object's name to be typed, because nothing is being
+  deleted
+- AND the reason SHALL be that rotation is irreversible and stops every caller holding the old key
+  at once, and that this is the dialog people open in order to *read* a key — so a single unguarded
+  click sat beside the value they came for
 
 #### Scenario: A rotated key reaches the fleet
 

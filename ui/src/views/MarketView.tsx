@@ -359,9 +359,12 @@ function ListingCard({ item, onTag }: { item: MarketCard; onTag: (tag: string) =
           {item.environments.length === 0 ? (
             <span className="badge warn">not published</span>
           ) : (
+            /* Upper case, like every other environment name in the portal — the picker's chevrons,
+               the page head's switcher, the certificates panel. The control plane returns them in
+               promotion-chain order, so the row reads DEV → TEST → PROD. */
             item.environments.map((environment) => (
               <span key={environment} className="pill ok">
-                {environment}
+                {environment.toUpperCase()}
               </span>
             ))
           )}

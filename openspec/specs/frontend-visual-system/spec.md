@@ -260,6 +260,33 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - THEN it SHALL keep the branded "liquid" dual-pill treatment, which is one of the two things a
   returning user recognises the portal by
 
+#### Scenario: A button written in the older vocabulary is rendered
+
+- GIVEN a screen under `views/`, written with `button`, `button.ghost`, `button.danger` or
+  `button.small` rather than with `.btn`
+- WHEN it renders inside the branded shell
+- THEN it SHALL still carry the shell's button chrome — a border, a background and padding
+- AND the reason SHALL be that `brand.css` resets every `button` to none of those, because the shell
+  builds its nav items, tabs, card heads and icon buttons out of bare elements; `styles.css` loads
+  first, so the reset won every tie and sixteen of the routes drew their buttons as flat text
+  indistinguishable from the sentence above them
+- AND the restoration SHALL name those four selectors exactly rather than match "every button that
+  is not a `.btn`", because the facets, the status chips and the fold headers are buttons that carry
+  their own chrome, and a `:not()` list of everything to be spared goes silently wrong as screens
+  are added
+- AND it SHALL NOT restore emphasis with the chrome: a bare `button` was the accent-filled primary
+  in the older vocabulary, and a form carrying six of those would contradict the one-primary rule
+  above, so the base is neutral and a screen promotes its dominant action explicitly
+
+#### Scenario: A control that operates nothing is rendered
+
+- GIVEN a value the reader cannot change — a version picker with one version, a count, a state
+- WHEN it renders
+- THEN it SHALL NOT be a `label`, a `select` or a button
+- AND the reason SHALL be that each of those is a promise of something to operate, and a reader who
+  accepts the promise and finds nothing there concludes the control is broken rather than that the
+  choice does not exist
+
 ### Requirement: Use one form-field shape and one editor
 
 #### Scenario: A field is rendered

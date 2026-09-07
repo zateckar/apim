@@ -96,6 +96,18 @@ They are two lists because they answer two questions, and each is exactly one sc
 - AND the reason SHALL be that a listing which could disagree with the thing it lists would be
   worse than no listing
 
+#### Scenario: A listing's environments are ordered
+
+- GIVEN a listing live in more than one environment
+- WHEN its environments are returned
+- THEN they SHALL be ordered by the configured promotion chain, so the row reads dev → test → prod
+- AND an environment that is not in the chain SHALL still appear, after those that are, rather than
+  be dropped — which would understate where the API is live
+- AND the reason SHALL be that the row of environments answers "how far along the chain has this
+  got"; in the order the rows happen to come back it read `dev · prod · test` and left the reader
+  to work out that the middle pill is the last stage
+- AND the same ordering SHALL apply to the environment facets, which already used it
+
 ### Requirement: Group the catalogue by domain
 
 #### Scenario: The Catalog screen renders

@@ -241,7 +241,13 @@ describe("spec normalization", () => {
     expect(format).toBe("swagger-2.0");
     expect(model.servers).toContain("https://example.test/v2");
     expect(model.operations.map((o) => `${o.method} ${o.path}`).sort()).toEqual([
+      "GET /a",
+      "GET /b",
+      "GET /c",
+      "GET /pet",
+      "GET /pet/{petId}",
       "GET /store/inventory",
+      "GET /x",
       "POST /pet",
     ]);
   });

@@ -248,7 +248,21 @@ export const MINI_SPEC = {
   schemes: ["https"],
   paths: {
     "/store/inventory": { get: { operationId: "getInventory", responses: { "200": { description: "ok" } } } },
-    "/pet": { post: { operationId: "addPet", responses: { "200": { description: "ok" } } } },
+    "/pet": {
+      post: { operationId: "addPet", responses: { "200": { description: "ok" } } },
+      get: { operationId: "listPets", responses: { "200": { description: "ok" } } },
+    },
+    "/pet/{petId}": { get: { operationId: "getPet", responses: { "200": { description: "ok" } } } },
+    /*
+     * The throwaway paths the fixtures reach for when the test is about something other than
+     * routing — a rate limit's second and third call, a header rule, a breaker. They have to be
+     * *declared* now that the gateway refuses a path its contract does not name, and declaring
+     * them is more honest than the wildcard that would hide which ones a test actually uses.
+     */
+    "/x": { get: { operationId: "getX", responses: { "200": { description: "ok" } } } },
+    "/a": { get: { operationId: "getA", responses: { "200": { description: "ok" } } } },
+    "/b": { get: { operationId: "getB", responses: { "200": { description: "ok" } } } },
+    "/c": { get: { operationId: "getC", responses: { "200": { description: "ok" } } } },
   },
 };
 

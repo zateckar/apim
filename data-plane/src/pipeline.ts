@@ -755,6 +755,23 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       operation = matched.operation;
       pathParams = matched.params;
       for (const [name, value] of Object.entries(pathParams)) templateCtx[`path.${name}`] = value;
+    } else {
+      /*
+       * The contract is the whole point. SOAP refuses a body element it does not declare, and MCP
+       * and A2A refuse a method they do not declare — REST used to be the one variant that let
+       * anything under the base path through to the backend, unmatched and therefore unvalidated,
+       * because `wantsBodyValidation` needs an operation. That made a published API a blanket proxy
+       * for its backend's entire surface: an owner who declared `/pets/{petId}` was also publishing
+       * `/pet/{petId}`, `/admin`, and whatever else the backend happened to answer.
+       *
+       * The escape hatch is the branch condition, not a flag: a route whose definition declares no
+       * operations at all has no contract to enforce and still forwards everything.
+       */
+      return deny(
+        404,
+        `"${req.method} ${relativePath}" is not an operation this API declares`,
+        "no-operation",
+      );
     }
   }
 

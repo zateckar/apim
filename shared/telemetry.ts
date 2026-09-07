@@ -61,6 +61,14 @@ export const OUTCOMES = [
   "bad-credential",
   /** A JSON-RPC method or tool this contract does not declare (plan sections 9, 10). */
   "rpc-unknown-method",
+  /**
+   * A path and method under a REST route's base path that its definition does not declare. The
+   * same diagnosis as `rpc-unknown-method`, for the variant that addresses operations by URL —
+   * kept separate from `no-route`, which means no route matched the host and path at all. On a
+   * dashboard they are different problems: `no-route` is usually a caller with a stale address,
+   * `no-operation` is usually a definition that has fallen behind its backend.
+   */
+  "no-operation",
   /** The upstream answered a JSON-RPC error: a tool saying "no" is not the gateway failing. */
   "rpc-error",
   /** Served from the per-instance response cache. */

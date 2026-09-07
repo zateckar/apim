@@ -36,6 +36,29 @@ afterEach(() => {
 
 const CLOSED_WINDOW = windowStartOf(Date.now() - 120_000);
 
+/**
+ * A definition whose single operation is one path segment, for the tests below that encode what
+ * the backend should do into the URL — a status to return, an encoding to use. The default fixture
+ * declares named paths, and the gateway refuses a path its contract does not declare, so these
+ * need a contract that says "one segment, whatever it is".
+ */
+const STATUS_IN_PATH_SPEC = {
+  swagger: "2.0",
+  info: { title: "status-in-path", version: "1.0.0" },
+  host: "example.test",
+  basePath: "/",
+  schemes: ["https"],
+  paths: {
+    "/{segment}": {
+      get: {
+        operationId: "bySegment",
+        parameters: [{ name: "segment", in: "path", required: true, type: "string" }],
+        responses: { "200": { description: "ok" } },
+      },
+    },
+  },
+};
+
 function report(count: number, overrides: Record<string, unknown> = {}): TelemetryReport {
   const buckets = emptyBuckets();
   buckets[6] = count;
@@ -480,6 +503,7 @@ describe("the gateway counts what it serves", () => {
       await publishApi(cp, {
         backendUrl: backend.url,
         basePath: "/sized",
+        spec: STATUS_IN_PATH_SPEC,
         policy: { rewrite: { stripBasePath: false } },
       });
       const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "sized" });
@@ -589,6 +613,10 @@ describe("the gateway counts what it serves", () => {
       const api = await publishApi(cp, {
         backendUrl: backend.url,
         basePath: "/folding",
+        // Its own definition: the status is a path parameter here, and the gateway refuses a path
+        // its contract does not declare, so `/{status}` is what makes these four calls reach the
+        // backend at all.
+        spec: STATUS_IN_PATH_SPEC,
         policy: { rewrite: { stripBasePath: true } },
       });
       expect(api.resourceId).toBeTruthy();

@@ -834,6 +834,22 @@ describe("headers, rewrite and templates", () => {
     }
   });
 
+  test("a path the definition does not declare is refused, not proxied", async () => {
+    const w = await world({});
+    try {
+      // `/orders` is declared; `/order` and `/orders/x/y` are not, and neither is DELETE on either.
+      const response = await get(w, "/order");
+      expect(response.status).toBe(404);
+      expect(await response.text()).toContain("is not an operation this API declares");
+      expect((await get(w, "/orders/ord_1/history")).status).toBe(404);
+      expect((await get(w, "/orders", { method: "DELETE" })).status).toBe(404);
+      // Nothing reached the backend: the refusal is the gateway's, before the proxy step.
+      expect(w.backend.requests).toHaveLength(0);
+    } finally {
+      w.stop();
+    }
+  });
+
   test("stripBasePath: false is the opt-out, for a backend mounted where the gateway publishes", async () => {
     const w = await world({ rewrite: { stripBasePath: false } });
     try {

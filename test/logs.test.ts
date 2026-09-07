@@ -8,7 +8,7 @@ import {
   type LogQuery,
 } from "../control-plane/src/logs.ts";
 import { resetLogSearchCache } from "../control-plane/src/api/logs.ts";
-import { makeCp, publishApi, startBackend, type TestCp } from "./helpers.ts";
+import { makeCp, MINI_SPEC, publishApi, startBackend, type TestCp } from "./helpers.ts";
 
 /**
  * The Logs capability, which is a *read* over an external index and nothing else.
@@ -22,6 +22,11 @@ import { makeCp, publishApi, startBackend, type TestCp } from "./helpers.ts";
 let cp: TestCp;
 let backend: ReturnType<typeof startBackend>;
 let published: Awaited<ReturnType<typeof publishApi>>;
+
+/** Every `operationId` the published fixture declares, read off the fixture itself. */
+const OPERATION_IDS = Object.values(MINI_SPEC.paths).flatMap((methods) =>
+  Object.values(methods as Record<string, { operationId: string }>).map((op) => op.operationId),
+);
 
 beforeAll(async () => {
   backend = startBackend();
@@ -125,7 +130,9 @@ describe("the simulated index", () => {
     for (const entry of items) {
       expect(entry.path.startsWith(published.basePath)).toBe(true);
       expect(entry.resourceName).toBe(published.name);
-      if (entry.operationId) expect(["getInventory", "addPet"]).toContain(entry.operationId);
+      // Derived from the fixture rather than restated, which is what this test is about: the two
+      // hard-coded names it used to carry went stale the moment the fixture grew an operation.
+      if (entry.operationId) expect(OPERATION_IDS).toContain(entry.operationId);
     }
   });
 

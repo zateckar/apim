@@ -223,6 +223,43 @@ that sent it is trusted.
 - WHEN it is answered
 - THEN it SHALL be a `404` in RFC-7807 shape
 
+### Requirement: Serve only the operations the definition declares
+
+A route publishes a contract, not a backend. Matching the base path decides *which* API a request is
+for; it does not decide that the request is one the API offers. Forwarding an unmatched path would
+make every published API a blanket proxy for its backend's whole surface, and would forward it
+unvalidated as well, since validation has no schema without an operation.
+
+#### Scenario: A path under the base path is not declared
+
+- GIVEN a REST route whose definition declares `GET /pets/{petId}`
+- WHEN `GET /pet/1` arrives under the same base path
+- THEN it SHALL be refused with `404` in RFC-7807 shape, naming the method and the relative path
+- AND the outcome SHALL be `no-operation`, distinct from `no-route`, which means no route matched
+  the host and path at all
+- AND no backend SHALL be called
+
+#### Scenario: A declared path is called with a method it does not declare
+
+- GIVEN the same route
+- WHEN `DELETE /pets/1` arrives and only `GET` is declared for it
+- THEN it SHALL be refused the same way, because an operation is a method and a path together
+
+#### Scenario: The definition declares no operations at all
+
+- GIVEN a route whose definition yields no operations
+- WHEN any path under its base path arrives
+- THEN it SHALL be forwarded, because there is no contract to enforce
+- AND this SHALL be the only way to publish a pass-through route
+
+#### Scenario: The variants agree
+
+- GIVEN a SOAP route refusing an undeclared body element, and an MCP or A2A route refusing an
+  undeclared method
+- WHEN a REST route meets an undeclared path
+- THEN it SHALL refuse too, so that "this API declares what it serves" holds for every variant
+  rather than three of the four
+
 ### Requirement: Forward to the backend by concatenation
 
 #### Scenario: A backend carries a path segment

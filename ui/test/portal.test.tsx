@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Portal } from "../src/portal/Portal.tsx";
-import { nextVersion, versionedPath, versionRefusal, editorTab } from "../src/portal/apis.tsx";
+import {
+  definitionChanged,
+  editorTab,
+  nextVersion,
+  prettyDefinition,
+  versionedPath,
+  versionRefusal,
+} from "../src/portal/apis.tsx";
 import { addressOf, navigable, ROUTES } from "../src/lib/routes.ts";
 import { portalVersion } from "../src/lib/changelog.ts";
 import { currentVersion, parseChangeLog } from "../../shared/changelog.ts";
@@ -217,5 +224,45 @@ describe("the portal shell", () => {
     // Every one of the six is a mock this phase; a shell that looked production-real would be the
     // one dishonest surface in the portal.
     expect(asAdmin.html).toContain("Integrations simulated");
+  });
+});
+
+/**
+ * The definition the workspace opens on, and what counts as having edited it.
+ *
+ * A normalised OpenAPI document is stored minified, so the editor used to open on one very long
+ * line. Indenting it is only safe if the save path stops treating whitespace as a change — which
+ * it did, so an indent-on-open would have cut a new revision on every save.
+ */
+describe("the definition a publisher reads", () => {
+  const minified = '{"openapi":"3.0.0","info":{"title":"checkout","version":"1.0.0"}}';
+
+  test("stored JSON is indented for reading", () => {
+    const pretty = prettyDefinition(minified, "rest");
+    expect(pretty.split("\n").length).toBeGreaterThan(4);
+    expect(JSON.parse(pretty)).toEqual(JSON.parse(minified));
+  });
+
+  test("YAML is left exactly as its author wrote it", () => {
+    // Re-emitting YAML restyles quoting, key order and block scalars. A viewer does not do that.
+    const yaml = "openapi: 3.0.0\ninfo:\n  title: checkout\n";
+    expect(prettyDefinition(yaml, "rest")).toBe(yaml);
+  });
+
+  test("a WSDL and an unparseable document are untouched, so a broken one can still be repaired", () => {
+    const wsdl = "<definitions><service/></definitions>";
+    expect(prettyDefinition(wsdl, "soap")).toBe(wsdl);
+    expect(prettyDefinition("{ not json", "rest")).toBe("{ not json");
+  });
+
+  test("indenting is not editing: only a change to the document counts", () => {
+    expect(definitionChanged(prettyDefinition(minified, "rest"), minified, "rest")).toBe(false);
+    const edited = JSON.stringify({ ...JSON.parse(minified), paths: {} }, null, 2);
+    expect(definitionChanged(edited, minified, "rest")).toBe(true);
+  });
+
+  test("a WSDL compares as text, because there is nothing here that parses it", () => {
+    expect(definitionChanged("<a/>", " <a/> ", "soap")).toBe(false);
+    expect(definitionChanged("<a/>", "<b/>", "soap")).toBe(true);
   });
 });

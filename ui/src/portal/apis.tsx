@@ -738,6 +738,44 @@ export function editorTab(asked: string | null | undefined): string {
   return EDITOR_TABS.includes(named) ? named : "definition";
 }
 
+/**
+ * The definition as a person should read it.
+ *
+ * A normalised OpenAPI document is stored minified, so the editor opened on one very long line —
+ * a 700-character wall with a single line number beside it, in a pane tall enough for forty lines.
+ * Nothing was wrong with the editor; it had never been given anything to indent.
+ *
+ * Only strict JSON is reformatted. A YAML definition is left exactly as its author wrote it,
+ * because re-emitting YAML restyles quoting, key order and block scalars, and "we tidied your file"
+ * is not a thing a viewer should do. Anything that does not parse is returned untouched so a
+ * malformed definition can still be seen and repaired.
+ */
+export function prettyDefinition(text: string, kind: string): string {
+  if (kind === "soap" || !text.trim().startsWith("{")) return text;
+  try {
+    return JSON.stringify(JSON.parse(text), null, 2);
+  } catch {
+    return text;
+  }
+}
+
+/**
+ * Whether the definition in the editor differs from the stored one **as a document**.
+ *
+ * This used to be `spec !== d.definition`, which made every save that followed a reformat — now
+ * every save at all, since the editor indents on open — upload the definition again and cut a new
+ * revision that said nothing. Whitespace is not a change to an API.
+ */
+export function definitionChanged(edited: string, stored: string, kind: string): boolean {
+  if (kind === "soap") return edited.trim() !== (stored ?? "").trim();
+  try {
+    return JSON.stringify(parse(edited)) !== JSON.stringify(parse(stored ?? ""));
+  } catch {
+    // Unparseable on either side: fall back to the text, so a broken edit still counts as one.
+    return edited !== stored;
+  }
+}
+
 function EditorForm({
   data: d,
   session: s,
@@ -774,7 +812,7 @@ function EditorForm({
     [rule, setRule] = useState<string>(d.settings?.backend?.rule ?? "failover"),
     [domain, setDomain] = useState<string>(d.resource.domain ?? ""),
     [subdomain, setSubdomain] = useState<string>(d.resource.subdomain ?? ""),
-    [spec, setSpec] = useState(d.definition ?? ""),
+    [spec, setSpec] = useState(() => prettyDefinition(d.definition ?? "", d.resource.kind)),
     [policy, setPolicy] = useState(
       JSON.stringify(d.settings?.policy ?? {}, null, 2),
     ),
@@ -1252,7 +1290,7 @@ function EditorForm({
                   }
                   if (policy !== JSON.stringify(d.settings.policy, null, 2))
                     body.policy = JSON.parse(policy);
-                  if (spec !== d.definition)
+                  if (definitionChanged(spec, d.definition, d.resource.kind))
                     body.spec = d.resource.kind === "soap" ? spec : parse(spec);
                   await command(
                     `/api/resources/${d.resource.id}/configure`,
@@ -1273,9 +1311,15 @@ function EditorForm({
                 Nothing to save: this API is not in {s.environment.toUpperCase()}.
               </span>
             ) : !domain ? (
+              /* The blocker is a field on another panel, so the reason carries the way there.
+                 It used to say "choose a domain on the properties tab first" and leave the reader
+                 to find it — a disabled button explaining itself by naming somewhere else is only
+                 half an explanation. */
               <span className="muted">
-                Choose a domain on the properties tab first — it is the first
-                segment of the address.
+                <button type="button" className="linklike" onClick={() => setTab("properties")}>
+                  Choose a domain
+                </button>{" "}
+                first — it is the first segment of the address.
               </span>
             ) : null}
           </div>

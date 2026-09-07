@@ -1,12 +1,22 @@
 // Client-side validator for the API definition editor. Catches the structural
-// issues APIM rejects (bad version field, missing info.title/version, missing
-// paths, malformed operations, bad URLs) before the user pays the round-trip.
-// Also handles JSON↔YAML detection and conversion.
+// issues the control plane refuses (bad version field, missing info.title or
+// info.version, missing paths, malformed operations, bad URLs) before the user
+// pays the round-trip. Also handles JSON↔YAML detection and conversion.
 //
 // Trade-off: this is structural validation only — no full $ref resolution, no
-// JSON-schema check of every parameter. APIM itself is the source of truth.
-// We aim to surface the 90% of mistakes that have an obvious fix, not to
-// replace the server check.
+// JSON-schema check of every parameter. `control-plane/src/normalize.ts` is the
+// source of truth. We aim to surface the mistakes that have an obvious fix, not
+// to replace the server check.
+//
+// This file was ported from the Azure-APIM-backed predecessor and, until it was
+// wired to a screen, nothing had ever read its messages. They described what
+// *Azure* would accept: a "tested matrix" of 3.0.0–3.0.3, OpenAPI 3.1 supported
+// "with limitations", `paths: {}` as something "APIM accepts". None of that is
+// true here — `resources.ts` accepts `swagger-2.0`, `openapi-3.0` and
+// `openapi-3.1` alike, and normalises all three to one model. The rules below
+// are this system's, and the two that actually get a document refused were the
+// two the Azure-era validator never checked: it must be JSON, and it must be
+// self-contained.
 
 import * as YAML from 'yaml';
 
@@ -150,34 +160,14 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
       message: 'Missing `openapi` (3.x) or `swagger` (2.0) version field.'
     });
   } else if (openapi) {
-    // Azure APIM "Restrictions on API import" documents support for OpenAPI
-    // 3.0 up to 3.0.3 and OpenAPI 3.1 with feature caveats. Anything else is
-    // technically a 3.x string but lives outside Azure's tested matrix — we
-    // warn rather than error so the user can still attempt the import.
+    // 3.0 and 3.1 are both first-class: `normalize.ts` reads either into the same
+    // model and records the schema dialect rather than rewriting the schemas, so
+    // there is no fidelity argument for preferring one. Anything that is not 3.x
+    // is refused outright.
     if (!/^3\.\d+(\.\d+)?$/.test(openapi)) {
       diagnostics.push({
         severity: 'error',
         message: `\`openapi\` must be a 3.x version string (got "${openapi}").`,
-        path: ['openapi']
-      });
-    } else if (/^3\.0\.([0-3])$/.test(openapi)) {
-      // Within the recommended range — no diagnostic.
-    } else if (/^3\.1(\.\d+)?$/.test(openapi)) {
-      diagnostics.push({
-        severity: 'warning',
-        message: `OpenAPI 3.1 (got "${openapi}") is supported by Azure APIM with limitations — 3.1-specific constructs (webhooks, JSON Schema 2020-12 keywords, type arrays, polymorphic discriminators) may be normalised or dropped on import. Use 3.0.0–3.0.3 for highest fidelity.`,
-        path: ['openapi']
-      });
-    } else if (/^3\.0(\.\d+)?$/.test(openapi)) {
-      diagnostics.push({
-        severity: 'warning',
-        message: `OpenAPI ${openapi} is outside Azure APIM's tested range (3.0.0–3.0.3). Import may fail or features may be lost.`,
-        path: ['openapi']
-      });
-    } else {
-      diagnostics.push({
-        severity: 'warning',
-        message: `OpenAPI ${openapi} is outside Azure APIM's documented support (3.0.0–3.0.3 or 3.1.x).`,
         path: ['openapi']
       });
     }
@@ -185,7 +175,7 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
     if (swagger !== '2.0') {
       diagnostics.push({
         severity: 'error',
-        message: `\`swagger\` must be exactly "2.0" (got "${swagger}"). Azure APIM does not import Swagger 1.x.`,
+        message: `\`swagger\` must be exactly "2.0" (got "${swagger}"). Swagger 1.x is not accepted — convert it to 2.0 or to OpenAPI 3.`,
         path: ['swagger']
       });
     }
@@ -200,9 +190,11 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
     validateSwaggerHost(root, diagnostics);
   }
 
-  // Components / definitions: not required, but a common APIM gotcha is
-  // referencing a schema that doesn't exist. Catching every $ref is overkill
-  // here, but warn if components/definitions look malformed at the top level.
+  validateSelfContained(root, diagnostics);
+
+  // Components / definitions: not required, but referencing a schema that does
+  // not exist is a common mistake. Catching every `$ref` target is overkill
+  // here, but a malformed container at the top level is worth saying.
   if (root.components !== undefined && !isPlainObject(root.components)) {
     diagnostics.push({
       severity: 'error',
@@ -219,6 +211,39 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
   }
 
   return diagnostics;
+}
+
+/**
+ * Every `$ref` must point inside the document.
+ *
+ * `control-plane/src/normalize.ts` refuses anything else outright — an external
+ * `$ref` is an SSRF vector and an availability dependency on somebody else's web
+ * server at validation time (design section 5.3). It is the single most common
+ * reason a real-world document is rejected, because exported specs routinely
+ * split their schemas across files, and until now the editor said nothing about
+ * it: the author found out from a 400 at publish.
+ */
+function validateSelfContained(
+  node: unknown,
+  diagnostics: SpecDiagnostic[],
+  path: (string | number)[] = []
+): void {
+  if (Array.isArray(node)) {
+    node.forEach((item, index) => validateSelfContained(item, diagnostics, [...path, index]));
+    return;
+  }
+  if (!isPlainObject(node)) return;
+  for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
+    if (key === '$ref' && typeof value === 'string' && !value.startsWith('#/')) {
+      diagnostics.push({
+        severity: 'error',
+        message: `\`$ref\` points outside this document ("${value}"). Uploaded definitions must be self-contained — inline the target, or bundle the document before importing it.`,
+        path: [...path, key]
+      });
+      continue;
+    }
+    validateSelfContained(value, diagnostics, [...path, key]);
+  }
 }
 
 function validateInfo(info: unknown, diagnostics: SpecDiagnostic[]) {
@@ -260,7 +285,7 @@ function validatePaths(paths: unknown, diagnostics: SpecDiagnostic[]) {
   if (entries.length === 0) {
     diagnostics.push({
       severity: 'warning',
-      message: '`paths` is empty — APIM accepts this, but the API will expose no endpoints.',
+      message: '`paths` is empty — this publishes, but the API will expose no operations, and the gateway refuses a call to anything the definition does not declare.',
       path: ['paths']
     });
     return;
@@ -531,6 +556,48 @@ export function lintSource(text: string): { format: SpecFormat; diagnostics: Spe
   }
   const structural = validateOpenApi(parsed.doc);
   return { format: parsed.format, diagnostics: [...parsed.diagnostics, ...structural], doc: parsed.doc };
+}
+
+/**
+ * The same, plus the rule that has nothing to do with the document's contents:
+ * `parseSpecDocument` refuses anything that does not start with `{`.
+ *
+ * This is separate from `lintSource` because it is a fact about *this* control
+ * plane rather than about OpenAPI, and because the editor can offer a one-click
+ * fix for it — `convertSource` is right here, and the `yaml` package it uses is
+ * already a dependency of the portal.
+ *
+ * The mismatch is worth naming: the workspace editor loads CodeMirror's YAML
+ * mode and `prettyDefinition` deliberately leaves YAML untouched, so the portal
+ * reads as though YAML were a supported input all the way up to the 400 at
+ * publish. Converting silently on save is the other way to close that gap, and
+ * it is the wrong one — it rewrites the author's document, with its comments and
+ * its key order, without asking.
+ */
+export function lintDefinition(text: string): {
+  format: SpecFormat;
+  diagnostics: SpecDiagnostic[];
+  doc?: unknown;
+  /** True when the only thing wrong is the serialisation, which one click fixes. */
+  convertible: boolean;
+} {
+  const result = lintSource(text);
+  if (!text.trim() || result.format === 'json') return { ...result, convertible: false };
+  const yamlParsed = result.doc !== undefined;
+  return {
+    ...result,
+    convertible: yamlParsed,
+    diagnostics: [
+      {
+        severity: 'error',
+        message: yamlParsed
+          ? 'This definition is YAML. The control plane accepts JSON only, so publishing it would be refused.'
+          : 'This definition is not JSON. The control plane accepts JSON only.',
+        path: []
+      },
+      ...result.diagnostics
+    ]
+  };
 }
 
 // Round-trip conversion. We stringify with `null` replacer + 2-space indent

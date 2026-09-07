@@ -27,6 +27,7 @@ import { command, listAll } from "./client";
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
 import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
+import { DefinitionDiagnostics } from "./components/DefinitionDiagnostics";
 import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
 import { DOMAINS, findDomain, publishedPath } from "../../../shared/domains";
@@ -547,6 +548,11 @@ export function Publish({ session: s }: { session: Session }) {
                   minHeight="260px"
                   onChange={setSpec}
                 />
+                {/* The same checks the workspace runs, on the step where the document is chosen.
+                    They are not a gate here — the wizard's own `missing()` decides that — because
+                    a publisher fixing an upstream document should be able to see every problem at
+                    once rather than one refusal per attempt. */}
+                <DefinitionDiagnostics source={spec} kind={kind} onFix={setSpec} />
               </>
             )}
             <DescriptionField
@@ -1010,6 +1016,14 @@ function EditorForm({
               minHeight="340px"
               editable={d.resource.canEdit && !!d.settings}
               onChange={setSpec}
+            />
+            {/* Above the operations, because a document with an error in it has no trustworthy
+                operation list to read — and below the editor, so the text being judged is the
+                text on screen. */}
+            <DefinitionDiagnostics
+              source={spec}
+              kind={d.resource.kind}
+              onFix={d.resource.canEdit ? setSpec : undefined}
             />
             {d.resource.kind === "rest" && (
               <OperationsCard doc={doc} loading={false} />

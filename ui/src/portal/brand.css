@@ -754,6 +754,14 @@ a { color: inherit; text-decoration: none; }
 .chip.accent-solid { background: var(--accent); color: var(--accent-soft); border-color: transparent; }
 .chip .dot { width: 6px; height: 6px; border-radius: 99px; background: currentColor; }
 
+/* What is wrong with the definition in the editor. The severity chip is a fixed-width column so
+   the messages left-align down the list rather than stepping in and out with the word beside them. */
+.diagnostics { display: flex; flex-direction: column; gap: 10px; margin: 12px 0 0; }
+.diagnostic { display: flex; align-items: flex-start; gap: 10px; }
+.diagnostic > .chip { flex: 0 0 62px; justify-content: center; text-transform: uppercase; letter-spacing: .3px; }
+.diagnostic-body { display: flex; flex-direction: column; gap: 2px; min-width: 0; font-size: 13px; }
+.diagnostic-body > .mono { word-break: break-all; }
+
 .api-name-cell {
   display: flex;
   align-items: center;

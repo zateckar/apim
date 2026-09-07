@@ -11,7 +11,7 @@ import {
 } from "../src/components.tsx";
 import { HowView } from "../src/views/HowView.tsx";
 import { Publish } from "../src/portal/apis.tsx";
-import { Granted } from "../src/views/SubscribeWizard.tsx";
+import { Requested } from "../src/views/SubscribeWizard.tsx";
 import { ALLOWED, permit } from "../src/lib/capabilities.ts";
 import { GLOSSARY, REQUIRED_TERMS } from "../src/lib/glossary.ts";
 import { releaseChip } from "../src/lib/status.ts";
@@ -211,7 +211,14 @@ describe("the wizards", () => {
  * same derivation the control plane validates with.
  */
 describe("what a journey ends with", () => {
-  test("subscribing ends with the key, a call that works, and where to go", () => {
+  /*
+   * The old assertion here was that the panel showed the key under "this is the only time the key
+   * is shown". It passed while the flow could not work: the component was handed a key by the test
+   * and `undefined` by the wizard, because creating a subscription deliberately does not return one
+   * and `/reveal` refuses until the state is `active`. What is asserted now is the thing the panel
+   * is actually for — which wait this is, and where the key will come from.
+   */
+  const state = (subscriptionState: string) => {
     const listing = {
       id: "res_1",
       title: "petstore",
@@ -230,22 +237,37 @@ describe("what a journey ends with", () => {
       versions: [],
       subscriptions: [],
     } as unknown as MarketListingDetail;
-    const html = renderToStaticMarkup(
-      <Granted
-        keyValue="k_live_abc123"
+    return renderToStaticMarkup(
+      <Requested
+        state={subscriptionState}
+        warnings={["petstore v0 is retired and will not accept new traffic patterns"]}
         subscriptionId="sub_1"
         listing={listing}
         environment="dev"
         resourceId="res_1"
       />,
     );
-    expect(html).toContain("only time the key is shown");
-    expect(html).toContain("k_live_abc123");
-    // A curl that names the real host and the real header, not a placeholder to be filled in.
+  };
+
+  test("subscribing ends with where the key comes from, a call that works, and where to go", () => {
+    const html = state("pending");
+    // The key is not on this page and the panel must not imply it was.
+    expect(html).not.toContain("only time the key is shown");
+    expect(html).toContain("revealable once the subscription is");
+    // A curl that names the real host and the real header, with the key left as the one blank.
     expect(html).toContain("https://gw.dev.internal/petstore/v1");
-    expect(html).toContain("X-Api-Key: k_live_abc123");
-    expect(html).toContain('href="/apis/res_1/try"');
+    expect(html).toContain("X-Api-Key: &lt;your key&gt;");
     expect(html).toContain('href="/subscriptions/sub_1"');
+    expect(html).toContain('href="/apis/res_1/try"');
+  });
+
+  test("it names which of the two waits this is", () => {
+    expect(state("pending")).toContain("The publisher decides");
+    expect(state("activating")).toContain("nobody to ask");
+  });
+
+  test("a retired member of the product is still reported after the call succeeds", () => {
+    expect(state("pending")).toContain("petstore v0 is retired");
   });
 });
 

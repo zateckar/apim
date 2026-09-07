@@ -43,7 +43,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
   const [applicationId, setApplicationId] = useState("");
   const [environment, setEnvironment] = useState(session.environment);
   const [productId, setProductId] = useState("");
-  const [key, setKey] = useState<{ id: string; value: string } | null>(null);
+  const [done, setDone] = useState<{ id: string; state: string; warnings: string[] } | null>(null);
 
   // Step 1 is a choice between applications; without the list there is no choice to offer, so
   // both failures stop the wizard rather than leaving an empty picker that looks like "you have
@@ -79,12 +79,13 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
         </div>
       </div>
 
-      <Stepper steps={STEPS} current={key ? 2 : step} />
+      <Stepper steps={STEPS} current={done ? 2 : step} />
 
-      {key ? (
-        <Granted
-          keyValue={key.value}
-          subscriptionId={key.id}
+      {done ? (
+        <Requested
+          state={done.state}
+          warnings={done.warnings}
+          subscriptionId={done.id}
           listing={api_}
           environment={environment}
           resourceId={resourceId}
@@ -171,7 +172,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
               product={chosenProduct}
               application={applications.data.items.find((app) => app.id === applicationId)}
               onBack={() => setStep(1)}
-              onSubscribed={(id, value) => setKey({ id, value })}
+              onSubscribed={(id, state, warnings) => setDone({ id, state, warnings })}
             />
           )}
         </>
@@ -272,8 +273,13 @@ function ReviewTerms({
   product: { id: string; name: string };
   application: Application | undefined;
   onBack: () => void;
-  onSubscribed: (id: string, key: string) => void;
+  onSubscribed: (id: string, state: string, warnings: string[]) => void;
 }) {
+  // The publisher reads this before deciding, and it is the only thing on the approval request that
+  // is not a machine-generated id. The server requires 3–500 characters (api-subscription-management,
+  // "A subscription is per environment and carries a purpose"); the same bounds are enforced here so
+  // the wizard says what is wrong before the round trip rather than after it.
+  const [purpose, setPurpose] = useState("");
   const policy = useAsync(
     () =>
       api.get<EffectivePolicyView>(
@@ -341,39 +347,78 @@ function ReviewTerms({
         </dd>
       </dl>
 
+      <div className="field" style={{ marginTop: 14 }}>
+        <label htmlFor="sw-purpose">What will you use it for?</label>
+        <textarea
+          id="sw-purpose"
+          rows={3}
+          minLength={3}
+          maxLength={500}
+          value={purpose}
+          onChange={(event) => setPurpose(event.target.value)}
+        />
+        <p className="muted small">
+          {product.name} belongs to somebody, and they decide by reading this. Say which system is
+          calling and what it needs — 3 to 500 characters.
+        </p>
+      </div>
+
       <div className="inline">
         <button className="ghost" onClick={onBack}>
           Back
         </button>
         <button
-          disabled={action.busy || !application}
+          disabled={action.busy || !application || purpose.trim().length < 3}
           onClick={async () => {
             await action.run(async () => {
-              const created = await api.post<{ id: string; primaryKey: string }>(
+              // No key comes back. The subscription is `pending` or `activating` at this point and
+              // the key is revealable only once it is `active`, so the panel below says what is
+              // happening rather than showing a secret that does not exist yet.
+              const created = await api.post<{ id: string; state: string; warnings?: string[] }>(
                 `/api/catalog/${product.id}/subscribe`,
-                { applicationId: application!.id, environment },
+                { applicationId: application!.id, environment, purpose: purpose.trim() },
               );
-              onSubscribed(created.id, created.primaryKey);
+              onSubscribed(created.id, created.state, created.warnings ?? []);
             });
           }}
         >
           Subscribe
         </button>
+        {!application && (
+          <span className="action-reason">Go back and choose the application that will call.</span>
+        )}
+        {application && purpose.trim().length < 3 && (
+          <span className="action-reason">Say what you will use it for first.</span>
+        )}
       </div>
     </Panel>
   );
 }
 
-/** The key, once, with something to do with it — not a confirmation that nothing follows from. */
+/**
+ * What actually happened, with something to do about it — not a confirmation that nothing follows
+ * from.
+ *
+ * This used to be called `Granted` and showed the key, under "this is the only time the key is
+ * shown". It could never have shown one: creating a subscription mints the key, encrypts it and
+ * deliberately does not return it, and `/reveal` refuses until the state is `active` — which a
+ * subscription one second old never is. So the panel rendered `undefined` beside a warning that it
+ * was the reader's only chance to copy it. It now says which of the two waits this is and sends
+ * people to the subscription, where revealing the key is one audited click.
+ */
 /** Exported so `ui/test` can assert the completion panel names what to do next (plan §9.2). */
-export function Granted({
-  keyValue,
+export function Requested({
+  state,
+  warnings,
   subscriptionId,
   listing,
   environment,
   resourceId,
 }: {
-  keyValue: string;
+  /** `pending` — waiting on the publisher. `activating` — your own product, so already decided. */
+  state: string;
+  /** Retired members of the product. The call succeeded; these are still worth reading. */
+  warnings: string[];
   subscriptionId: string;
   listing: MarketListingDetail;
   environment: string;
@@ -383,19 +428,30 @@ export function Granted({
   const url = endpoint
     ? `https://${endpoint.host === "*" ? "<gateway-host>" : endpoint.host}${endpoint.basePath === "/" ? "" : endpoint.basePath}`
     : "<the API's address>";
+  const own = state === "activating";
 
   return (
-    <Panel title="Your key">
-      <Notice kind="warn">
-        This is the only time the key is shown. After this it is encrypted at rest and can only be
-        recovered through a reveal, which is audited.
+    <Panel title={own ? "Access approved" : "Request sent"}>
+      <Notice kind="info">
+        {own
+          ? "This is your own application's product, so there was nobody to ask. Access is activating across the gateways now."
+          : "The publisher decides. They have the purpose you wrote, and you will be notified either way."}
       </Notice>
-      <div className="pre">{keyValue}</div>
-      <p className="muted small">A ready call:</p>
-      <div className="pre">{`curl "${url}/…" -H "X-Api-Key: ${keyValue}"`}</div>
+      {warnings.map((warning) => (
+        <Notice key={warning} kind="warn">
+          {warning}
+        </Notice>
+      ))}
+      <p className="muted small">
+        The key is minted and encrypted already, but it is only revealable once the subscription is
+        active — so there is nothing to copy from this page. Reveal it on the subscription when it
+        is, and every reveal is audited.
+      </p>
+      <p className="muted small">The call it will make:</p>
+      <div className="pre">{`curl "${url}/…" -H "X-Api-Key: <your key>"`}</div>
       <div className="inline" style={{ marginTop: 14 }}>
-        <Link to={`/apis/${resourceId}/try`}>Try it from here instead →</Link>
-        <Link to={`/subscriptions/${subscriptionId}`}>Manage this subscription</Link>
+        <Link to={`/subscriptions/${subscriptionId}`}>Open the subscription and reveal the key →</Link>
+        <Link to={`/apis/${resourceId}/try`}>Try it from here instead</Link>
         <Link to="/catalog">Find another API</Link>
       </div>
     </Panel>

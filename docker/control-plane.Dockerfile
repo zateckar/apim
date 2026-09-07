@@ -15,7 +15,11 @@ RUN cd ui && bun install --frozen-lockfile
 
 # `ui/src/lib/*` imports the wire vocabulary from `shared/` — the attention codes, the release
 # states — rather than restating it, so the build needs one directory above the project root.
+# `CHANGELOG.md` comes with it: `ui/src/lib/changelog.ts` imports it as `?raw`, so the portal's
+# version and its Change Log modal are baked into the bundle rather than fetched, and a build
+# without the file does not fall back to an empty change log — it fails to resolve the import.
 COPY shared/ ./shared/
+COPY CHANGELOG.md ./CHANGELOG.md
 COPY ui/ ./ui/
 RUN cd ui && bun run build
 

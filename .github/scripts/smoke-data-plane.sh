@@ -18,14 +18,23 @@ set -euo pipefail
 IMAGE="${1:?usage: smoke-data-plane.sh <image>}"
 NAME="apim-smoke-dp"
 
+# Only if the container was ever created: the first check below runs before it exists, and a
+# `No such container` line under the `[dp]` prefix reads like the gateway's own failure.
 cleanup() {
-  docker logs "$NAME" 2>&1 | sed 's/^/[dp] /' || true
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  if docker inspect "$NAME" >/dev/null 2>&1; then
+    docker logs "$NAME" 2>&1 | sed 's/^/[dp] /' || true
+    docker rm -f "$NAME" >/dev/null 2>&1 || true
+  fi
 }
 trap cleanup EXIT
 
 echo "--- no token is a startup failure that names the variable"
-if docker run --rm "$IMAGE" 2>&1 | tee /dev/stderr | grep -q "GATEWAY_TOKEN"; then
+# Captured rather than piped into `grep`. A refusal is a non-zero exit by design, and under
+# `pipefail` that exit status is the pipeline's own — so `docker run | grep -q` reported failure
+# for the very run that passed, and said the gateway had not refused while printing its refusal.
+refusal=$(docker run --rm "$IMAGE" 2>&1 || true)
+echo "$refusal"
+if grep -q "GATEWAY_TOKEN" <<<"$refusal"; then
   echo "refused, by name"
 else
   echo "expected the gateway to refuse to start and name GATEWAY_TOKEN"

@@ -106,7 +106,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   product: {
     term: "product",
     definition:
-      "A bundle of APIs that consumers subscribe to as one thing. Subscribing to a product grants a key that works for every API in it.",
+      "A bundle of APIs that consumers subscribe to as one thing. Subscribing to a product grants a key that works for every API in it. Publishing an API makes one for it, so most products are a bundle of one and nobody has to think about them.",
     see: ["subscription", "application"],
     group: "consuming",
   },

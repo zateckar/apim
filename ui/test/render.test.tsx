@@ -182,7 +182,9 @@ describe("the components keep their promises", () => {
 describe("the wizards", () => {
   test("publishing has three steps and refuses to start empty-handed", () => {
     const html = renderToStaticMarkup(<Publish session={session as never} />);
-    for (const label of ["Identify", "Define", "Route and sell"]) {
+    // "Route", not "Route and sell": the step no longer asks for a product, because an API sold on
+    // its own gets one without being asked.
+    for (const label of ["Identify", "Define", "Route"]) {
       expect(html, label).toContain(label);
     }
     expect(html).toContain('class="stepper"');

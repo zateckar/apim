@@ -26,7 +26,7 @@ test("the route table's address for the publish wizard opens the wizard", async 
   // The wizard itself, not merely a titled page: three steps, with everything past the first out of
   // reach until it is answered. Nothing is typed and nothing is submitted.
   const steps = page.locator(".stepper .step");
-  await expect(steps).toHaveText(["1Identify", "2Define", "3Route and sell"]);
+  await expect(steps).toHaveText(["1Identify", "2Define", "3Route"]);
   await expect(steps.nth(1)).toBeDisabled();
 
   expectNoErrors(errors);

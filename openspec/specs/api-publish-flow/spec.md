@@ -10,7 +10,9 @@ plane refuses, and what one publish creates. See *Published Path Derivation*, *T
 
 ### Requirement: Ask the three publishing questions one at a time
 
-The publish form SHALL be a three-step wizard: **Identify**, **Define**, **Route and sell**.
+The publish form SHALL be a three-step wizard: **Identify**, **Define**, **Route**. Each step's
+label SHALL be one verb; a compound label is a step doing two things, which is what the third one
+was before the product it asked for became automatic.
 
 #### Scenario: The wizard opens
 
@@ -102,24 +104,54 @@ Step one SHALL ask only for what forms the published address.
 - WHEN it is submitted
 - THEN it SHALL be refused
 
-### Requirement: Ask where it forwards and what it is sold in, last
+### Requirement: Ask where it forwards, last
 
 #### Scenario: Step three is answered
 
-- GIVEN the Route and sell step
+- GIVEN the Route step
 - WHEN it renders
-- THEN it SHALL ask for the backend URL in the first environment of the chain, the product, and
-  which of the environment's gateways the API answers on
+- THEN it SHALL ask for the backend URL in the first environment of the chain and which of the
+  environment's gateways the API answers on
 - AND the published path preview SHALL be shown again, now per selected gateway
+- AND it SHALL NOT ask for a product
 
-#### Scenario: A product is chosen or created
+### Requirement: Give an API its own product unless told otherwise
 
-- GIVEN the product field
-- WHEN it renders
-- THEN it SHALL offer the application's own **active** products, plus "Create a product"
-- AND a chosen product SHALL be refused unless it is active and owned by the same application
+#### Scenario: A publish names no product
+
+- GIVEN a publish request with neither `productId` nor `productName`
+- WHEN it is accepted
+- THEN a product SHALL be created for this API, owned by the same application and named after the
+  API, and the API SHALL be its first member
+- AND the reason SHALL be that requiring one stopped every first publish to invent a bundle for a
+  bundle of one, and the name people typed was the API's own
+- AND the step SHALL say what will be created and where to bundle instead, rather than asking
+
+#### Scenario: A second version of the same API is published
+
+- GIVEN an API whose earlier version is already in one of this application's active products
+- WHEN a later version is published naming no product
+- THEN it SHALL join that same product rather than making another
+- AND the reason SHALL be that two contracts for one business capability are one thing to subscribe
+  to, and a consumer re-requesting access at every version increment would rightly ask why
+
+#### Scenario: The API's name is already a product name
+
+- GIVEN a product name that is taken, anywhere in the estate
+- WHEN the automatic product is named
+- THEN the application's own slug SHALL be appended, and a counter after that
+- AND the publish SHALL NOT fail, because a failure on somebody else's naming is one the publisher
+  can neither see nor fix
+
+#### Scenario: A product is named explicitly
+
+- GIVEN `productId` or `productName` on the request
+- WHEN it is accepted
+- THEN a chosen product SHALL be refused unless it is active and owned by the same application
 - AND a new product name SHALL match the same pattern as an API name, and SHALL be refused with
   `409` if the name already exists
+- AND the portal SHALL offer bundling on the Products screen rather than in the wizard, because it
+  is the minority case and it is easier once the APIs exist
 
 #### Scenario: Gateways are chosen
 

@@ -11,7 +11,7 @@ import {
 import { can } from "./auth.ts";
 import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl } from "./api/common.ts";
 import { revisionSource, writeRevision } from "./api/resources.ts";
-import { newId, nowIso } from "./db.ts";
+import { newId, nowIso, type DB } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
 import { domainError, domainPrefix, publishedPath } from "../../shared/domains.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
@@ -447,6 +447,50 @@ function assertRouteFree(
   )
     throw conflict("another pending API already reserves this path");
 }
+/**
+ * The product one API is sold in when nobody said which.
+ *
+ * Per *API*, not per version: `checkout v2` joins the product `checkout v1` made, because two
+ * contracts for one business capability are one thing to subscribe to and a consumer who had to
+ * re-request access at every version increment would rightly ask why.
+ *
+ * Product names are unique across the estate, so the API's name is only available if nobody else
+ * has taken it — the application's own slug is the tie-break, and a counter after that, because a
+ * publish that failed on somebody else's naming is a publish that failed for no reason the
+ * publisher can see or fix.
+ */
+export function ownProductFor(db: DB, applicationId: string, apiName: string): string {
+  // Where this API is already sold, whatever that product ended up called. Looking the name up
+  // instead would miss a first version that had to take the tie-break name, and would miss one a
+  // publisher deliberately folded into a larger bundle — in both cases the later version belongs
+  // with the earlier one rather than in a new product of its own.
+  const already = db
+    .query<{ id: string }, [string, string]>(
+      `SELECT p.id FROM product p
+         JOIN product_member pm ON pm.product_id = p.id
+         JOIN resource r ON r.id = pm.resource_id
+        WHERE p.application_id = ? AND p.lifecycle = 'active' AND r.application_id = p.application_id
+          AND r.name = ?
+        ORDER BY p.rowid LIMIT 1`,
+    )
+    .get(applicationId, apiName);
+  if (already) return already.id;
+
+  const slug = applicationId.replace(/^application[_-]/, "").replace(/[^a-z0-9-]/g, "-");
+  const taken = (name: string) => db.query("SELECT id FROM product WHERE name=?").get(name) !== null;
+  let name = apiName;
+  if (taken(name)) name = `${apiName}-${slug}`.slice(0, 61);
+  for (let n = 2; taken(name); n++) name = `${apiName}-${slug}-${n}`.slice(0, 61);
+
+  const id = newId("prod");
+  db.run("INSERT INTO product(id,name,application_id,lifecycle) VALUES (?,?,?,'active')", [
+    id,
+    name,
+    applicationId,
+  ]);
+  return id;
+}
+
 export function registerOperationRoutes(router: Router) {
   router.add("GET", "/api/operations", "session", (ctx) => {
     const user = requireUser(ctx),
@@ -503,11 +547,12 @@ export function registerOperationRoutes(router: Router) {
       throw badRequest("name: 2–61 lowercase letters, digits or hyphens");
     if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(version))
       throw badRequest("invalid API version");
-    if (
-      !body.productId &&
-      (!body.productName || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.productName))
-    )
-      throw badRequest("choose a product or enter a valid product name");
+    // A product is no longer something the publisher has to have decided. Naming one is still
+    // accepted, and choosing an existing one still is, but the common case — one API, sold on its
+    // own — makes its own. Requiring it meant every first publish stopped to invent a bundle for a
+    // bundle of one, and the answer people gave was the API's name anyway.
+    if (body.productName && !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.productName))
+      throw badRequest("productName: 2–61 lowercase letters, digits or hyphens");
     // Required on a new API, with no "unclassified" escape: a catalog you cannot browse by domain
     // is a list, and one API without a domain is enough to make the grouping incomplete.
     const taxonomy = readTaxonomy(body, { domain: null, subdomain: null }, true);
@@ -542,18 +587,20 @@ export function registerOperationRoutes(router: Router) {
           throw badRequest(
             "choose an active product owned by this application",
           );
-      } else {
+      } else if (body.productName) {
         productId = newId("prod");
         if (
           ctx.app.db
             .query("SELECT id FROM product WHERE name=?")
-            .get(body.productName!)
+            .get(body.productName)
         )
           throw conflict("product name already exists");
         ctx.app.db.run(
           "INSERT INTO product(id,name,application_id,lifecycle) VALUES (?,?,?,'active')",
-          [productId, body.productName!, applicationId],
+          [productId, body.productName, applicationId],
         );
+      } else {
+        productId = ownProductFor(ctx.app.db, applicationId, body.name!);
       }
       ctx.app.db.run(
         `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,docs_url,domain,subdomain,created_at,updated_at)

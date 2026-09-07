@@ -15,6 +15,7 @@ import {
   OperationList,
   Panel,
   Skeleton,
+  Term,
   go,
   useAction,
   useAsync,
@@ -325,10 +326,14 @@ export function versionedPath(basePath: string, current: string, next: string): 
  * Publishing, in three questions rather than one screen of eighteen fields.
  *
  * The order is the order the answers depend on each other: what this thing *is* decides its
- * address, the address is what the definition is served under, and only then is there something to
- * route and something to sell. A single long form let somebody paste a definition and choose a
- * backend before they had decided what the API was called, and then re-do both when the name
- * changed the path.
+ * address, the address is what the definition is served under, and only then is there somewhere to
+ * send the traffic. A single long form let somebody paste a definition and choose a backend before
+ * they had decided what the API was called, and then re-do both when the name changed the path.
+ *
+ * The third step was "Route and sell", and the compound name was the honest description of a step
+ * that did two unrelated things. The selling half is gone: an API sold on its own gets its own
+ * product without being asked, and bundling several into one is the Products screen's job, for the
+ * minority who want it. What is left is one word.
  *
  * A step is reachable only when every step before it is answered, and the reason a step is not
  * reachable is on the screen rather than in a disabled button's tooltip. Going *back* is always
@@ -337,16 +342,12 @@ export function versionedPath(basePath: string, current: string, next: string): 
 const PUBLISH_STEPS = [
   { key: "identify", label: "Identify" },
   { key: "define", label: "Define" },
-  { key: "route", label: "Route and sell" },
+  { key: "route", label: "Route" },
 ] as const;
 
 export function Publish({ session: s }: { session: Session }) {
   const [step, setStep] = useState(0);
-  const w = useAction(),
-    products = useAsync(
-      () => api.get<{ items: any[] }>("/api/products"),
-      [s.application],
-    );
+  const w = useAction();
   const [kind, setKind] = useState(
       new URLSearchParams(location.search).get("kind") ?? "rest",
     ),
@@ -354,8 +355,6 @@ export function Publish({ session: s }: { session: Session }) {
     [apiVersion, setApiVersion] = useState("v1"),
     [description, setDescription] = useState(""),
     [docsUrl, setDocsUrl] = useState(""),
-    [productId, setProduct] = useState(""),
-    [productName, setProductName] = useState(""),
     [backendUrl, setBackend] = useState(""),
     [domain, setDomain] = useState(""),
     [subdomain, setSubdomain] = useState(""),
@@ -387,8 +386,6 @@ export function Publish({ session: s }: { session: Session }) {
     }
     if (!backendUrl.trim()) return "Somewhere to forward to in DEV.";
     if (selected.length === 0) return "At least one gateway to answer on.";
-    if (!productId && !productName.trim())
-      return "A product. Consumers subscribe to products, never directly to an API.";
     return null;
   }
   // The furthest step whose predecessors are all answered. Everything past it is disabled rather
@@ -442,7 +439,6 @@ export function Publish({ session: s }: { session: Session }) {
               // what the preview above the button says is what the gateway will answer on.
               basePath: publishedPath({ domain, subdomain, name, apiVersion }),
               gateways: selected,
-              ...(productId ? { productId } : { productName }),
             };
             if (source === "url")
               body[
@@ -455,7 +451,7 @@ export function Publish({ session: s }: { session: Session }) {
           });
         }}
       >
-        <Notice kind="error">{w.error ?? products.error}</Notice>
+        <Notice kind="error">{w.error}</Notice>
 
         {at === 0 && (
           <>
@@ -585,29 +581,18 @@ export function Publish({ session: s }: { session: Session }) {
                   onChange={(e) => setBackend(e.target.value)}
                 />
               </Field>
-              <Field label="Product">
-                <select value={productId} onChange={(e) => setProduct(e.target.value)}>
-                  <option value="">Create a product</option>
-                  {products.data?.items
-                    .filter(
-                      (p) => p.applicationId === s.application && p.lifecycle === "active",
-                    )
-                    .map((p) => (
-                      <option key={p.id} value={p.id}>
-                        {p.name}
-                      </option>
-                    ))}
-                </select>
-              </Field>
-              {!productId && (
-                <Field label="New product name">
-                  <input
-                    value={productName}
-                    onChange={(e) => setProductName(e.target.value)}
-                  />
-                </Field>
-              )}
             </div>
+            {/* Said rather than asked. Consumers still subscribe to products and never to an API,
+                but the product for an API sold on its own is a bundle of one and the answer people
+                typed was the API's name — so it is made, named after the API, and only a publisher
+                who genuinely wants to bundle has anything to do. */}
+            <p className="muted">
+              <Term name="product">A product</Term> named <strong>{name || "…"}</strong> will be
+              created for this <Term name="api">API</Term>, because that is what consumers subscribe
+              to. Later versions of {name || "it"} join the same one. To sell several APIs together
+              instead, put them in one product on{" "}
+              <Link to={`/${s.application}/products`}>Products</Link>.
+            </p>
             <GatewayPicker
               localities={localities}
               selected={selected}

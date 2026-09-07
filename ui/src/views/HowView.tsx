@@ -19,7 +19,7 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
       "Say where it answers: a host and a base path in this environment, and the backend it forwards to.",
       "Review, then release. The gateways pick it up at their next poll.",
     ],
-    ends: "The API is live in DEV, with its address shown, and you can try it, add a policy, put it in a product, or promote it.",
+    ends: "The API is live in DEV, with its address shown, and in a product of its own that consumers can subscribe to. You can try it, add a policy, bundle it with other APIs, or promote it.",
     to: "/apis/new",
   },
   {

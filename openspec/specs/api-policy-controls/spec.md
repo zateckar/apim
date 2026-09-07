@@ -97,6 +97,36 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 - THEN it SHALL read the same subtracted document the gateway sees, so "off" cannot mean one thing
   on a screen and another at the gateway
 
+### Requirement: The gateway's base path is the gateway's, and comes off before the backend is called
+
+The route base path is the address this platform publishes an API at. The backend has its own base,
+which is what `binding` holds. Concatenating both would send a backend a path built from the
+gateway's naming convention — a domain, a sub-domain, an API name and a version segment — that it
+has never served.
+
+#### Scenario: An API carries no `rewrite` unit
+
+- GIVEN a route with base path `/business-support/events/orders/v1` bound to `https://example/v2`
+- WHEN `GET /business-support/events/orders/v1/pets` arrives and the policy has no `rewrite` unit
+- THEN the backend SHALL be called at `https://example/v2/pets`
+- AND the reason SHALL be that an API published without touching policy at all is the common case,
+  and it SHALL work
+
+#### Scenario: The base path is deliberately kept
+
+- GIVEN the same route with `rewrite.stripBasePath` set to `false`
+- WHEN the same request arrives
+- THEN the backend SHALL be called at `https://example/v2/business-support/events/orders/v1/pets`
+- AND this SHALL be the only way to get that, because it is useful only when the backend is mounted
+  at the very path the gateway publishes
+
+#### Scenario: A path template is rendered
+
+- GIVEN `rewrite.path` set to a template over the matched operation's parameters
+- WHEN the request matches that operation
+- THEN the rendered path SHALL replace the relative path, and SHALL be appended to the base path
+  only when `stripBasePath` is `false`
+
 ### Requirement: Edit policy as units, not as a document
 
 #### Scenario: The policy panel renders

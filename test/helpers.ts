@@ -291,6 +291,10 @@ export async function publishApi(cp: TestCp, options: PublishOptions) {
   });
 
   for (const [unitKey, value] of Object.entries(options.policy ?? {})) {
+    // `undefined` means "do not attach this unit", so a caller can spread over a helper's default
+    // and end up with the API carrying no such unit — which is a state worth being able to test,
+    // and the one a hand-published API is in.
+    if (value === undefined) continue;
     const response = await cp.call(
       "PUT",
       `/api/resources/${resourceId}/policy/units/${encodeURIComponent(unitKey)}`,

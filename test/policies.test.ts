@@ -815,6 +815,35 @@ describe("headers, rewrite and templates", () => {
       w.stop();
     }
   });
+
+  /*
+   * The default, which is what a hand-published API gets. `rewrite: undefined` is not noise — it
+   * removes the `stripBasePath: true` that `world()` merges in, leaving the resource with no
+   * rewrite unit at all, which is the shape the publish flow actually produces. This forwarded the
+   * whole public path until the default was corrected, so every such API got a 404 from a backend
+   * that had never heard of the gateway's own address.
+   */
+  test("with no rewrite unit at all the base path still comes off", async () => {
+    const w = await world({ rewrite: undefined });
+    try {
+      const response = await get(w, "/orders");
+      expect(response.status).toBe(200);
+      expect(w.backend.requests.at(-1)!.path).toBe("/orders");
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("stripBasePath: false is the opt-out, for a backend mounted where the gateway publishes", async () => {
+    const w = await world({ rewrite: { stripBasePath: false } });
+    try {
+      const response = await get(w, "/orders");
+      expect(response.status).toBe(200);
+      expect(w.backend.requests.at(-1)!.path).toBe(`${w.basePath}/orders`);
+    } finally {
+      w.stop();
+    }
+  });
 });
 
 // --------------------------------------------------------------------------- preconditions

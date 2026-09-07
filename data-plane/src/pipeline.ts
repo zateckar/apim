@@ -1020,10 +1020,24 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
 
   // 13 — rewrite
   const rewrite = policy.rewrite;
-  let path = rewrite?.stripBasePath ? relativePath : url.pathname;
+  /*
+   * The base path is the *gateway's* address for this API, not the backend's, so it comes off
+   * before the backend is called — `/business-support/events/orders/v1/pets` on a backend of
+   * `https://petstore.swagger.io/v2` is `GET /v2/pets`, not `/v2/business-support/events/…`.
+   *
+   * This defaulted to `false`, which meant an API published with no `rewrite` unit forwarded the
+   * whole public path and every backend answered 404 for a URL it had never heard of. Nothing
+   * chose that: `POLICY_CATALOG`'s own `defaultValue` for the unit is `{ stripBasePath: true }`,
+   * every API in the perf and capacity harnesses sets it, and 56 places across the test suite set
+   * it — a flag that every caller has to turn on is a default that is the wrong way round.
+   * `stripBasePath: false` is still the opt-out, for a backend mounted at the same path the
+   * gateway publishes.
+   */
+  const strip = rewrite?.stripBasePath ?? true;
+  let path = strip ? relativePath : url.pathname;
   if (rewrite?.path) {
     const rendered = renderPathTemplate(rewrite.path, pathParams);
-    path = rewrite.stripBasePath ? rendered : `${route.basePath === "/" ? "" : route.basePath}${rendered}`;
+    path = strip ? rendered : `${route.basePath === "/" ? "" : route.basePath}${rendered}`;
   }
 
   const params = new URLSearchParams(

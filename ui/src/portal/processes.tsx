@@ -10,6 +10,7 @@ import {
   Notice,
   Panel,
   StatusChip,
+  go,
   useAction,
   useAsync,
 } from "../components";
@@ -138,7 +139,8 @@ export function Subscriptions({
     ),
     w = useAction();
   const [key, setKey] = useState<any>(null),
-    [withdraw, setWithdraw] = useState<any>(null);
+    [withdraw, setWithdraw] = useState<any>(null),
+    [rotating, setRotating] = useState(false);
   const rows = (data.data?.items ?? []).filter(
     (r) =>
       r.environment === s.environment &&
@@ -151,16 +153,25 @@ export function Subscriptions({
         : r.applicationId === s.application),
   );
   return (
-    <Panel title="Subscriptions">
+    // The heading says how many and where, not "Subscriptions" again under an `<h1>Subscriptions`.
+    // Where matters more here than anywhere else in the portal: a subscription is to a product in
+    // one environment and its keys work only there, so a list that did not name the environment
+    // was the empty state's own warning going unheeded by the populated case.
+    <Panel title={`${rows.length} in ${s.environment.toUpperCase()}`}>
       <Notice kind="error">{data.error ?? products.error ?? w.error}</Notice>
       {rows.length ? (
         rows.map((r) => (
           <div className="native-row" key={r.id}>
             <div>
-              <strong>
-                {products.data?.items.find((p) => p.id === r.productId)?.name ??
-                  r.productId}
-              </strong>
+              {/* The subscription's own screen — its keys, its history, the product behind it —
+                  was reachable from the publisher's Products screen and from nowhere on the
+                  consumer's own list. */}
+              <Link to={`/subscriptions/${r.id}`}>
+                <strong>
+                  {products.data?.items.find((p) => p.id === r.productId)?.name ??
+                    r.productId}
+                </strong>
+              </Link>
               <small>
                 {s.applicationName(r.applicationId)} · {r.purpose}
               </small>
@@ -202,11 +213,21 @@ export function Subscriptions({
         <EmptyState
           title={`No subscriptions in ${s.environment.toUpperCase()}`}
           detail="A subscription is to a product in one environment, and its keys work only there — so an application subscribed in DEV has nothing here until it subscribes in this one too."
-          action={<Link to="/catalog">Find an API to subscribe to →</Link>}
+          action={
+            <button className="btn sm" onClick={() => go("/catalog")}>
+              Find an API to subscribe to
+            </button>
+          }
         />
       )}
       {key && (
-        <Modal title="Subscription keys" close={() => setKey(null)}>
+        <Modal
+          title="Subscription keys"
+          close={() => {
+            setKey(null);
+            setRotating(false);
+          }}
+        >
           <p>Keep these credentials private.</p>
           <Field label="Primary key">
             <input readOnly value={key.primaryKey ?? ""} />
@@ -215,25 +236,49 @@ export function Subscriptions({
             <input readOnly value={key.secondaryKey ?? ""} />
           </Field>
           <Notice kind="error">{w.error}</Notice>
-          <button
-            className="btn"
-            disabled={w.busy}
-            onClick={() =>
-              void w.run(async () => {
-                await api.post(`/api/subscriptions/${key.id}/rotate`, {
-                  which: "secondary",
-                });
-                setKey({
-                  id: key.id,
-                  ...(await api.post<any>(
-                    `/api/subscriptions/${key.id}/reveal`,
-                  )),
-                });
-              })
-            }
-          >
-            Rotate secondary key
-          </button>
+          {/* Rotation is not reversible and it is not local: the old secondary stops working for
+              every caller holding it, at once. This dialog is the one people open to *read* a key,
+              so a single unguarded click beside the value they came for was the wrong shape. It
+              asks first — not a typed confirmation, because nothing is being deleted, but not one
+              click either. */}
+          {rotating ? (
+            <div className="native-actions">
+              <span className="muted small">
+                Every caller using the current secondary key stops working immediately. The primary
+                key is untouched, so rotate the secondary, move callers onto it, then rotate the
+                primary.
+              </span>
+              <button className="btn" disabled={w.busy} onClick={() => setRotating(false)}>
+                Keep it
+              </button>
+              <button
+                className="btn danger"
+                disabled={w.busy}
+                onClick={() =>
+                  void w.run(async () => {
+                    await api.post(`/api/subscriptions/${key.id}/rotate`, {
+                      which: "secondary",
+                    });
+                    setRotating(false);
+                    setKey({
+                      id: key.id,
+                      ...(await api.post<any>(
+                        `/api/subscriptions/${key.id}/reveal`,
+                      )),
+                    });
+                  })
+                }
+              >
+                Rotate it
+              </button>
+            </div>
+          ) : (
+            <div className="native-actions">
+              <button className="btn" disabled={w.busy} onClick={() => setRotating(true)}>
+                Rotate secondary key
+              </button>
+            </div>
+          )}
         </Modal>
       )}
       {withdraw && (

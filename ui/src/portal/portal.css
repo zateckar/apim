@@ -345,6 +345,75 @@
   border-bottom: 1px solid var(--border);
   text-align: left;
 }
+/*
+ * The older button vocabulary, restored.
+ *
+ * `styles.css` styles `button`, `button.ghost`, `button.danger` and `button.small` — the words the
+ * screens under `views/` were written with, before the branded shell existed. `brand.css` then
+ * resets *every* `button` to `border: 0; background: none; padding: 0`, because the shell builds
+ * its buttons out of `.btn` and needs bare elements for its nav items, its tabs, its card heads and
+ * its icon buttons. Both stylesheets load and brand.css loads second, so the reset won on
+ * specificity ties and every screen still speaking the old vocabulary drew its buttons as flat
+ * text: the Gateways form's Save was typographically identical to the sentence above it, and the
+ * Certificates screen's "Upload a certificate" to the empty row above that. It was not a missing
+ * style on one screen — it was sixteen routes and every `ghost small` button in the workspace.
+ *
+ * The old words are mapped onto the brand's chrome here, in the stylesheet that loads last.
+ * Emphasis is deliberately *not* restored with them: `styles.css` made a bare `button` the
+ * accent-filled primary, and a screen carrying six of those would contradict the three-tier system
+ * brand.css documents. The base is neutral; the dominant action on a screen is promoted with
+ * `.btn.primary` where that screen means it.
+ */
+/* Named exactly, rather than "every button that is not a `.btn`": the catalogue's facets, the
+   status chips and the fold headers are buttons too, and each already carries its own chrome. A
+   `:not()` list of everything that must be spared grows silently wrong; this list only grows when
+   somebody writes one of these four words. `:not([class])` is the bare button — the Save on a
+   legacy form — and it is the one that had no other way to be recognised. */
+.native-portal button.ghost:not(.btn),
+.native-portal button.danger:not(.btn),
+.native-legacy button.small:not(.btn),
+.native-legacy button:not([class]) {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  border-radius: var(--r-md);
+  border: 1px solid var(--border-strong);
+  background: var(--surface);
+  color: var(--fg);
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.native-portal button.ghost:not(.btn):hover,
+.native-legacy button.small:not(.btn):hover,
+.native-legacy button:not([class]):hover {
+  background: var(--bg-muted);
+  border-color: var(--fg-faint);
+}
+.native-portal button.ghost:not(.btn):disabled,
+.native-portal button.danger:not(.btn):disabled,
+.native-legacy button.small:not(.btn):disabled,
+.native-legacy button:not([class]):disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+/* `danger` was the one legacy variant that carried meaning rather than weight, so it keeps it. */
+.native-portal button.danger:not(.btn) {
+  color: var(--err);
+}
+.native-portal button.danger:not(.btn):hover {
+  background: var(--err-soft);
+  border-color: var(--err);
+}
+.native-portal button.small:not(.btn) {
+  padding: 5px 9px;
+  font-size: 12px;
+  border-radius: var(--r-sm);
+}
+/* A legacy button still needs a pointer even when it is not one of the four above. */
 .native-legacy button {
   cursor: pointer;
 }

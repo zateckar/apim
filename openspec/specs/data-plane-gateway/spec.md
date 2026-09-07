@@ -162,6 +162,43 @@ conveniences.
   - response validation SHALL precede the response transform, because the declared schema describes
     what the backend sends, not what is handed on
 
+### Requirement: Resolve the caller's address through the trusted-proxy boundary
+
+Stage 2 SHALL decide one address, and `ipAllow`, `rateLimit` and `quota` keyed by IP, the access
+log and telemetry SHALL all name that one. `X-Forwarded-For` SHALL be evidence only when the peer
+that sent it is trusted.
+
+#### Scenario: A request arrives from a trusted proxy
+
+- GIVEN a peer inside `TRUSTED_PROXY_CIDRS` and an `X-Forwarded-For` header
+- WHEN the caller's address is resolved
+- THEN the chain SHALL be walked from the **right**, skipping entries that are themselves trusted
+  proxies, and the first entry that is not SHALL be the caller
+- AND the direction SHALL be right-to-left because a conforming proxy *appends* the address it
+  received from, so the rightmost entry is the one our own proxy observed and the only one nobody
+  downstream could have written
+- AND when every hop is a trusted proxy, or the header is absent or unparseable, the peer SHALL be
+  used, because it is all that is known
+
+#### Scenario: A request arrives from an untrusted peer
+
+- GIVEN a peer outside every `TRUSTED_PROXY_CIDRS` entry, or no entry configured at all
+- WHEN `X-Forwarded-For` is present
+- THEN it SHALL be treated as a claim rather than evidence, and the socket address SHALL be used
+- AND the client-certificate headers SHALL NOT be read, for the same reason
+
+#### Scenario: A dual-stack listener reports an IPv4 peer
+
+- GIVEN a socket peer presented as an IPv4-mapped IPv6 address (`::ffff:a.b.c.d`)
+- WHEN it is matched against `TRUSTED_PROXY_CIDRS`, `ipAllow`, or the control plane's egress deny
+  list
+- THEN it SHALL be treated as the IPv4 address it maps, because a dual-stack listener reports
+  **every** IPv4 peer in that form and the alternative is a trust boundary that is configured,
+  matches nothing, and says nothing
+- AND the resolved address SHALL be recorded and keyed in its canonical IPv4 form, so one caller is
+  never counted as two spellings of itself
+- AND a real IPv6 literal SHALL still match no IPv4 rule
+
 ### Requirement: Match routes by host and base path at a segment boundary
 
 #### Scenario: A path is matched

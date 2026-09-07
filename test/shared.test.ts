@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { canonicalJson, digestOf } from "../shared/canonical.ts";
 import { hashSubscriptionKey } from "../shared/keys.ts";
-import { ipInCidr } from "../shared/net.ts";
+import { canonicalIp, effectiveClientIp, ipInCidr } from "../shared/net.ts";
 import { lintPattern, validateDocument, validateUnit } from "../shared/policy.ts";
 import {
   joinBackend,
@@ -308,5 +308,56 @@ describe("key hashing and CIDRs", () => {
     expect(ipInCidr("172.32.0.1", "172.16.0.0/12")).toBe(false);
     expect(ipInCidr("8.8.8.8", "10.0.0.0/8")).toBe(false);
     expect(ipInCidr("::1", "10.0.0.0/8")).toBe(false);
+  });
+
+  /**
+   * A dual-stack listener reports every IPv4 peer as `::ffff:a.b.c.d`. Before this, that form
+   * matched no CIDR at all, so `TRUSTED_PROXY_CIDRS` silently did nothing behind a proxy and the
+   * deny list silently missed a resolved RFC1918 address spelled that way.
+   */
+  test("an IPv4-mapped IPv6 address is the IPv4 address it maps", () => {
+    expect(canonicalIp("::ffff:10.89.1.1")).toBe("10.89.1.1");
+    expect(canonicalIp("::FFFF:10.89.1.1")).toBe("10.89.1.1");
+    // Left alone: a real IPv6 client, and a mapped form whose octets are not an address.
+    expect(canonicalIp("2001:db8::1")).toBe("2001:db8::1");
+    expect(canonicalIp("::ffff:999.1.1.1")).toBe("::ffff:999.1.1.1");
+    expect(canonicalIp("203.0.113.9")).toBe("203.0.113.9");
+
+    expect(ipInCidr("::ffff:10.89.1.1", "10.89.1.0/24")).toBe(true);
+    expect(ipInCidr("::ffff:10.1.2.3", "10.0.0.0/8")).toBe(true);
+    expect(ipInCidr("::ffff:8.8.8.8", "10.0.0.0/8")).toBe(false);
+    // Still not a match, because it is not an IPv4 address wearing a prefix.
+    expect(ipInCidr("2001:db8::1", "10.0.0.0/8")).toBe(false);
+  });
+
+  describe("the effective client IP behind a proxy", () => {
+    const cidrs = ["10.89.1.0/24", "127.0.0.1/32"];
+
+    test("a mapped peer is still a trusted proxy, so the forwarded chain is read", () => {
+      expect(effectiveClientIp("203.0.113.9", "::ffff:10.89.1.1", cidrs)).toBe("203.0.113.9");
+      expect(effectiveClientIp("203.0.113.9", "10.89.1.1", cidrs)).toBe("203.0.113.9");
+    });
+
+    test("an untrusted peer is returned canonicalised, header or no header", () => {
+      expect(effectiveClientIp("203.0.113.9", "::ffff:8.8.8.8", cidrs)).toBe("8.8.8.8");
+      expect(effectiveClientIp(null, "::ffff:8.8.8.8", cidrs)).toBe("8.8.8.8");
+      // No boundary configured: the header is never evidence, and the peer is still canonical.
+      expect(effectiveClientIp("203.0.113.9", "::ffff:8.8.8.8", [])).toBe("8.8.8.8");
+    });
+
+    test("the chain is read from the right, skipping trusted hops in either spelling", () => {
+      expect(effectiveClientIp("203.0.113.9, ::ffff:10.89.1.7", "::ffff:10.89.1.1", cidrs)).toBe(
+        "203.0.113.9",
+      );
+      // A spoofed leftmost entry does not win.
+      expect(effectiveClientIp("10.0.0.1, 203.0.113.9", "::ffff:10.89.1.1", cidrs)).toBe(
+        "203.0.113.9",
+      );
+    });
+
+    test("every hop trusted, or an unusable header, falls back to the canonical peer", () => {
+      expect(effectiveClientIp("::ffff:10.89.1.7", "::ffff:10.89.1.1", cidrs)).toBe("10.89.1.1");
+      expect(effectiveClientIp("not-an-address", "::ffff:10.89.1.1", cidrs)).toBe("10.89.1.1");
+    });
   });
 });

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { CircuitBreaker } from "../../shared/backend.ts";
-import { effectiveClientIp, ipInCidr } from "../../shared/net.ts";
+import { canonicalIp, effectiveClientIp, ipInCidr } from "../../shared/net.ts";
 import { TELEMETRY_DEFAULTS } from "../../shared/telemetry.ts";
 import { ArtifactCache } from "./artifacts.ts";
 import { TokenCache } from "./backend-auth.ts";
@@ -500,7 +500,10 @@ export class DataPlane {
         this.config.trustedProxyCidrs,
       ),
       // The socket peer, which is what this gateway appends to the chain on the way out.
-      peerIp: clientIp,
+      // Canonicalised for the same reason `effectiveClientIp` canonicalises what it returns: a
+      // dual-stack listener reports an IPv4 peer as `::ffff:a.b.c.d`, and the next hop should be
+      // given the address rather than that spelling of it.
+      peerIp: canonicalIp(clientIp),
       requestId,
       trustedPeer: this.config.trustedProxyCidrs.some((cidr) => ipInCidr(clientIp, cidr)),
       clientCertHeaders: this.config.clientCertHeaders,

@@ -56,6 +56,30 @@ carried out by a runner, not inside the request.
 - AND on completion an `operation.complete` notification SHALL be emitted naming the kind and the
   environment
 
+#### Scenario: A replica is counted towards the fleet's acknowledgement
+
+- GIVEN an environment whose registered replicas have not all acknowledged the current document
+- WHEN convergence is evaluated
+- THEN a replica that has **never** been seen SHALL count, and hold the operation pending — it is
+  freshly minted and expected, and dropping it would complete a publish before the gateway it was
+  published to had ever read it
+- AND a replica seen within `INSTANCE_ABANDONED_AFTER_SEC` SHALL count, and hold the operation
+  pending even while it reads as offline by `INSTANCE_STALE_AFTER_SEC` — reporting complete for a
+  gateway nobody has heard from would tell a consumer an API is live that one gateway answers `404`
+  for, and a rolling restart passes through this window
+- AND a replica silent for longer than `INSTANCE_ABANDONED_AFTER_SEC` SHALL NOT count — it is gone
+  rather than restarting, it is serving nobody, and it will fetch the current document if it ever
+  returns
+- AND a replica whose gateway has since been deleted SHALL NOT count, there being no document this
+  environment still builds for it
+- AND an environment with no counting replica at all SHALL NOT be treated as converged, because
+  that is an environment nobody is serving rather than one that agrees
+- AND the reason SHALL be that `waiting-for-gateways`, a subscription's `activating` and a
+  withdrawn subscription's `revoking` all end here and none of them has a timeout: a container
+  replaced during a redeploy left a row with `revoked_at IS NULL` whose `last_seen_at` never
+  advanced, and every one of those three states then waited on it until an administrator revoked
+  the dead token by hand
+
 #### Scenario: A command is repeated
 
 - GIVEN a command carrying an `Idempotency-Key`

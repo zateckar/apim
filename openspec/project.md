@@ -747,7 +747,8 @@ variable, never a silent downgrade.
 | `OIDC_AUTO_CREATE` | `1` | |
 | `OIDC_END_SESSION` | `0` | |
 | `OIDC_DISPLAY_NAME` | `Single sign-on` | the sign-in button's label |
-| `INSTANCE_STALE_AFTER_SEC` | `30` | |
+| `INSTANCE_STALE_AFTER_SEC` | `30` | when a replica reads as unhealthy on a screen |
+| `INSTANCE_ABANDONED_AFTER_SEC` | `900` | when a silent replica stops holding convergence open |
 | `MAX_SPEC_BYTES` | `5 MiB` | |
 | `TELEMETRY_FLUSH_INTERVAL_SEC` | `10` | |
 | `TELEMETRY_RETENTION_HOURS` | `48` | |

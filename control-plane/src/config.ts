@@ -184,6 +184,8 @@ export interface CpConfig {
   uiDevOrigin: string | null;
   uiDist: string;
   instanceStaleAfterSec: number;
+  /** When a silent replica stops holding the environment's convergence open. See `fleetApplied`. */
+  instanceAbandonedAfterSec: number;
   maxSpecBytes: number;
   integrations: Integrations;
   targets: TargetDef[];
@@ -477,6 +479,10 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
     uiDevOrigin: (process.env.UI_DEV_ORIGIN ?? "").trim() || null,
     uiDist: process.env.UI_DIST ?? "ui/dist",
     instanceStaleAfterSec: intFromEnv("INSTANCE_STALE_AFTER_SEC", 30),
+    // When a replica stops counting towards convergence at all. Deliberately an order of magnitude
+    // above the staleness threshold: that one answers "is this healthy right now" for a screen,
+    // and a fleet must not be abandoned mid-rolling-restart. See `fleetApplied`.
+    instanceAbandonedAfterSec: intFromEnv("INSTANCE_ABANDONED_AFTER_SEC", 900),
     maxSpecBytes: intFromEnv("MAX_SPEC_BYTES", 5 * 1024 * 1024),
     integrations: readIntegrations(integrationsFile),
     targets: readTargets(targetsFile),

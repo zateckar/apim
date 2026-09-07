@@ -811,23 +811,48 @@ export function registerOperationRoutes(router: Router) {
 }
 
 /**
- * A current complete configuration must be acknowledged by every non-revoked instance — each
- * against its own gateway's document, because two gateways in one environment serve different
- * subsets of it and comparing both to the union would say "behind" forever.
+ * A current complete configuration must be acknowledged by every instance that could still be
+ * serving it — each against its own gateway's document, because two gateways in one environment
+ * serve different subsets of it and comparing both to the union would say "behind" forever.
+ *
+ * A gateway that is merely *offline* still counts, and that is deliberate: reporting an operation
+ * complete while one gateway has not taken the change is a claim about a gateway nobody has heard
+ * from, and a consumer told an API is live would get a 404 from it. It stays visibly pending
+ * instead, and the returning instance converges it with no resubmission — `native-workflows`
+ * covers exactly that.
+ *
+ * What does *not* count is a replica that has been silent long enough to be gone rather than
+ * restarting. That distinction was missing, and its absence is a bug with a long reach: an
+ * operation reaches `complete`, a subscription reaches `active`, and — the one people notice — a
+ * withdrawn subscription reaches `revoked` only through here. A container replaced during a
+ * redeploy, or a gateway process killed rather than drained, leaves a row with `revoked_at IS NULL`
+ * and a `last_seen_at` that never advances again. Every one of those three transitions then waits
+ * on it forever, with no timeout on the far side and nothing on any screen saying which replica is
+ * being waited for, until an administrator revokes the dead token by hand.
+ *
+ * So the rule has three cases rather than two:
+ *
+ *  - **Never seen** — freshly minted, has not polled yet. It counts. It is expected imminently, and
+ *    dropping it would let a publish complete before the gateway it was published to ever read it.
+ *  - **Seen recently** — including "offline" by the 30-second display threshold. It counts. A
+ *    rolling restart passes through here and must not abandon the fleet mid-flight.
+ *  - **Silent beyond `INSTANCE_ABANDONED_AFTER_SEC`** — it is not restarting, it is gone. It does
+ *    not count. It is serving nobody, so it is not honouring the key being withdrawn either, and
+ *    it will fetch the current document if it ever returns, because that is the only thing it
+ *    fetches.
+ *
+ * The threshold is an order of magnitude above the staleness one on purpose: staleness answers "is
+ * this replica healthy right now" for a screen, and reusing it here would abandon a fleet during
+ * any restart slower than half a minute.
+ *
+ * No instance left after that filter is still false. An environment with nothing serving it has not
+ * converged on anything; it is an environment that is down.
  */
 export function fleetApplied(app: App, environment: string): boolean {
   if (buildConfig(app.db, app.kek, environment, app.config.integrations).errors.length) {
     return false;
   }
   const targets = gatewaysIn(app.db, environment);
-  const instances = app.db
-    .query<
-      { target_id: string; config_digest: string | null; last_seen_at: string | null },
-      [string]
-    >(
-      `SELECT gi.target_id,gi.config_digest,gi.last_seen_at FROM gateway_instance gi JOIN target t ON t.id=gi.target_id WHERE t.environment=? AND gi.revoked_at IS NULL`,
-    )
-    .all(environment);
   const digests = new Map(
     targets.map((t) => [
       t.id,
@@ -836,14 +861,25 @@ export function fleetApplied(app: App, environment: string): boolean {
         : buildConfig(app.db, app.kek, environment, app.config.integrations, t.id).digest,
     ]),
   );
-  return (
-    instances.length > 0 &&
-    instances.every(
-      (i) =>
-        i.config_digest === digests.get(i.target_id) &&
-        i.last_seen_at &&
-        Date.now() - Date.parse(i.last_seen_at) < 120000,
+  const abandonedBefore = Date.now() - app.config.instanceAbandonedAfterSec * 1000;
+  const counted = app.db
+    .query<
+      { target_id: string; config_digest: string | null; last_seen_at: string | null },
+      [string]
+    >(
+      `SELECT gi.target_id,gi.config_digest,gi.last_seen_at FROM gateway_instance gi JOIN target t ON t.id=gi.target_id WHERE t.environment=? AND gi.revoked_at IS NULL`,
     )
+    .all(environment)
+    // `digests.has` drops the orphan too: a replica whose gateway has since been deleted belongs to
+    // no document this environment still builds, so there is nothing it could be running.
+    .filter(
+      (i) =>
+        digests.has(i.target_id) &&
+        (i.last_seen_at === null || Date.parse(i.last_seen_at) >= abandonedBefore),
+    );
+  return (
+    counted.length > 0 &&
+    counted.every((i) => i.config_digest === digests.get(i.target_id) && i.last_seen_at !== null)
   );
 }
 export function runOperations(app: App): void {

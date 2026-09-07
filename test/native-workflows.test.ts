@@ -490,6 +490,50 @@ describe("native application workflows", () => {
     expect(releasesIn(op.resourceId, "dev")).toHaveLength(1);
   });
 
+  test("a replica that is gone rather than restarting stops holding the environment open", async () => {
+    // The other side of the test above, and the one that was missing. A container replaced during a
+    // redeploy leaves `revoked_at IS NULL` and a `last_seen_at` that never advances again. Every
+    // transition that runs through `fleetApplied` — an operation to `complete`, a subscription to
+    // `active`, a withdrawn one to `revoked` — then waited on it with no timeout and nothing on any
+    // screen naming the replica being waited for.
+    setup();
+    const op = await publish();
+    runDueJobs(cp.app);
+    await ack("dev", ["dev-1"]);
+    // dev-2 has polled at some point, so it is a replica that went away rather than one that has
+    // never appeared — and while it is merely offline it still counts, because a rolling restart
+    // passes through here.
+    cp.app.db.run(
+      "UPDATE gateway_instance SET last_seen_at=? WHERE name='dev-2'",
+      [new Date(Date.now() - 60_000).toISOString()],
+    );
+    runDueJobs(cp.app);
+    expect(stateOf(op.id)).toBe("waiting-for-gateways");
+
+    // Past the abandonment threshold it is gone, and the fleet converges on what is actually
+    // running. `INSTANCE_ABANDONED_AFTER_SEC` defaults to 900.
+    cp.app.db.run(
+      "UPDATE gateway_instance SET last_seen_at=? WHERE name='dev-2'",
+      [new Date(Date.now() - 3_600_000).toISOString()],
+    );
+    runDueJobs(cp.app);
+    expect(stateOf(op.id)).toBe("complete");
+    expect(releasesIn(op.resourceId, "dev")).toHaveLength(1);
+  });
+
+  test("an environment whose every replica is gone has not converged, it is down", async () => {
+    setup();
+    const op = await publish();
+    runDueJobs(cp.app);
+    cp.app.db.run("UPDATE gateway_instance SET last_seen_at=?", [
+      new Date(Date.now() - 3_600_000).toISOString(),
+    ]);
+    runDueJobs(cp.app);
+    // Nothing is serving this environment, so there is nothing for it to have converged on. The
+    // operation stays pending rather than reporting success into an empty fleet.
+    expect(stateOf(op.id)).toBe("waiting-for-gateways");
+  });
+
   test("a change queued before a restart converges afterwards, and is not applied twice", async () => {
     setup();
     const op = await publish();

@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, test } from "bun:test";
 import { resetLoginRate } from "../control-plane/src/auth-local.ts";
+import { applicationIdForGroup, mapGroupsToApplications } from "../control-plane/src/auth-oidc.ts";
 import { localByUsername, principalById } from "../control-plane/src/principals.ts";
 import { makeCp, type TestCp } from "./helpers.ts";
 
@@ -600,6 +601,101 @@ describe("applications", () => {
     } finally {
       cp.close();
     }
+  });
+
+  /**
+   * Groups provision applications. This used to be "matched, never created", on the grounds that a
+   * directory could otherwise invent a scope for whoever held a group; where the identity provider
+   * is authoritative for who owns what, holding the group *is* the grant and the confirmation step
+   * could only ever say yes.
+   */
+  describe("an application is provisioned from an identity provider group", () => {
+    test("a group nothing knows about becomes an application, and twice is once", () => {
+      const cp = world();
+      try {
+        const first = mapGroupsToApplications(cp.app.db, ["EAI", "EAI-TEST", "SKODA-IDP"]);
+        expect(first.applicationIds.sort()).toEqual(["eai", "eai-test", "skoda-idp"]);
+        expect(first.unmapped).toEqual([]);
+
+        const row = cp.app.db
+          .query<{ id: string; name: string; source_group: string }, []>(
+            "SELECT id, name, source_group FROM application WHERE id = 'eai'",
+          )
+          .get()!;
+        expect(row).toEqual({ id: "eai", name: "EAI", source_group: "EAI" });
+
+        // Idempotent, because this runs on every claims refresh and not only at sign-in.
+        const again = mapGroupsToApplications(cp.app.db, ["EAI", "EAI-TEST", "SKODA-IDP"]);
+        expect(again.applicationIds.sort()).toEqual(["eai", "eai-test", "skoda-idp"]);
+        expect(
+          cp.app.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM application").get()!.n,
+        ).toBe(first.applicationIds.length + 2); // the two seeded development applications
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("an existing group still matches rather than provisioning a second application", () => {
+      const cp = world();
+      try {
+        // Keycloak emits paths; the last segment is what names the application.
+        const { applicationIds, unmapped } = mapGroupsToApplications(cp.app.db, [
+          "/apim/SG-APIM-PLATFORM",
+          "sg-apim-orders",
+        ]);
+        expect(applicationIds.sort()).toEqual(["application_orders", "application_platform"]);
+        expect(unmapped).toEqual([]);
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("an application an administrator made by hand is adopted, not duplicated", () => {
+      const cp = world();
+      try {
+        cp.app.db.run("INSERT INTO application (id, name, source_group) VALUES ('eai', 'EAI', NULL)");
+        const { applicationIds, unmapped } = mapGroupsToApplications(cp.app.db, ["EAI"]);
+        expect(applicationIds).toEqual(["eai"]);
+        expect(unmapped).toEqual([]);
+        expect(
+          cp.app.db
+            .query<{ source_group: string }, []>("SELECT source_group FROM application WHERE id='eai'")
+            .get()!.source_group,
+        ).toBe("EAI");
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("a name another group already holds is refused rather than taken from it", () => {
+      const cp = world();
+      try {
+        mapGroupsToApplications(cp.app.db, ["/one/EAI"]);
+        // A different group whose last segment derives the same id. Handing it the first group's
+        // application would give its holders somebody else's APIs.
+        const { applicationIds, unmapped } = mapGroupsToApplications(cp.app.db, ["/two/EAI"]);
+        expect(applicationIds).toEqual([]);
+        expect(unmapped).toEqual(["/two/EAI"]);
+      } finally {
+        cp.close();
+      }
+    });
+
+    test("a group with no usable name in it is reported rather than given one", () => {
+      const cp = world();
+      try {
+        expect(applicationIdForGroup("EAI")).toBe("eai");
+        expect(applicationIdForGroup("/apim/Orders Team")).toBe("orders-team");
+        expect(applicationIdForGroup("///")).toBeNull();
+        expect(applicationIdForGroup("!")).toBeNull();
+
+        const { applicationIds, unmapped } = mapGroupsToApplications(cp.app.db, ["///", "  "]);
+        expect(applicationIds).toEqual([]);
+        expect(unmapped).toEqual(["///"]);
+      } finally {
+        cp.close();
+      }
+    });
   });
 
   test("renaming and remapping keep the one-group-one-application rule", async () => {

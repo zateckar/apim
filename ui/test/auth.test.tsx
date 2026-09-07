@@ -190,14 +190,16 @@ describe("applications", () => {
     expect(asAdmin).toContain("Create an application");
   });
 
-  test("an unmapped group is offered to an admin as an application to create, not created for them", () => {
+  test("a group that could not be provisioned is offered to an admin, and says why it is rare", () => {
     const html = renderToStaticMarkup(
       <ApplicationsView user={admin} unmappedGroups={["SG-APIM-BILLING"]} />,
     );
     expect(html).toContain("SG-APIM-BILLING");
     expect(html).toContain("Create an application for it");
-    // The rule, said where somebody would otherwise ask why it did not happen automatically.
-    expect(html).toContain("never turned into one automatically");
+    // Groups provision applications now, so this panel has to say why these ones did not — an
+    // admin who reads "unmapped" against the old rule goes looking for a mapping screen.
+    expect(html).toContain("provisions one on sign-in");
+    expect(html).toContain("already held by an");
   });
 });
 

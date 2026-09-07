@@ -119,6 +119,47 @@ An OIDC session SHALL NOT be a frozen copy of the claims it was issued with.
 - AND a screen SHALL be able to say where an admin flag came from — `local`, `idp` or `both` — so a
   local demotion that changes nothing is explicable
 
+### Requirement: Provision an application from the group that names it
+
+A group in the token SHALL be enough to own APIs, products, subscriptions and certificates under.
+No administrator SHALL have to create or map an application first.
+
+The identity provider is authoritative for who owns what, so holding the group **is** the grant and
+a confirmation step could only ever say yes. An application row still exists — `resource`,
+`product`, `subscription`, `certificate` and `membership` all carry `application_id` — but it is
+provisioned from the token rather than by hand.
+
+#### Scenario: A group names no application yet
+
+- GIVEN a token whose group claim carries a value no application is bound to
+- WHEN the claims are applied, at sign-in or at a claims refresh
+- THEN an application SHALL be provisioned for it, with the group stored as its `source_group`
+- AND its id SHALL be derived from the group's last path segment, so Keycloak's `/apim/orders`
+  provisions `orders`
+- AND the creation SHALL be audited against the principal whose token carried the group, because
+  nobody decided it and "who caused this to exist" is the question the row answers
+- AND applying the same claims again SHALL match the row rather than provision a second one
+
+#### Scenario: An administrator already created the application by hand
+
+- GIVEN an application whose id a group derives, carrying no `source_group`
+- WHEN that group is applied
+- THEN the existing application SHALL be adopted and bound to the group, not duplicated
+
+#### Scenario: Two groups would take one name
+
+- GIVEN an application already bound to one group
+- WHEN a different group derives the same id
+- THEN the existing application SHALL be left alone and the second group SHALL be reported as
+  unprovisioned
+- AND the reason SHALL be that handing it over would give one group's holders another group's APIs
+
+#### Scenario: A group carries no usable name
+
+- GIVEN a group value that yields no id matching `^[a-z0-9][a-z0-9_-]{1,47}$`
+- WHEN it is applied
+- THEN it SHALL be reported as unprovisioned rather than given an invented name
+
 #### Scenario: The callback origin does not match the portal's
 
 - GIVEN `OIDC_REDIRECT_URI`'s origin differs from `PUBLIC_URL`'s

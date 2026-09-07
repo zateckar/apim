@@ -11,6 +11,8 @@ import {
 } from "../../shared/jwt.ts";
 import type { OidcConfig } from "./config.ts";
 import { revokeSession, sessionRow, type SessionRow } from "./auth.ts";
+import { writeAudit } from "./audit.ts";
+import { ensureApplicationMetadata } from "./integrations.ts";
 import { decrypt, encrypt } from "./crypto.ts";
 import type { DB } from "./db.ts";
 import { nowIso } from "./db.ts";
@@ -416,36 +418,103 @@ export function claimsToIdentity(claims: Record<string, unknown>, oidc: OidcConf
 }
 
 /**
- * Group values matched against `application.source_group` — matched, never created. A group with no
- * mapping maps to nothing and is reported back to the user, because a directory that invented
- * applications would let anybody holding an IdP group become the owner of a new scope.
+ * The application id a group value provisions. Keycloak's group mapper emits full paths
+ * (`/apim/orders`), so the last segment names the thing; the whole value is what gets stored as
+ * `source_group`, because that is what the next token will present for matching.
  *
- * Keycloak's group mapper emits full paths (`/apim/orders`), so both the whole value and its last
- * segment are tried, case-insensitively and trimmed — directory exports are not careful.
+ * Returns null when nothing usable survives — the id column is `^[a-z0-9][a-z0-9_-]{1,47}$`, and a
+ * group of `///` or `!!` has no name in it to keep.
+ */
+export function applicationIdForGroup(group: string): string | null {
+  const leaf = group.trim().split("/").filter(Boolean).at(-1) ?? "";
+  const id = leaf
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-{2,}/g, "-")
+    .replace(/^[^a-z0-9]+/, "")
+    .replace(/[^a-z0-9]+$/, "")
+    .slice(0, 48);
+  return /^[a-z0-9][a-z0-9_-]{1,47}$/.test(id) ? id : null;
+}
+
+/**
+ * Group values resolved to applications, **provisioning one where it does not exist yet**.
+ *
+ * This used to match and never create, so that a directory could not invent a scope for whoever
+ * held a group. That guard is gone deliberately: where the identity provider is authoritative for
+ * who owns what, holding the group *is* the grant, and an administrator asked to confirm it can
+ * only ever say yes. An application row still has to exist — `resource`, `product`, `subscription`,
+ * `certificate` and `membership` all carry `application_id` — so "no mapping required" means the row
+ * is provisioned from the token rather than that there is no row.
+ *
+ * Three cases, and the third is the only one that still reports back:
+ *
+ *   - a row already carries this `source_group` (whole value or last segment, case-insensitively,
+ *     because directory exports are not careful) — use it;
+ *   - the derived id is free, or held by a row with no `source_group` at all — create or adopt it.
+ *     Adopting covers the application an administrator made by hand before the group existed, which
+ *     is the same thing under a different origin;
+ *   - the derived id is held by a row already bound to a *different* group — leave it alone and
+ *     report the group as unmapped. Two groups that both want one id is the one case where guessing
+ *     would hand somebody another group's application.
  */
 export function mapGroupsToApplications(
   db: DB,
   groups: string[],
+  onCreate?: (application: { id: string; name: string; sourceGroup: string }) => void,
 ): { applicationIds: string[]; unmapped: string[] } {
   const rows = db
-    .query<{ id: string; source_group: string | null }, []>(
-      "SELECT id, source_group FROM application WHERE source_group IS NOT NULL AND source_group <> ''",
-    )
+    .query<{ id: string; source_group: string | null }, []>("SELECT id, source_group FROM application")
     .all();
   const bySourceGroup = new Map<string, string>();
-  for (const row of rows) bySourceGroup.set(row.source_group!.trim().toLowerCase(), row.id);
+  const byId = new Map<string, string | null>();
+  for (const row of rows) {
+    byId.set(row.id, row.source_group);
+    if (row.source_group && row.source_group.trim()) {
+      bySourceGroup.set(row.source_group.trim().toLowerCase(), row.id);
+    }
+  }
 
   const applicationIds = new Set<string>();
   const unmapped: string[] = [];
+  const refuse = (value: string) => {
+    if (!unmapped.includes(value)) unmapped.push(value);
+  };
+
   for (const raw of groups) {
     const value = raw.trim();
     if (!value) continue;
+
     const candidates = [value, value.split("/").filter(Boolean).at(-1) ?? value];
     const hit = candidates
       .map((candidate) => bySourceGroup.get(candidate.toLowerCase()))
       .find((id): id is string => Boolean(id));
-    if (hit) applicationIds.add(hit);
-    else if (!unmapped.includes(value)) unmapped.push(value);
+    if (hit) {
+      applicationIds.add(hit);
+      continue;
+    }
+
+    const id = applicationIdForGroup(value);
+    if (!id) {
+      refuse(value);
+      continue;
+    }
+    if (byId.has(id)) {
+      const held = byId.get(id);
+      // Bound to another group: leave it alone rather than move it under this one.
+      if (held && held.trim()) {
+        refuse(value);
+        continue;
+      }
+      db.run("UPDATE application SET source_group = ? WHERE id = ?", [value, id]);
+    } else {
+      const name = candidates[1] || value;
+      db.run("INSERT INTO application (id, name, source_group) VALUES (?, ?, ?)", [id, name, value]);
+      onCreate?.({ id, name, sourceGroup: value });
+    }
+    bySourceGroup.set(value.toLowerCase(), id);
+    byId.set(id, value);
+    applicationIds.add(id);
   }
   return { applicationIds: [...applicationIds], unmapped };
 }
@@ -471,15 +540,31 @@ export function groupClaimWasEmpty(userId: string): boolean {
 }
 
 /**
- * Apply what the token says to the directory: the mutable display fields, the admin flag, and the
- * IdP-derived application memberships. Locally granted memberships are left alone (D33).
+ * Apply what the token says to the directory: the mutable display fields, the admin flag, the
+ * applications the groups name, and the IdP-derived memberships. Locally granted memberships are
+ * left alone (D33).
+ *
+ * Runs on sign-in *and* on every claims refresh, so provisioning has to be idempotent — it is: an
+ * application already carrying the group is matched rather than created.
  */
 export function applyClaims(
   app: App,
   row: PrincipalRow,
   identity: ClaimIdentity,
 ): { unmapped: string[] } {
-  const { applicationIds, unmapped } = mapGroupsToApplications(app.db, identity.groups);
+  const created: string[] = [];
+  const { applicationIds, unmapped } = mapGroupsToApplications(app.db, identity.groups, (created_) => {
+    created.push(created_.id);
+    // Audited against the person whose token provisioned it, not against an administrator: nobody
+    // decided this, and "who caused this application to exist" is the question the row answers.
+    writeAudit(app.db, {
+      actor: row.id,
+      action: "application.create",
+      subject: `application:${created_.id}`,
+      outcome: "ok",
+      detail: { name: created_.name, sourceGroup: created_.sourceGroup, reason: "idp group" },
+    });
+  });
   app.db.run(
     `UPDATE principal
         SET username = ?, email = ?, display_name = ?, idp_admin = ?
@@ -493,6 +578,9 @@ export function applyClaims(
     ],
   );
   syncIdpMemberships(app.db, row.id, applicationIds);
+  // Ask LeanIX about anything new now rather than at the next boot, so a business id appears on the
+  // picker within a poll of the application existing — the same courtesy the manual path gets.
+  if (created.length > 0) ensureApplicationMetadata(app);
   idpGroupsByUser.set(row.id, { unmapped, carried: identity.groups.length });
   return { unmapped };
 }

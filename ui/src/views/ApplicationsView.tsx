@@ -97,13 +97,15 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
 
       {user.isAdmin && unmappedGroups.length > 0 && (
         <Panel
-          title="Groups nothing here is mapped to"
-          hint="Your identity provider put somebody in these. The portal matched them to no application, so they granted nothing."
+          title="Groups that could not be provisioned"
+          hint="Your identity provider put somebody in these. An application is normally created from a group automatically; these are the ones that could not be."
         >
           <p className="muted">
-            A group is <strong>matched</strong> to an application, never turned into one automatically —
-            otherwise anybody holding a group in the directory could become the owner of a new
-            scope. Map one to an existing application on its own page, or create an application for it here.
+            A group names an application and provisions one on sign-in, so this list is short by
+            design: a group reaches it only when the name it would take is already held by an
+            application bound to a <strong>different</strong> group, or when there is no usable name
+            in it at all. Map one to an existing application on its own page, or create an
+            application for it here.
           </p>
           <ul className="plain">
             {unmappedGroups.map((group) => (

@@ -372,7 +372,7 @@ describe("verifying the id_token", () => {
 });
 
 describe("claims become roles and applications", () => {
-  test("groups map to applications by source_group, by full path or last segment", async () => {
+  test("groups match an application by source_group, by full path or last segment", async () => {
     const cp = oidcCp();
     application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
     application(cp, "application_orders", "Orders", "orders");
@@ -383,24 +383,47 @@ describe("claims become roles and applications", () => {
       "sg-apim-platform",
       "/company/apim/orders",
       "  ",
-      "SG-SOMETHING-ELSE",
     ]);
     expect(mapped.applicationIds.sort()).toEqual(["application_orders", "application_platform"]);
-    // Matched, never created: a directory that invented applications would let anybody holding a group
-    // become the owner of a new scope.
-    expect(mapped.unmapped).toEqual(["SG-SOMETHING-ELSE"]);
+    expect(mapped.unmapped).toEqual([]);
+    // Matching takes precedence over provisioning, so a group an application already carries adds
+    // nothing: still the three rows this test created.
     expect(cp.app.db.query("SELECT COUNT(*) AS n FROM application").get()).toEqual({ n: 3 });
   });
 
-  test("an unmapped group is reported to the user rather than swallowed", async () => {
+  test("a group nothing carries provisions an application rather than being refused", async () => {
     const cp = oidcCp();
     application(cp, "application_platform", "Platform APIs", "SG-APIM-PLATFORM");
-    idp.claims.groups = ["SG-APIM-PLATFORM", "SG-NOBODY-MAPPED"];
+    idp.claims.groups = ["SG-APIM-PLATFORM", "SG-BRAND-NEW"];
     const { session } = await signInThroughIdp(cp);
+
     const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      user: { applications: string[] };
       unmappedGroups: string[];
     };
-    expect(me.unmappedGroups).toEqual(["SG-NOBODY-MAPPED"]);
+    // Nothing is left for an administrator to do: the group is the grant.
+    expect(me.unmappedGroups).toEqual([]);
+    expect(me.user.applications.sort()).toEqual(["application_platform", "sg-brand-new"]);
+    expect(
+      cp.app.db
+        .query<{ name: string; source_group: string }, []>(
+          "SELECT name, source_group FROM application WHERE id = 'sg-brand-new'",
+        )
+        .get(),
+    ).toEqual({ name: "SG-BRAND-NEW", source_group: "SG-BRAND-NEW" });
+  });
+
+  test("a group whose name another group already holds is reported rather than taken", async () => {
+    const cp = oidcCp();
+    application(cp, "billing", "Billing", "/one/billing");
+    idp.claims.groups = ["/two/billing"];
+    const { session } = await signInThroughIdp(cp);
+    const me = (await (await cp.call("GET", "/api/me", { cookie: session! })).json()) as {
+      user: { applications: string[] };
+      unmappedGroups: string[];
+    };
+    expect(me.unmappedGroups).toEqual(["/two/billing"]);
+    expect(me.user.applications).toEqual([]);
   });
 
   test("a locally granted membership survives a sync that has never heard of the application", async () => {
@@ -562,9 +585,14 @@ describe("a realm whose roles are scoped per application", () => {
       applications: Array<{ applicationId: string }>;
       unmappedGroups: string[];
     };
-    expect(me.applications.map((t) => t.applicationId).sort()).toEqual(["application_mvis", "application_podp"]);
-    // Matched case-insensitively, and still matched rather than created.
-    expect(me.unmappedGroups).toEqual(["NO-APPLICATION-HERE"]);
+    // The two an application already carries are matched case-insensitively; the third names no
+    // application yet and provisions one, which is the whole point of holding the role for it.
+    expect(me.applications.map((t) => t.applicationId).sort()).toEqual([
+      "application_mvis",
+      "application_podp",
+      "no-application-here",
+    ]);
+    expect(me.unmappedGroups).toEqual([]);
     expect(me.user.isAdmin).toBe(false);
   });
 

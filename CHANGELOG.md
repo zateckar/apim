@@ -17,6 +17,71 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.2.4 - 08.09.2026
+
+The APIs you call sit beside the APIs you publish, a key has an age, and a definition is checked
+where it is written.
+
+### Added
+
+- **APIs**, **MCP Servers** and **A2A Agents** also list what this application subscribes to. A
+  subscribed row names the publisher, says which products and environments the access covers, and
+  opens the read-only catalogue listing rather than an editor that would refuse every control.
+- A filter over published-here and subscribed appears on those screens when there is something on
+  both sides of it.
+- A subscription's keys show how old each one is and the date it stops working, and **either** key
+  can be rotated — the primary used to be unreplaceable from the subscriptions list.
+- A subscription key now expires. The portal asks for a rotation once it is a year old and the
+  gateway stops accepting it at 600 days; an administrator can set both ages.
+- Definitions are checked on the page where they are written. Problems appear in the workspace and
+  in the publish wizard as you edit, with a one-click conversion from YAML to JSON.
+- The API workspace's tabs can be moved through with the arrow keys, and its definition editor
+  wraps long lines instead of scrolling sideways.
+
+### Changed
+
+- Publishing an API creates a product for it, named after the API, so the wizard no longer asks for
+  one. A later version of the same API joins that product. Bundling several APIs into one is still
+  on **Products**.
+- The publish wizard's third step is **Route** rather than "Route and sell", and asks only where
+  traffic goes.
+- **Subscriptions** offers what each state actually allows: cancel a request that is still waiting,
+  keys and revocation while it is active, subscribe again once it is over, and a sentence saying
+  what is being waited on while the gateways catch up.
+- Ending a request nobody has decided yet is called cancelling it, not withdrawing access that was
+  never granted.
+- What is in a product is chosen from a list of checkboxes instead of a multiple-selection box.
+- A catalogue card says how far along the promotion chain an API has got.
+- The catalogue heads an API by the name its publisher chose, not by whatever the title inside its
+  definition says.
+- Request timeouts accept 120 seconds by default and 240 at most.
+- An application is provisioned from the group in your token rather than mapped by hand.
+- The application picker stacks an application's name above its LeanIX id instead of running the
+  two together.
+- Dates and times read the same way across every screen.
+
+### Fixed
+
+- Buttons on sixteen screens drew as flat text, because two stylesheets disagreed about what a
+  button is.
+- A subscription could sit on **Revoking** for minutes. A replica that had been shut down rather
+  than restarted still counted as one the change was waiting for, which was silently holding up
+  publishing too.
+- An API refuses a path its definition does not declare instead of forwarding it to the backend
+  unchecked — and unvalidated, which was the same traffic nobody was checking.
+- The base path an API is published at is removed before the backend is called.
+- The API workspace opens a definition indented, and no longer counts a whitespace change as an
+  edit you have to save.
+- **MCP Servers** says "MCP server" where it used to say "API", and a single published version is
+  no longer drawn as a control that does nothing.
+- An empty certificate table is an empty state with an action rather than a bare heading.
+- The subscribe dialog asks for the purpose the request has to carry, and stops promising a key it
+  never had.
+- Environments in a listing are ordered along the promotion chain.
+- Adding a sign-in provider is a change to `.env` alone, and an empty value no longer defeats the
+  default.
+- A caller arriving over a dual-stack listener matches the IPv4 range that names it.
+
 ## 1.2.3 - 06.09.2026
 
 Every state on every screen says what it means, in one set of colours.

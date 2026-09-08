@@ -23,85 +23,211 @@
 # Then http://localhost:8080, sign in as the bootstrap administrator, and choose a password — the
 # one from `.env` is in a file, a shell history and `docker inspect`, so the portal will not let it
 # be kept.
+#
+# ---------------------------------------------------------------------------------------------
+# Every variable the control plane reads is below, in two groups: the ones with no default, which
+# `docker compose` refuses to start without and names, and the ones with one. The list is complete
+# and it is closed — `test/compose-env.test.ts` fails when this file names a variable the control
+# plane does not read, or omits one it does. `openspec/project.md` § Environment Variables is where
+# the defaults come from; this file repeats a default only where an empty string would not be
+# treated as absent, and the comments say which those are and why.
+#
+# `${VAR:-}` is a pass-through: it means the same thing to the container as `${VAR}` and does not
+# make compose print "the VAR variable is not set" for every unset setting at every `up`.
 
 name: apim
 
 services:
   control-plane:
-    build:
-      context: .
-      dockerfile: docker/control-plane.Dockerfile
-    image: apim-control-plane:local
+    # The published image, not a local build. `docker compose up` on a clean machine pulls this and
+    # starts — there is no build step in the documented path, because the images are what a
+    # deployment consumes and building from a checkout is a different activity with different
+    # inputs. To run your own build instead:
+    #
+    #   docker build -f docker/control-plane.Dockerfile -t apim-control-plane:local .
+    #   APIM_VERSION=… docker compose … # or override `image:` in a docker-compose.override.yml
+    #
+    # The tag is the minor line rather than an exact patch on purpose. CHANGELOG.md's newest
+    # heading is the portal's version and the repository keeps no second copy of it to disagree
+    # with; `1.2` follows the patch releases of that line without being a version number written
+    # down twice. Pin an exact one per deployment with APIM_VERSION when you want that.
+    image: ghcr.io/zateckar/apim/control-plane:${APIM_VERSION:-1.2}
     restart: unless-stopped
     ports:
       - "${CP_PORT:-8080}:8080"
     environment:
-      # How people sign in. There is no default (D36): a control plane that guessed would either be
-      # unreachable or wide open. Add `oidc` — or use it alone — once OIDC_* is filled in below.
-      AUTH_PROVIDERS: ${AUTH_PROVIDERS:-local}
-      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
-      PROMOTION_CHAIN: ${PROMOTION_CHAIN:-dev,test,prod}
+      # ═══════════════════════════════════════════════════════════ required: no default anywhere
+      # Both are checked by compose before the container is created, so a missing one is a message
+      # naming the variable rather than a container that starts and cannot be signed in to.
+
+      # How people sign in: an ordered subset of local,oidc,dev. There is no default (D36) — a
+      # control plane that guessed would either be unreachable or wide open — and this file does not
+      # invent one either. `.env.example` ships `AUTH_PROVIDERS=local`, which is the first-run answer.
+      AUTH_PROVIDERS: ${AUTH_PROVIDERS:?required — an ordered subset of local,oidc,dev. See .env.example}
 
       # Created once, only while the local directory is completely empty, and always with
       # "must change the password at first sign-in" — because this value reaches the process
       # through the environment and is therefore in `.env`, in `docker inspect`, and in whatever
-      # shell wrote it.
+      # shell wrote it. Twelve characters minimum.
+      #
+      # Required here even for an OIDC deployment, and that is deliberate: `oidc,local` is the
+      # combination this product recommends, because a local administrator is the way in on the day
+      # the identity provider is unreachable.
+      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?required — 12 characters minimum. Set it in .env}
+
+      # ═══════════════════════════════════════════════════════════════════ optional: addressing
+      # PUBLIC_URL has a code default and every real deployment still has to change it: it is the
+      # allowed `Origin` for every cookie-authenticated write, and an OIDC redirect URI's origin
+      # must equal it. Both it and PROMOTION_CHAIN repeat their default rather than passing straight
+      # through, because compose substitutes an **empty string** for an unset variable and both are
+      # read with `??`, which catches `undefined` and not `""`.
+      PUBLIC_URL: ${PUBLIC_URL:-http://localhost:8080}
+      PROMOTION_CHAIN: ${PROMOTION_CHAIN:-dev,test,prod}
+      # A second allowed `Origin` for the CSRF check — a Vite dev server, normally. Read with
+      # `|| null`, so an empty string is already "not set" and passing it straight through is right.
+      UI_DEV_ORIGIN: ${UI_DEV_ORIGIN:-}
+
+      # ════════════════════════════════════════════════════════════════════ optional: sessions
+      # Idle and absolute are distinct: the idle window slides on every request, so a working day is
+      # one sign-in; the absolute one does not, so a tab left open does not live for ever. Prune is
+      # how long a revoked or expired session stays readable in the session list.
+      #
+      # These and every other integer below are read with `intFromEnv`, which treats `""` as absent,
+      # so passing one straight through gets the code's own default rather than a zero. The gateway
+      # is not like this and its file says so.
+      SESSION_IDLE_MIN: ${SESSION_IDLE_MIN:-}
+      SESSION_LIFETIME_HOURS: ${SESSION_LIFETIME_HOURS:-}
+      SESSION_PRUNE_AFTER_DAYS: ${SESSION_PRUNE_AFTER_DAYS:-}
+
+      # ═════════════════════════════════════════════════════════ optional: the local directory
+      # The username the bootstrap administrator is created under. It goes with the password above:
+      # one without the other cannot create an account, and startup says so.
       BOOTSTRAP_ADMIN_USERNAME: ${BOOTSTRAP_ADMIN_USERNAME:-admin}
-      BOOTSTRAP_ADMIN_PASSWORD: ${BOOTSTRAP_ADMIN_PASSWORD:?set BOOTSTRAP_ADMIN_PASSWORD in .env}
+      # The local sign-in policy. Worth tuning when `local` is there for break-glass administrators:
+      # the lockout is what stands between a mistyped sealed-envelope password and a 15-minute wait
+      # during an incident, and the rate limit is global across all callers rather than per address,
+      # because it sits in front of the argon2 hash.
+      LOCAL_PASSWORD_MIN_LEN: ${LOCAL_PASSWORD_MIN_LEN:-}
+      LOCAL_LOCKOUT_THRESHOLD: ${LOCAL_LOCKOUT_THRESHOLD:-}
+      LOCAL_LOCKOUT_MINUTES: ${LOCAL_LOCKOUT_MINUTES:-}
+      LOCAL_LOGIN_RATE_PER_MIN: ${LOCAL_LOGIN_RATE_PER_MIN:-}
 
-      # The local sign-in policy. Passed through because a deployment that keeps `local` beside
-      # `oidc` for break-glass administrators is the one most likely to need to tune it: the
-      # lockout is what stands between a mistyped sealed-envelope password and a 15-minute wait
-      # during an incident. All four are read with `intFromEnv`, which treats `""` as absent, so
-      # an unset variable here gets the code's own default rather than a zero.
-      LOCAL_PASSWORD_MIN_LEN: ${LOCAL_PASSWORD_MIN_LEN}
-      LOCAL_LOCKOUT_THRESHOLD: ${LOCAL_LOCKOUT_THRESHOLD}
-      LOCAL_LOCKOUT_MINUTES: ${LOCAL_LOCKOUT_MINUTES}
-      LOCAL_LOGIN_RATE_PER_MIN: ${LOCAL_LOGIN_RATE_PER_MIN}
-
+      # ══════════════════════════════════════════════════════════ optional: the identity provider
       # Passed through unconditionally, so adding an identity provider is a change to `.env` alone.
       # `readOidc` reads none of these unless AUTH_PROVIDERS contains `oidc`; when it does, startup
       # refuses and names whichever of the three required ones is empty. There is nothing to
       # uncomment here, because a commented-out passthrough is a setting that is silently dropped —
-      # the operator sets OIDC_ISSUER in `.env`, sees it in `docker inspect` nowhere, and the
+      # the operator sets OIDC_ISSUER in `.env`, sees it nowhere in `docker inspect`, and the
       # control plane says the variable is required.
       #
-      # Which ones carry a default here is not a style choice. Compose substitutes an **empty
-      # string** for an unset variable, and `readOidc` defaults these with `??`, which catches
-      # `undefined` and not `""` — a bare passthrough of OIDC_ROLE_CLAIM would hand the control
-      # plane an empty claim path instead of `realm_access.roles`, and everybody would sign in
-      # fine, be in no application, and own nothing. So the `??`-defaulted strings repeat their
-      # default below; the rest are bare, because `required()` rejects `""` with a good message
-      # and `intFromEnv`/`boolFromEnv` both treat `""` as absent.
-      OIDC_ISSUER: ${OIDC_ISSUER}
-      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID}
+      # Which ones carry a default here is not a style choice. Passing OIDC_ROLE_CLAIM straight
+      # through would hand the control plane an empty claim path instead of `realm_access.roles`,
+      # and everybody would sign in fine, be in no application, and own nothing. So the
+      # `??`-defaulted strings repeat their default; the rest are `${VAR:-}`, because `required()`
+      # rejects `""` with a good message and `intFromEnv`/`boolFromEnv` treat `""` as absent.
+      OIDC_ISSUER: ${OIDC_ISSUER:-}
+      OIDC_CLIENT_ID: ${OIDC_CLIENT_ID:-}
       # Absent means a public PKCE client, the Keycloak default for this shape.
-      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET}
+      OIDC_CLIENT_SECRET: ${OIDC_CLIENT_SECRET:-}
       # Deliberately not derived from PUBLIC_URL. Its origin must *equal* PUBLIC_URL's, and startup
       # refuses a mismatch — but it can only refuse a value somebody chose. A derived one would
       # follow a PUBLIC_URL edit silently past the check and into the identity provider's own
       # registered-redirect-URI comparison, which fails at the callback rather than at boot.
-      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI}
+      OIDC_REDIRECT_URI: ${OIDC_REDIRECT_URI:-}
       OIDC_SCOPE: ${OIDC_SCOPE:-openid profile email offline_access}
       OIDC_ROLE_CLAIM: ${OIDC_ROLE_CLAIM:-realm_access.roles}
       OIDC_ADMIN_ROLE: ${OIDC_ADMIN_ROLE:-apim-admin}
       OIDC_GROUP_CLAIM: ${OIDC_GROUP_CLAIM:-groups}
       OIDC_DISPLAY_NAME: ${OIDC_DISPLAY_NAME:-Single sign-on}
-      OIDC_CLAIMS_REFRESH_SEC: ${OIDC_CLAIMS_REFRESH_SEC}
-      OIDC_AUTO_CREATE: ${OIDC_AUTO_CREATE}
-      OIDC_END_SESSION: ${OIDC_END_SESSION}
+      OIDC_CLAIMS_REFRESH_SEC: ${OIDC_CLAIMS_REFRESH_SEC:-}
+      OIDC_AUTO_CREATE: ${OIDC_AUTO_CREATE:-}
+      OIDC_END_SESSION: ${OIDC_END_SESSION:-}
 
-      SESSION_IDLE_MIN: ${SESSION_IDLE_MIN:-60}
-      SESSION_LIFETIME_HOURS: ${SESSION_LIFETIME_HOURS:-8}
+      # ══════════════════════════════════════════════════════ optional: the fleet, and key ageing
+      # Stale is when a replica reads as unhealthy on a screen. Abandoned is when it stops holding
+      # the environment's convergence open — an order of magnitude higher on purpose, so a rolling
+      # restart is not mistaken for a fleet that has gone away.
+      INSTANCE_STALE_AFTER_SEC: ${INSTANCE_STALE_AFTER_SEC:-}
+      INSTANCE_ABANDONED_AFTER_SEC: ${INSTANCE_ABANDONED_AFTER_SEC:-}
+      # When the portal starts asking for a rotation, and when the key leaves the configuration
+      # document and the gateway refuses it. Raise the expiry before the first start against a
+      # database whose keys predate this: a key past it stops working at that start.
+      SUBSCRIPTION_KEY_WARN_DAYS: ${SUBSCRIPTION_KEY_WARN_DAYS:-}
+      SUBSCRIPTION_KEY_EXPIRE_DAYS: ${SUBSCRIPTION_KEY_EXPIRE_DAYS:-}
+
+      # ═══════════════════════════════════════════════════════ optional: ceilings and retention
+      # Every one of these is a bound with a defined behaviour past it, which is why they are
+      # settings rather than constants. Three of them refuse `0` by name — REVISION_KEEP_COUNT,
+      # MAX_TRUST_ANCHORS and DASHBOARD_DEFAULT_SINCE_MIN — because zero is a legal integer and a
+      # destructive value for all three.
+      MAX_SPEC_BYTES: ${MAX_SPEC_BYTES:-}
+      ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-}
+      CATALOG_PAGE_SIZE: ${CATALOG_PAGE_SIZE:-}
+      REVISION_KEEP_COUNT: ${REVISION_KEEP_COUNT:-}
+      REVISION_KEEP_DAYS: ${REVISION_KEEP_DAYS:-}
+      MAX_TRUST_ANCHORS: ${MAX_TRUST_ANCHORS:-}
+      DASHBOARD_DEFAULT_SINCE_MIN: ${DASHBOARD_DEFAULT_SINCE_MIN:-}
+      # Telemetry and usage. The flush interval is also the quota RPO, because a lost flush is what
+      # quota can be behind by.
+      TELEMETRY_FLUSH_INTERVAL_SEC: ${TELEMETRY_FLUSH_INTERVAL_SEC:-}
+      TELEMETRY_RETENTION_HOURS: ${TELEMETRY_RETENTION_HOURS:-}
+      JOB_RETENTION_HOURS: ${JOB_RETENTION_HOURS:-}
+      MAX_REPORT_BYTES: ${MAX_REPORT_BYTES:-}
+      MAX_INSTANCES_PER_TARGET: ${MAX_INSTANCES_PER_TARGET:-}
+      MAX_RUNS_PER_INSTANCE_WINDOW: ${MAX_RUNS_PER_INSTANCE_WINDOW:-}
+      USAGE_FLUSH_INTERVAL_SEC: ${USAGE_FLUSH_INTERVAL_SEC:-}
+      MAX_QUOTA_ENTRIES: ${MAX_QUOTA_ENTRIES:-}
+
+      # ══════════════════════════════════════════════════════════════════ optional: the playground
+      # A playground call is a real call: it goes through the gateway, spends the subscription's
+      # rate limit and quota, and shows up in telemetry. These bound what this process will carry
+      # for it. The history pair bounds what is *stored*, not what is sent.
+      PLAYGROUND_MAX_BODY_BYTES: ${PLAYGROUND_MAX_BODY_BYTES:-}
+      PLAYGROUND_MAX_RESPONSE_BYTES: ${PLAYGROUND_MAX_RESPONSE_BYTES:-}
+      PLAYGROUND_TIMEOUT_MS: ${PLAYGROUND_TIMEOUT_MS:-}
+      PLAYGROUND_RATE_PER_MIN: ${PLAYGROUND_RATE_PER_MIN:-}
+      PLAYGROUND_HISTORY_PER_RESOURCE: ${PLAYGROUND_HISTORY_PER_RESOURCE:-}
+      PLAYGROUND_HISTORY_RETENTION_DAYS: ${PLAYGROUND_HISTORY_RETENTION_DAYS:-}
+      PLAYGROUND_HISTORY_BODY_BYTES: ${PLAYGROUND_HISTORY_BODY_BYTES:-}
+
+      # ═══════════════════════════════════════════════════════════════ optional: the request logs
+      # `mock` generates deterministic simulated traffic from the published estate, and every screen
+      # that shows it says so. `elk` reads a real index. There is deliberately **no fallback** from
+      # `elk` to `mock`: a portal that quietly invented traffic while the log cluster was down would
+      # present fiction as observation. With `elk`, ELK_URL is required, it must be in the egress
+      # allowlist, and either ELK_API_KEY or ELK_USERNAME/ELK_PASSWORD must be set.
+      #
+      # The three that repeat their default do so for the `??` reason above: an empty LOGS_PROVIDER
+      # is a startup failure, and an empty index name searches nothing.
+      LOGS_PROVIDER: ${LOGS_PROVIDER:-mock}
+      ELK_URL: ${ELK_URL:-}
+      ELK_INDEX: ${ELK_INDEX:-apim-access-*}
+      # A separate index because Heartbeat writes one document per check, and mixing them into the
+      # access index would make every request-count aggregation wrong.
+      ELK_UPTIME_INDEX: ${ELK_UPTIME_INDEX:-heartbeat-*}
+      ELK_API_KEY: ${ELK_API_KEY:-}
+      ELK_USERNAME: ${ELK_USERNAME:-}
+      ELK_PASSWORD: ${ELK_PASSWORD:-}
+      ELK_TIMEOUT_MS: ${ELK_TIMEOUT_MS:-}
+      ELK_MAX_RESULT_WINDOW: ${ELK_MAX_RESULT_WINDOW:-}
+      LOGS_MAX_RANGE_HOURS: ${LOGS_MAX_RANGE_HOURS:-}
+
+      # Set by the image and deliberately not repeated here: PORT, DB_PATH, KEK_PATH, UI_DIST,
+      # INTEGRATIONS_FILE, TARGETS_FILE. Each names a path *inside* the container that the volume
+      # and the mount below already fix, so a copy in this file could only ever disagree with them.
+      # DEV_AUTH is retired: setting it without AUTH_PROVIDERS is a startup failure that says so.
     volumes:
       # The database and the key that encrypts what is in it. Back up both together or neither:
       # the database without the KEK yields no subscription key and no certificate, and the KEK
       # without the database is a file of random bytes.
       - control-plane-data:/data
       # Read-only, and not baked into the image: the repository's copies allow egress to loopback
-      # so the local stack works, which is not a default anybody should inherit. `/app/config.sample`
-      # in the image holds them to copy from.
-      - ./config:/etc/apim:ro
+      # so the local stack works, which is not a default anybody should inherit. Deploying without
+      # a checkout, take the samples out of the image first and point APIM_CONFIG_DIR at them:
+      #
+      #   docker run --rm ghcr.io/zateckar/apim/control-plane:${APIM_VERSION:-1.2} \
+      #       sh -c 'cat /app/config.sample/integrations.json' > integrations.json
+      - ${APIM_CONFIG_DIR:-./config}:/etc/apim:ro
     networks:
       - apim
     healthcheck:

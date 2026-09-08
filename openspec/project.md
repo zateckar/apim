@@ -811,6 +811,7 @@ Refusals checked at boot, before anything serves:
 | `POLL_INTERVAL_SEC` | `2` | |
 | `MAX_BODY_BYTES` | `8 MiB` | |
 | `MAX_CONCURRENT_REQUESTS` | `2048` | |
+| `BUN_CONFIG_MAX_HTTP_REQUESTS` | *(the runtime's)* | the outbound queue; startup refuses unless it is at least `MAX_CONCURRENT_REQUESTS` |
 | `MAX_CONCURRENT_UPGRADES` | `1024` | |
 | `BLOCKING_BUFFER_BUDGET_BYTES` | `256 MiB` | |
 | `VALIDATE_POOL_SIZE` | `4` | |

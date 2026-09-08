@@ -113,8 +113,16 @@ changing a line.
 no default, and an image that guessed would make that guess for every deployment at once.
 
 **What the gateway image deliberately does not set:** `GATEWAY_CP_URL`, `GATEWAY_TOKEN_FILE`,
-`DP_NAME`, `MAX_BODY_BYTES`, `TRUSTED_PROXY_CIDRS`. Each is a deployment decision, and the process
-refuses to start without it, naming the variable.
+`DP_NAME`, `MAX_BODY_BYTES`, `TRUSTED_PROXY_CIDRS`. Each is a deployment decision, and an image that
+guessed would make that guess for every deployment at once.
+
+Only one of them stops the process: **the token**. Without `GATEWAY_TOKEN_FILE` or `GATEWAY_TOKEN`
+the gateway refuses to start and names both. The other four have code defaults, and those defaults
+are the argument for setting them rather than a reason to relax about them — a gateway with no
+`GATEWAY_CP_URL` polls `http://localhost:8080` and looks like a network fault, and one with no
+`TRUSTED_PROXY_CIDRS` logs and rate-limits on whatever client IP the caller asked for. That is why
+`GATEWAY_CP_URL` has no default in [`docker-compose.data-plane.yml`](docker-compose.data-plane.yml):
+the refusal an operator needs is the compose file's, before a container exists.
 
 **What the gateway image does set, and why both:** `MAX_CONCURRENT_REQUESTS=8192` and
 `BUN_CONFIG_MAX_HTTP_REQUESTS=16384`. The gateway refuses to start unless the second is at least
@@ -140,16 +148,28 @@ they are on different hosts — the portal beside its backup schedule, the gatew
 traffic. Both declare the project name `apim` and a network called `apim`, so passing both to one
 `docker compose` merges them into one project on one network.
 
+Both **pull the published image** rather than building one — there is no `build:` section in either
+file, because the images are what a deployment consumes and building from a checkout is a different
+activity with different inputs. The tag is the minor line, `ghcr.io/…/control-plane:1.2`, so patch
+releases arrive without an edit; `APIM_VERSION` pins an exact one. To run your own build, build it
+and override `image:` in a `docker-compose.override.yml`.
+
+Each file lists **every** variable its plane reads, in two groups — the ones with no default, which
+compose refuses to start without and names, and the ones with one. Nothing is missing and nothing
+is surplus: [`test/compose-env.test.ts`](test/compose-env.test.ts) fails when a file names a
+variable its plane does not read, or omits one it does.
+
 **On one machine:**
 
 ```bash
 cp .env.example .env
 ```
 
-Set `BOOTSTRAP_ADMIN_PASSWORD`. Twelve characters minimum; the control plane refuses to start with a
-shorter one rather than exempting the account that has every permission from the policy it enforces.
-`GATEWAY_CP_URL` is already `http://control-plane:8080` in the example, which is correct for this
-case and wrong for the next one.
+Two values have no default and compose stops before it creates a container without them:
+`AUTH_PROVIDERS` (the example ships `local`) and `BOOTSTRAP_ADMIN_PASSWORD`, which you set. Twelve
+characters minimum; the control plane refuses to start with a shorter one rather than exempting the
+account that has every permission from the policy it enforces. `GATEWAY_CP_URL` is already
+`http://control-plane:8080` in the example, which is correct for this case and wrong for the next one.
 
 ```bash
 docker compose -f docker-compose.control-plane.yml up -d

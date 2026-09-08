@@ -27,35 +27,110 @@
 # `.secrets/dev-1` is mounted as a *file*, and Docker silently creates an empty *directory* at that
 # path if it does not exist yet. The gateway then fails to read its token, and the message blames
 # the token rather than the missing file. Mint before you bring this up.
+#
+# ---------------------------------------------------------------------------------------------
+# Every variable the gateway reads is below, in two groups: the one with no default, which
+# `docker compose` refuses to start without and names, and the ones with one. The list is complete
+# and it is closed — `test/compose-env.test.ts` fails when this file names a variable the gateway
+# does not read, or omits one it does.
+#
+# **Every number below repeats its default, and that is not decoration.** The gateway reads its
+# integers with `Number(process.env.X ?? default)`, and `Number("")` is `0`, not the default —
+# while compose substitutes an empty string for an unset variable. Passing MAX_BODY_BYTES straight
+# through would therefore give this gateway a zero-byte body limit rather than 48 MiB. Only the
+# settings read as a *comparison* — `=== "off"`, `!== "0"` — and the two comma-separated lists are
+# safe to pass through, and those are the ones written `${VAR:-}` here. `openspec/project.md`
+# § Environment Variables is where the numbers come from.
+#
+# `${VAR:-}` rather than `${VAR}` throughout: the two mean the same thing to the container, and the
+# second makes compose print "the VAR variable is not set" for every one of them at every `up`.
 
 name: apim
 
 services:
   gateway:
-    build:
-      context: .
-      dockerfile: docker/data-plane.Dockerfile
-    image: apim-data-plane:local
+    # The published image, not a local build — see the note in docker-compose.control-plane.yml.
+    # The two planes are versioned independently but ship from one commit, so keep the tags equal
+    # unless you are deliberately running a gateway a version behind the portal.
+    image: ghcr.io/zateckar/apim/data-plane:${APIM_VERSION:-1.2}
     restart: unless-stopped
     ports:
+      # DP_PORT names the **host** port here and the container always listens on 8081; a second
+      # gateway on this host publishes a different one. The variable of the same name in the
+      # environment below is the port inside the container, which is why it is a literal.
       - "${DP_PORT:-8081}:8081"
     environment:
-      DP_NAME: ${DP_NAME:-dev-1}
-      DP_PORT: 8081
+      # ═══════════════════════════════════════════════════════════ required: no default anywhere
       # No default, on purpose. `http://control-plane:8080` is right only when this file was passed
       # to the same `docker compose` as the control plane's; on its own host it is a real URL, and a
       # gateway that silently polled a name that does not resolve would look like a network fault.
-      GATEWAY_CP_URL: ${GATEWAY_CP_URL:?set GATEWAY_CP_URL — http://control-plane:8080 when running both compose files together, otherwise the portal's URL}
+      GATEWAY_CP_URL: ${GATEWAY_CP_URL:?required — http://control-plane:8080 when running both compose files together, otherwise the portal's URL}
+
+      # ═══════════════════════════════════════════════════════════════════ optional: identity
+      # This instance's name, unique within its environment. A second gateway needs its own name,
+      # its own token file, its own volume and its own published port.
+      DP_NAME: ${DP_NAME:-dev-1}
+      DP_PORT: 8081
       # A file, not a value. An environment variable is visible to every process in the container
-      # and `docker inspect` prints it; a mounted file is readable by this user and nobody else.
+      # and `docker inspect` prints it. `GATEWAY_TOKEN` exists in the code and is deliberately not
+      # offered here for that reason; point GATEWAY_TOKEN_PATH at the minted file instead.
       GATEWAY_TOKEN_FILE: /run/secrets/gateway-token
+
+      # ════════════════════════════════════════════════════════════════ optional: polling and size
       POLL_INTERVAL_SEC: ${POLL_INTERVAL_SEC:-5}
       # The largest request body any route on this gateway must accept. Per instance, not per
       # route: raising it for one large-upload API raises it for every API here.
       MAX_BODY_BYTES: ${MAX_BODY_BYTES:-50331648}
+
+      # ═══════════════════════════════════════════════════════ optional: concurrency, and why both
+      # The gateway refuses to start unless BUN_CONFIG_MAX_HTTP_REQUESTS is at least
+      # MAX_CONCURRENT_REQUESTS, and that check exists precisely to catch the pairing an image
+      # setting neither would inherit: the runtime's small default outbound queue behind the
+      # gateway's own ceiling, where one slow backend delays every other route. They are both here
+      # so that raising one raises the other in the same edit — raise them together or not at all.
+      MAX_CONCURRENT_REQUESTS: ${MAX_CONCURRENT_REQUESTS:-8192}
+      BUN_CONFIG_MAX_HTTP_REQUESTS: ${BUN_CONFIG_MAX_HTTP_REQUESTS:-16384}
+      MAX_CONCURRENT_UPGRADES: ${MAX_CONCURRENT_UPGRADES:-1024}
+      # What may be held in memory at once for the requests that have to be buffered whole.
+      BLOCKING_BUFFER_BUDGET_BYTES: ${BLOCKING_BUFFER_BUDGET_BYTES:-268435456}
+      # Sized to cores rather than to a constant: the pool keeps validation off the request path,
+      # and past the core count it stops being concurrency and starts being a queue.
+      VALIDATE_POOL_SIZE: ${VALIDATE_POOL_SIZE:-4}
+      VALIDATE_QUEUE_DEPTH: ${VALIDATE_QUEUE_DEPTH:-256}
+
+      # ═════════════════════════════════════════════════════════════════ optional: what is cached
+      # The compiled validators and the certificate material, on the volume below.
+      ARTIFACT_CACHE_MAX_BYTES: ${ARTIFACT_CACHE_MAX_BYTES:-536870912}
+      # The response cache, in memory. Both bounds apply; whichever is reached first evicts.
+      RESPONSE_CACHE_MAX_ENTRIES: ${RESPONSE_CACHE_MAX_ENTRIES:-10000}
+      RESPONSE_CACHE_MAX_BYTES: ${RESPONSE_CACHE_MAX_BYTES:-67108864}
+
+      # ══════════════════════════════════════════════════════════════ optional: what is reported
+      # How much this gateway will carry between flushes. Past either bound it drops the excess and
+      # says how much in `/healthz`, rather than growing without limit.
+      TELEMETRY_MAX_SERIES: ${TELEMETRY_MAX_SERIES:-2000}
+      TELEMETRY_MAX_WINDOWS_PER_REPORT: ${TELEMETRY_MAX_WINDOWS_PER_REPORT:-15}
+      # Read as comparisons, so an empty value is already "leave it on" and these pass straight through.
+      DP_TELEMETRY: ${DP_TELEMETRY:-}
+      DP_ACCESS_LOG: ${DP_ACCESS_LOG:-}
+
+      # ══════════════════════════════════════════════════════════ optional: what is in front of it
       # Empty means "trust nothing about X-Forwarded-For". Set it to the reverse proxy's CIDRs, or
-      # every client IP the gateway logs and rate-limits on is one the caller chose.
+      # every client IP the gateway logs and rate-limits on is one the caller chose. Split on
+      # commas and filtered, so an empty value is correct and this passes straight through.
       TRUSTED_PROXY_CIDRS: ${TRUSTED_PROXY_CIDRS:-}
+      # The headers a TLS-terminating proxy presents a client certificate in, as `key=value` pairs.
+      # Unset keeps the defaults.
+      TRUSTED_PROXY_CLIENT_CERT_HEADERS: ${TRUSTED_PROXY_CLIENT_CERT_HEADERS:-}
+      # `0` trusts only the environment's own trust anchors. Read as `!== "0"`, so empty is "on".
+      TRUST_SYSTEM_ROOTS: ${TRUST_SYSTEM_ROOTS:-}
+      JWKS_MIN_REFETCH_SEC: ${JWKS_MIN_REFETCH_SEC:-60}
+      # Several processes sharing one port on one host. Read as `=== "1"`, so empty is "off".
+      DP_REUSE_PORT: ${DP_REUSE_PORT:-}
+
+      # Set by the image and deliberately not repeated here: GATEWAY_CONFIG_CACHE and
+      # GATEWAY_ARTIFACT_CACHE. Both name paths inside the volume mounted below, so a copy in this
+      # file could only ever disagree with it.
     volumes:
       # Per instance and it must be: the artifact cache holds compiled validators, and certificate
       # material beside it is written 0600, so two gateways sharing one directory would race on file
@@ -65,8 +140,9 @@ services:
     networks:
       - apim
     ulimits:
-      # Four times MAX_CONCURRENT_REQUESTS (8192 in the image): a held request keeps a client socket
-      # and an upstream socket, and the process needs headroom above the sum of both.
+      # Four times MAX_CONCURRENT_REQUESTS: a held request keeps a client socket and an upstream
+      # socket, and the process needs headroom above the sum of both. Raise this too if you raise
+      # the concurrency pair above.
       nofile:
         soft: 32768
         hard: 32768

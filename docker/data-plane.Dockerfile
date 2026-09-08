@@ -33,7 +33,14 @@ ENV MAX_CONCURRENT_REQUESTS=8192 \
     VALIDATE_QUEUE_DEPTH=256
 
 # Deliberately not set: GATEWAY_CP_URL, GATEWAY_TOKEN_FILE, DP_NAME, MAX_BODY_BYTES,
-# TRUSTED_PROXY_CIDRS. Each is a deployment decision the process fails to start without, by name.
+# TRUSTED_PROXY_CIDRS. Each is a deployment decision, and an image that guessed would make that
+# guess for every deployment at once.
+#
+# Only the token stops the process: `loadDpConfig` refuses to start without one and names both
+# variables. The other four have code defaults — which is the argument for setting them, not a
+# reason to relax about them, because a gateway that defaulted GATEWAY_CP_URL polls
+# `http://localhost:8080` and looks like a network fault. `docker-compose.data-plane.yml` is where
+# that refusal lives, before a container exists.
 #
 # `GATEWAY_TOKEN_FILE` rather than `GATEWAY_TOKEN` in the documented path: an environment variable
 # is visible to every process in the container and `docker inspect` prints it.

@@ -22,3 +22,8 @@ reports/
 # Private keys, wherever they land. Deploying to a host puts its SSH key next to the compose file
 # it deploys, and a working tree that quietly stages one is a worse outcome than a noisy pattern.
 *.pem
+
+# One person's own Claude Code permission rules for this checkout. `.claude/settings.json` is the
+# committed, team-wide half; this one is not, because what a machine is allowed to reach from here
+# is a property of that machine.
+.claude/settings.local.json

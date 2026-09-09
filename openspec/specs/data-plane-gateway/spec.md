@@ -704,6 +704,17 @@ whatever the caller put in it, and the log index is read by more people than the
 - AND the buffer SHALL be flushed on an orderly shutdown
 - AND the trade SHALL be stated: a process killed with `SIGKILL` loses what has not been flushed
 
+#### Scenario: The gateway is asked to stop
+
+- GIVEN buffered lines that no flush interval has reached yet
+- WHEN the gateway receives `SIGTERM`
+- THEN they SHALL reach the file before the process exits — a stop signal is an orderly shutdown,
+  not the `SIGKILL` case above
+- AND the gateway SHALL therefore handle the signal itself rather than leaving it to the default
+  disposition, which PID 1 does not have; see `runtime-configuration`
+- AND the reason SHALL be that a container restart is the most common way this process ever ends,
+  so the unflushed tail of a compliance log would otherwise be lost on every deploy
+
 #### Scenario: The file reaches its rotation size
 
 - GIVEN a live log file at the `accessLogMaxBytes` setting

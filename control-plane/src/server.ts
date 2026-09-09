@@ -39,6 +39,7 @@ import { registerUserRoutes } from "./api/users.ts";
 
 import { ensureApplicationMetadata, registerIntegrationRoutes } from "./integrations.ts";
 import { registerNotificationRoutes } from "./notifications.ts";
+import { DEFAULT_DRAIN_MS, drain, onShutdown } from "../../shared/shutdown.ts";
 
 export function createRouter(): Router {
   const router = new Router();
@@ -252,12 +253,32 @@ if (import.meta.main) {
   const app = createApp(config);
   await ensureBootstrapAdmin(app);
   const server = startServer(app);
-  startJobRunner(app);
+  const jobs = startJobRunner(app);
   app.telemetry.start(config.telemetryFlushIntervalSec * 1000);
   app.quota.start(config.usageFlushIntervalSec * 1000);
   // Started here rather than in `createApp`, because it makes outbound requests: a test world that
   // merely opens a database must not start probing gateway addresses on a timer.
-  uptimeMonitorFor(app).start();
+  const uptime = uptimeMonitorFor(app);
+  uptime.start();
+  /**
+   * Without this the runtime never receives SIGTERM at all — see `shared/shutdown.ts` for the
+   * PID 1 rule that makes an unhandled signal disappear.
+   *
+   * The two flushes are the reason this plane needs a handler as much as the gateway does. Both
+   * aggregators buffer for their configured interval, and losing that interval is the RPO a crash
+   * costs. A stop somebody asked for should not also pay it, and until now every deploy did.
+   */
+  onShutdown("cp", async () => {
+    await drain(server, DEFAULT_DRAIN_MS);
+    clearInterval(jobs);
+    uptime.stop();
+    app.telemetry.stop();
+    app.quota.stop();
+    app.telemetry.flushNow();
+    app.quota.flush();
+    // Last: a checkpoint of the WAL, and nothing left holding the file when the container goes.
+    app.db.close();
+  });
   console.log(
     `[cp] control plane on http://localhost:${server.port} — db ${config.dbPath}, ` +
       `environments ${config.promotionChain.join(",")}, UI from ${config.uiDist}, ` +

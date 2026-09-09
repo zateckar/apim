@@ -79,7 +79,7 @@ gateways of every environment in the chain, and the local upstreams in `tools/`.
 ```
 shared/         policy vocabulary · config contract · gateway settings · telemetry · JSON Schema
                 XSD · XML · SOAP · routing · operation matching · MCP · A2A · quota · attention
-                structural diff
+                structural diff · orderly shutdown
 control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota aggregation,
                 config build, gateway settings, artifact compiler, discovery, catalog search,
                 certificates, trust anchors, the playground, the dashboard, authentication and
@@ -112,6 +112,8 @@ Modules named by more than one capability spec:
 - `shared/config-doc.ts` — the gateway configuration document, the only contract between planes.
 - `shared/gateway-settings.ts` — the fleet's operational settings, their bounds, and the one
   three-layer resolution both planes and the settings screen read.
+- `shared/shutdown.ts` — the signal handler both planes install, the bounded drain, and the PID 1
+  rule that makes an unhandled `SIGTERM` disappear rather than stop a container.
 - `shared/domains.ts` — the catalogue taxonomy and the published-path derivation.
 - `shared/types.ts` — resource kinds, lifecycles, release states, the normalized API model.
 - `control-plane/src/operations.ts` — publish, configure, promote and subscribe as durable

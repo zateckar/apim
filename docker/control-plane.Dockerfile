@@ -58,6 +58,11 @@ ENV DB_PATH=/data/apim.sqlite \
 # plane that guessed would either be unreachable or wide open, and an image that guessed would
 # make that guess for every deployment at once.
 
+# No `--init` and no `STOPSIGNAL`, for the reason spelled out in `docker/data-plane.Dockerfile`:
+# the entrypoint `exec`s, so SIGTERM reaches the runtime directly, and what was missing was a
+# handler rather than an init. It is in `shared/shutdown.ts`, and here it is what flushes the
+# telemetry and quota buffers and closes the database instead of leaving a WAL behind.
+
 RUN mkdir -p /data /etc/apim && chown -R bun:bun /data /app
 
 EXPOSE 8080

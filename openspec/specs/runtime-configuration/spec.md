@@ -7,6 +7,8 @@ and what a misconfiguration is allowed to do. The governing rule is that **a wro
 value is a startup failure that names the variable, never a silent downgrade** — see *Environment
 Variables* in `openspec/project.md` for the complete tables.
 
+It also defines the other end of a process's life: how each plane stops when something asks it to.
+
 ## Requirements
 
 ### Requirement: Configuration is explicit, with no fallback chains
@@ -216,6 +218,58 @@ the configured string, without a network call.
 - WHEN a log query is served
 - THEN the results SHALL be deterministic and derived from the estate
 - AND the response SHALL be marked `simulated`, and every screen showing them SHALL say so
+
+### Requirement: Stop on a signal, in bounded time, without losing buffered work
+
+Each plane SHALL install its own handler for `SIGTERM` and `SIGINT` and wind down when one
+arrives. A handler SHALL NOT be treated as optional on the grounds that the default disposition
+would terminate the process: a container's main process is PID 1, and the kernel does not deliver
+a signal to PID 1 when no handler is installed for it, so a plane without one is not stopped by
+`docker stop` or `podman stop` at all — it is hard-killed after the runtime's grace period.
+
+#### Scenario: A stop signal arrives
+
+- GIVEN either plane running as a container's main process
+- WHEN the runtime sends `SIGTERM`
+- THEN the process SHALL stop accepting new connections, wind down, and exit of its own accord
+- AND it SHALL NOT rely on the signal's default disposition, which PID 1 does not have
+
+#### Scenario: The wind-down does not finish
+
+- GIVEN a wind-down that blocks — a connection that will not drain, a disk that will not write
+- WHEN the grace period passes
+- THEN the process SHALL exit anyway, saying that it did not finish
+- AND the grace period SHALL be shorter than a container runtime's default patience, so the exit
+  is the process's own rather than a kill
+- AND the reason SHALL be that a shutdown which hangs is the same outage as no handler at all,
+  except that it looks handled
+
+#### Scenario: A second signal arrives during the wind-down
+
+- GIVEN a wind-down already in progress
+- WHEN a second `SIGTERM` or `SIGINT` arrives
+- THEN the process SHALL exit immediately without finishing
+- AND the reason SHALL be that an operator pressing Ctrl-C twice means it, and one made to wait
+  out a grace period they are trying to skip learns to reach for `SIGKILL` instead
+
+#### Scenario: The gateway winds down
+
+- GIVEN a gateway with buffered access-log lines and open passthrough streams
+- WHEN it winds down
+- THEN it SHALL stop accepting, wait a bounded time for requests in flight, then stop polling,
+  close its streams and **flush and close the access log last**
+- AND the wait for in-flight work SHALL be bounded rather than graceful-until-done, because a
+  passthrough stream may stay open for as long as its own ceilings allow and the log's final
+  flush must not wait for it
+
+#### Scenario: The control plane winds down
+
+- GIVEN buffered telemetry and quota counters
+- WHEN the control plane winds down
+- THEN the job runner, the uptime monitor and both flush timers SHALL be stopped, the telemetry
+  and quota buffers SHALL be flushed, and the database SHALL be closed
+- AND the reason SHALL be that an interval's worth of counters is the RPO a crash costs, and a
+  stop somebody asked for should not also pay it
 
 ### Requirement: Serve the portal and the API from one process
 

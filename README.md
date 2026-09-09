@@ -470,6 +470,13 @@ does not make one syscall per request. An orderly shutdown flushes; a `SIGKILL` 
 still in the buffer. That is the trade, and it is the same one every proxy that does not write
 through makes.
 
+**`docker stop` and `podman stop` are the orderly case.** The gateway handles `SIGTERM`, stops
+accepting, waits a bounded moment for requests in flight, and flushes the log before it exits.
+It did not always — and because a container's main process is PID 1, and the
+kernel discards a signal PID 1 has installed no handler for, the runtime hard-killed it after the
+grace period instead. Every restart lost the tail of the log. If you have a wrapper that reaches
+for `kill -9`, or a `stop_grace_period` shortened to work around the old behaviour, both can go.
+
 `openspec/project.md` § The Access Log Line is the field list and what each one lands in on the ELK
 side. Two things about its contents are worth knowing before you build a dashboard on it: **no
 request or response header is ever in a line**, so there is no field to map for `Authorization` or

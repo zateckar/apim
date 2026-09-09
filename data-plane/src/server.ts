@@ -8,6 +8,7 @@ import {
   type GatewaySettings,
 } from "../../shared/gateway-settings.ts";
 import { canonicalIp, effectiveClientIp, ipInCidr } from "../../shared/net.ts";
+import { DEFAULT_DRAIN_MS, drain, onShutdown } from "../../shared/shutdown.ts";
 import { AccessLogWriter } from "./accesslog.ts";
 import { ArtifactCache } from "./artifacts.ts";
 import { TokenCache } from "./backend-auth.ts";
@@ -785,6 +786,14 @@ if (import.meta.main) {
   assertOutboundCeiling(dp.config);
   await dp.start();
   const server = startDataPlane(dp);
+  // Without this the runtime never receives SIGTERM at all — see `shared/shutdown.ts` for the PID 1
+  // rule that makes an unhandled signal disappear. The order is the whole content of the handler:
+  // stop accepting first, so nothing writes a line after `dp.stop()` has flushed and closed the
+  // access log.
+  onShutdown("dp", async () => {
+    await drain(server, DEFAULT_DRAIN_MS);
+    dp.stop();
+  });
   console.log(
     `[dp] ${dp.config.name} on http://localhost:${server.port} — control plane ${dp.config.cpUrl}, ` +
       `poll ${dp.config.pollIntervalMs}ms, cache ${dp.config.cachePath}, ` +

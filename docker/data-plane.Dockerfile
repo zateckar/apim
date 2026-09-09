@@ -50,6 +50,12 @@ ENV BUN_CONFIG_MAX_HTTP_REQUESTS=16384
 # `GATEWAY_TOKEN_FILE` rather than `GATEWAY_TOKEN` in the documented path: an environment variable
 # is visible to every process in the container and `docker inspect` prints it.
 
+# No `--init` and no `STOPSIGNAL`, deliberately. The base image's entrypoint `exec`s, so the runtime
+# is PID 1 and SIGTERM reaches it directly; the default stop signal is already SIGTERM. What was
+# missing was a handler — the kernel discards a signal PID 1 has installed none for — and that now
+# lives in `shared/shutdown.ts`. Adding an init here would "fix" the same symptom by putting a
+# second process in front of the one that has to flush the access log, which is worse.
+
 RUN mkdir -p /var/lib/apim && chown -R bun:bun /var/lib/apim /app
 
 EXPOSE 8081

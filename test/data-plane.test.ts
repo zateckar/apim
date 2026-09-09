@@ -1,4 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
+import { logTimestamp } from "../data-plane/src/accesslog.ts";
 import type { DataPlane, DpConfig } from "../data-plane/src/server.ts";
 import {
   FIXTURE_DOMAIN,
@@ -7,6 +9,7 @@ import {
   makeDp as newDataPlane,
   publishApi,
   serveCp,
+  setFleetSettings,
   startBackend,
   underDomain,
   type TestCp,
@@ -353,7 +356,8 @@ describe("limits and backend failures", () => {
       basePath: "/petstore",
       policy: { "auth.subscriptionKey": KEY_UNIT },
     });
-    const dp = makeDp({ maxBodyBytes: 10 });
+    setFleetSettings(cp, { maxBodyBytes: 1024 });
+    const dp = makeDp();
     await dp.client.pollOnce();
 
     const response = await dp.fetchHttp(
@@ -362,9 +366,9 @@ describe("limits and backend failures", () => {
         headers: {
           "X-Api-Key": published.key!,
           "content-type": "application/json",
-          "content-length": "64",
+          "content-length": "2048",
         },
-        body: "x".repeat(64),
+        body: "x".repeat(2048),
       }),
       "203.0.113.7",
     );
@@ -378,13 +382,14 @@ describe("limits and backend failures", () => {
       basePath: "/petstore",
       policy: { "auth.subscriptionKey": KEY_UNIT },
     });
-    const dp = makeDp({ maxBodyBytes: 10 });
+    setFleetSettings(cp, { maxBodyBytes: 1024 });
+    const dp = makeDp();
     await dp.client.pollOnce();
 
     // A chunked request declares no length, so the header check cannot see it.
     const stream = new ReadableStream<Uint8Array>({
       start(controller) {
-        controller.enqueue(new TextEncoder().encode("x".repeat(64)));
+        controller.enqueue(new TextEncoder().encode("x".repeat(2048)));
         controller.close();
       },
     });
@@ -538,6 +543,52 @@ describe("config distribution", () => {
     const fleet = await (await cp.call("GET", "/api/targets/dev/health", { cookie: alice })).json();
     expect(fleet.configDigest).toBe(health.configDigest);
     expect(fleet.inSync).toBe(true);
+  });
+
+  /*
+   * `Bun.serve` runs in development mode unless it is told otherwise, and a development-mode
+   * uncaught error answers the *caller* with the message, the stack, the source around each frame
+   * and the file paths. Nothing in the pipeline reaches it — every failure it knows about is
+   * already a `Response` — which is exactly why the day something does, the answer must not be the
+   * gateway's source code. There is no request that provokes it on demand, so the guarantee is
+   * held over the source: it is one line, and one deletion away from silently coming back.
+   */
+  test("the listener is not started in the runtime's development mode", () => {
+    const source = readFileSync(new URL("../data-plane/src/server.ts", import.meta.url), "utf8");
+    expect(source).toContain("development: false");
+    // And an uncaught error still answers as this gateway rather than as the runtime.
+    expect(source).toMatch(/error\(err\)\s*\{[\s\S]*problem\(\s*\n?\s*500/);
+  });
+
+  /*
+   * The access log formats one timestamp per second rather than one per request, by keeping the
+   * part that only changes each second. The whole optimisation is only allowed to exist if what it
+   * produces is character-for-character what it replaced, so that is what is asserted — across a
+   * second boundary, a millisecond that needs padding, and the two ends of the range.
+   */
+  test("the cached log timestamp is exactly what a Date would have formatted", () => {
+    const instants = [0, 1, 999, 1_000, 1_001, Date.now(), Date.now() + 1_500, 4_102_444_800_000];
+    for (const ms of instants) {
+      expect(logTimestamp(ms)).toBe(new Date(ms).toISOString());
+    }
+    // Same second twice, which is the case the cache exists for.
+    const base = Date.now() - (Date.now() % 1000);
+    expect(logTimestamp(base + 7)).toBe(new Date(base + 7).toISOString());
+    expect(logTimestamp(base + 42)).toBe(new Date(base + 42).toISOString());
+  });
+
+  test("healthz reports the runtime's DNS cache, which every backend call goes through", async () => {
+    await publishApi(cp, { backendUrl: backend.url, basePath: "/petstore" });
+    const dp = makeDp();
+    await dp.client.pollOnce();
+    const health = dp.health() as { dns: Record<string, number> };
+    // Warming happens at activation, so the counters exist from the first poll onwards; their
+    // values belong to the process, not to this test, so only their presence is asserted.
+    expect(health.dns).toMatchObject({
+      cacheMisses: expect.any(Number),
+      cacheHitsCompleted: expect.any(Number),
+      size: expect.any(Number),
+    });
   });
 
   test("with no config and no cache, every request is 503 rather than a wrong answer", async () => {

@@ -32,6 +32,7 @@ import { registerPlaygroundRoutes } from "./api/playground.ts";
 import { registerPolicyRoutes } from "./api/policy.ts";
 import { registerPromotionRoutes } from "./api/promotion.ts";
 import { registerResourceRoutes } from "./api/resources.ts";
+import { registerSettingsRoutes } from "./api/settings.ts";
 import { registerTelemetryRoutes } from "./api/telemetry.ts";
 import { registerTrustRoutes } from "./api/trust.ts";
 import { registerUserRoutes } from "./api/users.ts";
@@ -46,6 +47,7 @@ export function createRouter(): Router {
   registerAdminRoutes(router);
   registerUserRoutes(router);
   registerFleetRoutes(router);
+  registerSettingsRoutes(router);
   registerTelemetryRoutes(router);
   registerResourceRoutes(router);
   registerPromotionRoutes(router);
@@ -218,6 +220,13 @@ export function startServer(app: App, router = createRouter()) {
   const server = Bun.serve({
     port: app.config.port,
     idleTimeout: 60,
+    /**
+     * The same reason as the gateway's (`data-plane/src/server.ts`): the runtime's development
+     * mode answers an uncaught error with the source around each frame and the file paths. Every
+     * `/api/**` failure is already shaped by `dispatch`, but the static branch below is outside it,
+     * and this is the plane that holds the database.
+     */
+    development: false,
     fetch: (req) => {
       const url = new URL(req.url);
       if (API_PREFIXES.some((p) => url.pathname === p || url.pathname.startsWith(p + "/"))) {

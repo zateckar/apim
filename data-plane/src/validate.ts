@@ -328,9 +328,19 @@ export class ValidationPool {
   dropped = 0;
 
   constructor(
-    private readonly concurrency: number,
-    private readonly depth: number,
+    private concurrency: number,
+    private depth: number,
   ) {}
+
+  /**
+   * Both are the fleet's decision and change when a document is activated. Nothing queued is
+   * thrown away: a narrower pool simply starts fewer new drains, and a shallower queue rejects the
+   * next submissions until the backlog is under it.
+   */
+  resize(concurrency: number, depth: number): void {
+    this.concurrency = concurrency;
+    this.depth = depth;
+  }
 
   submit(task: PoolTask): boolean {
     if (this.queue.length >= this.depth) {
@@ -406,7 +416,15 @@ export class ValidationCounterSet {
 export class BlockingBudget {
   private used = 0;
 
-  constructor(readonly total: number) {}
+  constructor(public total: number) {}
+
+  /**
+   * Lowered below what is reserved, the reservations stand — they are bytes already held by
+   * requests in flight — and the next one is shed until enough have been released.
+   */
+  resize(total: number): void {
+    this.total = total;
+  }
 
   tryReserve(bytes: number): boolean {
     if (this.used + bytes > this.total) return false;

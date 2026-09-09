@@ -20,25 +20,30 @@ ENV GATEWAY_CONFIG_CACHE=/var/lib/apim/config.json \
     DP_PORT=8081 \
     POLL_INTERVAL_SEC=5
 
-# Both concurrency values, at the numbers `scripts/seed.ts` writes `[P1-22]`. This is not tidiness.
-# v3 made the gateway refuse to start unless BUN_CONFIG_MAX_HTTP_REQUESTS >= MAX_CONCURRENT_REQUESTS
-# precisely to catch the pairing an image that set neither would inherit: the runtime's default
-# outbound queue against the gateway's default ceiling, where one slow backend delays every other
-# route (reports/capacity-report.md). Raise them together or not at all.
-ENV MAX_CONCURRENT_REQUESTS=8192 \
-    BUN_CONFIG_MAX_HTTP_REQUESTS=16384 \
-    MAX_CONCURRENT_UPGRADES=1024 \
-    BLOCKING_BUFFER_BUDGET_BYTES=268435456 \
-    VALIDATE_POOL_SIZE=4 \
-    VALIDATE_QUEUE_DEPTH=256
+# The one concurrency value left in the image. Its pair — the `maxConcurrentRequests` gateway
+# setting — became the control plane's in v6, and the gateway still refuses to start, and now also
+# refuses to activate a document, unless this is at least that setting. The check exists precisely
+# to catch the pairing an image that set neither would inherit: the runtime's default outbound queue
+# behind the gateway's ceiling, where one slow backend delays every other route
+# (reports/capacity-report.md). Headroom rather than a match, so raising the setting from a browser
+# is a normal thing to do; past 16384 raise this and restart the container.
+ENV BUN_CONFIG_MAX_HTTP_REQUESTS=16384
 
-# Deliberately not set: GATEWAY_CP_URL, GATEWAY_TOKEN_FILE, DP_NAME, MAX_BODY_BYTES,
-# TRUSTED_PROXY_CIDRS. Each is a deployment decision, and an image that guessed would make that
-# guess for every deployment at once.
+# Deliberately not set: GATEWAY_CP_URL, GATEWAY_TOKEN_FILE, DP_NAME, TRUSTED_PROXY_CIDRS,
+# DP_ACCESS_LOG_PATH. Each is a deployment decision, and an image that guessed would make that guess
+# for every deployment at once. The log path most of all: unset means stdout, which is what the
+# container's own log driver collects, and a path in the image would send every gateway's lines to
+# one file on a volume the operator may not have mounted.
 #
-# Only the token stops the process: `loadDpConfig` refuses to start without one and names both
-# variables. The other four have code defaults — which is the argument for setting them, not a
-# reason to relax about them, because a gateway that defaulted GATEWAY_CP_URL polls
+# **Cannot be set here at all**: the request-body cap, the concurrency and buffer ceilings, the
+# cache sizes, the JWKS floor, the telemetry bounds and the access-log switches. They are the
+# control plane's since v6 and arrive in the configuration document; a container that still sets one
+# of their old variables refuses to start and names it. That is the upgrade path — see
+# `shared/gateway-settings.ts`.
+#
+# Only the token stops the process for a missing value: `loadDpConfig` refuses to start without one
+# and names both variables. The rest have code defaults — which is the argument for setting them,
+# not a reason to relax about them, because a gateway that defaulted GATEWAY_CP_URL polls
 # `http://localhost:8080` and looks like a network fault. `docker-compose.data-plane.yml` is where
 # that refusal lives, before a container exists.
 #

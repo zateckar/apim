@@ -50,7 +50,7 @@ export function Dashboard({
   const data = useAsync(
     () =>
       api.get<Dashboard>(
-        `/api/dashboard?environment=${encodeURIComponent(s.environment)}&sinceMin=${sinceMin}`,
+        `/api/dashboard?applicationId=${encodeURIComponent(s.application)}&environment=${encodeURIComponent(s.environment)}&sinceMin=${sinceMin}`,
       ),
     [s.environment, sinceMin, s.application, tick],
   );

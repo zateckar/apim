@@ -4,8 +4,8 @@ import { App } from "./App";
 import "@fontsource-variable/inter-tight";
 import "@fontsource-variable/jetbrains-mono";
 import "./styles.css";
-import "./portal/brand.css";
 import "./portal/portal.css";
+import "./portal/brand.css";
 
 createRoot(document.getElementById("root")!).render(
   <StrictMode>

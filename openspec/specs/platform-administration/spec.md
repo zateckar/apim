@@ -12,7 +12,8 @@ Administration group.
 
 #### Scenario: A member deep-links into an administration screen
 
-- GIVEN a member who opens Gateways, Trust, Global policy, People, Applications, Telemetry or Audit
+- GIVEN a member who opens Gateways, Gateway settings, Trust, Global policy, People, Applications,
+  Telemetry or Audit
 - WHEN it renders
 - THEN the current state SHALL be shown
 - AND every control SHALL be disabled with one sentence saying only a platform administrator can
@@ -117,6 +118,15 @@ Administration group.
 - THEN its name SHALL be unique within that environment and match the gateway name pattern
 - AND removing one SHALL be refused while anything is published on it, naming what
 
+#### Scenario: What a gateway enforces is changed
+
+- GIVEN an administrator
+- WHEN they change a gateway's concurrency ceilings, body cap, cache sizes, telemetry bounds or
+  access log
+- THEN they SHALL do it on the Gateway settings screen, for the fleet, one environment or that one
+  gateway, and never by editing a container's environment
+- AND the full requirements for that screen and its resolution are in `gateway-settings`
+
 ### Requirement: Mint an instance token once, show it once, and cap how many there are
 
 #### Scenario: A replica's token is minted
@@ -145,7 +155,8 @@ Administration group.
 - GIVEN registered instances
 - WHEN Health Status renders their detail
 - THEN each SHALL show which configuration digest it has activated, when it was last seen, its
-  process stats, and anything it has refused to activate
+  process stats, and anything it has refused to activate — including a settings block its container
+  cannot honour
 - AND its chip SHALL be **Revoked**, **Not reporting**, **Catching up** or **Healthy**, with the
   underlying reason in the tooltip
 - AND an instance not seen within `INSTANCE_STALE_AFTER_SEC` SHALL be stale
@@ -169,3 +180,13 @@ Administration group.
 - THEN each SHALL be present with an empty state naming the next action — registering a gateway,
   minting a replica, adding a trust anchor
 - AND no administration screen SHALL disappear because it has nothing in it yet
+
+### Requirement: Make audit events easy to scan
+
+#### Scenario: The audit table renders
+
+- GIVEN recorded audit events
+- WHEN Audit is opened
+- THEN it SHALL show the latest 200 events with date and time, actor, action, subject and outcome
+- AND each nonempty detail SHALL be available through a View details disclosure rather than expanded JSON in every row
+- AND loading SHALL show a skeleton, and an empty audit SHALL offer Refresh events

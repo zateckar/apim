@@ -5,6 +5,7 @@
  * serving what it already has.
  */
 import type { ArtifactRef } from "./artifact.ts";
+import type { GatewaySettings } from "./gateway-settings.ts";
 import type { PolicyDocument } from "./policy.ts";
 import type { A2aBinding, Lifecycle, ResourceKind } from "./types.ts";
 
@@ -16,8 +17,34 @@ import type { A2aBinding, Lifecycle, ResourceKind } from "./types.ts";
  * v4 adds `trustAnchors` — the environment's trust store, which is what makes G4 an environment
  * decision rather than a per-process one. An instance speaking 3 is refused, keeps serving from its
  * cache, and reports the refusal as `activationBlocked` (plan §10).
+ *
+ * v5 adds `logBodiesUntil` — a per-route, time-boxed instruction to capture bodies in the access
+ * log. It travels in the document rather than being configured on the gateway for the same reason
+ * every other decision does: an operator who could turn body capture on by editing an environment
+ * variable on one instance would have turned it on somewhere nobody can see, for as long as
+ * nobody notices.
+ *
+ * v6 adds `settings` — the gateway's own operational knobs, resolved per gateway from the fleet,
+ * environment and gateway layers (`shared/gateway-settings.ts`). They were environment variables on
+ * each container until now, which made a fleet's configuration the union of N compose files and
+ * drift between them invisible; the argument for moving them is exactly the one v5 makes above,
+ * applied to capacity rather than to body capture. `limits` stays a separate block because it comes
+ * from `INTEGRATIONS_FILE` rather than from the database; the two should converge.
  */
-export const CONFIG_VERSION = 4;
+export const CONFIG_VERSION = 6;
+
+/**
+ * The most of any one body that reaches an access-log line, while `logBodiesUntil` is open.
+ *
+ * Here rather than in the gateway because both planes state it: the gateway enforces it on every
+ * captured body, and the control plane tells whoever opens a window what they are about to get. A
+ * number the portal promised and the gateway did not honour would be worse than no number, so
+ * there is one.
+ *
+ * 8 KiB is enough of a body to see the shape of a request that went wrong, and small enough that a
+ * capture window cannot turn the log index into a copy of the traffic.
+ */
+export const MAX_LOGGED_BODY_BYTES = 8 * 1024;
 
 export interface ConfigSoapOperation {
   /** May legitimately be `""` — see ApiOperation.soapAction. */
@@ -96,6 +123,15 @@ export interface ConfigRoute {
   operations: ConfigOperation[];
   /** Compiled validators to fetch before this config may be activated (design section 8.7). */
   artifacts: ArtifactRef[];
+  /**
+   * Capture request and response bodies in this route's access-log lines until this instant
+   * (ISO-8601), then stop. Absent means the ordinary state: no bodies, ever.
+   *
+   * The instant travels rather than a flag, for the reason `ConfigBackendTls.expiresAt` does: the
+   * instance stops on its own clock, so a control-plane outage cannot leave a debugging window
+   * open indefinitely on a fleet nobody can reach.
+   */
+  logBodiesUntil?: string;
   soap?: { version: "1.1" | "1.2"; operations: ConfigSoapOperation[] };
   mcp?: { protocolVersion: string };
   a2a?: { cardPath: string; cardPublic: boolean; card: A2aBinding };
@@ -206,6 +242,12 @@ export interface GatewayConfig {
   digest: string;
   generatedAt: string;
   limits: ConfigLimits;
+  /**
+   * v6: this gateway's operational settings, already resolved. The layers they were resolved from
+   * do not travel — the instance is handed values, never a precedence rule to apply, which is what
+   * keeps "the data plane never decides anything" true of its own configuration too.
+   */
+  settings: GatewaySettings;
   routes: ConfigRoute[];
   subscriptions: ConfigSubscription[];
   certificates: ConfigCertificate[];

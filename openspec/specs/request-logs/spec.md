@@ -6,6 +6,11 @@ Define per-request access logs: a **native query interface** over a log index, s
 caller may read, with a real Elasticsearch implementation and a deterministic mock behind it. The
 control plane does not store request logs.
 
+It also defines the one thing the portal can change about what a log line contains: a **body
+capture window**, an hour in which one API's request and response bodies are written into the line
+as well. What the gateway actually writes is `data-plane-gateway` § Write one access-log line for
+every request, and never sample.
+
 ## Requirements
 
 ### Requirement: The control plane queries logs; it never stores them
@@ -20,16 +25,18 @@ control plane does not store request logs.
   "which call, when, and what happened to it" is a different question with a different retention
   story that the estate already runs Elasticsearch for
 
-### Requirement: Two reads, and nothing else
+### Requirement: Two reads over the index, and nothing else
 
 #### Scenario: The endpoints are enumerated
 
 - GIVEN the log surface
 - WHEN it is described
-- THEN it SHALL consist of `GET /api/logs` and `GET /api/logs/histogram`
-- AND there SHALL be no write, and no per-resource route
+- THEN reading logs SHALL consist of `GET /api/logs` and `GET /api/logs/histogram`
+- AND there SHALL be no write to the index, and no per-resource route
 - AND a resource SHALL be a **filter** on the same two endpoints, which therefore answer both "this
   API's traffic" and "everything I can see"
+- AND the only write in this capability SHALL be the body capture window below, which changes what
+  a future line contains and never touches a line that exists
 
 ### Requirement: Authorize by resolving the caller into a list of resource ids
 
@@ -153,3 +160,72 @@ control plane does not store request logs.
 - GIVEN a row in the dashboard's traffic table
 - WHEN it is activated
 - THEN it SHALL open that resource's workspace on the Logs panel, via `?tab=logs`
+
+### Requirement: Open a body capture window per API, per environment, for at most an hour
+
+Bodies are not logged. A window is the deliberate, temporary exception, for the bug that cannot be
+reproduced from status codes and timings.
+
+#### Scenario: A window is opened
+
+- GIVEN `POST /api/logs/body-capture` with a resource, an environment, a reason and a number of
+  minutes
+- WHEN it is accepted
+- THEN the window SHALL last at most `MAX_BODY_CAPTURE_MINUTES` (60), defaulting to it
+- AND a longer window SHALL be refused rather than clamped, because a second hour is a second
+  decision with a second audit row
+- AND the reason SHALL be at least 20 characters, for the same reader a TLS exception's reason is
+  written for
+
+#### Scenario: The caller is not an owner
+
+- GIVEN a caller who is not a member of the API's owning application and not an administrator
+- WHEN they try to open a window
+- THEN it SHALL be refused
+- AND the rule SHALL be the ordinary one — this changes something the caller's application owns —
+  rather than the admin-only carve-out a TLS exception takes, because capture exposes bodies the
+  owner's own backend already receives in full
+
+#### Scenario: A window is already open
+
+- GIVEN a live window for this resource in this environment
+- WHEN a second is requested
+- THEN it SHALL be refused, naming when the open one expires and who opened it
+- AND the reason SHALL be that two rows would mean two things to close and one still capturing
+
+#### Scenario: A window is opened or closed
+
+- GIVEN either write
+- WHEN it succeeds
+- THEN it SHALL be written to the audit log with the actor, the environment, the reason and the
+  expiry
+- AND the resource SHALL be touched, so the change reaches the fleet on the next poll and a
+  concurrent editor sees a changed ETag
+
+#### Scenario: A window is closed early
+
+- GIVEN `DELETE /api/logs/body-capture/:id`
+- WHEN it succeeds
+- THEN the row SHALL be dated rather than deleted
+- AND the reason SHALL be that "whose bodies were captured, when, and who asked" is the question
+  the table exists to answer, and a deleted row answers nothing
+
+#### Scenario: Windows are listed
+
+- GIVEN `GET /api/logs/body-capture`
+- WHEN it answers
+- THEN it SHALL list the live windows, optionally narrowed by environment and resource, with the
+  spent ones available behind `includeSpent=1`
+- AND every line SHALL carry the reason, who opened it, when it expires and the seconds remaining
+- AND the list SHALL be readable by any signed-in caller, not only by the owner, because a record
+  private to the person it is a record of is not a record
+- AND the response SHALL state the cap in minutes and the cap in bytes, so the screen does not have
+  to know them
+
+#### Scenario: The window reaches the fleet
+
+- GIVEN an open window
+- WHEN the environment's configuration document is built
+- THEN the route SHALL carry `logBodiesUntil` as the expiry **instant**
+- AND a spent or revoked window SHALL simply not appear in the document, so nothing has to know
+  what "revoked" means downstream

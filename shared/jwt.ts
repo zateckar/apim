@@ -67,6 +67,15 @@ export class JwksCache {
     return this.options.minRefetchMs ?? 60_000;
   }
 
+  /**
+   * The cooldown is the fleet's decision and changes when a configuration document is activated
+   * (`shared/gateway-settings.ts`). The cached key sets and the fetch timestamps survive: they are
+   * facts about the identity provider, not about how often we are willing to ask it.
+   */
+  setMinRefetchMs(minRefetchMs: number): void {
+    this.options.minRefetchMs = minRefetchMs;
+  }
+
   async keyFor(jwksUrl: string, kid: string | undefined): Promise<JwkKey | null> {
     const known = this.keys.get(jwksUrl);
     if (known) {

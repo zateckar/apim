@@ -8,7 +8,7 @@ import {
   type TelemetrySummary,
   type TelemetryTotals,
 } from "../api";
-import { Panel, EnvironmentPicker, Notice, Pill, StackedBars, useAsync } from "../components";
+import { Panel, Notice, Pill, StackedBars, useAsync } from "../components";
 
 /**
  * G4: gateway telemetry, in the control plane.
@@ -77,8 +77,7 @@ function Totals({ totals }: { totals: TelemetryTotals }) {
   );
 }
 
-export function TelemetryView({ meta }: { meta: Meta }) {
-  const [environment, setEnvironment] = useState(meta.chain[0] ?? "dev");
+export function TelemetryView({ meta, environment }: { meta: Meta; environment: string }) {
   const [sinceMin, setSinceMin] = useState(60);
   const query = `environment=${environment}&sinceMin=${sinceMin}`;
 
@@ -111,8 +110,7 @@ export function TelemetryView({ meta }: { meta: Meta }) {
           </p>
         </div>
         <div className="row">
-          <EnvironmentPicker chain={meta.chain} value={environment} onChange={setEnvironment} />
-          <select value={sinceMin} onChange={(event) => setSinceMin(Number(event.target.value))}>
+          <select aria-label="Time window" value={sinceMin} onChange={(event) => setSinceMin(Number(event.target.value))}>
             {WINDOWS.map((window) => (
               <option key={window.value} value={window.value}>
                 last {window.label}

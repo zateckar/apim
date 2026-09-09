@@ -1,11 +1,13 @@
 import type {
   ConfigCertificate,
   ConfigLimits,
+  ConfigOperation,
   ConfigReferences,
   ConfigRoute,
   ConfigSubscription,
   GatewayConfig,
 } from "../../shared/config-doc.ts";
+import { compileOperations, type CompiledOperations } from "../../shared/opmatch.ts";
 import { hostKey, pathMatchesBase } from "../../shared/routing.ts";
 import type { ArtifactCache, CertificateMaterial } from "./artifacts.ts";
 import { TrustSet } from "./trust.ts";
@@ -18,6 +20,9 @@ const NO_REFERENCES: ConfigReferences = {
   secretHashes: {},
   secrets: {},
 };
+
+/** A route declaring no operations matches none; it never needs its own empty index. */
+const NO_OPERATIONS: CompiledOperations<ConfigOperation> = compileOperations<ConfigOperation>([]);
 
 /** Used only when an older cache file is read; a live config always carries its own. */
 const FALLBACK_LIMITS: ConfigLimits = {
@@ -56,6 +61,12 @@ export class RouteTable {
   private readonly byKeyHash = new Map<string, ConfigSubscription>();
   private readonly certificatesById = new Map<string, ConfigCertificate>();
   /**
+   * Operation templates, split into segments once here — which is once per activation, for the
+   * same reason `trust` above is composed once. A template cannot change between two requests, so
+   * re-splitting it on each one is work the request path does not owe (perf review, step 11).
+   */
+  private readonly operationIndexes = new Map<ConfigRoute, CompiledOperations<ConfigOperation>>();
+  /**
    * The round-robin cursor is per table, so a config swap restarts the rotation. That is a
    * deliberate non-property: the rotation is a fairness heuristic on one instance, not a
    * distribution guarantee, and carrying it across a swap would mean the table was not immutable.
@@ -78,6 +89,21 @@ export class RouteTable {
     for (const certificate of config.certificates ?? []) {
       this.certificatesById.set(certificate.id, certificate);
     }
+    for (const route of this.routes) {
+      if (route.operations.length > 0) {
+        this.operationIndexes.set(route, compileOperations(route.operations));
+      }
+    }
+  }
+
+  /**
+   * The compiled operation index for a route this table matched. A route that declares nothing
+   * gets the empty index; the caller's "no contract, so forward everything" branch reads
+   * `route.operations.length` rather than this, because that is the condition the contract rule
+   * is written against.
+   */
+  operationsFor(route: ConfigRoute): CompiledOperations<ConfigOperation> {
+    return this.operationIndexes.get(route) ?? NO_OPERATIONS;
   }
 
   /** The next position in this route's rotation. Wraps well short of any precision limit. */

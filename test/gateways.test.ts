@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { CONFIG_VERSION } from "../shared/config-doc.ts";
 import { buildConfig } from "../control-plane/src/config-build.ts";
 import { runOperations } from "../control-plane/src/operations.ts";
 import { makeCp, MINI_SPEC, publishApi, startBackend, type TestCp } from "./helpers.ts";
@@ -303,7 +304,7 @@ describe("replicas belong to a gateway", () => {
     const response = await cp.call("POST", "/api/gateway/poll", {
       headers: { authorization: `Bearer ${minted.token}` },
       body: {
-        wireVersion: 4,
+        wireVersion: CONFIG_VERSION,
         instance: { name: "onprem-1", runId: "r", activeDigest: null, requestsTotal: 0, process: {} },
       },
     });

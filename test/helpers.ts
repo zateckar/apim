@@ -4,9 +4,11 @@ import { buildConfig } from '../control-plane/src/config-build.ts';
 import { mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { DataPlane, loadDpConfig, type DpConfig } from "../data-plane/src/server.ts";
+import { DataPlane, loadDpConfig, type DpConfigOverrides } from "../data-plane/src/server.ts";
 import { CONFIG_VERSION, type GatewayConfig } from "../shared/config-doc.ts";
 import { domainPrefix } from "../shared/domains.ts";
+import type { GatewaySettings } from "../shared/gateway-settings.ts";
+import { writeSettingOverrides } from "../control-plane/src/settings.ts";
 import {
   TELEMETRY_DEFAULTS,
   type PollResponse,
@@ -189,7 +191,7 @@ export async function poll(cp: TestCp, options: PollOptions = {}) {
 }
 
 /** A data plane wired to a control plane over HTTP, with its own telemetry and cache file. */
-export function makeDp(cpUrl: string, token: string, dir: string, overrides: Partial<DpConfig> = {}) {
+export function makeDp(cpUrl: string, token: string, dir: string, overrides: DpConfigOverrides = {}) {
   return new DataPlane(
     loadDpConfig({
       port: 0,
@@ -201,13 +203,27 @@ export function makeDp(cpUrl: string, token: string, dir: string, overrides: Par
       // shared path would carry one test's compiled schemas into the next one's assertions.
       artifactCachePath: join(dir, `dp-${overrides.name ?? "test-1"}-artifacts`),
       pollIntervalMs: 50,
-      maxBodyBytes: 8 * 1024 * 1024,
       trustedProxyCidrs: [],
-      maxSeries: TELEMETRY_DEFAULTS.maxSeries,
-      maxWindowsPerReport: TELEMETRY_DEFAULTS.maxWindowsPerReport,
       quiet: true,
       ...overrides,
     }),
+  );
+}
+
+/**
+ * Set a gateway setting fleet-wide on a test control plane, the way the settings screen does.
+ *
+ * This rather than a `DpConfig` override, and the difference is the point: since v6 a ceiling is
+ * the control plane's, so a test that starts a plane with one value and then polls a control plane
+ * with another would be asserting against a configuration no deployment can produce. Call it
+ * before the plane's first poll.
+ */
+export function setFleetSettings(cp: TestCp, values: Partial<GatewaySettings>): void {
+  writeSettingOverrides(
+    cp.app.db,
+    { scope: "fleet", scopeId: "", values },
+    "test",
+    cp.app.config.promotionChain,
   );
 }
 

@@ -7,6 +7,7 @@ import { thumbprintOf } from "../../control-plane/src/certificates.ts";
 import { loadConfig, readIntegrations } from "../../control-plane/src/config.ts";
 import { seedBaseline } from "../../control-plane/src/seed.ts";
 import { createApp, createRouter, startServer } from "../../control-plane/src/server.ts";
+import { writeSettingOverrides } from "../../control-plane/src/settings.ts";
 import { dispatch, type App, type Router } from "../../control-plane/src/router.ts";
 import { DataPlane, loadDpConfig, startDataPlane } from "../../data-plane/src/server.ts";
 import { PetstoreBackend, startBackend } from "../backend/server.ts";
@@ -365,6 +366,31 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
   const aliceResponse = await call(app, router, "", "POST", "/api/auth/dev-login", { userId: "alice" });
   const alice = aliceResponse.headers.get("set-cookie")!.split(";")[0]!;
 
+  /**
+   * Counting is a gateway's setting since v6 rather than each container's environment variable, so
+   * the replica that runs with it off needs a gateway of its own to be off on. Created after
+   * `seedBaseline` — which puts every seeded replica on the environment's first gateway — and
+   * before the publishes below, because a release that did not come through the promotion API
+   * lands on every gateway the environment has at that moment.
+   */
+  const quietGateway = await call(app, router, alice, "POST", "/api/gateways", {
+    environment: "dev",
+    name: "quiet",
+  });
+  if (!quietGateway.ok) {
+    throw new Error(`creating the quiet gateway failed: ${await quietGateway.text()}`);
+  }
+  const quietTargetId = app.db
+    .query<{ id: string }, [string]>("SELECT id FROM target WHERE environment = 'dev' AND name = ?")
+    .get("quiet")!.id;
+  app.db.run("UPDATE gateway_instance SET target_id = ? WHERE name = 'dev-quiet'", [quietTargetId]);
+  writeSettingOverrides(
+    app.db,
+    { scope: "gateway", scopeId: quietTargetId, values: { telemetry: false } },
+    "perf-harness",
+    app.config.promotionChain,
+  );
+
   const anchor = await call(app, router, alice, "POST", "/api/trust/anchors", {
     environment: "dev",
     name: "perf-backend-ca",
@@ -464,11 +490,11 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
         token: instance.token,
         cachePath: join(dir, `dp-${instance.name}.json`),
         pollIntervalMs: 1000,
-        maxBodyBytes: 8 * 1024 * 1024,
         trustedProxyCidrs: [],
-        maxSeries: 2000,
-        maxWindowsPerReport: 15,
-        telemetry,
+        // The block this process starts with, before its first poll. What it serves with a second
+        // later is the `quiet` gateway's setting above, which says the same thing — set in both
+        // places so the very first requests of a run are not counted differently from the rest.
+        settings: { telemetry: telemetry === "on" },
         quiet: true,
       }),
     );

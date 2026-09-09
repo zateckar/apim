@@ -65,7 +65,7 @@ export function App() {
     [ready, me.data?.user?.id],
   );
   const [environment, setEnvironment] = useState<string | null>(null);
-  const [application, setApplication] = useState<string | null>(null);
+  const [application, setApplication] = useState<string | null>(() => localStorage.getItem("portal-application"));
 
   if (me.loading) return <div className="main">Loading…</div>;
   if (me.error) return <Unreachable error={me.error} />;

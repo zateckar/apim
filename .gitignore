@@ -27,3 +27,4 @@ reports/
 # committed, team-wide half; this one is not, because what a machine is allowed to reach from here
 # is a property of that machine.
 .claude/settings.local.json
+Claude.md

@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
 import {
   ElkLogSearch,
   emptyBuckets,
@@ -7,7 +7,9 @@ import {
   readableResourceIds,
   type LogQuery,
 } from "../control-plane/src/logs.ts";
-import { resetLogSearchCache } from "../control-plane/src/api/logs.ts";
+import { MAX_BODY_CAPTURE_MINUTES, resetLogSearchCache } from "../control-plane/src/api/logs.ts";
+import { buildConfig } from "../control-plane/src/config-build.ts";
+import { MAX_LOGGED_BODY_BYTES } from "../shared/config-doc.ts";
 import { makeCp, MINI_SPEC, publishApi, startBackend, type TestCp } from "./helpers.ts";
 
 /**
@@ -207,6 +209,154 @@ describe("the HTTP surface", () => {
 
   test("is refused without a session", async () => {
     expect((await cp.call("GET", "/api/logs?environment=dev")).status).toBe(401);
+  });
+});
+
+/**
+ * Body capture: the one write in this capability, and the only thing the portal can change about
+ * what a log line contains.
+ *
+ * The property that matters most is the last one here. The *instant* travels in the configuration
+ * document, not a flag — so a window ends on the gateway's own clock whatever happens to the
+ * control plane, and a revoked or spent window is simply absent from the document rather than
+ * present-and-off. Everything else on this screen is a guard around how easy it is to open one.
+ */
+describe("body capture", () => {
+  const REASON = "INC-4471: the order POST returns 400 for one consumer only";
+
+  /** What the fleet would be handed right now for this API's route. */
+  function routeInConfig() {
+    const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    return config.routes.find((route) => route.resourceId === published.resourceId)!;
+  }
+
+  const open = (cookie: string, body: Record<string, unknown> = {}) =>
+    cp.call("POST", "/api/logs/body-capture", {
+      cookie,
+      body: { resourceId: published.resourceId, environment: "dev", reason: REASON, ...body },
+    });
+
+  beforeEach(() => {
+    // Each test starts with no window, however the previous one left it.
+    cp.app.db.run("DELETE FROM body_capture");
+  });
+
+  test("no window means no instruction: the document says nothing about bodies", () => {
+    expect(routeInConfig().logBodiesUntil).toBeUndefined();
+  });
+
+  test("an owner opens an hour, and the instant reaches the document", async () => {
+    const before = Date.now();
+    const response = await open(published.pavel);
+    expect(response.status).toBe(201);
+    const window = await response.json();
+    expect(window.maxBytes).toBe(MAX_LOGGED_BODY_BYTES);
+
+    const until = Date.parse(window.expiresAt);
+    // The default is the cap: somebody opening a window under pressure should not have to name a
+    // number, and the number they would name is the one they are allowed.
+    expect(until).toBeGreaterThan(before + (MAX_BODY_CAPTURE_MINUTES - 1) * 60_000);
+    expect(until).toBeLessThanOrEqual(before + MAX_BODY_CAPTURE_MINUTES * 60_000 + 1000);
+    expect(routeInConfig().logBodiesUntil).toBe(window.expiresAt);
+  });
+
+  test("the window is refused past an hour, and refused without a real reason", async () => {
+    const tooLong = await open(published.pavel, { minutes: MAX_BODY_CAPTURE_MINUTES + 1 });
+    expect(tooLong.status).toBe(400);
+    // Refused rather than clamped: a silently shortened window is one somebody believes is longer.
+    expect((await tooLong.json()).detail).toContain(String(MAX_BODY_CAPTURE_MINUTES));
+    expect(routeInConfig().logBodiesUntil).toBeUndefined();
+
+    const thin = await open(published.pavel, { reason: "debug" });
+    expect(thin.status).toBe(400);
+    expect((await thin.json()).detail).toContain("reason");
+  });
+
+  test("a second window is refused while one is open, naming the one that is", async () => {
+    expect((await open(published.pavel)).status).toBe(201);
+    const second = await open(published.pavel);
+    expect(second.status).toBe(409);
+    const detail = (await second.json()).detail;
+    expect(detail).toContain("pavel");
+    expect(detail).toContain("dev");
+  });
+
+  test("a consumer of the API cannot capture its bodies", async () => {
+    const response = await open(published.clara);
+    expect(response.status).toBe(403);
+    expect(routeInConfig().logBodiesUntil).toBeUndefined();
+  });
+
+  test("an administrator can, because an administrator may change anything", async () => {
+    const alice = await cp.login("alice");
+    expect((await open(alice)).status).toBe(201);
+    expect(routeInConfig().logBodiesUntil).toBeTruthy();
+  });
+
+  test("closing early dates the row rather than deleting it, and the document stops asking", async () => {
+    const window = await (await open(published.pavel)).json();
+    expect(routeInConfig().logBodiesUntil).toBeTruthy();
+
+    const closed = await cp.call("DELETE", `/api/logs/body-capture/${window.id}`, {
+      cookie: published.pavel,
+    });
+    expect(closed.status).toBe(204);
+    expect(routeInConfig().logBodiesUntil).toBeUndefined();
+
+    // Gone from the document, still on the record — which is the whole reason the column exists.
+    const live = await (await cp.call("GET", "/api/logs/body-capture", { cookie: published.pavel })).json();
+    expect(live.items).toHaveLength(0);
+    const all = await (
+      await cp.call("GET", "/api/logs/body-capture?includeSpent=1", { cookie: published.pavel })
+    ).json();
+    expect(all.items).toHaveLength(1);
+    expect(all.items[0].revokedAt).toBeTruthy();
+    expect(all.items[0].reason).toBe(REASON);
+    expect(all.items[0].openedBy).toBe("pavel");
+  });
+
+  test("a window that has run out simply is not in the document", async () => {
+    const window = await (await open(published.pavel)).json();
+    cp.app.db.run("UPDATE body_capture SET expires_at = ? WHERE id = ?", [
+      new Date(Date.now() - 1000).toISOString(),
+      window.id,
+    ]);
+    expect(routeInConfig().logBodiesUntil).toBeUndefined();
+    // And the next one is allowed, because nothing is holding the slot.
+    expect((await open(published.pavel)).status).toBe(201);
+  });
+
+  test("the record is readable by anyone signed in, not only by the owner", async () => {
+    await open(published.pavel);
+    const response = await cp.call("GET", "/api/logs/body-capture?environment=dev", {
+      cookie: published.clara,
+    });
+    expect(response.status).toBe(200);
+    const page = await response.json();
+    expect(page.items).toHaveLength(1);
+    expect(page.items[0].remainingSec).toBeGreaterThan(0);
+    expect(page.maxMinutes).toBe(MAX_BODY_CAPTURE_MINUTES);
+    expect(page.maxBytes).toBe(MAX_LOGGED_BODY_BYTES);
+    expect((await cp.call("GET", "/api/logs/body-capture")).status).toBe(401);
+  });
+
+  test("opening and closing are both audited, with the reason and the expiry", async () => {
+    const window = await (await open(published.pavel)).json();
+    await cp.call("DELETE", `/api/logs/body-capture/${window.id}`, { cookie: published.pavel });
+    // By this window's id rather than by action: earlier tests in this block have opened windows
+    // of their own, and an audit table that accumulates is the point of an audit table.
+    const rows = cp.app.db
+      .query<{ action: string; actor: string; detail: string }, [string, string]>(
+        `SELECT action, actor, detail FROM audit
+          WHERE action LIKE 'body-capture.%' AND (detail LIKE ? OR detail LIKE ?)
+          ORDER BY rowid`,
+      )
+      .all(`%${window.expiresAt}%`, `%${window.id}%`);
+    expect(rows.map((row) => row.action)).toEqual(["body-capture.open", "body-capture.close"]);
+    expect(rows[0]!.actor).toBe("pavel");
+    const detail = JSON.parse(rows[0]!.detail);
+    expect(detail.reason).toBe(REASON);
+    expect(detail.expiresAt).toBe(window.expiresAt);
   });
 });
 

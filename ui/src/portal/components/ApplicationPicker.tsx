@@ -29,13 +29,24 @@ export function ApplicationPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState("");
   const box = useRef<HTMLDivElement>(null);
+  const trigger = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!open) return;
     const onDown = (event: MouseEvent) => {
       if (!box.current?.contains(event.target as Node)) setOpen(false);
     };
-    const onKey = (event: KeyboardEvent) => event.key === "Escape" && setOpen(false);
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setOpen(false); trigger.current?.focus(); }
+      if (!["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key) || document.activeElement?.tagName === "INPUT") return;
+      const options = Array.from(box.current?.querySelectorAll<HTMLButtonElement>('[role="option"]') ?? []);
+      if (!options.length) return;
+      event.preventDefault();
+      const index = options.indexOf(document.activeElement as HTMLButtonElement);
+      const next = event.key === "Home" ? 0 : event.key === "End" ? options.length - 1 : (index + (event.key === "ArrowDown" ? 1 : -1) + options.length) % options.length;
+      options[next]?.focus();
+    };
+    if (applications.length <= 6) box.current?.querySelector<HTMLButtonElement>('[role="option"][aria-selected="true"], [role="option"]')?.focus();
     document.addEventListener("mousedown", onDown);
     document.addEventListener("keydown", onKey);
     return () => {
@@ -58,6 +69,7 @@ export function ApplicationPicker({
       <span className="app-picker-label">Application</span>
       <button
         className="app-picker-btn"
+        ref={trigger}
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Application"
@@ -115,6 +127,7 @@ export function ApplicationPicker({
               className={`opt ${application.id === value ? "active" : ""}`}
               onClick={() => {
                 setOpen(false);
+                trigger.current?.focus();
                 onChange(application.id);
               }}
             >

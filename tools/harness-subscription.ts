@@ -62,13 +62,26 @@ export async function provisionHarnessSubscription(
     { decision: "approved" },
     publisher,
   );
-  const digest = buildConfig(
-    app.db,
-    app.kek,
-    "dev",
-    app.config.integrations,
-  ).digest;
-  for (const instance of instances.filter((i) => i.environment === "dev"))
+  for (const instance of instances.filter((i) => i.environment === "dev")) {
+    /**
+     * The digest an instance claims to be serving has to be the one the control plane builds for
+     * *its own gateway*, not for the environment. It always did — an API can be published on one
+     * gateway and not another — and since v6 two gateways in one environment can also differ in
+     * their settings, which are part of the document and therefore part of the digest. An
+     * environment-wide digest here would match nothing and the operation would never converge.
+     */
+    const target = app.db
+      .query<{ target_id: string }, [string]>(
+        "SELECT target_id FROM gateway_instance WHERE id = ?",
+      )
+      .get(instance.id)!;
+    const digest = buildConfig(
+      app.db,
+      app.kek,
+      "dev",
+      app.config.integrations,
+      target.target_id,
+    ).digest;
     await call(
       "/api/gateway/poll",
       {
@@ -85,6 +98,7 @@ export async function provisionHarnessSubscription(
       undefined,
       instance.token,
     );
+  }
   runOperations(app);
   return (
     await call(`/api/subscriptions/${subscription.id}/reveal`, {}, consumer)

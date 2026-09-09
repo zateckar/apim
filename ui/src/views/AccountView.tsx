@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import { api, type Me, type SessionView } from "../api";
 import { Panel, EmptyState, Link, Notice, Term, useAction, useAsync } from "../components";
@@ -88,7 +89,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
                       <>
                         Granted in this portal
                         {application.grantedByName ? <> by {application.grantedByName}</> : null}
-                        {application.grantedAt ? <> on {new Date(application.grantedAt).toLocaleDateString()}</> : null}.
+                        {application.grantedAt ? <> on {formatDate(application.grantedAt)}</> : null}.
                       </>
                     )}
                   </td>
@@ -169,9 +170,9 @@ function SessionList({ items, onChanged }: { items: SessionView[]; onChanged: ()
                 {shortAgent(session.userAgent)}
                 {session.current && <span className="pill ok"> this one</span>}
               </td>
-              <td className="muted">{new Date(session.createdAt).toLocaleString()}</td>
+              <td className="muted">{formatDateTime(session.createdAt)}</td>
               <td className="muted">
-                {session.lastSeenAt ? new Date(session.lastSeenAt).toLocaleString() : "—"}
+                {session.lastSeenAt ? formatDateTime(session.lastSeenAt) : "—"}
               </td>
               <td>
                 {!session.current && (

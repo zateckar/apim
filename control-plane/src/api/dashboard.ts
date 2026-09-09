@@ -1,5 +1,5 @@
 import { buildDashboard } from "../dashboard.ts";
-import { badRequest, json, requireUser, Router } from "../router.ts";
+import { badRequest, forbidden, notFound, json, requireUser, Router } from "../router.ts";
 
 /**
  * `GET /api/dashboard?environment=all|dev|test|prod&sinceMin=…` (G2, plan §6.1).
@@ -10,7 +10,12 @@ import { badRequest, json, requireUser, Router } from "../router.ts";
  */
 export function registerDashboardRoutes(router: Router): void {
   router.add("GET", "/api/dashboard", "session", (ctx) => {
-    requireUser(ctx);
+    const user = requireUser(ctx);
+    const applicationId = ctx.url.searchParams.get("applicationId") ?? undefined;
+    if (applicationId) {
+      if (!user.isAdmin && !user.applications.includes(applicationId)) throw forbidden("Select an application you belong to");
+      if (!ctx.app.db.query("SELECT id FROM application WHERE id = ?").get(applicationId)) throw notFound("No such application");
+    }
     const chain = ctx.app.config.promotionChain;
 
     const environment = ctx.url.searchParams.get("environment") ?? "all";
@@ -30,6 +35,6 @@ export function registerDashboardRoutes(router: Router): void {
       );
     }
 
-    return json(buildDashboard(ctx, { environment, sinceMin }));
+    return json(buildDashboard(ctx, { environment, sinceMin, applicationId }));
   });
 }

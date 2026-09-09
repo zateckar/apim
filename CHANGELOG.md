@@ -17,6 +17,38 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.3.0 - 10.09.2026
+
+What a gateway enforces is set in the portal, for the fleet, an environment or one gateway.
+
+### Added
+
+- **Gateway settings**, a new administration screen. The concurrency ceilings, the request body
+  cap, the validation pool and buffer budget, the response and artifact cache sizes, the JWKS
+  refetch floor, the telemetry bounds and the access log are set here — for every gateway, for one
+  environment, or for a single gateway, with the most specific value winning for each setting on
+  its own.
+- Each setting shows the value in force, the layer it came from, the bounds it accepts and the
+  environment variable it replaced, so an upgrade is a transcription rather than a search.
+- Saved values reach every replica on its next poll, within seconds and without restarting
+  anything. A change is saved as one set or refused as one.
+- Health Status reports the settings a replica is actually enforcing, which is how a replica that
+  refused a change is told apart from one that has not received it yet.
+
+### Changed
+
+- Turning the access log off is now a typed confirmation and a named audit entry. It is still the
+  only thing that can be done to it: nothing thins the lines.
+- A replica whose container cannot honour a centrally-set concurrency ceiling refuses the whole
+  configuration, keeps serving what it had, and says why on Health Status. Lowering the setting is
+  enough to recover it — nothing has to be restarted.
+
+### Removed
+
+- Sixteen environment variables on the gateway. A container that still sets one refuses to start
+  and names it, together with the setting that replaced it. **Set the values on the new screen
+  before rolling gateways** — see Upgrading in `README.md`.
+
 ## 1.2.4 - 08.09.2026
 
 The APIs you call sit beside the APIs you publish, a key has an age, and a definition is checked

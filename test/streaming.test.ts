@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import type { ServerWebSocket } from "bun";
-import { makeCp, makeDp, publishApi, serveCp, startBackend, type TestCp } from "./helpers.ts";
+import {
+  makeCp,
+  makeDp,
+  publishApi,
+  serveCp,
+  setFleetSettings,
+  startBackend,
+  type TestCp,
+} from "./helpers.ts";
 import { startDataPlane, type DataPlane, type DpConfig } from "../data-plane/src/server.ts";
 import { PetstoreBackend, startBackend as startPetstore } from "../tools/backend/server.ts";
 
@@ -636,6 +644,7 @@ describe("passthrough.sse", () => {
 
   test("the instance ceiling names the instance", async () => {
     const sources: Array<ReturnType<typeof eventSource>> = [];
+    setFleetSettings(cp, { maxConcurrentUpgrades: 1 });
     const w = await sseWorld(
       { sse: true },
       () => {
@@ -643,7 +652,7 @@ describe("passthrough.sse", () => {
         sources.push(source);
         return source.response();
       },
-      { dp: { maxConcurrentUpgrades: 1 } },
+      {},
     );
     try {
       const { reader } = await openEvents(w);
@@ -850,7 +859,8 @@ describe("passthrough.websocket", () => {
   });
 
   test("the instance ceiling is separate from the route's", async () => {
-    const w = await wsWorld({ websocket: true }, { dp: { maxConcurrentUpgrades: 1 } });
+    setFleetSettings(cp, { maxConcurrentUpgrades: 1 });
+    const w = await wsWorld({ websocket: true });
     try {
       const client = wsClient(`${w.url}/ws?key=${w.key}`);
       await client.opened;

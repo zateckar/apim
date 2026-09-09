@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
 import { Notice, useAction, useAsync, useTicker, go } from "../components";
@@ -31,7 +31,10 @@ export function Portal({ session: s, path }: { session: Session; path: string })
   const effective: Session = { ...s, application: applicationId };
 
   useEffect(() => {
-    if (authorized && named !== s.application) s.setApplication(named!);
+    if (authorized && named !== s.application) {
+      s.setApplication(named!);
+      localStorage.setItem("portal-application", named!);
+    }
   }, [named]);
 
   const tick = useTicker();
@@ -49,6 +52,28 @@ export function Portal({ session: s, path }: { session: Session; path: string })
   }, [theme]);
   const [navOpen, setNavOpen] = useState(false);
   const [changes, setChanges] = useState(false);
+  const menuButton = useRef<HTMLButtonElement>(null);
+  const sidebar = useRef<HTMLElement>(null);
+  useEffect(() => {
+    document.title = `${route.title} · Integration Portal`;
+    setNavOpen(false);
+  }, [path, route.title]);
+  useEffect(() => {
+    if (!navOpen) return;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    sidebar.current?.querySelector<HTMLElement>("button, a")?.focus();
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { setNavOpen(false); menuButton.current?.focus(); }
+      if (event.key !== "Tab") return;
+      const controls = Array.from(sidebar.current?.querySelectorAll<HTMLElement>("a[href], button:not(:disabled), input") ?? []);
+      const first = controls[0], last = controls.at(-1);
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => { document.body.style.overflow = previousOverflow; document.removeEventListener("keydown", onKey); };
+  }, [navOpen]);
 
   const items = operations.data?.items ?? [];
   const active = items.filter((o) => !["complete", "superseded"].includes(o.state));
@@ -63,7 +88,9 @@ export function Portal({ session: s, path }: { session: Session; path: string })
         key={entry.id}
         className={`nav-item ${section === first ? "active" : ""}`}
         href={url}
+        aria-current={section === first ? "page" : undefined}
         onClick={(event) => {
+          if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
           event.preventDefault();
           setNavOpen(false);
           go(url);
@@ -77,7 +104,9 @@ export function Portal({ session: s, path }: { session: Session; path: string })
 
   return (
     <div className={`native-portal ${navOpen ? "nav-open" : ""}`}>
-      <aside className="sidebar">
+      <a className="skip-link" href="#main-content">Skip to content</a>
+      {navOpen && <button className="nav-backdrop" aria-label="Close navigation" onClick={() => { setNavOpen(false); menuButton.current?.focus(); }} />}
+      <aside className="sidebar" id="portal-navigation" ref={sidebar}>
         <div className="brand">
           <div className="logo">
             <I.Api size={22} />
@@ -128,13 +157,16 @@ export function Portal({ session: s, path }: { session: Session; path: string })
         <header className="topbar">
           <button
             className="btn sm mobile-menu"
+            ref={menuButton}
             aria-label="Toggle navigation"
+            aria-expanded={navOpen}
+            aria-controls="portal-navigation"
             onClick={() => setNavOpen(!navOpen)}
           >
             ☰
           </button>
           <div className="breadcrumbs">
-            <span>{s.applicationName(applicationId)}</span>
+            <span>{route.scope === "application" ? s.applicationName(applicationId) : "Platform"}</span>
             <span>/</span>
             <strong>{route.title}</strong>
           </div>
@@ -170,27 +202,28 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           </div>
         </header>
         {changes && <ChangeLog close={() => setChanges(false)} />}
-        <main className="native-content">
+        <main className="native-content" id="main-content" tabIndex={-1}>
           <div className="native-page-head">
             <div>
-              <div className="eyebrow">{s.applicationName(applicationId)}</div>
+              <div className="eyebrow">{route.scope === "application" ? s.applicationName(applicationId) : "Platform"}</div>
               <h1>{route.title}</h1>
               {/* Every screen has a one-line purpose, and it comes from the same table as the
                   title — so a screen cannot be added without one. */}
               <p className="native-page-purpose">{route.purpose}</p>
             </div>
             <div className="native-actions">
-              <div className="seg" role="group" aria-label="Environment">
+              {route.environmentScoped && <div className="seg" role="group" aria-label="Environment">
                 {s.meta.chain.map((environment) => (
                   <button
                     className={s.environment === environment ? "active" : ""}
                     key={environment}
+                    aria-pressed={s.environment === environment}
                     onClick={() => s.setEnvironment(environment)}
                   >
                     {environment.toUpperCase()}
                   </button>
                 ))}
-              </div>
+              </div>}
               {["apis", "mcp", "a2a", "dashboard"].includes(section) && route.id !== "api" && (
                 <button
                   className="btn primary"

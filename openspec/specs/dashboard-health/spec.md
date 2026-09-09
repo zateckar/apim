@@ -245,3 +245,21 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - WHEN FixMe renders
 - THEN the detail that quotes internal hosts SHALL be redacted
 - AND the actions SHALL be disabled with the reason, not hidden
+
+### Requirement: Keep dashboard and telemetry context consistent with the shell
+
+#### Scenario: A person belongs to several applications
+
+- GIVEN a selected application in the portal
+- WHEN its dashboard is loaded
+- THEN the request SHALL include `applicationId` and the owner and consumer blocks SHALL be scoped to that application
+- AND platform attention SHALL remain available to administrators
+- AND an unknown application SHALL return 404, and a non-administrator requesting an application outside their memberships SHALL receive 403
+- AND omitting `applicationId` SHALL retain the existing caller-wide aggregation for API clients
+
+#### Scenario: The Telemetry environment changes
+
+- GIVEN Telemetry is open
+- WHEN the shell environment changes
+- THEN its summary and all breakdowns SHALL query that environment
+- AND the page SHALL have no independent environment picker that could disagree with the shell

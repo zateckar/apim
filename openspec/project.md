@@ -77,11 +77,13 @@ gateways of every environment in the chain, and the local upstreams in `tools/`.
 ## Repository Map
 
 ```
-shared/         policy vocabulary · config contract · telemetry · JSON Schema · XSD · XML · SOAP
-                routing · operation matching · MCP · A2A · quota · attention · structural diff
+shared/         policy vocabulary · config contract · gateway settings · telemetry · JSON Schema
+                XSD · XML · SOAP · routing · operation matching · MCP · A2A · quota · attention
+                structural diff
 control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota aggregation,
-                config build, artifact compiler, discovery, catalog search, certificates,
-                trust anchors, the playground, the dashboard, authentication and the directory
+                config build, gateway settings, artifact compiler, discovery, catalog search,
+                certificates, trust anchors, the playground, the dashboard, authentication and
+                the directory
 data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
                 backend pool and breaker, response cache, stream registry, counters, trust store
 ui/             React + Vite SPA, served by the control plane
@@ -108,6 +110,8 @@ Modules named by more than one capability spec:
 - `shared/policy.ts` — the closed policy vocabulary, its validators, the global tier allowlist and
   the per-operation override allowlist.
 - `shared/config-doc.ts` — the gateway configuration document, the only contract between planes.
+- `shared/gateway-settings.ts` — the fleet's operational settings, their bounds, and the one
+  three-layer resolution both planes and the settings screen read.
 - `shared/domains.ts` — the catalogue taxonomy and the published-path derivation.
 - `shared/types.ts` — resource kinds, lifecycles, release states, the normalized API model.
 - `control-plane/src/operations.ts` — publish, configure, promote and subscribe as durable
@@ -134,6 +138,7 @@ Modules named by more than one capability spec:
 | `frontend-visual-system` | Tokens, tone vocabulary, and the rules `ui/test/hygiene.test.ts` enforces |
 | `control-plane-surface` | Durable operations, the reconciler, jobs, artifacts, retention |
 | `data-plane-gateway` | The poll, fail-static, the pipeline order, limits, rate limit, quota, cache |
+| `gateway-settings` | The fleet's operational bounds, set centrally in three layers and applied without a restart |
 | `workspace-api-catalog` | My APIs, the Catalog, visibility, facets, search, ownership |
 | `api-publish-flow` | The three-step wizard and what a publish creates |
 | `api-edit-properties` | The eight workspace panels, the definition, the description, the docs link |
@@ -141,7 +146,7 @@ Modules named by more than one capability spec:
 | `api-subscription-management` | Products, subscriptions, approval, keys, usage |
 | `api-versioning-and-stage` | Versions, revisions, releases, promotion, rollback, divergence |
 | `api-testing-playground` | Calling a published API from the portal |
-| `request-logs` | Per-request access logs, from ELK or the mock |
+| `request-logs` | Per-request access logs, from ELK or the mock, and the hour-long body capture window |
 | `ai-gateway-mcp-a2a` | The two RPC variants and the rewritten agent card |
 | `backend-integration-surface` | The backend pool, the breaker, named backend-auth schemes |
 | `app-certificates` | The client identity the estate presents, and renewal in place |
@@ -179,7 +184,7 @@ Modules named by more than one capability spec:
 which component answers each `id`. Nothing else in the interface resolves an address or chooses a
 screen; `ui/test/screens.test.ts` holds the two lists to each other in both directions.
 
-Each entry carries `id`, `patterns`, `title`, `purpose`, `scope`, and optionally `nav`, `adminOnly`
+Each entry carries `id`, `patterns`, `title`, `purpose`, `scope`, and optionally `environmentScoped`, `nav`, `adminOnly`
 and `plainChrome`. Matching is longest-literal-prefix-first over every declared pattern, so
 `/apis/new` is the publish wizard and not the API whose id is `new`.
 
@@ -218,6 +223,7 @@ already has, kept because losing one costs a working link.
 | `account` | `/account` | Your account | global | Global |
 | `fleet` | `/fleet` · `/health` | Health Status | global | Administration |
 | `gateways` | `/gateways` | Gateways | global | Administration |
+| `gateway-settings` | `/gateway-settings` | Gateway settings | global | Administration |
 | `applications` | `/applications` | Applications | global | Administration |
 | `application` | `/applications/:applicationId` | Application | global | — |
 | `users` | `/users` | People | global | Administration |
@@ -338,6 +344,7 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET | `/api/environments/:environment/config` | ses |
 | GET · POST | `/api/gateways` | ses |
 | PATCH · DELETE | `/api/gateways/:environment/:name` | ses |
+| GET · PATCH | `/api/gateway-settings` | ses |
 | GET | `/api/targets` | ses |
 | GET | `/api/targets/:environment/health` | ses |
 | GET · POST | `/api/targets/:environment/instances` | ses |
@@ -353,6 +360,8 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET | `/api/jobs/:id` | ses |
 | GET | `/api/audit` | ses |
 | GET | `/api/logs` · `/api/logs/histogram` | ses |
+| GET · POST | `/api/logs/body-capture` | ses |
+| DELETE | `/api/logs/body-capture/:id` | ses |
 | GET | `/api/notifications` | ses |
 | GET | `/api/integrations` · `/api/integration-events` | ses |
 | POST | `/api/integration-events/:id/decision` | ses |
@@ -423,9 +432,13 @@ Tables, by the capability that owns them:
   `environment_override`, `release`, `release_plan`, `applied`, `artifact`.
 - **Selling** — `product`, `product_member`, `subscription`, `usage_counter`.
 - **Policy** — `policy_entry`, `global_policy_entry`.
-- **Estate** — `target`, `gateway_instance`, `telemetry_rollup`, `job`, `operation`.
+- **Estate** — `target`, `gateway_instance`, `gateway_setting`, `telemetry_rollup`, `job`,
+  `operation`. `gateway_setting` is sparse and keyed `(scope, scope_id, key)`: `scope_id` is `''`
+  for the fleet, the environment's name, or a **target id**, so a gateway's overrides follow it
+  through a rename and leave with it when it is deleted.
 - **Trust** — `certificate`, `trust_anchor`, `tls_exception`.
 - **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`.
+- **Logs** — `body_capture`. The lines themselves live in the log index, never here.
 - **Everything else** — `audit`, `integration_event`, `playground_call`, `schema_version`.
 
 Migrations are numbered SQL files applied in order and recorded in `schema_version`. There is no
@@ -572,13 +585,19 @@ control plane validates on write; the data plane interprets.
 
 ### The Configuration Document
 
-`shared/config-doc.ts` is the only contract between the planes. `CONFIG_VERSION = 4`. The control
+`shared/config-doc.ts` is the only contract between the planes. `CONFIG_VERSION = 6`. The control
 plane owns desired state; the document is the projection the data plane serves from.
 
 ```
-GatewayConfig = { configVersion, environment, digest, generatedAt, limits,
+GatewayConfig = { configVersion, environment, digest, generatedAt, limits, settings,
                   routes[], subscriptions[], certificates[], trustAnchors[], references, errors[] }
 ```
+
+- `settings` is this gateway's operational bounds, **already resolved** from the three override
+  layers — see *Gateway Settings* below. The layers do not travel: the instance is handed values,
+  never a precedence rule, which is what keeps "the data plane never decides anything" true of its
+  own configuration too. Two gateways in one environment can therefore differ, so a document is
+  built per gateway and there is no such thing as an environment's digest.
 
 - `routes[]` carries the **effective** policy document — the environment's global tier merged
   under the resource's own units — never the two tiers separately.
@@ -710,6 +729,43 @@ log.
 normalised — `32.01.2026` is a typo, and a field that quietly turned it into 1 February would hide
 it.
 
+### The Access Log Line
+
+One JSON object per line, one line per request, written by the gateway to stdout or to
+`DP_ACCESS_LOG_PATH`, tailed by Logstash and shipped to the central ELK. Built in **one** place in
+`data-plane/src/pipeline.ts`, so no field can be present on the served path and missing on the
+refused one. Every field is always a key: `null` when the stage that would have filled it was never
+reached — a `404` has no operation, a rejection at the key check has no backend — because a field
+that sometimes disappears is a field the index maps inconsistently. The only exceptions are the two
+body fields, which are absent unless there is a body to carry.
+
+| Field | Meaning | ELK field it lands in |
+|---|---|---|
+| `ts` | when the request finished, ISO-8601 UTC with milliseconds | `at` |
+| `requestId` | the `x-request-id` the gateway assigned; what a consumer quotes in a ticket | `requestId` |
+| `traceId` · `spanId` · `parentSpanId` | W3C Trace Context: the trace continued or started, this hop's span, and the caller's | `traceId` · `spanId` · `parentSpanId` |
+| `environment` · `gateway` · `instance` | where it was served | same |
+| `method` · `path` · `query` · `host` | what was called. `query` is **redacted** — every credential-shaped parameter's value replaced, the names kept | same |
+| `status` · `backendStatus` | what the caller got, and what the backend gave. They differ when the gateway shaped the answer | same |
+| `outcome` | `ok`, `no-route`, `upstream-error`, `cache-hit`, … — the `Outcome` vocabulary telemetry counts in, so a line and a cell agree about what happened | same |
+| `error` | why it failed, in words: the transport error's name, message and cause with the backend origin, or the gateway's own detail for a `5xx` it produced | same |
+| `resourceId` · `resourceName` · `apiVersion` · `rev` · `operationId` | what matched. `operationId` is legitimately absent | same, `operationId` nullable |
+| `subscriptionId` · `applicationId` | who called | `subscriptionId` · `consumerApplicationId` |
+| `clientIp` | resolved through the trusted-proxy boundary, never as the caller claimed it | same |
+| `durationMs` · `backendMs` | total, and the part spent waiting for the backend | same |
+| `note` | one sentence when the gateway has something to say about this line | — |
+| `requestBody` · `responseBody` (+ `…Truncated`) | present **only** under an open capture window, or on a `5xx` the gateway generated, where the response body carries the transport reason | same |
+
+**No header ever appears in a line**, at any time, under any setting — see `data-plane-gateway`
+§ Never write a credential into a line for why the rule is the category rather than a list of names.
+
+Two constants bound what a line may contain:
+
+| Constant | Value | Where |
+|---|---|---|
+| `MAX_LOGGED_BODY_BYTES` | 8 KiB | `shared/config-doc.ts` — the cap the gateway enforces on a captured body and the portal quotes when a window is opened |
+| `MAX_BODY_CAPTURE_MINUTES` | 60 | `control-plane/src/api/logs.ts` — the longest window the portal will open, refused rather than clamped past it |
+
 ## Environment Variables
 
 ### Control Plane
@@ -799,6 +855,10 @@ Refusals checked at boot, before anything serves:
 
 ### Data Plane
 
+Only what is true of **this container**. Everything the whole fleet should agree about is a gateway
+setting instead — see the next section. A retired variable still set here is a startup failure that
+names it and the setting that replaced it.
+
 | Variable | Default | Notes |
 |---|---|---|
 | `DP_NAME` | `dev-1` | this instance's name |
@@ -807,26 +867,44 @@ Refusals checked at boot, before anything serves:
 | `GATEWAY_TOKEN` / `GATEWAY_TOKEN_FILE` | *(none)* | the minted instance token |
 | `GATEWAY_CONFIG_CACHE` | `.data/dp-<name>-config.json` | what fail-static serves from |
 | `GATEWAY_ARTIFACT_CACHE` | `.data/dp-<name>-artifacts` | |
-| `ARTIFACT_CACHE_MAX_BYTES` | `512 MiB` | |
-| `POLL_INTERVAL_SEC` | `2` | |
-| `MAX_BODY_BYTES` | `8 MiB` | |
-| `MAX_CONCURRENT_REQUESTS` | `2048` | |
-| `BUN_CONFIG_MAX_HTTP_REQUESTS` | *(the runtime's)* | the outbound queue; startup refuses unless it is at least `MAX_CONCURRENT_REQUESTS` |
-| `MAX_CONCURRENT_UPGRADES` | `1024` | |
-| `BLOCKING_BUFFER_BUDGET_BYTES` | `256 MiB` | |
-| `VALIDATE_POOL_SIZE` | `4` | |
-| `VALIDATE_QUEUE_DEPTH` | `256` | |
-| `RESPONSE_CACHE_MAX_ENTRIES` | `10_000` | |
-| `RESPONSE_CACHE_MAX_BYTES` | `64 MiB` | |
-| `TELEMETRY_MAX_SERIES` | `2000` | |
-| `TELEMETRY_MAX_WINDOWS_PER_REPORT` | `15` | |
-| `TRUSTED_PROXY_CIDRS` | *(none)* | who may set forwarding headers |
+| `POLL_INTERVAL_SEC` | `2` | the one cadence that is not a central setting: it is the channel the settings arrive on, so a mistake in it slows down its own correction |
+| `BUN_CONFIG_MAX_HTTP_REQUESTS` | *(the runtime's)* | the outbound queue, read by the runtime. Startup refuses unless it is at least the `maxConcurrentRequests` setting, and a document that raises the setting past it is refused at activation rather than applied |
+| `BUN_CONFIG_DNS_TIME_TO_LIVE_SECONDS` | `30` | how long a backend's resolved address is reused. Read by the runtime, not by the gateway: it bounds how long traffic follows an address a backend has moved off. Each activation warms the new document's backend hostnames, so the lookup is normally off the request path |
+| `TRUSTED_PROXY_CIDRS` | *(none)* | who may set forwarding headers. Deliberately not a central setting: whether a header counts as an identity is a fact about the network in front of one container, and getting it wrong fleet-wide is an authorization bypass |
 | `TRUSTED_PROXY_CLIENT_CERT_HEADERS` | *(none)* | the headers a terminating proxy presents a client certificate in |
 | `TRUST_SYSTEM_ROOTS` | `1` | `0` trusts only the environment's anchors |
-| `JWKS_MIN_REFETCH_SEC` | `60` | |
-| `DP_TELEMETRY` | `on` | |
-| `DP_ACCESS_LOG` | `on` | |
+| `DP_ACCESS_LOG_PATH` | *(none)* | empty writes to stdout, for the container's log driver. A path makes this process append to it and rotate it itself, for a shipper — Logstash, Filebeat — that tails the file. **One path per instance**, which is why it is not a fleet setting |
 | `DP_REUSE_PORT` | `0` | |
+
+### Gateway Settings
+
+`shared/gateway-settings.ts` declares them; `gateway_setting` stores the sparse overrides; the
+control plane resolves them per gateway and ships the result in the document's `settings` block;
+the portal's Gateway settings screen is where they are set. Three scopes, most specific winning per
+key: `gateway` over `environment` over `fleet`, with the defaults below under all three.
+
+The entry criterion is that **a running instance can apply the key without restarting**, which is
+why every one of these is a plain number or flag on the process rather than preallocated capacity.
+An out-of-range value is refused on write and clamped on read.
+
+| Setting | Was | Default | Range |
+|---|---|---|---|
+| `maxConcurrentRequests` | `MAX_CONCURRENT_REQUESTS` | `2048` | 1 – 1 000 000 |
+| `maxConcurrentUpgrades` | `MAX_CONCURRENT_UPGRADES` | `1024` | 1 – 1 000 000 |
+| `maxBodyBytes` | `MAX_BODY_BYTES` | `8 MiB` | 1 KiB – 1 GiB |
+| `blockingBufferBudgetBytes` | `BLOCKING_BUFFER_BUDGET_BYTES` | `256 MiB` | 1 MiB – 8 GiB |
+| `validatePoolSize` | `VALIDATE_POOL_SIZE` | `4` | 1 – 256 |
+| `validateQueueDepth` | `VALIDATE_QUEUE_DEPTH` | `256` | 1 – 100 000 |
+| `responseCacheMaxEntries` | `RESPONSE_CACHE_MAX_ENTRIES` | `10 000` | 0 – 10 000 000; `0` turns the cache off here |
+| `responseCacheMaxBytes` | `RESPONSE_CACHE_MAX_BYTES` | `64 MiB` | 0 – 8 GiB |
+| `artifactCacheMaxBytes` | `ARTIFACT_CACHE_MAX_BYTES` | `512 MiB` | 1 MiB – 8 GiB |
+| `jwksMinRefetchSec` | `JWKS_MIN_REFETCH_SEC` | `60` | 1 – 86 400 s |
+| `telemetry` | `DP_TELEMETRY` | `on` | flag |
+| `telemetryMaxSeries` | `TELEMETRY_MAX_SERIES` | `2000` | 1 – 1 000 000 |
+| `telemetryMaxWindowsPerReport` | `TELEMETRY_MAX_WINDOWS_PER_REPORT` | `15` | 1 – 1440 |
+| `accessLog` | `DP_ACCESS_LOG` | `on` | flag, **sensitive**: off switches the log off entirely. There is no setting that thins it — the lines are a compliance record, so "all of them" and "none" are the only two states, and the change is audited behind a typed confirmation |
+| `accessLogMaxBytes` | `DP_ACCESS_LOG_MAX_BYTES` | `128 MiB` | 1 MiB – 8 GiB |
+| `accessLogKeep` | `DP_ACCESS_LOG_KEEP` | `5` | 0 – 1000; the log's disk is `(keep + 1) × maxBytes` |
 
 ## Configuration Files
 
@@ -861,15 +939,14 @@ would otherwise fail at the first request instead.
 
 ## Visual Identity Summary
 
-- The visual system lives in `ui/src/portal/brand.css` and is shared verbatim with the predecessor
-  portal, so UI parity is a markup exercise rather than a styling one. Prefer an existing class
-  over a new one.
-- Left navigation: dark green vertical gradient, centred logo, slanted application cards, grouped
+- The visual system lives in `ui/src/portal/brand.css`, loaded after the structural portal stylesheet.
+  Legacy token names resolve to the same theme tokens. Prefer an existing class over a new one.
+- Left navigation: dark green vertical gradient, compact brand row, rounded application picker, grouped
   sections (API · Kafka · Other · Global · Administration).
 - Main content: white canvas, muted green borders, little card chrome except where a boundary
   means something.
-- Signature controls: gooey dual-pill "liquid" buttons for primary actions; trapezoid environment
-  switchers and chips; rounded pill inputs and selects; CodeMirror with a light theme for schema
+- Shared controls: solid-accent primary buttons; compact segmented environment
+  switchers; rounded rectangular inputs and selects; CodeMirror with a light theme for schema
   editing; a three-step `.stepper` for the publish wizard.
 - Chip variants: bare `.chip` (neutral), `.ok`, `.warn`, `.err`, `.info`, `.violet`, `.accent` —
   driven by the tone vocabulary above, never by a colour written into a view.

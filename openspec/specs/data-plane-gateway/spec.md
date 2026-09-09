@@ -11,8 +11,9 @@ in `openspec/project.md`.
 
 ### Requirement: Take every decision from one configuration document
 
-The gateway SHALL hold no configuration of its own beyond how to reach the control plane and how
-to bound itself.
+The gateway SHALL hold no configuration of its own beyond how to reach the control plane and the
+few facts that are about this container rather than about the fleet — see `gateway-settings` for
+where that line is drawn and why. Its own bounds arrive in the document like everything else.
 
 #### Scenario: A behaviour is needed that the document does not describe
 
@@ -20,6 +21,16 @@ to bound itself.
 - WHEN a request needs it
 - THEN it SHALL come from the active configuration document
 - AND the gateway SHALL NOT read it from its own environment, a local file, or a request header
+
+#### Scenario: A bound is needed
+
+- GIVEN any concurrency ceiling, body cap, cache size, telemetry bound or access-log switch
+- WHEN the gateway enforces it
+- THEN the value SHALL be the document's `settings` block, resolved for this gateway by the control
+  plane
+- AND the gateway SHALL NOT read it from its own environment, which is a startup failure naming the
+  variable — see `gateway-settings`
+- AND the block SHALL be complete, so the gateway holds no default of its own to fall back to
 
 ### Requirement: Poll bidirectionally, in a single round trip
 
@@ -104,6 +115,15 @@ A configuration SHALL NOT be activated unless everything it needs is already hel
 - THEN the configuration SHALL be refused rather than activated
 - AND the reason SHALL be that reading an identity from a header with no trust boundary in front is
   an authorization bypass
+
+#### Scenario: The settings block cannot be honoured on this container
+
+- GIVEN a document whose `settings` name a bound this container's runtime will not honour
+- WHEN it is received
+- THEN it SHALL be refused before any artifact is fetched, reported as `activationBlocked`, and
+  whatever is already serving SHALL keep serving
+- AND unlike a missing trust boundary this SHALL NOT be fatal without a configuration, because
+  correcting the setting centrally makes the next poll succeed — see `gateway-settings`
 
 #### Scenario: The wire version is not understood
 
@@ -348,10 +368,12 @@ unvalidated as well, since validation has no schema without an operation.
 
 #### Scenario: The cache exceeds its bounds
 
-- GIVEN `RESPONSE_CACHE_MAX_ENTRIES` or `RESPONSE_CACHE_MAX_BYTES`
+- GIVEN the `responseCacheMaxEntries` or `responseCacheMaxBytes` setting
 - WHEN either is reached
 - THEN entries SHALL be evicted rather than the bound exceeded
 - AND caching SHALL be **off** by default
+- AND a bound lowered by a settings change SHALL evict down to it rather than be exceeded until the
+  next restart
 
 ### Requirement: Verify backend TLS by default
 
@@ -395,11 +417,74 @@ unvalidated as well, since validation has no schema without an operation.
 - AND the reason SHALL be that a `401` without them reaches a browser as an opaque CORS failure, so
   the consumer sees "CORS error" instead of "your key is wrong"
 
+### Requirement: Carry a compressed response through untouched when nothing has to read it
+
+The gateway SHALL decide this on the **request**, by whether it forwards the caller's
+`Accept-Encoding`: a body the backend never compressed cannot be forwarded compressed, and a body
+the gateway asked for compressed and then had to expand costs twice and buys nothing.
+
+Whether anything has to read the body is known before the backend is called — response validation,
+the response transform, the cache unit and the route's `kind` are all resolved by step 14. The one
+input that is not is the response's status, so the test SHALL be whether this operation *could*
+validate any response rather than whether it will validate this one.
+
+#### Scenario: Nothing on the response side needs the body
+
+- GIVEN a caller that sent an `Accept-Encoding`
+- AND a route with response validation disabled, no response transform, no cache unit applying to
+  this request, a `kind` that is neither `mcp` nor `a2a`, and no `passthrough.sse`
+- WHEN the request is forwarded
+- THEN the caller's `Accept-Encoding` SHALL be forwarded unchanged
+- AND the response body SHALL NOT be decoded, so the bytes the backend produced are the bytes the
+  caller receives
+- AND `Content-Encoding` and `Content-Length` SHALL be forwarded as received, because they now
+  describe the body actually being sent
+- AND `Accept-Encoding` SHALL be added to `Vary` whenever an encoding was carried through, so no
+  intermediary serves one caller's encoding to another
+
+#### Scenario: The caller negotiated no encoding
+
+- GIVEN a request with no `Accept-Encoding`
+- WHEN it is forwarded
+- THEN the response SHALL be delivered decoded, exactly as it was before this requirement existed
+- AND the reason SHALL be that the runtime supplies an `Accept-Encoding` of its own when a request
+  carries none, so a caller that asked for nothing could otherwise be handed an encoding it never
+  agreed to — and by the time that is visible, the chance to decode it has gone
+
+#### Scenario: Something on the response side needs the body
+
+- GIVEN response validation that could apply, a response transform, a cache unit, an `mcp` or `a2a`
+  route, or `passthrough.sse`
+- WHEN the request is forwarded
+- THEN its `Accept-Encoding` SHALL be set to `identity`, so the backend answers in bytes the gateway
+  can read
+- AND it SHALL be **set** rather than removed, because the runtime supplies an `Accept-Encoding` of
+  its own when a request carries none — a removed header means the backend compresses and the
+  gateway expands it again, which is both machines paying for an encoding nobody asked for
+- AND for `passthrough.sse` the reason SHALL be that compressing an event stream makes the encoder
+  buffer, which is the latency the stream exists to avoid
+
+### Requirement: Answer an unexpected failure as the gateway, never as the runtime
+
+The listener SHALL NOT run in the runtime's development mode. That mode answers an uncaught error
+with the exception's message, its stack, the source around each frame and the file paths — to
+whoever sent the request — and it is the default unless the process says otherwise.
+
+#### Scenario: Something throws where nothing should
+
+- GIVEN a failure the pipeline does not shape into a response of its own
+- WHEN it reaches the listener
+- THEN the caller SHALL receive `problem+json` with `500` and a generic detail, carrying a request
+  id that also appears in the instance's log
+- AND the exception's message, stack and source SHALL NOT appear in the response
+- AND the failure SHALL NOT be counted as traffic, because it has no route and no subscription to
+  attribute
+
 ### Requirement: Bound every allocation
 
 #### Scenario: A request body exceeds the cap
 
-- GIVEN a body larger than `MAX_BODY_BYTES` or the route's `always` limit
+- GIVEN a body larger than the `maxBodyBytes` setting or the route's `always` limit
 - WHEN it is read
 - THEN the request SHALL be refused with `413`, and the body SHALL be cancelled rather than buffered
 - AND on the **response** side an over-cap body SHALL still be delivered by replaying the prefix
@@ -407,19 +492,29 @@ unvalidated as well, since validation has no schema without an operation.
 
 #### Scenario: Concurrency ceilings are reached
 
-- GIVEN `MAX_CONCURRENT_REQUESTS`, `MAX_CONCURRENT_UPGRADES`, `VALIDATE_POOL_SIZE`,
-  `VALIDATE_QUEUE_DEPTH` or `BLOCKING_BUFFER_BUDGET_BYTES`
+- GIVEN the `maxConcurrentRequests`, `maxConcurrentUpgrades`, `validatePoolSize`,
+  `validateQueueDepth` or `blockingBufferBudgetBytes` setting
 - WHEN one is reached
 - THEN the excess SHALL be refused or shed with a stated status, and counted
 - AND a validation sample that does not fit SHALL be counted rather than allowed to hold memory
+- AND each of these SHALL be held as a number rather than as preallocated capacity, which is what
+  makes a settings change a set of assignments instead of a restart
 
 #### Scenario: A compressed response is measured
 
-- GIVEN a gzipped backend response
+- GIVEN a gzipped backend response the gateway decoded in order to read it
 - WHEN its size is recorded
 - THEN a `Content-Length` that describes the compressed bytes while the body has been transparently
   expanded SHALL NOT be trusted
 - AND the presence of `Content-Encoding` SHALL be what makes the case detectable
+
+#### Scenario: A compressed response is passed through
+
+- GIVEN a gzipped backend response the gateway did not decode
+- WHEN its size is recorded
+- THEN the declared `Content-Length` SHALL be trusted, because it describes exactly the bytes being
+  forwarded
+- AND what is counted SHALL be the bytes on the wire, not what they expand to
 
 ### Requirement: Validate against compiled artifacts, in the declared mode
 
@@ -450,9 +545,12 @@ unvalidated as well, since validation has no schema without an operation.
 
 - GIVEN traffic
 - WHEN a window closes
-- THEN counters SHALL be reported per series, bounded by `TELEMETRY_MAX_SERIES` and
-  `TELEMETRY_MAX_WINDOWS_PER_REPORT`, and the whole report by `MAX_REPORT_BYTES`
+- THEN counters SHALL be reported per series, bounded by the `telemetryMaxSeries` and
+  `telemetryMaxWindowsPerReport` settings, and the whole report by `MAX_REPORT_BYTES`
 - AND an outcome SHALL distinguish served, refused by the gateway, and failed upstream
+- AND the `telemetry` setting SHALL be able to switch counting off for a gateway, which blanks the
+  Telemetry view for it and hands the response body through rather than pulling it through a
+  counter
 
 #### Scenario: A JSON-RPC response carries an error
 
@@ -461,3 +559,158 @@ unvalidated as well, since validation has no schema without an operation.
 - THEN a body that does not parse SHALL simply not be an RPC error
 - AND the response SHALL be passed through either way, and whether it matches the contract SHALL be
   a separate check with its own state and counters
+
+### Requirement: Write one access-log line for every request, and never sample
+
+The estate keeps these lines to answer "who called what, when" for compliance. Sampling is
+therefore not available at any rate, under any load, and there SHALL be no setting that reduces
+the lines below one per request. The `accessLog` setting switches the log off entirely rather than
+thinning it, so "we have all of them" and "we have none" are the only two states the estate can be
+in — and because the lines are a promise to somebody outside engineering, it is the one setting
+whose change is a typed confirmation and a named audit entry (see `gateway-settings`).
+
+#### Scenario: A request is answered, however it was answered
+
+- GIVEN any request the listener accepted — served, refused by the gateway, or failed upstream
+- WHEN it finishes
+- THEN exactly one line SHALL be written
+- AND a request refused before a route matched SHALL be logged with the route fields absent rather
+  than not logged, because "a call arrived and was rejected" is the compliance question more often
+  than "a call succeeded"
+
+#### Scenario: The line is built
+
+- GIVEN a finished request
+- WHEN its line is built
+- THEN it SHALL be one JSON object on one line, carrying the timestamp, the request id, the trace
+  and span ids, the environment, gateway and instance, the method, path, redacted query and host,
+  the status, the backend's status, the outcome and any error, the resource, version, revision,
+  operation, subscription and consumer application, the client address, the total duration and the
+  backend duration
+- AND `outcome` SHALL be the same `Outcome` vocabulary telemetry counts in, so a line and a
+  dashboard cell cannot disagree about what happened
+- AND every line SHALL be built in **one** place, so a field cannot be present on the served path
+  and missing on the refused one
+
+### Requirement: Never write a credential into a line
+
+#### Scenario: Headers are considered
+
+- GIVEN any request
+- WHEN its line is built
+- THEN **no request or response header SHALL appear in it**, at any time, under any setting
+- AND the reason SHALL be that `Authorization` and the subscription-key header are headers: a rule
+  that named them would be a rule with a list to keep current, and the list would be wrong the
+  first time a scheme was added
+
+#### Scenario: The query string is written down
+
+- GIVEN a request whose query carries a credential-shaped parameter — the route's own key
+  parameter, or one of the names a caller put a token in because it was easier
+- WHEN the line is built
+- THEN the value SHALL be replaced by a marker and the parameter name SHALL remain
+- AND the parameter name SHALL be matched whole and case-insensitively, so `sort_key` is not a key
+
+#### Scenario: A captured body contains a credential
+
+- GIVEN a body being captured under an open window
+- WHEN it is written down
+- THEN the values of credential-shaped JSON members SHALL be replaced by a marker
+- AND the scan SHALL work on a fragment, because the body is already truncated and a parser refuses
+  a fragment
+- AND it SHALL over-match rather than under-match, which is the correct direction for this
+
+### Requirement: Capture bodies only inside an open window, and only the front of them
+
+Bodies SHALL NOT appear in a line by default. A body is the one part of a call that contains
+whatever the caller put in it, and the log index is read by more people than the API's backend is.
+
+#### Scenario: No window is open
+
+- GIVEN a route whose configuration carries no `logBodiesUntil`
+- WHEN a request is logged
+- THEN neither body SHALL appear in the line
+- AND no body SHALL be buffered for logging, so the default costs nothing
+
+#### Scenario: A window is open
+
+- GIVEN a route whose `logBodiesUntil` is in the future by the instance's own clock
+- WHEN a request is logged
+- THEN the request and response bodies SHALL appear, each truncated to `MAX_LOGGED_BODY_BYTES`
+  (8 KiB) and each marked when there was more of it
+- AND the prefix SHALL be taken without preventing the body from being forwarded in full
+
+#### Scenario: The window's instant passes
+
+- GIVEN an open window whose instant has been reached
+- WHEN the next request arrives
+- THEN capture SHALL stop, on the instance's own clock
+- AND it SHALL stop even if the control plane has been unreachable since the window was opened,
+  which is what makes a temporary window actually temporary
+
+#### Scenario: A response could be passed through compressed
+
+- GIVEN an open capture window on a route that would otherwise qualify for compressed pass-through
+- WHEN the request is forwarded
+- THEN pass-through SHALL be suppressed, because a captured body has to be readable
+- AND the window closing SHALL restore it without any other change
+
+### Requirement: Always record the reason a request failed below HTTP
+
+#### Scenario: The backend connection or handshake fails
+
+- GIVEN a TCP failure, a TLS failure, a timeout or any other transport error reaching the backend
+- WHEN the gateway answers `502`, `504` or any other `5xx` of its own
+- THEN the line SHALL carry the reason — the error's name, its message, its cause and the backend
+  origin — in the response-body field
+- AND this SHALL happen **regardless of whether a capture window is open**, because a reason the
+  gateway generated is not the caller's data and is the only record of what went wrong
+- AND the same SHALL apply to every `5xx` the gateway itself produces
+
+### Requirement: Correlate with W3C Trace Context
+
+#### Scenario: The caller sends a `traceparent`
+
+- GIVEN a request carrying a well-formed `traceparent` — version `00`, a non-zero trace id and a
+  non-zero parent span id
+- WHEN it is handled
+- THEN the trace id SHALL be continued, a fresh span id SHALL be minted for this hop, and the
+  caller's span id SHALL be recorded as the parent
+- AND a `tracestate` SHALL be carried onward only on a continued trace, bounded to 512 bytes
+- AND the header sent to the backend SHALL name this gateway's span, not the caller's
+
+#### Scenario: The caller sends nothing, or something malformed
+
+- GIVEN no `traceparent`, or one this gateway cannot parse
+- WHEN it is handled
+- THEN a new trace SHALL be started with a fresh trace id and span id and no parent
+- AND a malformed header SHALL be replaced rather than propagated, so a bad hop cannot poison the
+  trace downstream
+
+### Requirement: Write the log where a shipper can read it, and rotate it
+
+#### Scenario: `DP_ACCESS_LOG_PATH` is unset
+
+- GIVEN the default
+- WHEN lines are written
+- THEN they SHALL go to standard output, which is what the container's own log driver collects
+
+#### Scenario: `DP_ACCESS_LOG_PATH` names a file
+
+- GIVEN a path
+- WHEN lines are written
+- THEN they SHALL be appended to that file, buffered and flushed by size and by an interval, so a
+  gateway at rate does not make one syscall per request
+- AND the buffer SHALL be flushed on an orderly shutdown
+- AND the trade SHALL be stated: a process killed with `SIGKILL` loses what has not been flushed
+
+#### Scenario: The file reaches its rotation size
+
+- GIVEN a live log file at the `accessLogMaxBytes` setting
+- WHEN it is rotated
+- THEN the file SHALL be **renamed** and a new one opened, keeping `accessLogKeep` generations
+- AND it SHALL NOT be truncated in place, because a tailing shipper loses whatever it had not read
+- AND a failed rotation SHALL reopen the file anyway, so a rotation problem never becomes a logging
+  outage
+- AND one path SHALL serve one instance: two gateways sharing a path would interleave their buffers
+  and race each other's rotation

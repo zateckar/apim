@@ -1,3 +1,4 @@
+import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import {
   api,
@@ -51,7 +52,7 @@ export function TrustView({
 
   return (
     <>
-      <div className="tabs">
+      {!applicationId && <div className="tabs" role="group" aria-label="Trust sections">
         <button className={tab === "anchors" ? "tab active" : "tab"} onClick={() => setTab("anchors")}>
           Certificate authorities
         </button>
@@ -66,7 +67,7 @@ export function TrustView({
             Governance report
           </button>
         )}
-      </div>
+      </div>}
 
       {tab === "anchors" && (
         <TrustAnchors meta={meta} environment={environment} isAdmin={user.isAdmin} />
@@ -206,7 +207,7 @@ function CertificateRowView({
         ) : (
           <span className="badge ok">{row.expiresInDays} days</span>
         )}
-        <div className="muted">{new Date(row.notAfter).toLocaleDateString()}</div>
+        <div className="muted">{formatDate(row.notAfter)}</div>
       </td>
       <td className="mono small" title={row.thumbprint}>
         {row.thumbprint.slice(0, 16)}…
@@ -511,7 +512,7 @@ function Exceptions({ user, environment }: { user: User; environment: string }) 
                   ) : (
                     <span className="badge">expired</span>
                   )}
-                  <div className="muted">{new Date(row.expiresAt).toLocaleDateString()}</div>
+                  <div className="muted">{formatDate(row.expiresAt)}</div>
                 </td>
                 <td className="small">{row.reason}</td>
                 <td className="muted small">{row.createdBy}</td>

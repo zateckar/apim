@@ -1,3 +1,4 @@
+import { formatDateTime } from "../lib/datetime";
 import { useEffect, useMemo, useState } from "react";
 import {
   api,
@@ -548,7 +549,7 @@ function History({
         <tbody>
           {history.data.items.map((entry) => (
             <tr key={entry.id}>
-              <td className="muted small">{new Date(entry.createdAt).toLocaleString()}</td>
+              <td className="muted small">{formatDateTime(entry.createdAt)}</td>
               <td>
                 {/* Environments are mixed on purpose — the same call against DEV and TEST is the
                     comparison people want — so every row says which one `[P1-28]`. */}

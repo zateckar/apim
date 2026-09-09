@@ -8,7 +8,12 @@ import {
   validate,
   type JsonSchemaNode,
 } from "../shared/jsonschema.ts";
-import { matchOperation, renderPathTemplate } from "../shared/opmatch.ts";
+import {
+  compileOperations,
+  matchCompiled,
+  matchOperation,
+  renderPathTemplate,
+} from "../shared/opmatch.ts";
 
 /** Compiles one schema against an empty component set and returns what the runtime would walk. */
 function compile(
@@ -262,5 +267,35 @@ describe("operation matching", () => {
     expect(matchOperation(operations, "GET", "/pets/a%2Fb")!.params.petId).toBe("a/b");
     expect(renderPathTemplate("/{petId}/description", { petId: "a/b" })).toBe("/a%2Fb/description");
     expect(renderPathTemplate("/{missing}/x", {})).toBe("//x");
+  });
+
+  /*
+   * The data plane matches against an index compiled once per config activation rather than
+   * against the raw templates. It is the same function underneath — `matchOperation` compiles and
+   * calls it — so what has to be held is that the index is reusable: it carries no state from the
+   * request that used it last, and answers the same way however many requests it has served.
+   */
+  test("a compiled index answers identically, request after request", () => {
+    const compiled = compileOperations(operations);
+    for (let i = 0; i < 3; i++) {
+      expect(matchCompiled(compiled, "GET", "/pets/mine")!.operation.id).toBe("getPetMine");
+      expect(matchCompiled(compiled, "GET", "/pets/7")!.params).toEqual({ petId: "7" });
+      expect(matchCompiled(compiled, "GET", "/pets/7/owner")!.operation.id).toBe("getPetOwner");
+      expect(matchCompiled(compiled, "HEAD", "/pets")!.operation.id).toBe("listPets");
+      expect(matchCompiled(compiled, "DELETE", "/pets")).toBeNull();
+      expect(matchCompiled(compiled, "GET", "/pets/7/owner/extra")).toBeNull();
+    }
+  });
+
+  test("only the winner's variables are read out", () => {
+    // `/pets/{petId}/owner` and `/pets/mine/{note}` are the same arity: the first candidate loses
+    // on specificity, and nothing it would have bound may appear in the answer.
+    const ambiguous = [
+      { id: "byId", method: "GET", template: "/pets/{petId}/owner" },
+      { id: "mine", method: "GET", template: "/pets/mine/{note}" },
+    ];
+    const match = matchCompiled(compileOperations(ambiguous), "GET", "/pets/mine/hello")!;
+    expect(match.operation.id).toBe("mine");
+    expect(match.params).toEqual({ note: "hello" });
   });
 });

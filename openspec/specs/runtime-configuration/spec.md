@@ -32,6 +32,18 @@ cannot be resolved SHALL fail startup rather than resolve to a weaker default.
 - AND it SHALL NOT interpret the old variable, because reading it silently is how a development
   bypass survives an upgrade into production
 
+#### Scenario: A variable that moved into the configuration document is still set
+
+- GIVEN a gateway container that still sets one of the variables the settings table replaced —
+  `MAX_BODY_BYTES`, `MAX_CONCURRENT_REQUESTS`, `DP_ACCESS_LOG` and the rest
+- WHEN the data plane starts
+- THEN it SHALL refuse to start, naming every one of them and the setting that replaced it, and
+  saying where to set them instead
+- AND it SHALL NOT read the value, for both reasons: honouring it would keep a fleet's
+  configuration in as many places as it has containers, and ignoring it would quietly *lower* the
+  limits of an estate whose compose file set one above the code default
+- AND the requirements for the settings themselves are in `gateway-settings`
+
 #### Scenario: An integer bound is given a destructive value
 
 - GIVEN `REVISION_KEEP_COUNT`, `MAX_TRUST_ANCHORS` or `DASHBOARD_DEFAULT_SINCE_MIN` is `0`
@@ -243,8 +255,9 @@ The control plane SHALL cap what it will read.
 
 ### Requirement: Two planes are configured independently
 
-The data plane SHALL take its configuration from its own environment and hold no copy of the
-control plane's.
+The data plane SHALL take from its own environment only what is true of this container — how to
+reach the control plane, who this instance is, where its files are, and what the network in front
+of it is — and hold no copy of the control plane's configuration.
 
 #### Scenario: An instance is given its identity
 
@@ -252,7 +265,8 @@ control plane's.
 - WHEN the instance starts
 - THEN it SHALL poll the control plane with that bearer token
 - AND everything else it serves SHALL come from the configuration document, not from its own
-  environment
+  environment — including its own bounds, which are the document's `settings` block since
+  `configVersion` 6
 
 #### Scenario: The instance has never reached the control plane
 

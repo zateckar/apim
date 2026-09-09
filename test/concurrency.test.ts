@@ -2,7 +2,15 @@ import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { DEFAULT_TIMEOUT_MS, lintDocument, validateUnit } from "../shared/policy.ts";
 import { ConcurrencyGate } from "../data-plane/src/concurrency.ts";
 import { assertOutboundCeiling, type DataPlane } from "../data-plane/src/server.ts";
-import { makeCp, makeDp, publishApi, serveCp, startBackend, type TestCp } from "./helpers.ts";
+import {
+  makeCp,
+  makeDp,
+  publishApi,
+  serveCp,
+  setFleetSettings,
+  startBackend,
+  type TestCp,
+} from "./helpers.ts";
 
 /**
  * Plan G7: a slow backend must not be able to take the gateway down.
@@ -188,7 +196,8 @@ describe("a slow backend cannot take the gateway with it", () => {
         basePath: "/slow",
         policy: { rewrite: { stripBasePath: false }, timeoutMs: 60_000 },
       });
-      const dp = makePlane({ name: "capped", maxConcurrentRequests: 1 });
+      setFleetSettings(cp, { maxConcurrentRequests: 1 });
+      const dp = makePlane({ name: "capped" });
       await dp.start();
 
       const parked = dp.fetchHttp(new Request("http://gw/it/solution/slow/pet"), "127.0.0.1");
@@ -377,7 +386,7 @@ describe("the policy lint warns about the trap it cannot enforce", () => {
 });
 
 describe("the runtime's outbound queue must not bind before the gateway's ceilings", () => {
-  const config = { maxConcurrentRequests: 2048 } as Parameters<typeof assertOutboundCeiling>[0];
+  const config = { settings: { maxConcurrentRequests: 2048 } } as Parameters<typeof assertOutboundCeiling>[0];
 
   test("a value at or above the instance ceiling is accepted", () => {
     expect(() => assertOutboundCeiling(config, { BUN_CONFIG_MAX_HTTP_REQUESTS: "2048" })).not.toThrow();
@@ -393,8 +402,24 @@ describe("the runtime's outbound queue must not bind before the gateway's ceilin
 
   test("below the instance ceiling is a startup failure, because the queue would bind first", () => {
     expect(() => assertOutboundCeiling(config, { BUN_CONFIG_MAX_HTTP_REQUESTS: "256" })).toThrow(
-      /below MAX_CONCURRENT_REQUESTS/,
+      /below this gateway's maxConcurrentRequests/,
     );
+  });
+
+  test("the pairing is checked again when a document raises the ceiling", () => {
+    // The boot check cannot cover a ceiling an administrator sets afterwards from a browser, so
+    // activation repeats it: the document is refused, this instance keeps serving what it has, and
+    // the reason appears against it in the fleet view (v6).
+    const dp = makePlane({ name: "ceiling" });
+    const raised = { ...dp.settings, maxConcurrentRequests: 8192 };
+    expect(dp.settingsBlocker(raised, { BUN_CONFIG_MAX_HTTP_REQUESTS: "1024" })).toContain(
+      "above this container's BUN_CONFIG_MAX_HTTP_REQUESTS (1024)",
+    );
+    expect(dp.settingsBlocker(raised, { BUN_CONFIG_MAX_HTTP_REQUESTS: "8192" })).toBeNull();
+    // Unset or unreadable, there is nothing to compare against and the boot check has already
+    // refused to start; inferring a refusal here would block activation for a second reason.
+    expect(dp.settingsBlocker(raised, {})).toBeNull();
+    expect(dp.settingsBlocker(raised, { BUN_CONFIG_MAX_HTTP_REQUESTS: "lots" })).toBeNull();
   });
 
   test("a value that is not a positive integer is rejected", () => {

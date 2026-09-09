@@ -55,10 +55,10 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 - GIVEN the portal
 - WHEN the sidebar renders
-- THEN it SHALL be a dark vertical gradient with a centred logo, grouped navigation sections and a
+- THEN it SHALL be a dark vertical gradient with a compact brand row, grouped navigation sections and a
   user footer
-- AND the slanted geometry cues of the application picker and the environment switcher SHALL be
-  preserved, because they are what makes the portal recognisable at a glance
+- AND the application picker and environment switcher SHALL use compact rounded controls with a
+  clearly marked selection
 
 #### Scenario: An application card is rendered
 
@@ -257,8 +257,7 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 - GIVEN a publish or a new-version action
 - WHEN it renders
-- THEN it SHALL keep the branded "liquid" dual-pill treatment, which is one of the two things a
-  returning user recognises the portal by
+- THEN it SHALL use the same solid-accent primary button as other committing actions
 
 #### Scenario: A button written in the older vocabulary is rendered
 
@@ -294,7 +293,7 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - GIVEN any labelled input, select or textarea
 - WHEN it renders
 - THEN it SHALL carry a label above the control, an optional helper line beneath it, and the
-  rounded pill geometry of the shared stylesheet
+  compact rounded rectangular geometry of the shared stylesheet
 - AND a read-only field SHALL be visibly disabled with the reason nearby rather than removed
 - AND the label SHALL **name** its control — wrapping it, or carrying `htmlFor` against the
   control's id — rather than merely sitting above it, which announces an unlabelled box
@@ -352,3 +351,37 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - WHEN it renders
 - THEN the screen SHALL say it is simulated, in words, beside the result
 - AND the topbar SHALL additionally carry a standing chip while any surrounding system is simulated
+
+### Requirement: Keep all screens compact and readable in both themes
+
+#### Scenario: A shared surface renders
+
+- GIVEN a list, form, dashboard, health card or administration screen
+- WHEN it renders in either theme
+- THEN panels SHALL use 16px body padding, compact section headers, subtle borders and neutral surfaces
+- AND status fills SHALL be soft tints with readable state text; health verdicts SHALL retain explicit labels
+- AND primary actions SHALL use the accent fill with contrasting text in both idle and hover states
+- AND dashboard helper text SHALL use sentence case rather than all capitals
+- AND legacy colour and font tokens SHALL resolve to the same theme tokens as branded components
+
+#### Scenario: A table or identifier exceeds its container
+
+- GIVEN a narrow viewport or a long identifier
+- WHEN a page renders
+- THEN tables SHALL scroll within their panel and identifiers SHALL wrap within available space
+- AND the page itself SHALL NOT require horizontal scrolling
+- AND workspace and trust tabs SHALL remain reachable by horizontal scrolling
+
+#### Scenario: A timestamp is rendered in an older screen
+
+- GIVEN an account, membership, certificate, policy, gateway, playground-history or audit timestamp
+- WHEN it is displayed
+- THEN it SHALL use the shared date or date-time formatter
+- AND an audit timestamp SHALL include the date, so events on separate days are distinguishable
+
+#### Scenario: The application picker is operated from the keyboard
+
+- GIVEN the picker is open
+- WHEN the user presses Up, Down, Home or End on an option
+- THEN focus SHALL move between available applications
+- AND Escape or selecting an option SHALL return focus to the trigger

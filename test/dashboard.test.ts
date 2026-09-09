@@ -842,3 +842,22 @@ afterAll(() => {
     throw new Error(`no test produced these attention codes: ${missing.join(", ")}`);
   }
 });
+
+test("selected application scopes dashboard counts for a multi-application administrator", async () => {
+  makeResource("publisher-one");
+  makeResource("publisher-two");
+  makeResource("consumer-owned", "application_orders");
+  const cookie = await cp.login("alice");
+  const publisher = await dashboard(cookie, "?environment=dev&applicationId=application_platform");
+  const consumer = await dashboard(cookie, "?environment=dev&applicationId=application_orders");
+  expect(publisher.owner.apis.total).toBe(2);
+  expect(consumer.owner.apis.total).toBe(1);
+  expect((await dashboard(cookie, "?environment=dev")).owner.apis.total).toBe(3);
+});
+
+test("dashboard application scope rejects unknown and unauthorized applications", async () => {
+  const admin = await cp.login("alice");
+  const publisher = await cp.login("pavel");
+  expect((await cp.call("GET", "/api/dashboard?applicationId=missing", {cookie:admin})).status).toBe(404);
+  expect((await cp.call("GET", "/api/dashboard?applicationId=application_orders", {cookie:publisher})).status).toBe(403);
+});

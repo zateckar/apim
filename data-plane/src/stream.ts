@@ -1,5 +1,6 @@
 import type { ServerWebSocket } from "bun";
 import type { PassthroughUnit } from "../../shared/policy.ts";
+import { logTimestamp } from "./accesslog.ts";
 
 /**
  * WebSocket and SSE passthrough (design section 5.8).
@@ -60,7 +61,16 @@ export class StreamRegistry {
   peak = 0;
   closed: Record<string, number> = {};
 
-  constructor(private readonly maxTotal: number) {}
+  constructor(private maxTotal: number) {}
+
+  /**
+   * Lowered below the number of streams already open, nothing is closed: a stream is a connection
+   * somebody is using, and shedding new ones until the count comes down is the honest reading of a
+   * ceiling. Only a revoked subscription closes a stream that is already open.
+   */
+  resize(maxTotal: number): void {
+    this.maxTotal = maxTotal;
+  }
 
   get size(): number {
     return this.streams.size;
@@ -264,7 +274,7 @@ export class WebSocketBridge {
     const durationMs = handle ? Date.now() - handle.openedAtMs : 0;
     this.deps.record?.(handle?.bytesIn ?? 0, handle?.bytesOut ?? 0, durationMs, reason);
     this.deps.log?.({
-      ts: new Date().toISOString(),
+      ts: logTimestamp(),
       requestId: this.intent.requestId,
       kind: "websocket",
       resourceId: this.intent.resourceId,

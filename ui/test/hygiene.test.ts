@@ -209,6 +209,11 @@ describe("interaction hygiene", () => {
       endpoint: "/applications/",
       why: "revoking an application membership, which the button beside it grants back — and which the response itself explains when the directory will simply re-add it",
     },
+    {
+      file: "views/LogsPanel.tsx",
+      endpoint: "/api/logs/body-capture/",
+      why: "closing a body-capture window early, which deletes nothing: the row is dated rather than removed, and stopping the capture is always the safe direction — a typed confirmation between somebody and 'stop writing bodies to the log index' would be a guard pointing the wrong way",
+    },
   ];
 
   test("every delete of a named object goes through the typed confirmation", () => {

@@ -113,22 +113,29 @@ changing a line.
 no default, and an image that guessed would make that guess for every deployment at once.
 
 **What the gateway image deliberately does not set:** `GATEWAY_CP_URL`, `GATEWAY_TOKEN_FILE`,
-`DP_NAME`, `MAX_BODY_BYTES`, `TRUSTED_PROXY_CIDRS`. Each is a deployment decision, and an image that
-guessed would make that guess for every deployment at once.
+`DP_NAME`, `TRUSTED_PROXY_CIDRS`. Each is a deployment decision, and an image that guessed would
+make that guess for every deployment at once.
 
 Only one of them stops the process: **the token**. Without `GATEWAY_TOKEN_FILE` or `GATEWAY_TOKEN`
-the gateway refuses to start and names both. The other four have code defaults, and those defaults
+the gateway refuses to start and names both. The other three have code defaults, and those defaults
 are the argument for setting them rather than a reason to relax about them — a gateway with no
 `GATEWAY_CP_URL` polls `http://localhost:8080` and looks like a network fault, and one with no
 `TRUSTED_PROXY_CIDRS` logs and rate-limits on whatever client IP the caller asked for. That is why
 `GATEWAY_CP_URL` has no default in [`docker-compose.data-plane.yml`](docker-compose.data-plane.yml):
 the refusal an operator needs is the compose file's, before a container exists.
 
-**What the gateway image does set, and why both:** `MAX_CONCURRENT_REQUESTS=8192` and
-`BUN_CONFIG_MAX_HTTP_REQUESTS=16384`. The gateway refuses to start unless the second is at least
-the first, and that check exists precisely to catch the pairing an image setting neither would
-inherit — the runtime's small default outbound queue behind the gateway's own ceiling, where one
-slow backend delays every other route. Raise them together or not at all.
+**What the gateway image cannot set at all:** the body cap, the concurrency and buffer ceilings, the
+cache sizes, the JWKS floor, the telemetry bounds and the access-log switches. Those are gateway
+settings, held by the control plane and delivered in the configuration document, and a container
+that still sets one of their old variables refuses to start naming it.
+
+**What the gateway image does set:** `BUN_CONFIG_MAX_HTTP_REQUESTS=16384`. This is the runtime's own
+outbound queue, so it can only be a per-container value; the gateway refuses to start, and refuses
+to activate a document, unless it is at least the `maxConcurrentRequests` setting. That check exists
+precisely to catch the pairing an image setting neither would inherit — the runtime's small default
+queue behind the gateway's own ceiling, where one slow backend delays every other route. 16384 is
+headroom, not a match, so raising the setting from the portal is an ordinary thing to do; past it,
+raise this and restart the container.
 
 **The image ships no configuration as a default.** The repository's own `config/` is copied to
 `/app/config.sample/` instead, because its egress allowlist permits loopback so the local stack
@@ -327,25 +334,39 @@ my department can see nothing" has a visible cause and a one-click fix.
 These are the ones with no correct default, because the right number is a property of your traffic.
 Each fails in a way that looks like something else, which is why they are together in one table.
 
+Five of the six are **gateway settings**, not environment variables: they are set on the portal's
+Gateway settings screen for the whole fleet, one environment or one gateway, and reach each replica
+on its next poll without a restart. Sizing them is still the operator's job; finding them is no
+longer a matter of knowing which container to edit.
+
 | | The rule | What a wrong value looks like |
 |---|---|---|
-| `MAX_BODY_BYTES` | The largest body any route on this gateway must accept | `413` on a legitimate upload |
+| `maxBodyBytes` (setting) | The largest body any route on this gateway must accept | `413` on a legitimate upload |
 | `validate.always.maxBodyBytes` (per route, in policy) | That route's largest body, at or below the above | `413` on one API while the others are fine |
-| `BLOCKING_BUFFER_BUDGET_BYTES` | At least the route's `maxBodyBytes` × the number of concurrent blocking requests you mean to absorb | `503` on a route that was validating fine yesterday |
-| `MAX_CONCURRENT_REQUESTS` | At least peak requests-per-second × the worst backend latency you mean to absorb | `503` shed too early when a backend degrades |
-| `BUN_CONFIG_MAX_HTTP_REQUESTS` | At least `MAX_CONCURRENT_REQUESTS` | One slow backend delays every other route |
+| `blockingBufferBudgetBytes` (setting) | At least the route's `maxBodyBytes` × the number of concurrent blocking requests you mean to absorb | `503` on a route that was validating fine yesterday |
+| `maxConcurrentRequests` (setting) | At least peak requests-per-second × the worst backend latency you mean to absorb | `503` shed too early when a backend degrades |
+| `BUN_CONFIG_MAX_HTTP_REQUESTS` (env, per container) | At least `maxConcurrentRequests` | One slow backend delays every other route |
 | `concurrency.maxInFlight` (per route, in policy) | That route's requests-per-second × its p99, plus headroom | One sick backend fills the whole instance |
 
-Three things that are easy to get wrong about these:
+Four things that are easy to get wrong about these:
 
-**`MAX_BODY_BYTES` is per instance, not per route.** Raising it for one large-upload API raises the
-ceiling for every API on that gateway. The per-route number that should actually differ is the
-policy's own `validate.always.maxBodyBytes`.
+**`maxBodyBytes` is per instance, not per route.** Raising it for one large-upload API raises the
+ceiling for every API on the gateways the layer you set it on reaches. The per-route number that
+should actually differ is the policy's own `validate.always.maxBodyBytes`.
 
-**`nofile` must be at least four times `MAX_CONCURRENT_REQUESTS`.** Each held request keeps a client
+**The one env/setting pair is the one that can bite on a heterogeneous fleet.**
+`BUN_CONFIG_MAX_HTTP_REQUESTS` is the runtime's, set per container, and the gateway will not run
+with `maxConcurrentRequests` above it. Raise it from the portal past what a particular container
+allows and that replica **refuses the whole document**, keeps serving what it already had, and says
+why on Health Status — so the mistake is visible and one central edit undoes it, but the replica is
+a revision behind until you make it. The image ships 16384 as headroom for exactly this reason.
+
+**`nofile` must be at least four times `maxConcurrentRequests`.** Each held request keeps a client
 socket and an upstream socket, and a container's default limit of 1024 is reached long before any
-ceiling configured here. A stream holds its pair for its whole life, so `MAX_CONCURRENT_UPGRADES`
-counts against the same budget. The compose file sets `nofile` to 32768 for this reason.
+ceiling set on the portal. A stream holds its pair for its whole life, so `maxConcurrentUpgrades`
+counts against the same budget. The compose file sets `nofile` to 32768 for this reason — and since
+the ceiling is now raised from a browser rather than from that file, check the two against each
+other when you raise it.
 
 **A route's `timeoutMs` covers the whole upstream exchange, including streaming the request body
 up.** So a large upload from a slow client needs a timeout that covers the transfer, not just the
@@ -415,8 +436,47 @@ lost contact with the portal but is still serving its last-good document reports
 say otherwise.
 
 A gateway that has downloaded a configuration and **refused to activate it** — because it references
-a compiled validator it cannot fetch — keeps serving the previous one and reports why, and the
-Gateways screen shows it as blocked with the reason.
+a compiled validator it cannot fetch, or because its settings name a ceiling this container's
+runtime will not honour — keeps serving the previous one and reports why, and the Gateways screen
+shows it as blocked with the reason. `/healthz` also reports the settings actually in force on that
+replica, which is how you tell a refusal apart from a change that simply has not arrived yet.
+
+### The access log, and shipping it
+
+Every gateway writes one JSON line per request, for every request, and there is no setting that
+thins that — the lines are a compliance record, so the `accessLog` setting switches the log off
+entirely rather than sampling it. Size the destination for the whole of your traffic, not a
+fraction of it. Switching it off is the one gateway setting behind a typed confirmation, and it is
+written to the audit trail named as sensitive.
+
+Unset, the lines go to standard output and the container's log driver collects them. That is the
+right answer when something else on the host already ships stdout. Point `DP_ACCESS_LOG_PATH` at a
+file on a mounted volume when a shipper — Logstash, Filebeat — tails the file instead:
+
+| | |
+|---|---|
+| `DP_ACCESS_LOG_PATH` (env, per container) | **One path per instance.** Two gateways writing one file would interleave their buffers and race each other's rotation, so put `DP_NAME` in the path. This is why it stayed a variable rather than becoming a fleet setting |
+| `accessLogMaxBytes` (setting) | How large the live file grows before it is rotated. `128 MiB` by default |
+| `accessLogKeep` (setting) | How many rotations are kept. `5` by default, so the volume has to hold `(keep + 1) × maxBytes` — about 768 MiB at the defaults, per instance |
+
+**The gateway rotates the file itself, and does not want `logrotate` doing it too.** It renames and
+reopens (`access.log` → `access.log.1` → …), which is the mode a tailing shipper handles correctly:
+it finishes the renamed inode and then follows the new file. An external rotator truncating in
+place loses whatever the shipper had not read yet. If you already run `logrotate` on this host,
+exclude this path.
+
+The lines are buffered and flushed by size and by a quarter-second interval, so a gateway at rate
+does not make one syscall per request. An orderly shutdown flushes; a `SIGKILL` loses whatever was
+still in the buffer. That is the trade, and it is the same one every proxy that does not write
+through makes.
+
+`openspec/project.md` § The Access Log Line is the field list and what each one lands in on the ELK
+side. Two things about its contents are worth knowing before you build a dashboard on it: **no
+request or response header is ever in a line**, so there is no field to map for `Authorization` or
+an API key, and credential-shaped query parameters arrive with their values already replaced.
+Bodies are absent unless somebody has opened a capture window on that API from the portal's Logs
+tab — an hour at most, 8 KiB at most, audited, and visible to every reader of the portal while it
+is open.
 
 ### Backup and restore
 
@@ -457,6 +517,36 @@ Rolling the gateways one at a time is safe by construction: each is stateless, c
 poll, and the fleet's rate limits are per instance, so removing one instance lowers the fleet
 ceiling proportionally rather than shifting load into a shared counter.
 
+**Upgrading to 1.3: the gateway's own limits moved into the portal, and the old variables are now a
+startup failure.** `MAX_BODY_BYTES`, `MAX_CONCURRENT_REQUESTS`, `MAX_CONCURRENT_UPGRADES`,
+`BLOCKING_BUFFER_BUDGET_BYTES`, `VALIDATE_POOL_SIZE`, `VALIDATE_QUEUE_DEPTH`,
+`RESPONSE_CACHE_MAX_ENTRIES`, `RESPONSE_CACHE_MAX_BYTES`, `ARTIFACT_CACHE_MAX_BYTES`,
+`JWKS_MIN_REFETCH_SEC`, `DP_TELEMETRY`, `TELEMETRY_MAX_SERIES`, `TELEMETRY_MAX_WINDOWS_PER_REPORT`,
+`DP_ACCESS_LOG`, `DP_ACCESS_LOG_MAX_BYTES` and `DP_ACCESS_LOG_KEEP` are gateway settings now. A
+gateway that still has one of them set refuses to start and names every one it found.
+
+That refusal is deliberate and it is the whole upgrade path, because the two silent alternatives are
+both worse: reading the variables would keep a fleet's configuration in as many places as it has
+containers, and ignoring them would quietly *lower* the limits of any estate whose compose file had
+raised one above the code default — which is most of them, since the shipped file set an 8192
+request ceiling.
+
+So, in this order:
+
+1. **Before** rolling any gateway, upgrade the control plane and set the values your compose files
+   currently carry on **Administration → Gateway settings**. Fleet-wide is usually right; set an
+   environment or a single gateway only where they actually differ today. The screen names the
+   variable each setting replaced, so this is a transcription rather than a redesign.
+2. Remove those variables from every gateway's environment.
+3. Roll the gateways.
+
+A gateway rolled before step 1 comes up on the code defaults, which for most estates is a *lower*
+body cap and a lower concurrency ceiling than it had — so do step 1 first, not afterwards.
+
+`BUN_CONFIG_MAX_HTTP_REQUESTS` stays where it is: it is the runtime's, per container. Check it is at
+least the `maxConcurrentRequests` you just set, or that gateway will refuse the document and say so
+on Health Status.
+
 ### What a Kubernetes chart would have to get right
 
 There is no chart here, and that is deliberate: writing one with no cluster to test it against would
@@ -478,10 +568,12 @@ permissions. So gateways want a `StatefulSet` with per-pod volumes and per-pod t
 `Deployment` with one shared secret — or an `emptyDir` and the acceptance that every restart
 re-downloads its artifacts.
 
-**4. `nofile` and the two concurrency ceilings must move together.** At least four times
-`MAX_CONCURRENT_REQUESTS`, and `BUN_CONFIG_MAX_HTTP_REQUESTS` at least `MAX_CONCURRENT_REQUESTS` or
-the gateway refuses to start. A container runtime's default limit is reached long before any of
-these numbers.
+**4. `nofile` and the two concurrency ceilings must move together.** At least four times the
+`maxConcurrentRequests` setting, and `BUN_CONFIG_MAX_HTTP_REQUESTS` at least that setting or the
+gateway refuses to start — and refuses to activate a document that raises it past what the pod
+allows. A container runtime's default limit is reached long before any of these numbers. The
+awkward part for a chart is that the ceiling is now changed from a browser while `nofile` and the
+runtime queue are in the manifest, so leave headroom in both rather than matching them exactly.
 
 **5. Readiness must use the right endpoint per plane.** The control plane's `/readyz`; the gateway's
 `/healthz`, and a gateway serving its last-good document during a control-plane outage must stay in
@@ -500,8 +592,9 @@ database, and the two mounted configuration files belong in a `ConfigMap` — ex
 bun test
 ```
 
-878 tests across 44 files: the shared vocabulary, the JSON Schema and XSD validators, the control
-plane, the gateway pipeline, promotion, versioning, telemetry, the fleet, SOAP, artifacts,
+998 tests across 50 files: the shared vocabulary, the JSON Schema and XSD validators, the control
+plane, the gateway pipeline, promotion, versioning, telemetry, the fleet, gateway settings and the
+three layers they resolve from, SOAP, artifacts,
 validation in all three states, backend pools and the breaker, trust anchors, quota, streaming, the
 global tier, MCP, A2A, the catalog, the playground, the dashboard, revisions and the structural
 diff, the concurrency bulkheads, local and OIDC authentication against a real in-process identity

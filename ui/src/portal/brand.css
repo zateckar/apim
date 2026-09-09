@@ -18,12 +18,12 @@
 
   --fg: oklch(0.22 0.01 260);
   --fg-muted: oklch(0.48 0.012 260);
-  --fg-subtle: oklch(0.62 0.012 260);
+  --fg-subtle: oklch(0.50 0.012 260);
   --fg-faint: oklch(0.78 0.01 260);
 
   --accent: var(--brand-dark);
-  --accent-hover: var(--brand-light);
-  --accent-soft: var(--brand-light);
+  --accent-hover: oklch(0.36 0.055 165);
+  --accent-soft: oklch(0.95 0.025 155);
   --accent-soft-2: oklch(0.88 0.1 155);
   --accent-fg: #ffffff;
   --accent-ring: rgb(14 58 47 / 0.25);
@@ -31,8 +31,8 @@
   /* OK status unified with brand — a single green family for both "main
      action" and "success" so the visual story stays simple. */
   --ok: var(--brand-dark);
-  --ok-soft: var(--brand-light);
-  --warn: oklch(0.72 0.14 75);
+  --ok-soft: oklch(0.95 0.025 155);
+  --warn: oklch(0.49 0.11 65);
   --warn-soft: oklch(0.96 0.05 85);
   --err: oklch(0.58 0.18 25);
   --err-soft: oklch(0.96 0.04 25);
@@ -74,7 +74,7 @@
 
   --fg: oklch(0.96 0.005 110);
   --fg-muted: oklch(0.72 0.008 110);
-  --fg-subtle: oklch(0.58 0.008 110);
+  --fg-subtle: oklch(0.72 0.008 110);
   --fg-faint: oklch(0.42 0.008 110);
 
   /* Brand swap for dark mode: light green is the readable accent on a
@@ -3820,3 +3820,169 @@ a { color: inherit; text-decoration: none; }
   .native-portal .workspace-catalog .version-env-picker { flex-wrap: wrap; max-width: 100%; }
   .native-portal .api-workspace .policy-card { align-items: flex-start; flex-wrap: wrap; }
 }
+
+/* Portal polish — frontend-visual-system: one rhythm and readable themes for every route.
+   These aliases keep the earlier screen vocabulary on the same live tokens. */
+:root {
+  --ink: var(--fg); --text: var(--fg); --muted: var(--fg-muted);
+  --line: var(--border); --panel: var(--surface); --panel-2: var(--bg-muted);
+  --accent-ink: var(--accent); --danger: var(--err); --warn-bg: var(--warn-soft);
+  --radius: var(--r-md); --mono: var(--font-mono);
+  --sidebar-bg: oklch(0.25 0.035 165);
+  --sidebar-end: oklch(0.20 0.025 165);
+  --sidebar-fg: oklch(0.94 0.012 155);
+  --sidebar-muted: oklch(0.77 0.025 155);
+  --sidebar-hover: oklch(0.32 0.04 165);
+  --overlay: oklch(0.15 0.02 165 / 0.45);
+}
+.native-portal { --sidebar-w: 232px; }
+.native-portal .sidebar {
+  width: var(--sidebar-w); height: 100dvh; min-height: 0;
+  background: linear-gradient(160deg, var(--sidebar-bg), var(--sidebar-end));
+  color: var(--sidebar-fg); border: 0; overflow: visible;
+}
+.native-portal .sidebar::after { display: none; }
+.native-portal .sidebar .brand { height: 64px; padding: 16px; flex-shrink: 0; }
+.native-portal .sidebar .brand .name { color: var(--sidebar-fg); font-size: 14px; letter-spacing: 0; }
+.native-portal .sidebar .logo { display: flex; align-items: center; justify-content: center; padding: 0; flex-shrink: 0; }
+.native-portal .sidebar .app-picker { margin: 0 12px 12px; padding: 10px; background: var(--sidebar-hover); flex-shrink: 0; }
+.native-portal .sidebar .app-picker-label { color: var(--sidebar-muted); margin-bottom: 4px; }
+.native-portal .sidebar nav { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
+.native-portal .sidebar .nav-item { min-height: 32px; padding: 6px 10px; margin: 1px 0; font-size: 13px; color: var(--sidebar-muted); }
+.native-portal .sidebar .nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-fg); }
+.native-portal .sidebar .nav-item.active { background: var(--sidebar-hover); color: var(--brand-light); box-shadow: inset 2px 0 var(--brand-light); }
+.native-portal .sidebar .nav-group-title { justify-content: flex-start; color: var(--sidebar-muted); font-size: 10px; letter-spacing: .07em; margin: 0 10px 4px; }
+.native-portal .sidebar .nav-group-title::before,
+.native-portal .sidebar .nav-group-title::after { display: none; }
+.native-portal .sidebar .nav-section:has(> .nav-group-title) { margin-top: 12px; }
+.native-portal .sidebar .user { padding: 12px 16px; flex-shrink: 0; border-color: var(--sidebar-hover); margin-top: 0; }
+.native-portal .sidebar .user strong { color: var(--sidebar-fg); font-size: 12px; }
+.native-portal .sidebar .user small { color: var(--sidebar-muted); font-size: 11px; }
+.native-main { margin-left: var(--sidebar-w); }
+.native-portal .topbar { height: 52px; padding: 0 24px; color: var(--fg); position: sticky; top: 0; z-index: 20; }
+.native-portal .breadcrumbs { min-width: 0; gap: 8px; font-size: 12px; }
+.native-portal .breadcrumbs > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-portal .topbar .native-actions { flex-wrap: nowrap; gap: 6px; }
+.native-content { padding: 24px; max-width: 1440px; }
+.native-page-head { gap: 16px; margin-bottom: 20px; align-items: center; }
+.native-page-head > div { min-width: 0; }
+.native-page-head h1 { font-size: 25px; line-height: 1.25; margin: 4px 0 6px; font-weight: 650; }
+.native-page-purpose { line-height: 1.5; }
+.native-portal .eyebrow { font-size: 11px; font-weight: 600; }
+.native-portal .native-actions { gap: 8px; }
+.native-portal .card { border-radius: var(--r-md); margin-bottom: 16px; box-shadow: none; }
+.native-portal .card-head, .native-modal .card-head { padding: 12px 16px; flex-wrap: wrap; }
+.native-portal .card-head h3 { font-size: 14px; font-weight: 600; }
+.native-portal .card-body, .native-modal .card-body { padding: 16px; }
+.native-portal .card-body.flush, .native-modal .card-body.flush { padding: 0; }
+.native-portal .card-body:has(> table) { overflow-x: auto; }
+.native-portal .card-body > :first-child { margin-top: 0; }
+.native-portal .card-body > :last-child { margin-bottom: 0; }
+.native-portal .native-field { gap: 5px; margin-bottom: 16px; }
+.native-portal :is(input:not([type=checkbox]):not([type=radio]), select, textarea),
+.native-modal :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
+  border-radius: var(--r-sm); padding: 7px 10px; background: var(--surface); color: var(--fg); min-height: 34px;
+}
+.native-portal :is(input, select, textarea):disabled { background: var(--bg-muted); color: var(--fg-muted); }
+.native-portal :is(input[type=checkbox], input[type=radio]), .native-modal :is(input[type=checkbox], input[type=radio]) { accent-color: var(--accent); width: auto; min-height: auto; }
+.native-portal .btn, .native-modal .btn { border-radius: var(--r-sm); min-height: 34px; }
+.native-portal .btn.sm, .native-modal .btn.sm { min-height: 30px; padding: 5px 9px; }
+.native-portal .btn.primary, .native-modal .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-fg); }
+.native-portal .btn.primary:hover:not(:disabled), .native-modal .btn.primary:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); color: var(--accent-fg); }
+.native-portal .seg { padding: 3px; gap: 2px; background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--r-md); }
+.native-portal .native-page-head .seg { margin: 0; }
+.native-portal .seg button { background: transparent; min-height: 30px; padding: 5px 11px; font-size: 12px; }
+.native-portal .seg button.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-xs); }
+.native-portal .native-row { padding: 12px 0; gap: 16px; }
+.native-portal .native-row > div { min-width: 0; overflow-wrap: anywhere; }
+.native-portal .native-row > .native-actions { flex-shrink: 0; }
+.native-portal .empty { padding: 24px 16px; border: 0; background: var(--bg-subtle); border-radius: var(--r-sm); }
+.native-portal .empty strong { color: var(--fg); font-size: 14px; }
+.native-portal .empty p { margin: 6px auto 12px; font-size: 13px; line-height: 1.5; }
+.native-portal .kpi-row { gap: 12px; margin-bottom: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.native-portal .kpi-card { padding: 16px; gap: 8px; min-width: 0; }
+.native-portal .kpi-label { text-transform: none; font-size: 12px; letter-spacing: 0; color: var(--fg-muted); font-weight: 500; }
+.native-portal .kpi-value { font-size: 26px; font-variant-numeric: tabular-nums; }
+.native-portal .kpi-card > .kpi-label:last-child { font-weight: 400; font-size: 11px; }
+.native-portal :is(.tbl, .native-legacy table) { font-size: 13px; }
+.native-portal :is(.tbl, .native-legacy table) :is(th, td) { padding: 10px 12px; border-color: var(--border); }
+.native-portal :is(.tbl, .native-legacy table) th { background: var(--bg-subtle); text-transform: none; letter-spacing: 0; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
+.native-portal :is(.tbl, .native-legacy table) tbody tr:hover { background: var(--bg-subtle); }
+.native-portal .native-legacy td a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.native-portal :is(.kv, .glossary) { grid-template-columns: minmax(110px, max-content) minmax(0, 1fr); }
+.native-portal :is(.kv, .glossary) dd { overflow-wrap: anywhere; }
+.native-portal :is(.spread, header.page) { flex-wrap: wrap; }
+.native-portal :is(.row, .field, .stack, .stats, .market-grid, .listing) { min-width: 0; }
+.native-portal .market-grid { grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
+.native-portal .workspace-tabs { margin-bottom: 16px; }
+.native-portal .workspace-tabs button { min-height: 34px; font-size: 12px; padding: 6px 10px; }
+.native-portal :is(.pill, .pill.muted, .listing-icon, .envpicker) { background: var(--bg-muted); color: var(--fg-muted); }
+.native-portal .envpicker .env.active { background: var(--surface); color: var(--accent); }
+.native-portal .unit.attached { background: var(--bg-subtle); border-color: var(--border-strong); }
+.native-portal .native-notifications { max-height: calc(100dvh - 76px); overflow-y: auto; top: 60px; }
+.native-modal::backdrop { background: var(--overlay); }
+.native-modal .card-head { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+.skip-link { position: fixed; left: 12px; top: -80px; z-index: 100; padding: 10px 16px; background: var(--surface); color: var(--accent); border-radius: var(--r-sm); }
+.skip-link:focus { top: 12px; }
+.nav-backdrop { display: none; }
+@media (max-width: 1100px) { .native-portal .kpi-row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 1000px) {
+  .native-portal { --sidebar-w: 216px; }
+  .native-page-head { align-items: flex-start; }
+  .native-content { padding: 20px; }
+}
+@media (max-width: 700px) {
+  .native-main { margin-left: 0; }
+  .native-portal .sidebar { visibility: hidden; width: min(280px, 85vw); }
+  .native-portal.nav-open .sidebar { visibility: visible; top: 52px; height: calc(100dvh - 52px); }
+  .native-portal .nav-backdrop { display: block; position: fixed; inset: 52px 0 0; background: var(--overlay); z-index: 25; }
+  .native-portal .topbar { padding: 0 12px; }
+  .native-content { padding: 16px; }
+  .native-page-head h1 { font-size: 23px; }
+  .native-page-head > .native-actions { width: 100%; justify-content: space-between; }
+  .native-portal .kpi-card { padding: 12px; }
+  .native-portal .native-row > .native-actions { flex-wrap: wrap; }
+  .native-portal :is(.kv, .glossary) { grid-template-columns: 1fr; gap: 4px; }
+  .native-portal :is(.kv, .glossary) dd { margin-bottom: 10px; }
+  .native-portal .stepper { flex-wrap: wrap; }
+  .native-portal .field { flex-basis: 100%; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
+}
+.native-portal .sidebar { padding: 0; }
+.native-portal .sidebar .brand { background: transparent; }
+.native-portal .sidebar .user { flex-direction: row; text-align: left; }
+.native-portal .sidebar .user .info { flex: 1; }
+.native-portal .sidebar .app-picker-btn { padding: 8px; }
+.native-portal .sidebar .app-picker-btn .swatch { display: none; }
+.native-portal .health-env-card { padding: 16px; border-radius: var(--r-md); color: var(--fg); gap: 10px; }
+.native-portal .health-env-card.ok { background: var(--ok-soft); border-color: var(--border); }
+.native-portal .health-env-card.warn { background: var(--warn-soft); border-color: var(--border); }
+.native-portal .health-env-card.err { background: var(--err-soft); border-color: var(--border); }
+.native-portal .health-env-card .env-tag { background: transparent; padding: 0; color: var(--fg-muted); border: 0; font-size: 12px; }
+.native-portal .health-env-card .health-env-meta { color: var(--fg-muted); }
+.native-portal .health-env-card.ok .v { color: var(--ok); }
+.native-portal .health-env-card.warn .v { color: var(--warn); }
+.native-portal .health-env-card.err .v { color: var(--err); }
+.native-portal .health-env-card .pulse { box-shadow: none; }
+.native-portal .health-env-card .pulse.ok { background: var(--ok); }
+.native-portal .health-env-card .pulse.warn { background: var(--warn); }
+.native-portal .health-env-card .pulse.err { background: var(--err); }
+.native-portal .audit-detail { min-width: 130px; max-width: 380px; }
+.native-portal .audit-detail summary { color: var(--accent); cursor: pointer; white-space: nowrap; }
+.native-portal .audit-detail pre { min-width: 240px; overflow-wrap: anywhere; }
+.native-portal .tabs { overflow-x: auto; gap: 4px; }
+.native-portal .tabs button { white-space: nowrap; flex-shrink: 0; }
+.native-portal .btn.secondary:hover { color: var(--accent-fg); }
+.login { width: min(440px, calc(100% - 32px)); margin: 10vh auto; }
+.login .card { box-shadow: var(--shadow-sm); overflow: hidden; }
+.login .card-head h3 { font-size: 22px; }
+.login input { width: 100%; min-height: 38px; padding: 8px 10px; border: 1px solid var(--border-strong); border-radius: var(--r-sm); background: var(--surface); }
+.login button { padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--surface); color: var(--fg); }
+.login button:hover { background: var(--bg-muted); }
+.login button[type=submit], .login .button.primary { background: var(--accent); color: var(--accent-fg); }
+.login :is(button,a,input):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media (max-width: 700px) { .native-portal .health-hero { grid-template-columns: 1fr; } }
+.native-portal .health-overview .page-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
+.native-portal .health-overview .health-hero { margin-bottom: 16px; }

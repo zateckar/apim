@@ -1,3 +1,4 @@
+import { formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import { api, type FleetHealth, type GatewayRow } from "../api";
 import { Panel, DangerZone, TextField, Notice, Pill, useAction, useAsync } from "../components";
@@ -329,7 +330,7 @@ function Replicas({
             <tr key={instance.id}>
               <td>{instance.name}</td>
               <td className="muted">
-                {instance.lastSeenAt ? new Date(instance.lastSeenAt).toLocaleTimeString() : "never"}
+                {instance.lastSeenAt ? formatDateTime(instance.lastSeenAt) : "never"}
               </td>
               <td>
                 {instance.revoked ? (

@@ -40,7 +40,17 @@ export class ConcurrencyGate {
   private shedRoute = 0;
   private shedInstance = 0;
 
-  constructor(readonly maxTotal: number) {}
+  constructor(public maxTotal: number) {}
+
+  /**
+   * The instance ceiling is the fleet's decision, so it changes when a document is activated
+   * (`shared/gateway-settings.ts`). Lowered below what is in flight it is not an error and nothing
+   * already admitted is disturbed: the next arrivals are shed, exactly as they would be if this
+   * many had arrived under the old ceiling, and the gauge drains as they complete.
+   */
+  resize(maxTotal: number): void {
+    this.maxTotal = maxTotal;
+  }
 
   /**
    * Take a slot, or say which ceiling refused it.

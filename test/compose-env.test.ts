@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
+import { GATEWAY_SETTING_DEFS, GATEWAY_SETTING_KEYS } from "../shared/gateway-settings.ts";
 
 /**
  * The compose files name every setting its plane reads, and no setting it does not.
@@ -72,10 +73,16 @@ const PLANES: Record<string, Plane> = {
       DEV_AUTH: "retired — setting it without AUTH_PROVIDERS is a startup failure that says so",
     },
   },
+  /**
+   * Short since v6, and the count is the assertion: everything the gateway used to be told about
+   * its own ceilings is the control plane's now and travels in the configuration document, so what
+   * is left here is what a process needs before it can poll. `test/gateway-settings.test.ts` holds
+   * the other half — which settings exist, and that the poll interval is not one of them.
+   */
   "data plane": {
     file: "docker-compose.data-plane.yml",
     sources: ["data-plane/src/server.ts"],
-    atLeast: 25,
+    atLeast: 12,
     notInCompose: {
       GATEWAY_TOKEN: "the token as a value; the documented path is GATEWAY_TOKEN_FILE, because an " +
         "environment variable is visible to every process in the container and `docker inspect` prints it",
@@ -143,12 +150,22 @@ describe("the compose files and the environment contract", () => {
     // The ones safe to pass straight through are read as a comparison or split on commas, never as
     // a number.
     expect(bare.sort()).toEqual([
-      "DP_ACCESS_LOG",
+      // A path, read as a string, where empty means "write to stdout instead" — so the empty
+      // string compose substitutes is the documented default rather than a broken number.
+      "DP_ACCESS_LOG_PATH",
       "DP_REUSE_PORT",
-      "DP_TELEMETRY",
       "TRUSTED_PROXY_CIDRS",
       "TRUSTED_PROXY_CLIENT_CERT_HEADERS",
       "TRUST_SYSTEM_ROOTS",
     ]);
+  });
+
+  test("no variable a gateway setting replaced is still offered in the gateway's compose file", () => {
+    // The refusal in `loadDpConfig` catches an operator's own file at startup; this catches ours
+    // before it ships. A file that still offered MAX_BODY_BYTES would be a file that cannot bring
+    // a gateway up, which is a worse failure than either the old behaviour or the new one.
+    const declared = composeEnv(read(PLANES["data plane"]!.file));
+    const retired = GATEWAY_SETTING_KEYS.map((key) => GATEWAY_SETTING_DEFS[key].env);
+    expect(retired.filter((name) => declared.has(name))).toEqual([]);
   });
 });

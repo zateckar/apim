@@ -53,10 +53,25 @@ export class ResponseCache {
   misses = 0;
 
   constructor(
-    private readonly maxEntries: number,
-    private readonly maxBytes: number,
+    private maxEntries: number,
+    private maxBytes: number,
     private readonly now: () => number = Date.now,
   ) {}
+
+  /**
+   * Both bounds are the fleet's decision and change when a document is activated. Lowering one
+   * evicts here rather than waiting for the next `set`: the bytes are the reason somebody lowered
+   * it, so holding them until the next cacheable response would be the wrong half of the change.
+   */
+  resize(maxEntries: number, maxBytes: number): void {
+    this.maxEntries = maxEntries;
+    this.maxBytes = maxBytes;
+    while (this.entries.size > this.maxEntries || this.bytes > this.maxBytes) {
+      const oldest = this.entries.keys().next();
+      if (oldest.done) break;
+      this.drop(oldest.value);
+    }
+  }
 
   get(key: string): CachedResponse | null {
     const entry = this.entries.get(key);

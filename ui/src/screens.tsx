@@ -11,6 +11,7 @@ import { AccountView } from "./views/AccountView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
 import { AuditView } from "./views/AuditView";
 import { GatewayAdminView } from "./views/GatewayAdminView";
+import { GatewaySettingsView } from "./views/GatewaySettingsView";
 import { GatewayView } from "./views/GatewayView";
 import { GlobalPolicyView } from "./views/GlobalPolicyView";
 import { HealthView } from "./views/HealthView";
@@ -130,6 +131,17 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
         </p>
       </Panel>
     ),
+  "gateway-settings": ({ session }) =>
+    session.user.isAdmin ? (
+      <GatewaySettingsView />
+    ) : (
+      <Panel title="Gateway settings">
+        <p>
+          What every gateway enforces — its concurrency ceilings, body cap, cache sizes and access
+          log — is set by an administrator, for the whole fleet, one environment or one gateway.
+        </p>
+      </Panel>
+    ),
   applications: ({ session }) => (
     <ApplicationsView user={session.user} unmappedGroups={session.me.unmappedGroups ?? []} />
   ),
@@ -140,7 +152,7 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
     <UsersView user={session.user} canCreate={session.meta.authProviders.includes("local")} />
   ),
   user: ({ match, session }) => <UserView userId={match.params.userId!} me={session.user} />,
-  telemetry: ({ session }) => <TelemetryView meta={session.meta} />,
+  telemetry: ({ session }) => <TelemetryView meta={session.meta} environment={session.environment} />,
   "global-policy": ({ session }) => (
     <GlobalPolicyView
       meta={session.meta}

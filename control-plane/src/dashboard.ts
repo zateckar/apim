@@ -51,6 +51,7 @@ const MAX_SUBSCRIPTIONS_LISTED = 50;
 export interface DashboardQuery {
   environment: string;
   sinceMin: number;
+  applicationId?: string;
 }
 
 function bounded(rows: AttentionRow[]): { attention: AttentionRow[]; attentionTruncated: number } {
@@ -69,6 +70,8 @@ export function buildDashboard(ctx: Ctx, query: DashboardQuery) {
   const app = ctx.app;
   const now = Date.now();
   const scope: Scope = { ...scopeFor(app, user, query.environment), now, configErrors: new Map() };
+  // dashboard-health: the selected application's figures must match the lists they open.
+  if (query.applicationId) scope.applications = [query.applicationId];
 
   // The platform block first: it builds each environment's config document, and seeding the
   // memo from it is what stops `config-error` rebuilding the same document a second time.

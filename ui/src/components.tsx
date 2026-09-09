@@ -262,11 +262,12 @@ export function EnvironmentPicker({
   onChange: (next: string) => void;
 }) {
   return (
-    <div className="envpicker">
+    <div className="envpicker" role="group" aria-label="Environment">
       {chain.map((environment) => (
         <button
           key={environment}
           className={environment === value ? "env active" : "env"}
+          aria-pressed={environment === value}
           onClick={() => onChange(environment)}
         >
           {environment}

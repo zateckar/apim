@@ -1,3 +1,4 @@
+import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import { api, type ApplicationDetail, type ApplicationRow, type User } from "../api";
 import {
@@ -247,7 +248,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
                         Granted here
                         {member.grantedByName ? ` by ${member.grantedByName}` : ""}
                         {member.grantedAt
-                          ? ` on ${new Date(member.grantedAt).toLocaleDateString()}`
+                          ? ` on ${formatDate(member.grantedAt)}`
                           : ""}
                       </>
                     )}

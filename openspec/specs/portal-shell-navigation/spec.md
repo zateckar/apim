@@ -38,6 +38,9 @@ registry says which component answers each of them. The shell resolves nothing o
   topbar, the main column SHALL take the full width, and two-column form and stat grids SHALL
   collapse to one
 - AND selecting a navigation entry SHALL close the drawer
+- AND Escape and a backdrop control SHALL close it and restore focus to the menu button
+- AND while open, keyboard focus SHALL remain within the drawer and background scrolling SHALL stop
+- AND while closed, the drawer's controls SHALL be hidden from keyboard navigation
 
 ### Requirement: Route by parsing the address, with no router dependency
 
@@ -47,6 +50,7 @@ registry says which component answers each of them. The shell resolves nothing o
 - WHEN it is followed
 - THEN it SHALL be handled by `history.pushState` and `popstate`, with the default click
   suppressed, so the address bar and the back button both work
+- AND modified clicks SHALL retain the browser's native open-in-new-tab behavior
 - AND no routing library SHALL be introduced
 
 #### Scenario: Two address shapes arrive
@@ -131,6 +135,8 @@ The rule SHALL be enforced structurally rather than by review.
 - WHEN the shell renders it
 - THEN the title and the one-line purpose SHALL be taken from `ui/src/lib/routes.ts` and rendered
   by the shell
+- AND the document title SHALL name that screen followed by Integration Portal
+- AND the shell SHALL provide a keyboard-visible skip link to the main content
 - AND a screen SHALL therefore be unable to exist without them
 - AND a test SHALL be able to assert the property over every route rather than over every component
 
@@ -218,7 +224,8 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN any screen
 - WHEN the topbar renders
-- THEN it SHALL show a breadcrumb of `<application> / <screen title>`, a chip saying the
+- THEN it SHALL show a breadcrumb of `<application> / <screen title>` for application routes and
+  `Platform / <screen title>` for global routes, a chip saying the
   surrounding systems are simulated, the portal version as a **button**, a light/dark toggle, a
   count of deployments in progress, and the notifications bell
 
@@ -250,11 +257,14 @@ The rule SHALL be enforced structurally rather than by review.
 
 #### Scenario: The page head renders
 
-- GIVEN the promotion chain
+- GIVEN a route marked `environmentScoped` in the route table and the promotion chain
 - WHEN the page head renders
 - THEN a labelled segmented control SHALL offer every environment in chain order, with the current
   one marked active
 - AND changing it SHALL change what the screen below shows, without navigating
+- AND the active environment SHALL be exposed as pressed to assistive technology
+- AND pages that show all environments, an object's fixed environment, or no environmental data
+  SHALL omit the shell switcher, rather than offer a control that does not change the page
 
 #### Scenario: A publishing screen is open
 
@@ -295,3 +305,10 @@ The rule SHALL be enforced structurally rather than by review.
 - WHEN the workspace is open
 - THEN it SHALL refresh from the shell's live ticker rather than from the operation count
 - AND a transient state SHALL NOT persist until a full reload
+
+#### Scenario: A selected application is reloaded
+
+- GIVEN an authorized application was selected through the picker or an application-prefixed address
+- WHEN the browser reloads a global page
+- THEN the picker SHALL restore that application from local storage
+- AND a stored application outside the current user's permitted choices SHALL fall back to an allowed application

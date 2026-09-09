@@ -1,3 +1,4 @@
+import { formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import {
   api,
@@ -417,7 +418,7 @@ function GlobalUnit({
 
       {attached && (
         <p className="muted" style={{ marginTop: 8, marginBottom: 0 }}>
-          last changed by {attached.updatedBy} at {new Date(attached.updatedAt).toLocaleString()}
+          last changed by {attached.updatedBy} at {formatDateTime(attached.updatedAt)}
         </p>
       )}
     </div>

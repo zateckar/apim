@@ -128,3 +128,10 @@ A renewal SHALL replace the material under the same id.
 - THEN it SHALL be refused, listing what uses it
 - AND the reason SHALL be that the alternative is a route that stops authenticating to its backend
   with no visible cause
+
+#### Scenario: The application certificate page is opened
+
+- GIVEN Certificates under a selected application
+- WHEN it renders
+- THEN it SHALL show only that application's client certificates for the selected environment
+- AND environment-wide authorities, TLS exceptions and governance SHALL remain on the Trust page rather than appear as tabs under the application title

@@ -1,5 +1,6 @@
 import { api } from "../api";
-import { Panel, Notice, useAsync } from "../components";
+import { Panel, Notice, Skeleton, EmptyState, useAsync } from "../components";
+import { formatDateTime } from "../lib/datetime";
 
 interface AuditRow {
   id: string;
@@ -17,11 +18,13 @@ export function AuditView() {
   return (
     <>
       <p className="muted small">
-        Append-only, enforced by the database itself: an UPDATE or DELETE on this table aborts. What
-        is here is what happened.
+        The latest 200 events. Open an event's details to inspect the recorded change.
       </p>
       <Notice kind="error">{audit.error}</Notice>
-      <Panel>
+      <Panel flush>
+        {audit.loading ? <Skeleton rows={5} /> : !audit.data?.items.length ? (
+          <EmptyState title="No audit events yet" detail="Sign-ins and changes to the platform appear here." action={<button className="btn sm" onClick={audit.reload}>Refresh events</button>} />
+        ) : (
         <table>
           <thead>
             <tr>
@@ -36,20 +39,21 @@ export function AuditView() {
           <tbody>
             {(audit.data?.items ?? []).map((row) => (
               <tr key={row.id}>
-                <td className="muted">{new Date(row.at).toLocaleTimeString()}</td>
+                <td className="muted">{formatDateTime(row.at)}</td>
                 <td>{row.actor}</td>
                 <td className="mono">{row.action}</td>
                 <td className="mono muted">{row.subject}</td>
                 <td>
                   <span className={`badge ${row.outcome === "ok" ? "ok" : "off"}`}>{row.outcome}</span>
                 </td>
-                <td className="mono muted" style={{ maxWidth: 380, wordBreak: "break-all" }}>
-                  {row.detail}
+                <td className="audit-detail">
+                  {row.detail ? <details><summary>View details</summary><pre>{row.detail}</pre></details> : <span className="muted">—</span>}
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
+        )}
       </Panel>
     </>
   );

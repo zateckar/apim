@@ -16,6 +16,7 @@ import {
   poll,
   publishApi,
   serveCp,
+  setFleetSettings,
   startBackend,
   type TestCp,
 } from "./helpers.ts";
@@ -541,13 +542,11 @@ describe("the gateway counts what it serves", () => {
         basePath: "/logged",
         policy: { rewrite: { stripBasePath: true } },
       });
-      // `quiet: false` is the shipped default; the switch under test is `accessLog`, which until
-      // now was reachable only from code and so could not be turned off in a running process.
-      const dp = makeDp(cpServer.url, cp.token, cp.dir, {
-        name: "unlogged",
-        quiet: false,
-        accessLog: false,
-      });
+      // `quiet: false` is the shipped default; the switch under test is the `accessLog` setting,
+      // which is the fleet's since v6 — so it is set on the control plane and reaches this
+      // instance in the document it activates during `start()`.
+      setFleetSettings(cp, { accessLog: false });
+      const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "unlogged", quiet: false });
       try {
         await dp.start();
         console.log = (...args: unknown[]) => void written.push(args.map(String).join(" "));
@@ -579,7 +578,8 @@ describe("the gateway counts what it serves", () => {
         policy: { rewrite: { stripBasePath: true } },
       });
       expect(api.resourceId).toBeTruthy();
-      const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "quiet", telemetry: "off" });
+      setFleetSettings(cp, { telemetry: false });
+      const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "quiet" });
       try {
         await dp.start();
         const response = await dp.fetchHttp(new Request("http://gw/it/solution/quiet/pet"), "127.0.0.1");
@@ -620,7 +620,8 @@ describe("the gateway counts what it serves", () => {
         policy: { rewrite: { stripBasePath: true } },
       });
       expect(api.resourceId).toBeTruthy();
-      const dp = makeDp(cpServer.url, cp.token, cp.dir, { maxSeries: 2 });
+      setFleetSettings(cp, { telemetryMaxSeries: 2 });
+      const dp = makeDp(cpServer.url, cp.token, cp.dir, {});
       try {
         await dp.start();
         // Distinct statuses would be distinct series; the cap folds them instead.

@@ -126,9 +126,16 @@ New-Item -ItemType Directory -Force -Path .data | Out-Null
 # nobody chose — and, for the ones that are required, one that refuses to boot naming a variable
 # the file does not contain. Reseed instead. The marker is the newest variable seed.ts writes, so
 # this check has to move each time one is added.
-$stale = (Test-Path ".data/env/dev-1") -and
-  -not (Select-String -Path ".data/env/dev-1" -Pattern "MAX_CONCURRENT_UPGRADES" -Quiet)
-if ($stale) { Write-Host ".data/env/* predates the v3 gateway settings; reseeding" }
+#
+# Since v6 the marker also has to catch a file written *before* the ceilings moved into the
+# database: one that still sets MAX_CONCURRENT_UPGRADES starts a gateway that refuses to boot,
+# naming the variable. So the check is now in both directions — a file missing what seed.ts writes
+# today, or still carrying what it no longer does.
+$stale = (Test-Path ".data/env/dev-1") -and (
+  -not (Select-String -Path ".data/env/dev-1" -Pattern "BUN_CONFIG_MAX_HTTP_REQUESTS" -Quiet) -or
+  (Select-String -Path ".data/env/dev-1" -Pattern "MAX_CONCURRENT_UPGRADES" -Quiet)
+)
+if ($stale) { Write-Host ".data/env/* predates the v6 gateway settings; reseeding" }
 
 if ($Rebuild -or $stale -or -not (Test-Path ".data/env/dev-1")) {
   # Bun loads .env.local into every process it starts, including the seed. Since the seed is what

@@ -293,6 +293,18 @@ export class ArtifactCache {
   }
 
   /** LRU by total size, with the active config's entries pinned. */
+  /**
+   * The disk ceiling is the fleet's decision and changes when a document is activated. Enforced
+   * immediately rather than at the next fetch: lowering it is usually a response to a volume that
+   * is already full, so waiting for the next download would be waiting for the thing that fails.
+   * Pinned entries — the ones the current configuration references — are never evicted, so a
+   * ceiling below what this configuration needs frees what it can and leaves the rest.
+   */
+  resize(maxBytes: number): void {
+    this.options.maxBytes = maxBytes;
+    this.enforceCeiling();
+  }
+
   private enforceCeiling(): void {
     let total = 0;
     for (const entry of this.entries.values()) total += entry.bytes;

@@ -57,6 +57,23 @@ export class InstanceTelemetry {
   }
 
   /**
+   * Both bounds are the fleet's decision and change when a document is activated. The windows
+   * already accumulated are kept: they are traffic that happened, and a narrower series ceiling
+   * applies to the *next* series rather than retroactively folding one that is already counted.
+   *
+   * `batchSize` follows `maxWindowsPerReport` only when it has not been halved by a 413 — that
+   * halving is backpressure from the control plane about the size of one report, and a settings
+   * change is not evidence the report will now fit.
+   */
+  resize(maxSeries: number, maxWindowsPerReport: number): void {
+    const wasBackedOff = this.batchSize < this.options.maxWindowsPerReport;
+    this.options.maxSeries = maxSeries;
+    this.options.maxWindowsPerReport = maxWindowsPerReport;
+    if (!wasBackedOff) this.batchSize = maxWindowsPerReport;
+    else this.batchSize = Math.min(this.batchSize, maxWindowsPerReport);
+  }
+
+  /**
    * Counts the request as soon as its status is decided, and returns a handle for the bytes,
    * which are only known once the response body has finished streaming. Counting at completion
    * instead would lose every response whose body a client never reads — and would break the

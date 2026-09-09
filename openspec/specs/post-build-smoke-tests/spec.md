@@ -154,3 +154,14 @@ something belongs in `test/`, against a control plane the test owns.
   decisions, and `bun run test:e2e` this suite
 - AND the suite's output SHALL be written under the repository's own data directory rather than
   beside the source
+
+### Requirement: Verify shared layouts at desktop, tablet and phone widths
+
+#### Scenario: A visual-system change ships
+
+- GIVEN the navigation pages visible to the smoke user
+- WHEN the layout suite runs
+- THEN each SHALL render without page-level horizontal overflow at 390px, 820px and 1440px, in light and dark themes
+- AND the suite SHALL check that mobile navigation closes with Escape and restores focus
+- AND Telemetry SHALL be checked against the shell's selected environment
+- AND workspace panel checks SHALL use accessible tab roles and selected state

@@ -13,7 +13,7 @@ import type { ValidationIssue } from "../../shared/jsonschema.ts";
 import { hashSubscriptionKey } from "../../shared/keys.ts";
 import { isStreamingMethod, rewriteCard } from "../../shared/a2a.ts";
 import { selectorFor } from "../../shared/mcp.ts";
-import { matchOperation, renderPathTemplate } from "../../shared/opmatch.ts";
+import { matchCompiled, renderPathTemplate } from "../../shared/opmatch.ts";
 import {
   DEFAULT_TIMEOUT_MS,
   isIdempotent,
@@ -35,6 +35,7 @@ import { baseContext, render, renderDeep, type TemplateContext } from "../../sha
 import type { Outcome } from "../../shared/telemetry.ts";
 import { ipInCidr } from "../../shared/net.ts";
 import { scanEnvelope, XmlError, parseDocument } from "../../shared/xml.ts";
+import { bodyExcerpt, logTimestamp, redactQuery, MAX_LOGGED_BODY_BYTES } from "./accesslog.ts";
 import type { ArtifactCache } from "./artifacts.ts";
 import { applyBackendAuth, tokenCacheKey, type TokenCache } from "./backend-auth.ts";
 import { cacheKeyFor, downstreamCacheControl, isCacheable, type ResponseCache } from "./cache.ts";
@@ -56,6 +57,7 @@ import { DEFAULT_ERROR_FORMAT, gatewayError, STATUS_TITLES } from "./respond.ts"
 import type { RateLimiter, RateVerdict } from "./ratelimit.ts";
 import type { RouteTable } from "./route-table.ts";
 import { superviseSse, type StreamRegistry, type UpgradeIntent } from "./stream.ts";
+import { traceContextFrom, traceStateFor } from "./trace.ts";
 import { soapToJson } from "./transform.ts";
 import {
   BlockingBudget,
@@ -320,6 +322,16 @@ export interface PipelineDeps {
    */
   peerIp?: string;
   requestId: string;
+  /**
+   * The parsed request URL. The server has already built one — it has to, to tell `/healthz` from
+   * traffic — so it travels rather than being parsed again here: `new URL` is not free at the rate
+   * the rejection paths answer (`reports/perf-report.md`), and two parses of one string cannot
+   * disagree usefully.
+   */
+  url: URL;
+  /** This gateway and this replica, so a log line identifies itself without the shipper's help. */
+  gatewayName: string;
+  runId: string;
   /** True only when the peer is inside TRUSTED_PROXY_CIDRS (design section 8.1). */
   trustedPeer: boolean;
   clientCertHeaders: { dn: string; issuer: string; verify: string; fingerprint: string; san: string };
@@ -336,7 +348,7 @@ export type PipelineResult = Response | UpgradeIntent;
 
 export async function handleRequest(req: Request, deps: PipelineDeps): Promise<PipelineResult> {
   const started = performance.now();
-  const url = new URL(req.url);
+  const url = deps.url;
   const limits: ConfigLimits = deps.table.limits;
   let route: ConfigRoute | null = null;
   let subscription: ConfigSubscription | null = null;
@@ -348,17 +360,90 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   let bytesIn = 0;
   let format: ErrorFormatUnit = DEFAULT_ERROR_FORMAT;
   let corsOut: Record<string, string> = {};
+  /** The trace this call belongs to: continued from the caller, or started here. */
+  const trace = traceContextFrom(req.headers.get("traceparent"));
+  /** Set once the route is known and its window checked; false for every request that is not in one. */
+  let captureBodies = false;
+  /** The route's own key parameter, when it carries one in the query: a credential by declaration. */
+  let keyParamName: string | null = null;
+  /**
+   * What the line learns as the request progresses. One object rather than four variables because
+   * the line is written from a closure, and a `let` that is still `null` where the closure is
+   * created is a `let` the compiler is entitled to believe will always be `null`.
+   *
+   * `failure` is the reason a 5xx or a transport error happened; it and `responseBody` are written
+   * for those cases whatever the body window says.
+   */
+  const logged: {
+    requestBody: { body: string; truncated: boolean } | null;
+    responseBody: { body: string; truncated: boolean } | null;
+    backendMs: number | null;
+    failure: string | null;
+  } = { requestBody: null, responseBody: null, backendMs: null, failure: null };
 
-  const emit = (status: number, outcome: Outcome, bytesOut: number) =>
+  const emit = (status: number, outcome: Outcome, bytesOut: number, durationMs?: number) =>
     deps.record?.({
       resourceId: route?.resourceId ?? null,
       subscriptionId: subscription?.id ?? null,
       outcome,
       status,
-      durationMs: Math.round(performance.now() - started),
+      durationMs: durationMs ?? Math.round(performance.now() - started),
       bytesIn,
       bytesOut,
     });
+
+  /**
+   * The one place a line is assembled, for the two paths that write one: a response this gateway
+   * produced, and a response streamed from a backend.
+   *
+   * What is deliberately **not** here: any header. The subscription key and the `Authorization` it
+   * arrived under are the two things this file spends most of its length protecting, and a log is
+   * a copy of a request that outlives it — so headers are not omitted for size, they are omitted
+   * because one of them is always a credential. The query string is written down redacted, because
+   * a caller that put its key in a URL still needs the rest of that URL to be debuggable.
+   */
+  const writeLog = (o: {
+    status: number;
+    outcome: Outcome;
+    note?: string | null;
+    durationMs: number;
+  }): void => {
+    deps.log?.({
+      ts: logTimestamp(),
+      requestId: deps.requestId,
+      traceId: trace.traceId,
+      spanId: trace.spanId,
+      parentSpanId: trace.parentSpanId,
+      environment: deps.table.environment,
+      gateway: deps.gatewayName,
+      instance: deps.runId,
+      method: req.method,
+      path: url.pathname,
+      query: redactQuery(url.search, keyParamName),
+      host: req.headers.get("host"),
+      status: o.status,
+      backendStatus,
+      outcome: o.outcome,
+      error: logged.failure,
+      resourceId: route?.resourceId ?? null,
+      resourceName: route?.resourceName ?? null,
+      apiVersion: route?.apiVersion ?? null,
+      rev: route?.rev ?? null,
+      operationId: operation?.id ?? null,
+      subscriptionId: subscription?.id ?? null,
+      applicationId: subscription?.applicationId ?? null,
+      clientIp: deps.clientIp,
+      durationMs: o.durationMs,
+      backendMs: logged.backendMs,
+      note: o.note ?? null,
+      ...(logged.requestBody
+        ? { requestBody: logged.requestBody.body, requestBodyTruncated: logged.requestBody.truncated }
+        : {}),
+      ...(logged.responseBody
+        ? { responseBody: logged.responseBody.body, responseBodyTruncated: logged.responseBody.truncated }
+        : {}),
+    });
+  };
 
   /** Terminal for every response the gateway itself writes: body length is already known. */
   const finish = (response: Response, outcome: Outcome, note?: string): Response => {
@@ -368,27 +453,11 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     for (const [name, value] of Object.entries(corsOut)) response.headers.set(name, value);
     response.headers.set("x-request-id", deps.requestId);
     const bytesOut = Number(response.headers.get("content-length") ?? "0");
-    deps.log?.({
-      ts: new Date().toISOString(),
-      requestId: deps.requestId,
-      method: req.method,
-      path: url.pathname,
-      host: req.headers.get("host"),
-      status: response.status,
-      backendStatus,
-      outcome,
-      resourceId: route?.resourceId ?? null,
-      resourceName: route?.resourceName ?? null,
-      apiVersion: route?.apiVersion ?? null,
-      rev: route?.rev ?? null,
-      operationId: operation?.id ?? null,
-      subscriptionId: subscription?.id ?? null,
-      applicationId: subscription?.applicationId ?? null,
-      clientIp: deps.clientIp,
-      durationMs: Math.round(performance.now() - started),
-      note: note ?? null,
-    });
-    emit(response.status, outcome, bytesOut);
+    // Once, for both readers: the log line and the telemetry cell describe the same request, and
+    // two `performance.now()` calls either side of a `JSON.stringify` describe it differently.
+    const durationMs = Math.round(performance.now() - started);
+    writeLog({ status: response.status, outcome, note, durationMs });
+    emit(response.status, outcome, bytesOut, durationMs);
     return response;
   };
 
@@ -398,8 +467,16 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     outcome: Outcome,
     extra: Record<string, unknown> = {},
     headers: Record<string, string> = {},
-  ): Response =>
-    finish(
+  ): Response => {
+    if (status >= 500) {
+      // A 5xx is this estate's failure rather than the caller's, and the reason for it is the whole
+      // content of the line: a log that recorded `502` and not why is one somebody has to reproduce
+      // an outage to read. So the reason is written whatever the body window says — it is the
+      // gateway's own sentence about its own failure, and it contains nothing the caller sent.
+      logged.failure = logged.failure ?? detail;
+      logged.responseBody = { body: detail, truncated: false };
+    }
+    return finish(
       gatewayError(
         format,
         status,
@@ -413,6 +490,7 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       outcome,
       outcome,
     );
+  };
 
   // 1 — route match
   route = deps.table.match(req.headers.get("host"), url.pathname);
@@ -421,6 +499,18 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   }
   const policy = route.policy;
   format = policy.errorFormat ?? DEFAULT_ERROR_FORMAT;
+  keyParamName = policy["auth.subscriptionKey"]?.in === "query"
+    ? policy["auth.subscriptionKey"].name
+    : null;
+  /*
+   * The body window (design section 5.1's sibling): bodies are captured only while an
+   * administrator has asked for them on this API, and the instance stops on its own clock the
+   * moment the window closes — a control-plane outage cannot hold one open. The window arrives in
+   * the configuration document, so turning it on is an act somebody performed on the control
+   * plane, against one API, with an audit row behind it.
+   */
+  captureBodies =
+    route.logBodiesUntil !== undefined && Date.parse(route.logBodiesUntil) > Date.now();
   const validate: ValidateUnit = policy.validate ?? {};
   corsOut = corsHeaders(route, req.headers.get("origin"));
 
@@ -750,7 +840,8 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       );
     }
   } else if (route.operations.length > 0) {
-    const matched = matchOperation(route.operations, req.method, relativePath);
+    // Against the index the table compiled when this config was activated, not the raw templates.
+    const matched = matchCompiled(deps.table.operationsFor(route), req.method, relativePath);
     if (matched) {
       operation = matched.operation;
       pathParams = matched.params;
@@ -1035,6 +1126,56 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     }
   }
 
+  /*
+   * Whether this response may be carried through in whatever encoding the backend chose.
+   *
+   * The decision is made *here*, on the request, rather than on the response — because what makes
+   * a compressed response cheap is not decoding it, and the only way to have a compressed response
+   * at all is to have asked for one. Everything the test depends on is already resolved: the
+   * validation state, the artifact, the operation, the transform, the cache unit and the route's
+   * kind. The one thing that is not is the status, so the question asked is whether this operation
+   * *could* validate a response rather than whether it will validate this one.
+   *
+   * `passthrough.sse` is excluded on its own merits: compressing an event stream makes the encoder
+   * buffer, which is exactly the latency the stream exists to avoid.
+   */
+  /*
+   * The request body, while a window is open. Taken as a bounded prefix rather than by buffering
+   * the whole thing: what is being read is the shape of a request that went wrong, and a debugging
+   * window must not turn a 40 MiB upload into 40 MiB of log. The prefix is put back in front of
+   * the stream the backend reads, so capturing changes what is written down and nothing else.
+   *
+   * One byte more than the cap is taken, so "there was more" is a fact rather than an inference
+   * from a body that happened to be exactly 8 KiB.
+   */
+  if (captureBodies && bufferedBody) {
+    logged.requestBody = bodyExcerpt(bufferedBody);
+  } else if (captureBodies && upstreamBody) {
+    const taken = await takePrefix(upstreamBody, MAX_LOGGED_BODY_BYTES + 1);
+    if (taken.overCap) {
+      return deny(413, `body larger than ${routeMaxBody} bytes (enforced while streaming)`, "body-too-large");
+    }
+    logged.requestBody = bodyExcerpt(taken.prefix);
+    upstreamBody = taken.stream;
+  }
+
+  const cacheUnit = opPolicy.cache ?? policy.cache;
+  const passCompressed =
+    // A window that is open is a window somebody has to be able to read: an excerpt of gzip is not
+    // a body anybody can look at, so capturing costs the passthrough for as long as it lasts.
+    !captureBodies &&
+    // Only what the caller negotiated. The runtime supplies an `Accept-Encoding` of its own when a
+    // request carries none, so without this test a caller that asked for nothing could be handed a
+    // gzip body it never agreed to — and by the time that is visible the chance to decode it has
+    // gone. A caller that asks for no encoding gets exactly what it got before this existed.
+    (req.headers.get("accept-encoding") ?? "").trim().length > 0 &&
+    !(effectiveValidate.response !== undefined && effectiveValidate.response !== "disabled") &&
+    (policy.transform?.response ?? "none") === "none" &&
+    route.kind !== "mcp" &&
+    route.kind !== "a2a" &&
+    !(cacheUnit && isCacheable(req.method)) &&
+    !policy.passthrough?.sse;
+
   // 13 — rewrite
   const rewrite = policy.rewrite;
   /*
@@ -1075,8 +1216,29 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   }
   outHeaders.delete("host");
   outHeaders.delete("content-length");
-  // Bun decodes the upstream response for us, so asking for an encoding we then strip is noise.
-  outHeaders.delete("accept-encoding");
+  /*
+   * Kept as the caller wrote it when the response will be carried through as it arrives.
+   *
+   * Otherwise it is set to `identity` rather than deleted, which is the correction to an
+   * assumption this line used to carry. Deleting it does not mean "do not compress": the runtime
+   * supplies an `Accept-Encoding` of its own when a request has none, so the backend compressed,
+   * the runtime expanded it again, and both machines paid for an encoding nobody wanted. Saying
+   * `identity` is how a proxy that has to read the body asks for one it can read.
+   */
+  if (!passCompressed) outHeaders.set("accept-encoding", "identity");
+
+  /*
+   * W3C Trace Context. The backend is handed a `traceparent` naming *this* hop as its parent, so
+   * the call it makes onward joins the same trace — which is what makes one identifier follow a
+   * request across the portal, this gateway and whatever the backend calls next. `tracestate` is
+   * vendor data this gateway carries and never reads, and only when the trace was continued: it
+   * belongs to a trace, so attaching it to one started here would be a claim about somebody else's
+   * call.
+   */
+  outHeaders.set("traceparent", trace.header);
+  const traceState = traceStateFor(trace, req.headers.get("tracestate"));
+  if (traceState) outHeaders.set("tracestate", traceState);
+  else outHeaders.delete("tracestate");
 
   if (keyUnit && !keyUnit.forwardCredentials && keyUnit.in === "header") outHeaders.delete(keyUnit.name);
   // The inbound Authorization belongs to this gateway's auth, not the backend's. A route with no
@@ -1153,7 +1315,6 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   }
 
   // 16 — cache lookup
-  const cacheUnit = opPolicy.cache ?? policy.cache;
   let cacheKey: string | null = null;
   if (cacheUnit && isCacheable(req.method)) {
     cacheKey = cacheKeyFor({
@@ -1277,11 +1438,14 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
 
       const target = joinBackend(entry.url, path, attemptQuery);
       const deadline = AbortSignal.timeout(remaining);
-      const init: RequestInit & { duplex?: "half"; tls?: unknown } = {
+      const init: RequestInit & { duplex?: "half"; tls?: unknown; decompress?: boolean } = {
         method: req.method,
         headers: attemptHeaders,
         redirect: "manual",
         signal: clientGone ? AbortSignal.any([clientGone, deadline]) : deadline,
+        // The runtime decodes a compressed response by default, which is right when the gateway
+        // has to read it and pure cost when it does not.
+        ...(passCompressed ? { decompress: false } : {}),
       };
       const tls = tlsOptionsFor(route, entry.url, deps);
       if (tls) init.tls = tls;
@@ -1291,8 +1455,12 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
         init.duplex = "half";
       }
 
+      const attemptStarted = performance.now();
       try {
         const response = await doFetch(target, init);
+        // Headers and status, not the whole body: the same boundary the bulkhead releases on, and
+        // the one an operator means by "how long did the backend take".
+        logged.backendMs = Math.round(performance.now() - attemptStarted);
         if (isRetryable(response.status, retries) && attempt + 1 < maxAttempts) {
           deps.breaker.onFailure(breakerKey, breakerSettings);
           lastError = {
@@ -1330,6 +1498,21 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
         }
         const error = err as Error;
         const timedOut = error.name === "TimeoutError" || error.name === "AbortError";
+        logged.backendMs = Math.round(performance.now() - attemptStarted);
+        /*
+         * The transport's own words, kept whole and kept whatever the body window says.
+         *
+         * A refused connection, a reset, a TLS handshake that failed on a name or an expired
+         * certificate, a DNS answer that did not come: these are the failures where the response
+         * the caller sees ("could not reach the backend") is the least useful sentence anybody
+         * has, and the runtime's message — `ECONNREFUSED`, `CERT_HAS_EXPIRED`, a hostname
+         * mismatch — is the one that ends the investigation. `cause` carries it when the error
+         * itself is a wrapper, which is what a TLS failure usually arrives as.
+         */
+        const cause = (error as { cause?: unknown }).cause;
+        const causeText =
+          cause instanceof Error ? `: ${cause.message}` : typeof cause === "string" ? `: ${cause}` : "";
+        logged.failure = `${error.name}: ${error.message}${causeText} (backend ${new URL(entry.url).origin})`;
         deps.breaker.onFailure(breakerKey, breakerSettings);
         lastError = {
           status: timedOut ? 504 : 502,
@@ -1391,9 +1574,22 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   for (const [name, value] of upstream.headers) {
     if (!HOP_BY_HOP.has(name.toLowerCase())) responseHeaders.set(name, value);
   }
-  // The body reaching us is already decoded, so the upstream's framing headers would be a lie.
-  responseHeaders.delete("content-encoding");
-  responseHeaders.delete("content-length");
+  if (passCompressed) {
+    // Nothing was decoded, so the upstream's framing headers describe the body being forwarded and
+    // travel as they arrived. `Vary` is the correctness half: without it an intermediary that
+    // cached this answer could hand a gzip body to a caller that never asked for one.
+    if (responseHeaders.has("content-encoding")) {
+      const vary = responseHeaders.get("vary");
+      const already = (vary ?? "")
+        .split(",")
+        .some((value) => value.trim().toLowerCase() === "accept-encoding");
+      if (!already) responseHeaders.set("vary", vary ? `${vary}, Accept-Encoding` : "Accept-Encoding");
+    }
+  } else {
+    // The body reaching us is already decoded, so the upstream's framing headers would be a lie.
+    responseHeaders.delete("content-encoding");
+    responseHeaders.delete("content-length");
+  }
   for (const [name, value] of Object.entries(rateHeaders)) responseHeaders.set(name, value);
   for (const [name, value] of Object.entries(lifecycleHeaders(route))) responseHeaders.set(name, value);
   for (const [name, value] of Object.entries(corsOut)) responseHeaders.set(name, value);
@@ -1453,7 +1649,7 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       (reason, bytes) => {
         counted?.addBytesOut(bytes);
         deps.log?.({
-          ts: new Date().toISOString(),
+          ts: logTimestamp(),
           requestId: deps.requestId,
           kind: "sse",
           resourceId: route!.resourceId,
@@ -1467,17 +1663,26 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   }
 
   if (!wantsResponseWork) {
-    accessLog(deps, req, url, route, operation, subscription, status, backendStatus, "ok", started);
+    // Streamed to the caller, so the excerpt is taken the same way the request's was: a bounded
+    // prefix, put back in front of the stream that is forwarded.
+    let outStream: ReadableStream<Uint8Array<ArrayBufferLike>> | null = upstream.body;
+    if (captureBodies && outStream) {
+      const taken = await takePrefix(outStream, MAX_LOGGED_BODY_BYTES + 1);
+      logged.responseBody = bodyExcerpt(taken.prefix);
+      outStream = taken.overCap ? null : taken.stream;
+    }
     const outcome: Outcome = status >= 400 ? "upstream-error" : "ok";
-    const counted = emit(status, outcome, 0);
-    if (!upstream.body) return new Response(null, { status, headers: responseHeaders });
-    if (!counted) return new Response(upstream.body, { status, headers: responseHeaders });
-    const declared = declaredBodyBytes(upstream);
+    const durationMs = Math.round(performance.now() - started);
+    writeLog({ status, outcome, durationMs });
+    const counted = emit(status, outcome, 0, durationMs);
+    if (!outStream) return new Response(null, { status, headers: responseHeaders });
+    if (!counted) return new Response(outStream, { status, headers: responseHeaders });
+    const declared = declaredBodyBytes(upstream, passCompressed);
     if (declared !== null) {
       counted.addBytesOut(declared);
-      return new Response(upstream.body, { status, headers: responseHeaders });
+      return new Response(outStream, { status, headers: responseHeaders });
     }
-    return new Response(countingStream(upstream.body, (bytes) => counted.addBytesOut(bytes)), {
+    return new Response(countingStream(outStream, (bytes) => counted.addBytesOut(bytes)), {
       status,
       headers: responseHeaders,
     });
@@ -1521,9 +1726,10 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       // back in front of the rest and the whole thing is streamed on — unvalidated, uncached,
       // and with the JSON-RPC outcome unclassified, all of which are counted rather than silent.
       deps.counters.sampleDropped();
-      accessLog(deps, req, url, route, operation, subscription, status, backendStatus, "ok", started);
       const outcome: Outcome = status >= 400 ? "upstream-error" : "ok";
-      const counted = emit(status, outcome, 0);
+      const durationMs = Math.round(performance.now() - started);
+      writeLog({ status, outcome, durationMs });
+      const counted = emit(status, outcome, 0, durationMs);
       if (!read.rest) return new Response(null, { status, headers: responseHeaders });
       const rest = counted
         ? countingStream(read.rest, (bytes) => counted.addBytesOut(bytes))
@@ -1594,8 +1800,10 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       : rpcRoute && rpcErrorInBody(bodyBytes, responseHeaders)
         ? "rpc-error"
         : "ok";
-  accessLog(deps, req, url, route, operation, subscription, status, backendStatus, finalOutcome, started);
-  emit(status, finalOutcome, outBody.byteLength);
+  if (captureBodies) logged.responseBody = bodyExcerpt(outBody);
+  const finalDurationMs = Math.round(performance.now() - started);
+  writeLog({ status, outcome: finalOutcome, durationMs: finalDurationMs });
+  emit(status, finalOutcome, outBody.byteLength, finalDurationMs);
   return new Response(outBody, { status, headers: responseHeaders });
 
   // ------------------------------------------------------------------ local helpers
@@ -2011,7 +2219,7 @@ function logValidation(
   // Design section 5.1's log record. The payload is not included: `includeBodyExcerptBytes`
   // defaults to 0 and its ceiling is admin config, because bodies routinely carry personal data.
   deps.log?.({
-    ts: new Date().toISOString(),
+    ts: logTimestamp(),
     event: "validation.failed",
     requestId: deps.requestId,
     mode,
@@ -2031,40 +2239,6 @@ function logValidation(
   });
 }
 
-function accessLog(
-  deps: PipelineDeps,
-  req: Request,
-  url: URL,
-  route: ConfigRoute,
-  operation: ConfigOperation | null,
-  subscription: ConfigSubscription | null,
-  status: number,
-  backendStatus: number | null,
-  outcome: Outcome,
-  started: number,
-): void {
-  deps.log?.({
-    ts: new Date().toISOString(),
-    requestId: deps.requestId,
-    method: req.method,
-    path: url.pathname,
-    host: req.headers.get("host"),
-    status,
-    backendStatus,
-    outcome,
-    resourceId: route.resourceId,
-    resourceName: route.resourceName,
-    apiVersion: route.apiVersion,
-    rev: route.rev,
-    operationId: operation?.id ?? null,
-    subscriptionId: subscription?.id ?? null,
-    applicationId: subscription?.applicationId ?? null,
-    clientIp: deps.clientIp,
-    durationMs: Math.round(performance.now() - started),
-    note: null,
-  });
-}
-
 /**
  * The response body's size according to the backend, or `null` when that cannot be trusted.
  *
@@ -2072,9 +2246,13 @@ function accessLog(
  * with its body already expanded while `Content-Length` still describes the *compressed* bytes.
  * It leaves `Content-Encoding` in place when it does that, which is what makes the case
  * detectable: no encoding header means nothing was expanded underneath us.
+ *
+ * `carriedThrough` is the other half of that: when the gateway asked the runtime not to decode,
+ * the declared length describes exactly the bytes being forwarded, and those bytes are what went
+ * on the wire — which is what the counter is for.
  */
-function declaredBodyBytes(upstream: Response): number | null {
-  if (upstream.headers.has("content-encoding")) return null;
+function declaredBodyBytes(upstream: Response, carriedThrough = false): number | null {
+  if (!carriedThrough && upstream.headers.has("content-encoding")) return null;
   const raw = upstream.headers.get("content-length");
   if (raw === null) return null;
   const value = Number(raw);

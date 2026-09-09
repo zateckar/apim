@@ -473,6 +473,63 @@ export interface GatewayRow {
   published: number;
 }
 
+// ------------------------------------------------------------------ gateway settings
+
+/** Most specific last, which is also the order they are resolved in. */
+export type SettingScope = "fleet" | "environment" | "gateway";
+
+export type SettingValue = number | boolean;
+
+/**
+ * One setting, as the control plane declares it. The label and the one-line purpose come from
+ * `shared/gateway-settings.ts` rather than from this screen, for the reason a route's title comes
+ * from `lib/routes.ts`: a screen that named its own settings would be a second list of them.
+ */
+export interface SettingDef {
+  env: string;
+  kind: "count" | "bytes" | "seconds" | "flag";
+  default: SettingValue;
+  min?: number;
+  max?: number;
+  label: string;
+  purpose: string;
+  /** Changing it is audited and asks for a typed confirmation. */
+  sensitive?: boolean;
+}
+
+/** A resolved value and the layer it came from — `null` for "nobody has set this". */
+export interface SettingSource {
+  value: SettingValue;
+  scope: SettingScope | null;
+}
+
+export interface GatewaySettingsModel {
+  defs: Record<string, SettingDef>;
+  scopes: SettingScope[];
+  environments: string[];
+  gateways: Array<{
+    id: string;
+    environment: string;
+    name: string;
+    label: string | null;
+    category: string;
+  }>;
+  overrides: Array<{
+    scope: SettingScope;
+    scopeId: string;
+    key: string;
+    value: SettingValue;
+    setAt: string;
+    setBy: string;
+  }>;
+  /** What each layer resolves to, so inheritance is rendered without a call per gateway. */
+  effective: {
+    fleet: Record<string, SettingSource>;
+    environments: Record<string, Record<string, SettingSource>>;
+    gateways: Record<string, Record<string, SettingSource>>;
+  };
+}
+
 export interface PolicyUnitRow {
   unitKey: string;
   value: unknown;
@@ -1168,6 +1225,37 @@ export interface LogEntry {
 export interface LogWindow {
   from: string;
   to: string;
+}
+
+/**
+ * An hour in which one API's request and response bodies are written into its log lines as well.
+ *
+ * Off by default and never longer than `maxMinutes`, because a body is the one part of a call that
+ * carries whatever the caller put in it. The row survives the window — `revokedAt` is set rather
+ * than the row being deleted — so the screen can show that bodies *were* captured, when, and on
+ * whose word.
+ */
+export interface BodyCaptureWindow {
+  id: string;
+  resourceId: string;
+  resourceName: string;
+  applicationId: string;
+  environment: string;
+  reason: string;
+  openedBy: string;
+  openedAt: string;
+  expiresAt: string;
+  revokedAt: string | null;
+  live: boolean;
+  /** Zero once the window is spent, never negative — so a countdown cannot run backwards. */
+  remainingSec: number;
+}
+
+export interface BodyCapturePage {
+  items: BodyCaptureWindow[];
+  /** The longest window the control plane will open, and the cap on each captured body. */
+  maxMinutes: number;
+  maxBytes: number;
 }
 
 export interface LogPage {

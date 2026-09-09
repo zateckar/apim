@@ -1,6 +1,14 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { generateKeyPairSync, sign } from "node:crypto";
-import { makeCp, makeDp, publishApi, serveCp, startBackend, type TestCp } from "./helpers.ts";
+import {
+  makeCp,
+  makeDp,
+  publishApi,
+  serveCp,
+  setFleetSettings,
+  startBackend,
+  type TestCp,
+} from "./helpers.ts";
 import type { DpConfig } from "../data-plane/src/server.ts";
 import type { DataPlane } from "../data-plane/src/server.ts";
 import type { Integrations } from "../control-plane/src/egress.ts";
@@ -300,9 +308,12 @@ describe("auth.jwt", () => {
     cp = makeCpWith({
       issuers: { vwidp: { issuer: "https://idp.test", jwksUrl: jwks.url, algorithms: ["ES256"] } },
     });
-    // A cooldown short enough to observe. In production it is 60 s: the trade is 401s for that
-    // long after a rotation against letting any caller make this gateway hammer the IdP.
-    const w = await world({ "auth.jwt": { issuerRef: "vwidp" } }, { dp: { jwksMinRefetchMs: 5 } });
+    // The shortest cooldown the setting allows, so the rotation below can be observed within a
+    // test. In production it is 60 s: the trade is 401s for that long after a rotation against
+    // letting any caller make this gateway hammer the IdP. It is a fleet setting since v6, so it
+    // is set on the control plane and arrives in the document `world()` activates.
+    setFleetSettings(cp, { jwksMinRefetchSec: 1 });
+    const w = await world({ "auth.jwt": { issuerRef: "vwidp" } });
     try {
       const now = Math.floor(Date.now() / 1000);
       const claims = { iss: "https://idp.test", sub: "u1", exp: now + 600 };
@@ -311,7 +322,10 @@ describe("auth.jwt", () => {
 
       jwks.rotate();
       const rotated = jwks.mintWithRotatedKey(claims);
-      await Bun.sleep(10);
+      // Past the one-second cooldown, which is the floor the setting enforces: a value that let
+      // every unknown `kid` refetch immediately is the hammering the cooldown exists to prevent,
+      // so there is no shorter one to test with.
+      await Bun.sleep(1100);
       // The unknown `kid` triggers a refetch, and the new key then works without a restart.
       expect((await get(w, "/orders", { headers: { authorization: `Bearer ${rotated}` } })).status).toBe(200);
       expect(jwks.fetches).toBe(afterFirst + 1);
@@ -746,6 +760,89 @@ describe("cache", () => {
       // there is no invalidation logic to get wrong.
       w.dp.cache.clear();
       expect(await (await get(w)).json()).toEqual({ n: 2 });
+    } finally {
+      w.stop();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------- compression
+
+/**
+ * The gateway decides on the *request* whether a compressed response may be carried through: a
+ * body the backend never compressed cannot be forwarded compressed, and one the gateway asked for
+ * compressed and then had to expand costs twice.
+ */
+describe("response compression", () => {
+  const PAYLOAD = JSON.stringify({ orders: Array.from({ length: 200 }, (_, i) => ({ id: i })) });
+
+  /** A backend that compresses when asked and says so, exactly as a real one would. */
+  const compressing = (req: Request) => {
+    const accepts = (req.headers.get("accept-encoding") ?? "").includes("gzip");
+    if (!accepts) {
+      return new Response(PAYLOAD, {
+        headers: { "content-type": "application/json", "content-length": String(PAYLOAD.length) },
+      });
+    }
+    const zipped = Bun.gzipSync(new TextEncoder().encode(PAYLOAD));
+    return new Response(zipped, {
+      headers: {
+        "content-type": "application/json",
+        "content-encoding": "gzip",
+        "content-length": String(zipped.byteLength),
+      },
+    });
+  };
+
+  test("a body nothing has to read is forwarded in the encoding the backend chose", async () => {
+    const w = await world({}, { respondWith: compressing });
+    try {
+      const response = await get(w, "/orders", { headers: { "accept-encoding": "gzip" } });
+      expect(response.status).toBe(200);
+
+      // What the backend was asked for: the caller's own negotiation, forwarded.
+      expect(w.backend.requests.at(-1)!.headers["accept-encoding"]).toContain("gzip");
+
+      // What the caller receives: the bytes the backend produced, still compressed, with framing
+      // headers that describe them — and a `Vary`, so no intermediary hands this body to a caller
+      // that never asked for gzip.
+      expect(response.headers.get("content-encoding")).toBe("gzip");
+      expect(response.headers.get("vary")?.toLowerCase()).toContain("accept-encoding");
+      const bytes = new Uint8Array(await response.arrayBuffer());
+      expect(bytes.byteLength).toBeLessThan(PAYLOAD.length);
+      expect(Number(response.headers.get("content-length"))).toBe(bytes.byteLength);
+      expect(new TextDecoder().decode(Bun.gunzipSync(bytes))).toBe(PAYLOAD);
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("a caller that negotiated nothing is answered decoded, as before", async () => {
+    const w = await world({}, { respondWith: compressing });
+    try {
+      const response = await get(w, "/orders");
+      expect(response.status).toBe(200);
+      // The runtime adds an `Accept-Encoding` of its own, so the backend may well compress — but
+      // the caller agreed to nothing, so what it gets is plain bytes and no encoding header.
+      expect(response.headers.get("content-encoding")).toBeNull();
+      expect(await response.text()).toBe(PAYLOAD);
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("a route whose response the gateway has to read asks for none", async () => {
+    // A cache unit is enough: the stored bytes are served to the next caller, whose negotiation is
+    // its own, so a compressed body cannot be what is kept.
+    const w = await world({ cache: { ttlSec: 60 } }, { respondWith: compressing });
+    try {
+      const response = await get(w, "/orders", { headers: { "accept-encoding": "gzip" } });
+      expect(response.status).toBe(200);
+      // `identity`, not absent: deleting the header lets the runtime supply one of its own, and
+      // the backend would compress a body the gateway then has to expand in order to store it.
+      expect(w.backend.requests.at(-1)!.headers["accept-encoding"]).toBe("identity");
+      expect(response.headers.get("content-encoding")).toBeNull();
+      expect(await response.text()).toBe(PAYLOAD);
     } finally {
       w.stop();
     }

@@ -42,11 +42,13 @@ Azure-shaped concept in a spec, that is a porting bug; fix the spec.
 ## Layout
 
 ```
-shared/         policy vocabulary · config contract · telemetry · JSON Schema · XSD · XML · SOAP
-                routing · operation matching · MCP · A2A · quota · attention · structural diff
+shared/         policy vocabulary · config contract · gateway settings · telemetry · JSON Schema
+                XSD · XML · SOAP · routing · operation matching · MCP · A2A · quota · attention
+                structural diff
 control-plane/  API, SQLite, migrations, promotion, jobs, telemetry and quota aggregation,
-                config build, artifact compiler, discovery, catalog search, certificates,
-                trust anchors, the playground, the dashboard, authentication and the directory
+                config build, gateway settings, artifact compiler, discovery, catalog search,
+                certificates, trust anchors, the playground, the dashboard, authentication and
+                the directory
 data-plane/     config poll, route table, the request pipeline, validation, rate limit, quota,
                 backend pool and breaker, response cache, stream registry, counters, trust store
 ui/             React + Vite SPA, served by the control plane

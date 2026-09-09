@@ -1,3 +1,4 @@
+import { formatDateTime } from "../lib/datetime";
 import { api, type EnvironmentsView, type FleetHealth, type Meta, type User } from "../api";
 import { Panel, Digest, Notice, Pill, useAsync } from "../components";
 
@@ -120,7 +121,7 @@ function Fleet({ environment }: { environment: string }) {
                 )}
               </td>
               <td className="muted">
-                {instance.lastSeenAt ? new Date(instance.lastSeenAt).toLocaleTimeString() : "never"}
+                {instance.lastSeenAt ? formatDateTime(instance.lastSeenAt) : "never"}
               </td>
               <td className="muted">
                 {(instance.process?.requestsTotal as number | undefined)?.toLocaleString() ?? "—"}

@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import {
   api,
@@ -137,7 +138,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
                   </td>
                   <td>{row.applications}</td>
                   <td className="muted">
-                    {row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleDateString() : "never"}
+                    {row.lastLoginAt ? formatDate(row.lastLoginAt) : "never"}
                   </td>
                 </tr>
               ))}
@@ -239,11 +240,11 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           )}
           <dt>First seen</dt>
           <dd className="muted">
-            {new Date(row.createdAt).toLocaleString()} · created by {row.createdBy}
+            {formatDateTime(row.createdAt)} · created by {row.createdBy}
           </dd>
           <dt>Last signed in</dt>
           <dd className="muted">
-            {row.lastLoginAt ? new Date(row.lastLoginAt).toLocaleString() : "never"}
+            {row.lastLoginAt ? formatDateTime(row.lastLoginAt) : "never"}
           </dd>
         </dl>
 
@@ -369,8 +370,8 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             <ul className="plain">
               {row.sessions.map((session) => (
                 <li key={session.id} className="muted">
-                  {session.provider} · started {new Date(session.createdAt).toLocaleString()} · last
-                  seen {session.lastSeenAt ? new Date(session.lastSeenAt).toLocaleString() : "—"}
+                  {session.provider} · started {formatDateTime(session.createdAt)} · last
+                  seen {session.lastSeenAt ? formatDateTime(session.lastSeenAt) : "—"}
                 </li>
               ))}
             </ul>

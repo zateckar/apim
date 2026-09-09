@@ -90,7 +90,7 @@ export function HealthView({ user }: { user: User }) {
   const claimed = new Set(GROUPS.flatMap((group) => group.kinds));
 
   return (
-    <div className="content">
+    <div className="health-overview">
       <div className="page-actions">
         <button className="btn" onClick={() => void refresh()} disabled={health.loading}>
           {health.loading ? "Probing…" : "Refresh"}

@@ -35,13 +35,13 @@ test("every tab of an API workspace renders", async ({ page }) => {
   // On an application's own APIs the name opens the workspace; the read-only listing is what the
   // cross-application catalog offers instead, and that is asserted in `catalog.spec.ts`.
   await rows.first().click();
-  await expect(page.locator(".seg button").first()).toBeVisible();
+  await expect(page.getByRole("tab").first()).toBeVisible();
 
   for (const tab of TABS) {
-    await page.locator(".seg button", { hasText: new RegExp(`^${tab}$`) }).click();
+    await page.getByRole("tab", { name: new RegExp(`^${tab}$`, "i") }).click();
     // Each panel is given a moment to do its own fetch; what is asserted is that the workspace is
     // still there afterwards rather than a blank frame where a thrown render used to be.
-    await expect(page.locator(".seg button", { hasText: new RegExp(`^${tab}$`) })).toHaveClass(/active/);
+    await expect(page.getByRole("tab", { name: new RegExp(`^${tab}$`, "i") })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("main.native-content")).not.toBeEmpty();
   }
 
@@ -58,7 +58,7 @@ test("the description is written as Markdown, and Preview renders it", async ({ 
   const rows = page.locator(".discover-item .di-name");
   await expect(rows.first()).toBeVisible();
   await rows.first().click();
-  await page.locator(".seg button", { hasText: /^properties$/ }).click();
+  await page.getByRole("tab", { name: /^properties$/i }).click();
 
   const editor = page.locator(".md-editor").first();
   await expect(editor).toBeVisible();

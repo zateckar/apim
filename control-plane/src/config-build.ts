@@ -36,6 +36,7 @@ import {
   type Integrations,
 } from "./egress.ts";
 import { effectiveDocument } from "./globals.ts";
+import { settingsFor } from "./settings.ts";
 import { liveAnchorsFor } from "./trust-store.ts";
 
 export const COMPILER_VERSION = "v3-1";
@@ -220,6 +221,38 @@ function tlsFor(db: DB, resourceId: string, environment: string, now: string): C
 }
 
 /**
+ * The one hour in which this route's bodies are written to the access log, or `undefined` for the
+ * default — which is never.
+ *
+ * Same shape as `tlsFor` above and for the same reason: the *instant* travels, not a flag, so the
+ * gateway closes the window on its own clock. A fleet serving its last config through a
+ * control-plane outage stops capturing when the hour is up rather than when it next hears
+ * otherwise, which is the property that makes a temporary window actually temporary.
+ *
+ * The narrowest live window is not a question here the way it is for TLS — a resource has at most
+ * one open window per environment, because the endpoint refuses to open a second — but ordering by
+ * `expires_at DESC` is still right: if a database somehow holds two, the honest answer is the one
+ * a reader of the screen would have been shown.
+ */
+function logBodiesUntilFor(
+  db: DB,
+  resourceId: string,
+  environment: string,
+  now: string,
+): string | undefined {
+  const row = db
+    .query<{ expires_at: string }, [string, string, string]>(
+      `SELECT expires_at
+         FROM body_capture
+        WHERE resource_id = ? AND environment = ? AND revoked_at IS NULL AND expires_at > ?
+        ORDER BY expires_at DESC
+        LIMIT 1`,
+    )
+    .get(resourceId, environment, now);
+  return row?.expires_at;
+}
+
+/**
  * The bundle a route needs before it may serve. `''` is the sentinel for "compiled, and this
  * contract declares no schemas", which is why an empty digest yields no reference.
  *
@@ -337,6 +370,7 @@ export function buildRoutes(
       ? (JSON.parse(row.index_json) as ConfigOperation[])
       : [];
     const backend = readBackendPool(JSON.parse(row.backend_json));
+    const logBodiesUntil = logBodiesUntilFor(db, row.resource_id, environment, now);
 
     routes.push({
       resourceId: row.resource_id,
@@ -362,6 +396,7 @@ export function buildRoutes(
         validate: validateFor(row.kind, policy, limits.validation, limits.xml),
       },
       operations,
+      ...(logBodiesUntil ? { logBodiesUntil } : {}),
       artifacts: artifactsFor(db, row.artifact_digest, row.kind),
       soap: soapIndexFor(model),
       ...(row.kind === "mcp" && model?.mcp
@@ -568,6 +603,11 @@ export function buildConfig(
     configVersion: CONFIG_VERSION,
     environment,
     limits,
+    // Resolved for *this* gateway. An environment-wide build — nothing polls for one, but the
+    // artifact scope check and the config preview both make one — resolves the fleet and
+    // environment layers and no gateway layer, which is what "the environment's configuration"
+    // means when no gateway has been named.
+    settings: settingsFor(db, { environment, targetId: targetId ?? "" }),
     routes,
     subscriptions,
     certificates,

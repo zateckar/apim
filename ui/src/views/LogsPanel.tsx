@@ -1,6 +1,12 @@
 import { useMemo, useState } from "react";
-import { api, type LogEntry, type LogHistogram, type LogPage } from "../api";
-import { EmptyState, Notice, useAsync } from "../components";
+import {
+  api,
+  type BodyCapturePage,
+  type LogEntry,
+  type LogHistogram,
+  type LogPage,
+} from "../api";
+import { EmptyState, Field, Modal, Notice, useAction, useAsync, useTicker } from "../components";
 import { formatDateTime, formatDuration, toDateTimeInput, fromDateTimeInput } from "../lib/datetime";
 import { LogsHistogram } from "./LogsHistogram";
 
@@ -122,6 +128,8 @@ export function LogsPanel({
           with <code>ELK_URL</code> to read the real index.
         </Notice>
       )}
+
+      <BodyCapture resourceId={resourceId} environment={environment} />
 
       <div className="filter-bar">
         <div className="uptime-range" role="group" aria-label="Time range">
@@ -294,6 +302,133 @@ export function LogsPanel({
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * Body capture: an hour in which this API's request and response bodies are written into its log
+ * lines as well, for the bug that cannot be reproduced from status codes and timings.
+ *
+ * The screen's job here is to make the cost visible rather than to make the switch convenient. What
+ * it says out loud, every time: bodies go to the same index everybody else reads, the window is an
+ * hour and not renewable by accident, only the first 8 KiB is kept, and the row saying you asked
+ * outlives the window. The reason is required by the server and the box says why — it is what
+ * somebody reads later when they find bodies in the index and want to know who wanted them there.
+ *
+ * The countdown runs off `expiresAt` rather than off `remainingSec`, and the shell's tick moves it
+ * without re-reading the list. `expiresAt` is an absolute instant the server chose and the *gateway*
+ * enforces on its own clock; `remainingSec` was only ever that instant minus the moment the response
+ * was built. Polling once every tick to watch a number tick down would be a request every three
+ * seconds for an hour, to learn something arithmetic already knows.
+ */
+function BodyCapture({ resourceId, environment }: { resourceId: string; environment: string }) {
+  const [asking, setAsking] = useState(false);
+  const [reason, setReason] = useState("");
+  const [reload, setReload] = useState(0);
+  const tick = useTicker();
+  const action = useAction();
+
+  const windows = useAsync(
+    () =>
+      api.get<BodyCapturePage>(
+        `/api/logs/body-capture?environment=${encodeURIComponent(environment)}` +
+          `&resourceId=${encodeURIComponent(resourceId)}`,
+      ),
+    [resourceId, environment, reload],
+  );
+
+  const page = windows.data;
+  const found = page?.items.find((item) => item.live) ?? null;
+  // Recomputed on the tick, so the banner goes away by itself when the hour is up rather than
+  // waiting for somebody to change tabs.
+  const remainingMs = useMemo(
+    () => (found ? Date.parse(found.expiresAt) - Date.now() : 0),
+    [found?.expiresAt, tick],
+  );
+  const live = remainingMs > 0 ? found : null;
+  const kib = page ? Math.round(page.maxBytes / 1024) : 8;
+
+  return (
+    <>
+      <Notice kind="error">{windows.error}</Notice>
+      <Notice kind="error">{action.error}</Notice>
+
+      {live ? (
+        <Notice kind="warn">
+          <strong>Bodies are being captured</strong> for this API in {environment.toUpperCase()},
+          for another {formatDuration(remainingMs)}. Requested by {live.openedBy}:{" "}
+          <em>{live.reason}</em>. The first {kib} KiB of each request and response is written into
+          the log index, with credential-shaped fields replaced. Headers never are.{" "}
+          <button
+            className="btn sm"
+            disabled={action.busy}
+            onClick={() =>
+              action
+                .run(() => api.del(`/api/logs/body-capture/${live.id}`))
+                .then(() => setReload((n) => n + 1))
+            }
+          >
+            Stop capturing
+          </button>
+        </Notice>
+      ) : (
+        <div className="filter-bar">
+          <span className="muted small">
+            Bodies are not logged. Capture them for an hour if you need to see one.
+          </span>
+          <button className="btn sm" onClick={() => setAsking(true)}>
+            Capture bodies for an hour…
+          </button>
+        </div>
+      )}
+
+      {asking && (
+        <Modal title="Capture request and response bodies" close={() => setAsking(false)}>
+          <p className="hint">
+            For one hour, on this API in {environment.toUpperCase()}, the first {kib} KiB of each
+            request and response body is written into its access-log lines. They go to the same log
+            index as everything else, so anyone who can read this API's traffic can read them. The
+            window cannot be extended — opening a second one is a second decision.
+          </p>
+          <Field
+            label="Why"
+            hint="At least 20 characters. Name the ticket and the call you are trying to reproduce; this is shown beside the API for as long as the record exists."
+          >
+            <textarea
+              rows={3}
+              value={reason}
+              onChange={(event) => setReason(event.target.value)}
+              placeholder="INC-4471: the order POST returns 400 for one consumer only"
+            />
+          </Field>
+          <Notice kind="error">{action.error}</Notice>
+          <div className="row-actions">
+            <button className="btn" onClick={() => setAsking(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn primary"
+              disabled={action.busy || reason.trim().length < 20}
+              onClick={async () => {
+                const ok = await action.run(() =>
+                  api.post("/api/logs/body-capture", {
+                    resourceId,
+                    environment,
+                    reason: reason.trim(),
+                  }),
+                );
+                if (!ok) return;
+                setAsking(false);
+                setReason("");
+                setReload((n) => n + 1);
+              }}
+            >
+              Start capturing
+            </button>
+          </div>
+        </Modal>
+      )}
+    </>
   );
 }
 

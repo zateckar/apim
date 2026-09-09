@@ -49,6 +49,8 @@ export interface RouteDef {
    * `global` screens are the same whoever is reading. Both shapes also resolve without the prefix.
    */
   scope: "application" | "global";
+  /** Only screens that consume the shell's selected environment offer its switcher. */
+  environmentScoped?: boolean;
   /** The sidebar entry. Absent for a screen you arrive at rather than navigate to. */
   nav?: { group: NavGroup; label: string };
   /**
@@ -69,6 +71,7 @@ export const ROUTES: RouteDef[] = [
   // ------------------------------------------------------------------ the selected application
   {
     id: "dashboard",
+    environmentScoped: true,
     // `/` is the address the browser opens on and the one the logo returns to. It resolves to the
     // selected application's dashboard rather than to an estate-wide home, because every question
     // this portal answers is asked about one application at a time.
@@ -107,6 +110,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "api",
+    environmentScoped: true,
     /**
      * One workspace, four addresses. `apis`, `mcp` and `a2a` are three listings of the same objects
      * and each writes the row it opens under its own section, so the sidebar highlights the list
@@ -148,6 +152,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "subscriptions",
+    environmentScoped: true,
     patterns: ["/subscriptions"],
     title: "Subscriptions",
     purpose: "The APIs this application may call, in each environment, and their keys.",
@@ -165,6 +170,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "approvals",
+    environmentScoped: true,
     patterns: ["/approvals"],
     title: "Approvals",
     purpose: "Requests to call what this application publishes, waiting on somebody here.",
@@ -173,6 +179,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "kafka",
+    environmentScoped: true,
     patterns: ["/kafka"],
     title: "Kafka Topics",
     purpose: "The topics this application owns, and who is allowed to produce to or consume them.",
@@ -181,6 +188,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "kafka-proxy",
+    environmentScoped: true,
     patterns: ["/kafka-proxy"],
     title: "Kafka REST Proxy",
     purpose: "Reaching those topics over HTTP, for callers that cannot speak the Kafka protocol.",
@@ -189,6 +197,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "certificates",
+    environmentScoped: true,
     patterns: ["/certificates"],
     title: "Certificates",
     purpose: "The client certificates this application presents, and when each of them expires.",
@@ -198,6 +207,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "integrations",
+    environmentScoped: true,
     // Not "Integrations", which reads as a development slug for the thing this portal *is*. This
     // screen is the console for the surrounding systems — LeanIX, the directory, FixMe — every one
     // of which is simulated in this phase, which the chrome already says.
@@ -263,6 +273,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "fixme",
+    environmentScoped: true,
     patterns: ["/fixme"],
     title: "FixMe diagnostics",
     purpose: "What the FixMe service reports about the estate, and what it was asked.",
@@ -317,6 +328,17 @@ export const ROUTES: RouteDef[] = [
     plainChrome: true,
   },
   {
+    id: "gateway-settings",
+    patterns: ["/gateway-settings"],
+    title: "Gateway settings",
+    purpose:
+      "The ceilings, caches and counters every gateway enforces — set once for the fleet, an environment or one gateway.",
+    scope: "global",
+    nav: { group: "Administration", label: "Gateway settings" },
+    adminOnly: true,
+    plainChrome: true,
+  },
+  {
     id: "applications",
     patterns: ["/applications"],
     title: "Applications",
@@ -354,6 +376,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "telemetry",
+    environmentScoped: true,
     patterns: ["/telemetry"],
     title: "Telemetry",
     purpose: "Calls per minute across the estate: served, refused by the gateway, and failed upstream.",
@@ -364,6 +387,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "global-policy",
+    environmentScoped: true,
     patterns: ["/policy"],
     title: "Global policy",
     purpose: "Policy units attached to a whole environment, and the APIs that override them.",
@@ -374,6 +398,7 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "trust",
+    environmentScoped: true,
     patterns: ["/trust"],
     title: "Trust",
     purpose:

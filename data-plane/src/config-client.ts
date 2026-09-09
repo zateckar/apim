@@ -2,6 +2,8 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ArtifactRef } from "../../shared/artifact.ts";
 import { CONFIG_VERSION, type GatewayConfig } from "../../shared/config-doc.ts";
+import type { GatewaySettings } from "../../shared/gateway-settings.ts";
+import { ipv4ToInt } from "../../shared/net.ts";
 import type { PolicyDocument } from "../../shared/policy.ts";
 import type { PollRequest, PollResponse } from "../../shared/telemetry.ts";
 import type { ArtifactCache } from "./artifacts.ts";
@@ -64,6 +66,17 @@ export interface ConfigClientOptions {
    * Carried here because the trust set is composed when a config is activated, which is here.
    */
   trustSystemRoots?: boolean;
+  /**
+   * How the document's `settings` block reaches the running process, and the one way it can be
+   * refused (v6). Optional so a test can drive the poll loop without a whole data plane behind it;
+   * absent means the block is carried and ignored, which is what an instance built only to read
+   * routes should do with it.
+   */
+  settings?: {
+    /** Why this container cannot honour these settings, or `null`. See `DataPlane.settingsBlocker`. */
+    blockerFor(next: GatewaySettings): string | null;
+    apply(next: GatewaySettings): void;
+  };
 }
 
 export class ConfigClient {
@@ -93,6 +106,24 @@ export class ConfigClient {
       const config = JSON.parse(readFileSync(this.options.cachePath, "utf8")) as GatewayConfig;
       if (config.configVersion !== this.wireVersion) return false;
       this.table = this.tableFor(config);
+      /**
+       * The fleet's settings come back with the routes, so a restart during a control-plane outage
+       * does not quietly revert this instance to the build's defaults — which for an estate that
+       * had raised its body cap would mean 413s on requests that worked before the restart.
+       *
+       * Unlike an activation, a settings block this container cannot honour does **not** stop the
+       * cached routes being served. Fail-static exists to keep traffic flowing without the control
+       * plane, and refusing to serve anything because one ceiling is unreachable here would trade
+       * the outage this survives for one it does not. The reason is recorded instead, and the
+       * defaults stay in force until a document arrives that this container can apply.
+       */
+      const refused = this.options.settings?.blockerFor(config.settings);
+      if (refused) {
+        this.activationBlocked = refused;
+        console.error(`[dp] serving cached routes with default settings: ${refused}`);
+      } else {
+        this.options.settings?.apply(config.settings);
+      }
       this.fromCache = true;
       return true;
     } catch (err) {
@@ -278,6 +309,14 @@ export class ConfigClient {
   private async blockerFor(
     config: GatewayConfig,
   ): Promise<{ reason: string; fatalWithoutConfig: boolean } | null> {
+    // First and cheapest, and before anything is fetched: a settings block this container cannot
+    // honour makes the whole document unactivatable, so downloading its artifacts would be work
+    // done for a configuration that is not going to serve. Not fatal without a config — correcting
+    // the setting centrally makes the next poll succeed, so an instance with nothing to serve waits
+    // rather than exits (v6).
+    const refused = this.options.settings?.blockerFor(config.settings);
+    if (refused) return { reason: refused, fatalWithoutConfig: false };
+
     if (this.options.trustedProxyConfigured === false) {
       const route = config.routes.find((candidate) => needsClientCertificate(candidate.policy));
       if (route) {
@@ -310,8 +349,13 @@ export class ConfigClient {
     };
   }
 
-  /** The three pieces of live state a config swap invalidates (design sections 5.1, 5.8 and 8.7). */
+  /** The pieces of live state a config swap invalidates (design sections 5.1, 5.8 and 8.7). */
   private afterActivation(config: GatewayConfig): void {
+    // Before the invalidation below, because two of those are the caches this may have just
+    // resized: clearing a cache and then shrinking it is the same outcome in the other order, and
+    // shrinking one that is about to be cleared would evict entries twice (v6).
+    this.options.settings?.apply(config.settings);
+
     // Section 5.8: a subscription that left the document has its open streams closed here. This is
     // the only place a config update reaches backwards into work already in flight.
     const active = new Set(config.subscriptions.map((subscription) => subscription.id));
@@ -322,6 +366,9 @@ export class ConfigClient {
     this.options.sampler?.reset();
     // Keys carry the digest, so nothing old could be hit anyway; this reclaims the bytes.
     this.options.responseCache?.clear();
+    // Not invalidation but the same shape of work: a new document names the backends this instance
+    // is about to call, and activation is the moment their addresses are worth having.
+    prefetchBackends(config);
   }
 
   private persist(config: GatewayConfig): void {
@@ -344,6 +391,53 @@ export class ConfigClient {
   stop(): void {
     if (this.timer) clearInterval(this.timer);
     this.timer = null;
+  }
+}
+
+/**
+ * How many backend hosts one activation warms. The runtime's DNS cache holds 256 entries for 30
+ * seconds and every outbound connection in the process shares it — including the poll to the
+ * control plane — so warming more hosts than the cache can hold would evict the ones warmed first
+ * and buy nothing. Past this, the remaining backends resolve on the request path, which is what
+ * every backend did before this existed.
+ */
+const MAX_PREFETCHED_HOSTS = 128;
+
+/**
+ * Resolve the addresses of the backends this config names, now, rather than on the first request
+ * to each of them.
+ *
+ * The runtime resolves DNS on the request path and caches the answer for 30 seconds
+ * (`BUN_CONFIG_DNS_TIME_TO_LIVE_SECONDS`), so without this the first request after an activation —
+ * and one request every 30 seconds after that — waits for a lookup that has nothing to do with the
+ * backend's own latency, and reports it as backend latency.
+ *
+ * Fire-and-forget, deliberately: `dns.prefetch` returns nothing to wait on, a name that does not
+ * resolve is not an activation failure, and the request path resolves again anyway. An address
+ * literal is skipped because there is nothing to look up and the entry it would take is worth more
+ * to a host that has a name — which matters on the local stack, where every backend is `127.0.0.1`.
+ */
+function prefetchBackends(config: GatewayConfig): void {
+  const seen = new Set<string>();
+  for (const route of config.routes) {
+    for (const entry of route.backend.pool) {
+      if (seen.size >= MAX_PREFETCHED_HOSTS) return;
+      let url: URL;
+      try {
+        url = new URL(entry.url);
+      } catch {
+        // A backend URL this cannot parse is the config builder's problem, and the route will say
+        // so on its own first request. Warming is not the place to discover it.
+        continue;
+      }
+      const host = url.hostname;
+      if (host.startsWith("[") || ipv4ToInt(host) !== null) continue;
+      const port = url.port ? Number(url.port) : url.protocol === "https:" ? 443 : 80;
+      const key = `${host}:${port}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      Bun.dns.prefetch(host, port);
+    }
   }
 }
 

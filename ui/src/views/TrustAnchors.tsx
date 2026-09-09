@@ -1,3 +1,4 @@
+import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import {
   api,
@@ -135,7 +136,7 @@ function AnchorRow({ row, onChanged }: { row: TrustAnchorRow; onChanged: () => v
         <td>
           <strong>{row.name}</strong>
           <div className="muted small">
-            {row.addedBy} · {new Date(row.addedAt).toLocaleDateString()}
+            {row.addedBy} · {formatDate(row.addedAt)}
             {row.selfSigned === false && " · not self-signed (an intermediate)"}
             {row.keyAlgorithm && ` · ${row.keyAlgorithm}`}
           </div>

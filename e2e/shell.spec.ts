@@ -72,8 +72,8 @@ test("the version in the top bar opens the change log", async ({ page }) => {
 test("switching environment keeps you on the screen you were reading", async ({ page }) => {
   const errors = watchErrors(page);
   const application = await openPortal(page);
-  await page.goto(`/${application}/apis`);
-  await expect(screenTitle(page)).toHaveText("APIs");
+  await page.goto(`/${application}/subscriptions`);
+  await expect(screenTitle(page)).toHaveText("Subscriptions");
 
   const environments = page.locator('[role="group"][aria-label="Environment"] button');
   const count = await environments.count();
@@ -81,7 +81,7 @@ test("switching environment keeps you on the screen you were reading", async ({ 
   await environments.nth(1).click();
 
   await expect(environments.nth(1)).toHaveClass(/active/);
-  await expect(screenTitle(page)).toHaveText("APIs");
+  await expect(screenTitle(page)).toHaveText("Subscriptions");
 
   expectNoErrors(errors);
 });

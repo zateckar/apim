@@ -22,16 +22,9 @@ import { ALLOWED } from "../lib/capabilities";
  * Health lives on its own screen. This one is where a gateway comes into existence, gets its
  * addresses, gains and loses replicas, and is removed.
  */
-const CATEGORY_LABELS: Record<string, string> = {
-  managed: "Managed",
-  samb: "On-premise",
-  other: "Other",
-};
-
 interface GatewayList {
   items: GatewayRow[];
   environments: string[];
-  categories: string[];
 }
 
 export function GatewayAdminView() {
@@ -69,7 +62,6 @@ export function GatewayAdminView() {
             ))}
             <AddGateway
               environment={environment}
-              categories={gateways.data?.categories ?? []}
               taken={rows.map((r) => r.name)}
               onChanged={gateways.reload}
             />
@@ -82,19 +74,16 @@ export function GatewayAdminView() {
 
 function AddGateway({
   environment,
-  categories,
   taken,
   onChanged,
 }: {
   environment: string;
-  categories: string[];
   taken: string[];
   onChanged: () => void;
 }) {
   const action = useAction();
   const [open, setOpen] = useState(false);
   const [name, setName] = useState("");
-  const [category, setCategory] = useState("managed");
   const [label, setLabel] = useState("");
   const [publicUrl, setPublicUrl] = useState("");
   const [intranetUrl, setIntranetUrl] = useState("");
@@ -117,16 +106,6 @@ function AddGateway({
         this gateway exists in, because a publish carries the name along the promotion chain.
         {taken.length > 0 && ` Already taken here: ${taken.join(", ")}.`}
       </p>
-      <div className="field">
-        <label>Kind</label>
-        <select value={category} onChange={(event) => setCategory(event.target.value)}>
-          {categories.map((value) => (
-            <option key={value} value={value}>
-              {CATEGORY_LABELS[value] ?? value}
-            </option>
-          ))}
-        </select>
-      </div>
       <TextField label="Locality" value={label} onChange={setLabel} />
       <TextField label="Internet address" value={publicUrl} onChange={setPublicUrl} />
       <TextField label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
@@ -139,7 +118,6 @@ function AddGateway({
                 api.post("/api/gateways", {
                   environment,
                   name: name.trim(),
-                  category,
                   label: label.trim() || null,
                   publicUrl: publicUrl.trim() || null,
                   intranetUrl: intranetUrl.trim() || null,
@@ -183,10 +161,7 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
     (row.label ?? "") !== label;
 
   return (
-    <Panel
-      title={`${row.name}${row.label ? ` · ${row.label}` : ""}`}
-      hint={CATEGORY_LABELS[row.category] ?? row.category}
-    >
+    <Panel title={`${row.name}${row.label ? ` · ${row.label}` : ""}`}>
       <div className="row wrap">
         {row.addresses.length === 0 ? (
           <Pill kind="warn">no published address</Pill>

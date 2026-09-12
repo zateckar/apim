@@ -204,6 +204,7 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - WHEN it changes
 - THEN every figure, trend and list on the page SHALL be recomputed against the same window
 - AND `DASHBOARD_DEFAULT_SINCE_MIN` SHALL be the default
+- AND the time-range control SHALL sit above the dashboard figures, since it governs the whole page rather than only the traffic table
 
 ### Requirement: Aggregate telemetry on the control plane, bounded
 

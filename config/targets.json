@@ -1,11 +1,10 @@
 {
-  "_comment": "TARGETS_FILE (design section 11). One entry per gateway, keyed on (environment, name): since v8 an environment may hold several gateways — a managed one in the cloud, an on-premise one — and an API says which of them it answers on. `name` defaults to the adapter, which is what every gateway was called before they had names, so an older file still matches the rows it created. `category` is managed | samb | other and only groups the list. v2 ships the 'standalone' adapter across the whole promotion chain; 'apim' and 'kafka' are out of scope. v4 adds config.gatewayUrls: where the playground may send a request in that environment (plan section 11) — those are the individual replicas and are admin-only. `publicUrl` is the reverse proxy in front of them and `intranetUrl` is the same gateway's inside-only name; both seed the target row on insert and are editable afterwards on the admin Gateways screen. Locally there is no proxy, so dev's publicUrl points at one replica and dev keeps two gatewayUrls so calls x instances stays demonstrable by hand.",
+  "_comment": "TARGETS_FILE (design section 11). One entry per gateway, keyed on (environment, name): since v8 an environment may hold several gateways — a managed one in the cloud, an on-premise one — and an API says which of them it answers on. `name` defaults to the adapter, which is what every gateway was called before they had names, so an older file still matches the rows it created. v2 ships the 'standalone' adapter across the whole promotion chain; 'apim' and 'kafka' are out of scope. v4 adds config.gatewayUrls: where the playground may send a request in that environment (plan section 11) — those are the individual replicas and are admin-only. `publicUrl` is the reverse proxy in front of them and `intranetUrl` is the same gateway's inside-only name; both seed the target row on insert and are editable afterwards on the admin Gateways screen. Locally there is no proxy, so dev's publicUrl points at one replica and dev keeps two gatewayUrls so calls x instances stays demonstrable by hand.",
   "targets": [
     {
       "environment": "dev",
       "adapter": "standalone",
       "name": "local",
-      "category": "other",
       "enforce": true,
       "paused": false,
       "publicUrl": "http://127.0.0.1:8081",
@@ -22,7 +21,6 @@
       "environment": "test",
       "adapter": "standalone",
       "name": "local",
-      "category": "other",
       "enforce": true,
       "paused": false,
       "publicUrl": "http://127.0.0.1:8083",
@@ -35,7 +33,6 @@
       "environment": "prod",
       "adapter": "standalone",
       "name": "local",
-      "category": "other",
       "enforce": true,
       "paused": false,
       "publicUrl": "http://127.0.0.1:8084",

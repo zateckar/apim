@@ -305,6 +305,14 @@ warning and not a value that is read.
 
 The portal SHALL offer an administrator one place to read and change every setting, at every layer.
 
+#### Scenario: The settings table is laid out
+
+- GIVEN the selected layer's settings
+- WHEN the table renders
+- THEN it SHALL distinguish the setting, its effective value and the override at this layer in three stable columns
+- AND Save changes SHALL be the primary action for the pending set
+- AND on narrow screens the table SHALL scroll within its panel without widening the page
+
 #### Scenario: The Gateway settings screen renders
 
 - GIVEN any signed-in user

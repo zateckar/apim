@@ -13,6 +13,7 @@ import {
 } from "../components";
 import { lifecycleChip } from "../lib/status";
 import { PlaygroundPanel } from "./PlaygroundPanel";
+import { DescriptionMarkdown } from "../portal/components/DescriptionMarkdown";
 
 /**
  * One listing, in consumer mode (goal G6, plan §9.3).
@@ -181,9 +182,7 @@ function Overview({ item }: { item: MarketListingDetail }) {
   return (
     <>
       <Panel title="What it is">
-        <p style={{ whiteSpace: "pre-wrap", marginTop: 0 }}>
-          {item.description ?? <span className="muted">Nobody has written a description yet.</span>}
-        </p>
+        {item.description?.trim() ? <DescriptionMarkdown source={item.description} /> : <p className="muted">No description provided.</p>}
         {item.tags.length > 0 && (
           <div className="listing-tags">
             {item.tags.map((tag) => (
@@ -408,7 +407,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
 function GettingStarted({ item }: { item: MarketListingDetail }) {
   return (
     <>
-      <Panel title="1 · Subscribe" hint="A key belongs to an application, and an application belongs to your application.">
+      <Panel title="1 · Subscribe" hint="Subscribe to a product using the application that will call this API.">
         <p>
           {item.products.length === 1
             ? "Subscribe through this product:"

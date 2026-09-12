@@ -122,12 +122,6 @@ The environment model SHALL be internally consistent at boot.
 - THEN startup SHALL fail, naming the file, the environment and the offending name
 - AND the message SHALL show the expected shape with an example
 
-#### Scenario: A gateway category is unknown
-
-- GIVEN a target declares a `category` outside `managed | samb | other`
-- WHEN the file is parsed
-- THEN startup SHALL fail, naming the gateway and listing the legal categories
-
 #### Scenario: Public and intranet URLs are seeds only
 
 - GIVEN a target row already exists for `<environment>/<name>`

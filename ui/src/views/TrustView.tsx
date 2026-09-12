@@ -116,7 +116,7 @@ function Certificates({ user, environment, applicationId }: { user: User; enviro
         {/* An empty table used to be seven column headings over one grey sentence in a `<td>`. The
             headings name columns that are not there, and the sentence is an empty state written
             out longhand without the one thing an empty state owes the reader: what to do next. */}
-        {items.length === 0 ? (
+        {items.length === 0 ? (!uploading && (
           <EmptyState
             title={`No client certificates in ${environment.toUpperCase()}`}
             detail="A binding only needs one if its backend asks for mutual TLS. Uploading it here is what makes it available to choose on a backend."
@@ -126,7 +126,7 @@ function Certificates({ user, environment, applicationId }: { user: User; enviro
               </button>
             }
           />
-        ) : (
+        )) : (
           <table>
             <thead>
               <tr>

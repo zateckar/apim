@@ -76,7 +76,8 @@ describe("migrations", () => {
       const rebuilt = (db.query("PRAGMA table_info(target)").all() as Array<{ name: string }>)
         .map((c) => c.name);
       expect(rebuilt).toContain("name");
-      expect(rebuilt).toContain("category");
+      // schema-012 dropped it again: it named `managed | samb | other` and nothing read it.
+      expect(rebuilt).not.toContain("category");
       expect(
         (db.query("SELECT sql FROM sqlite_master WHERE name = 'target'").get() as { sql: string })
           .sql,

@@ -55,8 +55,9 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 - GIVEN the portal
 - WHEN the sidebar renders
-- THEN it SHALL be a dark vertical gradient with a compact brand row, grouped navigation sections and a
+- THEN it SHALL be a neutral surface matching the selected theme, with a subtle right border, a compact brand row, grouped navigation sections and a
   user footer
+- AND the selected navigation entry SHALL use a soft accent fill and readable accent text; navigation labels SHALL not repeat an identical decorative icon on every entry
 - AND the application picker and environment switcher SHALL use compact rounded controls with a
   clearly marked selection
 
@@ -250,7 +251,7 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - WHEN they render
 - THEN there SHALL be at most one primary action, ghost buttons for the rest, and a small variant
   for controls inside rows and headers
-- AND red SHALL be reserved for destructive and dismissive actions, so a red control always means
+- AND red SHALL be reserved for destructive actions; Cancel and Close SHALL hover neutrally, so a red control always means
   the same thing
 
 #### Scenario: A signature action is rendered
@@ -363,6 +364,17 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - AND primary actions SHALL use the accent fill with contrasting text in both idle and hover states
 - AND dashboard helper text SHALL use sentence case rather than all capitals
 - AND legacy colour and font tokens SHALL resolve to the same theme tokens as branded components
+- AND commonly used field labels, workspace tabs and table values SHALL be at least 14px, with secondary metadata at least 12px in the shared page chrome
+- AND unread mail SHALL use a subtle background, a leading dot and stronger subject text instead of a saturated row fill
+- AND uptime charts SHALL use neutral surfaces with theme-aware axes, lines and status marks
+- AND numeric table columns SHALL retain right alignment in both screen vocabularies
+
+#### Scenario: Controls govern the content below them
+
+- GIVEN a dashboard or telemetry time-range control
+- WHEN the page renders
+- THEN it SHALL appear above the values it governs in a compact toolbar
+- AND toolbar controls SHALL wrap together on a narrow screen without stretching a select across the whole desktop page
 
 #### Scenario: A table or identifier exceeds its container
 

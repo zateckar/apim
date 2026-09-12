@@ -34,6 +34,14 @@ who may see a key, and what each side of the relationship is allowed to do to th
   the selection in a grey that all but disappears when the control is not focused, and offers the
   reader nothing that distinguishes "this product is empty" from "I have just lost what was in it"
 
+#### Scenario: Products are browsed before editing
+
+- GIVEN the application's products
+- WHEN the Products page renders
+- THEN each product SHALL show links to its current APIs and its subscriptions
+- AND its membership editor SHALL start collapsed under "Edit APIs in this product"
+- AND collapsing the editor SHALL retain pending edits and indicate unsaved changes in its summary
+
 #### Scenario: A product is deleted
 
 - GIVEN a product with active subscriptions

@@ -184,32 +184,40 @@ function ProductCard({
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
 
-      <MemberPicker
-        id={`members-${product.id}`}
-        label="APIs in this product"
-        resources={resources}
-        selected={members}
-        disabled={!canEdit.enabled}
-        onChange={setMembers}
-      />
-      <p className="muted small">
-        Every subscriber's key works for every API in here, immediately. Removing one takes it away
-        from every subscriber at the next gateway poll.
+      <p className="product-members">
+        {product.members.length === 0 ? "No APIs in this product." : product.members.map((member) => {
+          const resource = resources.find((row) => row.id === member.id);
+          return <Link key={member.id} to={`/apis/${member.id}`}>{resource?.name ?? member.id}{resource?.apiVersion ? ` · ${resource.apiVersion}` : ""}</Link>;
+        })}
       </p>
-      <Action
-        permission={canEdit}
-        className="primary"
-        busy={action.busy || !dirty}
-        onClick={async () => {
-          const ok = await action.run(
-            () => api.put(`/api/products/${product.id}/members`, { resourceIds: members }),
-            "Saved. Subscribers see the change at the next gateway poll.",
-          );
-          if (ok) onChanged();
-        }}
-      >
-        Save what is in this product
-      </Action>
+      <details className="product-editor">
+        <summary>Edit APIs in this product{dirty ? " · Unsaved changes" : ""}</summary>
+        <MemberPicker
+          id={`members-${product.id}`}
+          label="APIs in this product"
+          resources={resources}
+          selected={members}
+          disabled={!canEdit.enabled}
+          onChange={setMembers}
+        />
+        <p className="muted small">
+          Removing an API stops every subscriber from calling it at the next gateway poll.
+        </p>
+        <Action
+          permission={canEdit}
+          className="primary"
+          busy={action.busy || !dirty}
+          onClick={async () => {
+            const ok = await action.run(
+              () => api.put(`/api/products/${product.id}/members`, { resourceIds: members }),
+              "Saved. Subscribers see the change at the next gateway poll.",
+            );
+            if (ok) onChanged();
+          }}
+        >
+          Save APIs
+        </Action>
+      </details>
 
       <h4 className="section-sub">Who has subscribed</h4>
       {subscriptions.length === 0 ? (

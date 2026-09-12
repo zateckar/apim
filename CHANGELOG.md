@@ -17,6 +17,23 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   in the commit message, not here.
 - Newest version first.
 
+## 1.3.1 - 11.09.2026
+
+A gateway is its name and where it is, not a word from a list.
+
+### Removed
+
+- The **Kind** field is gone from the Gateways screen. `Managed`, `On-premise` and `Other` had to
+  be chosen when a gateway was added, could never be changed afterwards, and nothing in the portal
+  ever read the answer — no routing, no policy, no promotion, no icon.
+- With it goes the only thing it reached: gateways were listed with the managed ones first. They
+  are now listed by name, everywhere they appear.
+
+### Changed
+
+- A gateway now says what it is with the two fields that mean something: its **name**, which a
+  publish travels under, and its **Locality**, which is where the deployment physically is.
+
 ## 1.3.0 - 10.09.2026
 
 What a gateway enforces is set in the portal, for the fleet, an environment or one gateway.

@@ -31,7 +31,6 @@ export function registerSettingsRoutes(router: Router): void {
         environment,
         name: target.name,
         label: target.label,
-        category: target.category,
       })),
     );
     return json({

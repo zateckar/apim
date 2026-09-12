@@ -15,7 +15,7 @@ import { expectNoErrors, openPortal, screenTitle, watchErrors } from "./_helpers
  */
 
 const CARD = "article.listing";
-/** Only the domains that hold something; the empty ones are drawn, disabled, on purpose. */
+/** Empty domains remain available inside a disclosure; browsing starts with populated domains. */
 const OPENABLE = ".domain-head:not([disabled])";
 
 test("the catalog browses by domain, and /discover arrives at the same screen", async ({ page }) => {
@@ -44,6 +44,14 @@ test("the catalog browses by domain, and /discover arrives at the same screen", 
   await expect(head).toHaveAttribute("aria-expanded", "false");
   await expect(page.locator(".domain-body")).toHaveCount(0);
 
+  const unused = page.locator(".catalog-unused-domains");
+  if (await unused.count()) {
+    await expect(unused.locator(".domain-head").first()).toBeHidden();
+    await unused.locator("summary").click();
+    await expect(unused.locator(".domain-head").first()).toBeVisible();
+    await expect(unused.locator(".domain-head").first()).toBeDisabled();
+  }
+
   expectNoErrors(errors);
 });
 
@@ -56,7 +64,7 @@ test("search crosses the domains, and clearing it puts them back", async ({ page
 
   // Browsing is by domain; searching is across them, because somebody typing an operation id is
   // asking a question the taxonomy has no opinion about.
-  await page.getByLabel("Search", { exact: true }).fill("zzzz-nothing-matches-this");
+  await page.getByLabel(/^Search resources/).fill("zzzz-nothing-matches-this");
   await expect(page.getByRole("heading", { name: "Nothing matches that" })).toBeVisible();
   await expect(page.locator(".domain-list")).toHaveCount(0);
 

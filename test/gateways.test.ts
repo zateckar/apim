@@ -68,9 +68,8 @@ async function addOnPrem(cookie: string, environment = "dev") {
     body: {
       environment,
       name: "onprem",
-      category: "samb",
       label: "Mladá Boleslav",
-      publicUrl: "https://gw-samb.example",
+      publicUrl: "https://gw-onprem.example",
       intranetUrl: "https://apigw.internal.example",
     },
   });
@@ -87,7 +86,7 @@ describe("gateways in an environment", () => {
     // Nothing already published moves onto a gateway that did not exist when it was published.
     expect(created.published).toBe(0);
     expect(created.addresses).toEqual([
-      { network: "internet", url: "https://gw-samb.example" },
+      { network: "internet", url: "https://gw-onprem.example" },
       { network: "intranet", url: "https://apigw.internal.example" },
     ]);
 
@@ -234,12 +233,12 @@ describe("what the portal shows", () => {
 
     expect(
       publishedUrlsFor(cp.app.db, api.resourceId, "dev").map((u) => `${u.network} ${u.url}`),
-      // Grouped by category — managed, then on-premise, then everything else — so the list reads
-      // the same way on every screen. The seeded workstation gateway is `other`, so it comes last.
+      // Ordered by gateway name — `local` before `onprem` — so the list reads the same way on
+      // every screen, and a gateway's two addresses stay together.
     ).toEqual([
-      `internet https://gw-samb.example${api.basePath}`,
-      `intranet https://apigw.internal.example${api.basePath}`,
       `internet http://127.0.0.1:8081${api.basePath}`,
+      `internet https://gw-onprem.example${api.basePath}`,
+      `intranet https://apigw.internal.example${api.basePath}`,
     ]);
   });
 

@@ -96,7 +96,6 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           go(url);
         }}
       >
-        <I.Api />
         {entry.nav!.label}
       </a>
     );
@@ -176,15 +175,16 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                 time I was here. A chip that only states a number leaves that question unanswered
                 and the answer in a file nobody using the portal can open. */}
             <button
-              className="btn sm"
+              className="btn ghost sm"
               aria-label={`Portal version ${portalVersion()} — what changed`}
               onClick={() => setChanges(true)}
             >
               v{portalVersion()}
             </button>
             <button
-              className="btn sm"
+              className="btn ghost sm"
               aria-label="Toggle theme"
+              title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             >
               {theme === "light" ? "Dark" : "Light"}
@@ -192,8 +192,9 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             {/* Deployments in flight, which is a different question from "what happened that I
                 have not seen" — that one is the bell's, and it counts unread rather than active. */}
             <button
-              className="btn sm"
+              className="btn ghost sm"
               aria-label={`${active.length} changes in progress`}
+              title={`${active.length} changes in progress`}
               onClick={() => go(`/${applicationId}/activity`)}
             >
               <I.Activity /> {active.length}

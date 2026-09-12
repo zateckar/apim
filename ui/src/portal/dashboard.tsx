@@ -85,6 +85,21 @@ export function Dashboard({
         </Panel>
       )}
 
+      <div className="page-toolbar">
+        <h2>Traffic overview</h2>
+        <div className="uptime-range" role="group" aria-label="Window">
+          {WINDOWS.map((entry, index) => (
+            <button
+              key={entry.label}
+              className={`uptime-range-btn ${index === windowIndex ? "active" : ""}`}
+              aria-pressed={index === windowIndex}
+              onClick={() => setWindowIndex(index)}
+            >
+              {entry.label}
+            </button>
+          ))}
+        </div>
+      </div>
       <div className="kpi-row">
         <Kpi
           label={`Requests · last ${WINDOWS[windowIndex]!.label}`}
@@ -147,23 +162,7 @@ export function Dashboard({
         />
       </div>
 
-      <Panel
-        title="Traffic by API"
-        actions={
-          <div className="uptime-range" role="group" aria-label="Window">
-            {WINDOWS.map((entry, index) => (
-              <button
-                key={entry.label}
-                className={`uptime-range-btn ${index === windowIndex ? "active" : ""}`}
-                aria-pressed={index === windowIndex}
-                onClick={() => setWindowIndex(index)}
-              >
-                {entry.label}
-              </button>
-            ))}
-          </div>
-        }
-      >
+      <Panel title="Traffic by API">
         {!d ? (
           <Skeleton rows={4} />
         ) : d.owner.topApis.length === 0 ? (

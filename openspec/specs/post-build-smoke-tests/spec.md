@@ -8,6 +8,21 @@ something belongs in `test/`, against a control plane the test owns.
 
 ## Requirements
 
+### Requirement: Check detail layouts as well as navigation pages
+
+#### Scenario: Workspace tabs render on a phone or desktop
+
+- GIVEN a running estate with a published API
+- WHEN the read-only browser suite visits every workspace tab at 390px and 1440px
+- THEN the page SHALL fit the viewport without horizontal page scrolling
+- AND History SHALL not repeat its operation list in a separate deployment-progress panel
+
+#### Scenario: Empty catalog domains are disclosed
+
+- GIVEN a catalog with populated and empty domains
+- WHEN the browser suite opens the catalog
+- THEN populated domains SHALL be immediately available, and empty domains SHALL be reachable by opening their disclosure
+
 ### Requirement: The suite runs against a stack that is already up
 
 #### Scenario: The suite starts

@@ -17,6 +17,7 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - THEN it SHALL offer, in this order: **definition**, **properties**, **policies**,
   **subscriptions**, **playground**, **logs**, **revisions**, **history**
 - AND the panel SHALL be selected by a segmented control, and the definition SHALL be the default
+- AND History SHALL show each operation once, without a second deployment-progress panel repeating its entries
 
 #### Scenario: A link lands on a specific panel
 

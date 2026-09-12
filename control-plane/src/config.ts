@@ -26,8 +26,6 @@ export interface TargetDef {
    * adapter, which is what every target was called before an environment could hold several.
    */
   name?: string;
-  /** `managed` | `samb` | `other`. Groups the list; decides nothing. */
-  category?: GatewayCategory;
   enforce: boolean;
   paused: boolean;
   config: Record<string, unknown>;
@@ -48,10 +46,6 @@ export interface TargetDef {
   /** What to call this deployment: `Azure Cloud`, `Mladá Boleslav`. Seeded the same way. */
   label?: string;
 }
-
-/** The estate's own vocabulary for what kind of thing a gateway is. */
-export type GatewayCategory = "managed" | "samb" | "other";
-export const GATEWAY_CATEGORIES: readonly GatewayCategory[] = ["managed", "samb", "other"];
 
 /**
  * Where the playground may send a request in an environment (plan §11). Admin configuration, not
@@ -361,13 +355,6 @@ export function readTargets(path: string): TargetDef[] {
       throw new Error(`${path}: ${target.environment} has two gateways named "${target.name}"`);
     }
     seen.add(key);
-    target.category = target.category ?? "other";
-    if (!GATEWAY_CATEGORIES.includes(target.category)) {
-      throw new Error(
-        `${path}: gateway "${key}" category "${target.category}": expected one of ` +
-          GATEWAY_CATEGORIES.join(", "),
-      );
-    }
   }
   return parsed.targets;
 }

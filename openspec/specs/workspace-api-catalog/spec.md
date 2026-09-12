@@ -51,6 +51,7 @@ They are two lists because they answer two questions, and each is exactly one sc
 - WHEN the list renders
 - THEN an empty state SHALL be shown naming the next action — publishing a first API
 - AND the section SHALL still be present, because sections follow capability rather than inventory
+- AND the empty-state publish action SHALL preserve the resource kind on MCP Servers and A2A Agents, matching the page-head action
 
 #### Scenario: A row is opened
 
@@ -141,11 +142,9 @@ They are two lists because they answer two questions, and each is exactly one sc
 - GIVEN the catalogue
 - WHEN it is grouped
 - THEN it SHALL be grouped by **domain**, not by application
-- AND the domain list SHALL be presented in taxonomy order with "Other" last, rather than ordered by
-  count
-- AND the reason SHALL be that the domain list is a fixed structure the estate is filed into: a
-  domain that happens to be empty today still belongs in it, and one that reorders itself as APIs
-  are published is not a structure
+- AND domains containing visible resources SHALL be presented first, in taxonomy order with "Other" last
+- AND empty domains SHALL remain available, in taxonomy order, under a collapsed "Domains with no resources" disclosure with its count
+- AND the reason SHALL be that browsing starts with resources somebody can use while retaining the full taxonomy
 
 #### Scenario: Facet counts are computed
 
@@ -200,6 +199,7 @@ They are two lists because they answer two questions, and each is exactly one sc
   lifecycle, and the products it is sold in
 - AND it SHALL offer the subscribe action, or the reason it is unavailable
 - AND it SHALL NOT expose the publisher's editing controls
+- AND an empty or whitespace-only description SHALL show "No description provided." rather than an empty panel
 
 ### Requirement: Reassign an API's owning application
 

@@ -98,9 +98,11 @@ Administration group.
 
 - GIVEN an administrator
 - WHEN Gateways renders
-- THEN each environment's gateways SHALL be listed with their name, category, label, public address,
+- THEN each environment's gateways SHALL be listed with their name, label, public address,
   intranet address, and whether they are enforcing or paused
-- AND gateways SHALL be ordered with managed first, then on-premise
+- AND gateways SHALL be ordered by name
+- AND a gateway SHALL have no kind, class or category: its name and its label are what it is, and a
+  taxonomy nothing reads is a field an administrator must fill in and cannot be told the meaning of
 
 #### Scenario: A gateway's address is published
 

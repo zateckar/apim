@@ -1,6 +1,5 @@
 import { writeAudit } from "../audit.ts";
 import { buildConfig } from "../config-build.ts";
-import { GATEWAY_CATEGORIES } from "../config.ts";
 import { hashToken, mintInstanceToken } from "../crypto.ts";
 import { newId, nowIso, type DB } from "../db.ts";
 import {
@@ -90,7 +89,6 @@ export interface TargetRow {
   id: string;
   environment: string;
   name: string;
-  category: string;
   adapter: string;
   enforce: number;
   paused: number;
@@ -100,18 +98,20 @@ export interface TargetRow {
 }
 
 const TARGET_COLUMNS =
-  "id, environment, name, category, adapter, enforce, paused, public_url, intranet_url, label";
+  "id, environment, name, adapter, enforce, paused, public_url, intranet_url, label";
 
 /**
- * Every gateway in an environment, in the order the estate reads them: managed first, on-premise
- * next, everything else after, and alphabetical within a group so the list does not reshuffle
- * itself when a gateway is renamed.
+ * Every gateway in an environment, alphabetically by name.
+ *
+ * The order used to be a taxonomy first — managed, then on-premise, then everything else — which
+ * was the only thing a gateway's `category` ever reached. The column is gone (schema-012) and the
+ * name is enough: it is stable, it is the identity a publish travels under, and a list ordered by
+ * it reads the same on every screen.
  */
 export function gatewaysIn(db: DB, environment: string): TargetRow[] {
   return db
     .query<TargetRow, [string]>(
-      `SELECT ${TARGET_COLUMNS} FROM target WHERE environment = ?
-        ORDER BY CASE category WHEN 'managed' THEN 0 WHEN 'samb' THEN 1 ELSE 2 END, name`,
+      `SELECT ${TARGET_COLUMNS} FROM target WHERE environment = ? ORDER BY name`,
     )
     .all(environment);
 }
@@ -204,7 +204,7 @@ export function publishedUrlsFor(
         .join(", ")}
          FROM route_gateway rg JOIN target t ON t.id = rg.target_id
         WHERE rg.resource_id = ? AND rg.environment = ?
-        ORDER BY CASE t.category WHEN 'managed' THEN 0 WHEN 'samb' THEN 1 ELSE 2 END, t.name`,
+        ORDER BY t.name`,
     )
     .all(resourceId, environment);
   return targets.flatMap((target) =>
@@ -281,7 +281,6 @@ function gatewayView(ctx: Ctx, target: TargetRow) {
   return {
     environment: target.environment,
     name: target.name,
-    category: target.category,
     id: target.id,
     adapter: target.adapter,
     label: target.label,
@@ -326,7 +325,6 @@ export function registerFleetRoutes(router: Router): void {
           /** Every gateway an API in this environment can be published on. */
           gateways: gateways.map((t) => ({
             name: t.name,
-            category: t.category,
             label: t.label,
             addresses: gatewayAddresses(t),
             paused: Boolean(t.paused),
@@ -447,7 +445,6 @@ export function registerFleetRoutes(router: Router): void {
       ),
       /** So the screen can offer "add a gateway to PROD" for an environment holding none. */
       environments: ctx.app.config.promotionChain,
-      categories: GATEWAY_CATEGORIES,
     });
   });
 
@@ -456,7 +453,6 @@ export function registerFleetRoutes(router: Router): void {
     const body = await readJson<{
       environment?: string;
       name?: string;
-      category?: string;
       label?: string;
       publicUrl?: string;
       intranetUrl?: string;
@@ -471,10 +467,6 @@ export function registerFleetRoutes(router: Router): void {
     if (!/^[a-z0-9][a-z0-9-]{0,31}$/.test(name)) {
       throw badRequest('name: expected lower-case letters, digits and hyphens, e.g. "onprem"');
     }
-    const category = String(body.category ?? "other");
-    if (!(GATEWAY_CATEGORIES as readonly string[]).includes(category)) {
-      throw badRequest(`category: expected one of ${GATEWAY_CATEGORIES.join(", ")}`);
-    }
     if (gatewaysIn(ctx.app.db, environment).some((t) => t.name === name)) {
       throw conflict(`${environment} already has a gateway named "${name}"; edit it instead`);
     }
@@ -482,17 +474,17 @@ export function registerFleetRoutes(router: Router): void {
     const intranetUrl = readPublicUrl(body.intranetUrl, "intranetUrl");
     const id = newId("tgt");
     ctx.app.db.run(
-      `INSERT INTO target (id, environment, name, category, adapter, config_json, enforce, paused,
+      `INSERT INTO target (id, environment, name, adapter, config_json, enforce, paused,
                            public_url, intranet_url, label)
-       VALUES (?, ?, ?, ?, 'standalone', '{}', 1, 0, ?, ?, ?)`,
-      [id, environment, name, category, publicUrl, intranetUrl, (body.label ?? "").trim() || null],
+       VALUES (?, ?, ?, 'standalone', '{}', 1, 0, ?, ?, ?)`,
+      [id, environment, name, publicUrl, intranetUrl, (body.label ?? "").trim() || null],
     );
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "gateway.create",
       subject: `target:${id}`,
       outcome: "ok",
-      detail: { environment, name, category, publicUrl, intranetUrl, label: body.label ?? null },
+      detail: { environment, name, publicUrl, intranetUrl, label: body.label ?? null },
     });
     // Deliberately empty: nothing already published in this environment moves onto a gateway that
     // did not exist when it was published. An API arrives here when somebody decides it belongs.
@@ -505,7 +497,6 @@ export function registerFleetRoutes(router: Router): void {
     const target = gatewayIn(ctx, environment, ctx.params.name!);
     const body = await readJson<{
       label?: string | null;
-      category?: string;
       publicUrl?: string | null;
       intranetUrl?: string | null;
       paused?: boolean;
@@ -518,22 +509,17 @@ export function registerFleetRoutes(router: Router): void {
         : readPublicUrl(body.intranetUrl, "intranetUrl");
     const label =
       body.label === undefined ? target.label : (String(body.label ?? "").trim() || null);
-    const category = body.category === undefined ? target.category : String(body.category);
-    if (!(GATEWAY_CATEGORIES as readonly string[]).includes(category)) {
-      throw badRequest(`category: expected one of ${GATEWAY_CATEGORIES.join(", ")}`);
-    }
     const paused = body.paused === undefined ? Boolean(target.paused) : Boolean(body.paused);
     ctx.app.db.run(
-      `UPDATE target SET public_url = ?, intranet_url = ?, label = ?, category = ?, paused = ?
-        WHERE id = ?`,
-      [publicUrl, intranetUrl, label, category, paused ? 1 : 0, target.id],
+      `UPDATE target SET public_url = ?, intranet_url = ?, label = ?, paused = ? WHERE id = ?`,
+      [publicUrl, intranetUrl, label, paused ? 1 : 0, target.id],
     );
     writeAudit(ctx.app.db, {
       actor: user.id,
       action: "gateway.update",
       subject: `target:${target.id}`,
       outcome: "ok",
-      detail: { environment, name: target.name, publicUrl, intranetUrl, label, category, paused },
+      detail: { environment, name: target.name, publicUrl, intranetUrl, label, paused },
     });
     return json(gatewayView(ctx, gatewayIn(ctx, environment, target.name)));
   });
@@ -623,7 +609,6 @@ export function healthFor(ctx: Ctx, environment: string) {
     );
     return {
       name: row.name,
-      category: row.category,
       label: row.label,
       addresses: gatewayAddresses(row),
       paused: Boolean(row.paused),

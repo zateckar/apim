@@ -50,6 +50,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 9, name: "a subscription's two keys have two ages", file: "schema-009.sql" },
   { version: 10, name: "an hour of bodies, asked for and dated", file: "schema-010.sql" },
   { version: 11, name: "a gateway's settings belong to the fleet", file: "schema-011.sql" },
+  { version: 12, name: "a gateway has no kind", file: "schema-012.sql" },
 ];
 
 /**

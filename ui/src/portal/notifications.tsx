@@ -256,9 +256,7 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
       }
     >
       <p className="muted">
-        Every message this portal sent about {s.applicationName(s.application)} — access asked for,
-        access decided, deployments that finished. The transport is simulated in this phase: the
-        message was composed and addressed, and no mail server was contacted.
+        Simulated delivery — these messages were composed but no email was sent.
       </p>
       <Notice kind="error">{feed.error}</Notice>
       {!feed.error && items.length === 0 && (

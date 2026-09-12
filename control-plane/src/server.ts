@@ -91,9 +91,9 @@ export function createApp(config: CpConfig): App {
  * adapter no longer tells them apart. The name defaults to the adapter, so a file written before
  * gateways had names still matches the rows it created.
  *
- * The addresses, the label and the category are the exception, and deliberately: they are what an
- * administrator sets on the Gateways screen, and a file that reasserted them at every boot would
- * undo that without saying so. They are seeded on insert and left alone afterwards.
+ * The addresses and the label are the exception, and deliberately: they are what an administrator
+ * sets on the Gateways screen, and a file that reasserted them at every boot would undo that
+ * without saying so. They are seeded on insert and left alone afterwards.
  */
 function syncTargets(app: App): void {
   for (const target of app.config.targets) {
@@ -113,16 +113,15 @@ function syncTargets(app: App): void {
       ]);
     } else {
       app.db.run(
-        `INSERT INTO target (id, environment, name, category, adapter, config_json, enforce, paused,
+        `INSERT INTO target (id, environment, name, adapter, config_json, enforce, paused,
                              public_url, intranet_url, label)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           // Random rather than derived from the name: a gateway can be renamed, and an id that
           // spelled its old name would collide with the row that later takes it.
           newId("tgt"),
           target.environment,
           name,
-          target.category ?? "other",
           target.adapter,
           JSON.stringify(target.config ?? {}),
           target.enforce ? 1 : 0,
@@ -167,14 +166,12 @@ function adopt(app: App, target: TargetDef, name: string): { id: string } | null
   app.db.run(
     `UPDATE target
         SET name = ?,
-            category     = CASE WHEN category = 'other' THEN ? ELSE category END,
             public_url   = COALESCE(public_url, ?),
             intranet_url = COALESCE(intranet_url, ?),
             label        = COALESCE(label, ?)
       WHERE id = ?`,
     [
       name,
-      target.category ?? "other",
       target.publicUrl ?? null,
       target.intranetUrl ?? null,
       target.label ?? null,

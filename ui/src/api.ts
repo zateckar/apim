@@ -448,7 +448,6 @@ export interface GatewayAddress {
 /** A gateway an API can be published on: one environment, one locality, one or two addresses. */
 export interface Locality {
   name: string;
-  category: string;
   label: string | null;
   addresses: GatewayAddress[];
   paused: boolean;
@@ -457,7 +456,6 @@ export interface Locality {
 export interface GatewayRow {
   environment: string;
   name: string;
-  category: string;
   id: string;
   adapter: string;
   label: string | null;
@@ -512,7 +510,6 @@ export interface GatewaySettingsModel {
     environment: string;
     name: string;
     label: string | null;
-    category: string;
   }>;
   overrides: Array<{
     scope: SettingScope;
@@ -806,7 +803,6 @@ export interface FleetHealth {
   /** Per locality, because that is where a disagreement between replicas actually lives. */
   gateways: Array<{
     name: string;
-    category: string;
     label: string | null;
     addresses: GatewayAddress[];
     paused: boolean;

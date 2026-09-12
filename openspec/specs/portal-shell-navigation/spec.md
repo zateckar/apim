@@ -17,7 +17,7 @@ registry says which component answers each of them. The shell resolves nothing o
 
 - GIVEN a signed-in user
 - WHEN any screen renders
-- THEN it SHALL sit inside a dark branded sidebar and a light main column
+- THEN it SHALL sit beside a neutral branded sidebar, separated from the main column by a subtle border, with both surfaces following the selected theme
 - AND the main column SHALL carry a topbar, then a page head with an eyebrow, an `h1` and the
   screen's one-line purpose, then the screen's content
 - AND a screen SHALL render no heading of its own repeating that title, because a second heading

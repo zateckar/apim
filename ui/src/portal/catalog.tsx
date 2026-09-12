@@ -397,11 +397,9 @@ export function Catalog({
           ) : (
             <EmptyState
               title={`${s.applicationName(s.application)} has no ${noun.many} yet`}
-              detail={`Nothing published, and no subscription that reaches ${
-                section === "apis" ? "one" : `an ${noun.one}`
-              } somebody else publishes. Publishing takes a definition, an address and a backend to forward to, and puts the result in the first environment of the chain.`}
+              detail={`Publish your first ${noun.one}, or find a resource to subscribe to in the Catalog.`}
               action={
-                <button className="btn sm" onClick={() => go(`/${s.application}/publish`)}>
+                <button className="btn sm" onClick={() => go(`/${s.application}/publish${section === "mcp" || section === "a2a" ? `?kind=${section}` : ""}`)}>
                   {/* All three are read letter-first — "an API", "an MCP server", "an A2A agent" —
                       so the article is a constant rather than a fourth field on the noun. */}
                   Publish an {noun.one}

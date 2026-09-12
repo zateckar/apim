@@ -1343,7 +1343,7 @@ function EditorForm({
       </Panel>
       {/* Only where there is progress to report. On somebody else's long-published API this used
           to read "No changes yet. Publish an API to get started." (finding 8). */}
-      {operations.length > 0 && (
+      {operations.length > 0 && tab !== "history" && (
         <Panel title="Deployment progress">
           <OperationList items={operations.slice(0, 5)} />
         </Panel>

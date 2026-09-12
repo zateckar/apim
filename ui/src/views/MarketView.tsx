@@ -61,27 +61,21 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
    */
   return (
     <>
-      <p className="muted small">
-        Browse every API and Kafka topic by domain, or search across all of them — names,
-        descriptions, tags and the contract itself: operation ids, MCP tool names, A2A skills.
-        {facets.data ? ` ${facets.data.total} listed.` : ""}
-      </p>
-
       <Panel>
-        <div className="row wrap">
+        <div className="row wrap catalog-filters">
           {/* Each label names its own control. They used to sit beside one, which reads the same
               and is not the same: a screen reader announced three unlabelled fields. */}
-          <div className="field" style={{ flex: "2 1 320px" }}>
-            <label htmlFor="catalog-search">Search</label>
+          <div className="field catalog-query">
+            <label htmlFor="catalog-search">Search resources{facets.data ? ` (${facets.data.total})` : ""}</label>
             <input
               id="catalog-search"
               type="text"
               value={q}
-              placeholder="pets, addPet, order book, streaming…"
+              placeholder="Search names, descriptions, operations or tags…"
               onChange={(event) => setQ(event.target.value)}
             />
           </div>
-          <div className="field" style={{ flex: "0 0 180px" }}>
+          <div className="field">
             <label htmlFor="catalog-application">Application</label>
             <select
               id="catalog-application"
@@ -96,7 +90,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
               ))}
             </select>
           </div>
-          <div className="field" style={{ flex: "0 0 180px" }}>
+          <div className="field">
             <label htmlFor="catalog-sort">Sort by</label>
             <select id="catalog-sort" value={sort} onChange={(event) => setSort(event.target.value)}>
               {SORTS.map((option) => (
@@ -181,9 +175,17 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
       ) : (
         items.length > 0 && (
           <div className="domain-list">
-            {(facets.data?.domains ?? []).map((entry) => (
+            {(facets.data?.domains ?? []).filter((entry) => entry.count + entry.topics > 0).map((entry) => (
               <DomainSection key={entry.value} entry={entry} onTag={setTag} />
             ))}
+            {(facets.data?.domains ?? []).some((entry) => entry.count + entry.topics === 0) && (
+              <details className="catalog-unused-domains">
+                <summary>Domains with no resources ({facets.data!.domains.filter((entry) => entry.count + entry.topics === 0).length})</summary>
+                {facets.data!.domains.filter((entry) => entry.count + entry.topics === 0).map((entry) => (
+                  <DomainSection key={entry.value} entry={entry} onTag={setTag} />
+                ))}
+              </details>
+            )}
           </div>
         )
       )}
@@ -210,8 +212,8 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
 
 /**
  * One domain, closed until asked for. The count comes from the facets — every domain in the
- * taxonomy is listed, including the empty ones, because the taxonomy is a structure the estate is
- * filed into rather than a summary of what happens to exist today. The rows are fetched only on
+ * taxonomy is retained, with empty domains behind a disclosure (workspace-api-catalog: Group the
+ * catalogue by domain), so browsing starts with resources. The rows are fetched only on
  * expand: thirteen domains eagerly loading their contents is thirteen requests nobody asked for.
  */
 function DomainSection({
@@ -243,7 +245,7 @@ function DomainSection({
         onClick={() => setOpen(!open)}
       >
         <span className="domain-name">
-          {entry.value === "other" ? "OTHER" : entry.value.toUpperCase()}
+          {entry.value === "other" ? "Other" : entry.value}
         </span>
         <span className="muted small">
           {empty
@@ -297,6 +299,7 @@ function FacetRow({
       <span className="facet-label">{label}</span>
       <button
         className={value === null ? "chip active" : "chip"}
+        aria-pressed={value === null}
         onClick={() => onChange(null)}
         type="button"
       >
@@ -307,6 +310,7 @@ function FacetRow({
           key={option.value}
           type="button"
           className={value === option.value ? "chip active" : "chip"}
+          aria-pressed={value === option.value}
           onClick={() => onChange(value === option.value ? null : option.value)}
         >
           {option.label} <span className="muted">{option.count}</span>

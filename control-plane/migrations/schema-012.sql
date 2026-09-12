@@ -1,0 +1,21 @@
+-- ---------------------------------------------------------------------------------------------
+-- v12 — a gateway has no kind.
+--
+-- schema-008 gave `target` a `category` of `managed | samb | other` and said in as many words that
+-- it decides nothing. That was true, and it was the problem: the column named three things without
+-- defining any of them. `samb` is an initialism from one estate, `managed` describes who operates
+-- a gateway rather than anything the portal does differently, and `other` is the absence of an
+-- answer dressed as one. An administrator adding a gateway had to pick one of them and could not
+-- be told what turned on it, because nothing did.
+--
+-- The one thing it reached was `ORDER BY CASE category …` in `gatewaysIn`, which put managed
+-- gateways first. Ordering by name alone is just as stable and does not need a taxonomy to
+-- produce it. What a gateway *is* is now said by the two fields that carry meaning: its `name`,
+-- which a publish travels under, and its `label`, which is where the deployment physically is.
+--
+-- A plain DROP COLUMN rather than a table rebuild: `category` is in no index, no trigger and no
+-- view, so SQLite can rewrite the rows in place — and the rebuild schema-011 would otherwise
+-- force would take `gateway_setting_target_delete` down with the table.
+-- ---------------------------------------------------------------------------------------------
+
+ALTER TABLE target DROP COLUMN category;

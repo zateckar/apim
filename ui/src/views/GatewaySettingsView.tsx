@@ -115,11 +115,8 @@ export function GatewaySettingsView() {
       <header className="page">
         <div>
           <p className="muted">
-            The ceilings, caches and counters every gateway enforces. They reach the fleet in the
-            configuration document each replica already polls for, so setting one needs no restart
-            and no edit on any container — and every gateway a layer reaches has the same value for
-            it, which a compose file per host could never promise. Whether a replica has taken a
-            change is on Health Status, by digest.
+            Choose where these settings apply. Changes take effect without a restart;
+            check Health Status to see when replicas have applied them.
           </p>
         </div>
       </header>
@@ -208,7 +205,8 @@ function LayerEditor({
   return (
     <Panel
       title={`Settings for ${layer.label}`}
-      hint="A change is saved as one set or refused as one: these numbers are chosen against each other — a buffer budget makes sense for a concurrency ceiling — and half of a considered pair applied is a fleet nobody configured."
+      className="gateway-settings"
+      hint="Changes are saved together. Leave a value empty to inherit it from the layer above."
     >
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
@@ -217,8 +215,8 @@ function LayerEditor({
         <thead>
           <tr>
             <th>Setting</th>
-            <th>In force</th>
-            <th>Set here</th>
+            <th>Effective value</th>
+            <th>Override here</th>
           </tr>
         </thead>
         <tbody>
@@ -282,8 +280,8 @@ function LayerEditor({
         </tbody>
       </table>
 
-      <div className="row">
-        <button disabled={action.busy || pending === 0} onClick={save}>
+      <div className="row settings-save">
+        <button className="btn primary" disabled={action.busy || pending === 0} onClick={save}>
           Save {pending === 0 ? "" : pending} change{pending === 1 ? "" : "s"}
         </button>
         <button className="ghost" disabled={pending === 0} onClick={() => setEdits({})}>

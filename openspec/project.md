@@ -915,14 +915,13 @@ An out-of-range value is refused on write and clamped on read.
 `{ targets: TargetDef[] }`. One entry per gateway per environment.
 
 ```
-TargetDef = { environment, adapter, name?, category?, enforce, paused, config,
+TargetDef = { environment, adapter, name?, enforce, paused, config,
               publicUrl?, intranetUrl?, label? }
 ```
 
 - `name` defaults to `adapter`, matches `^[a-z0-9][a-z0-9-]{0,31}$`, and is unique within an
   environment. It is the identity a publish carries along the promotion chain, so "published on
-  `managed`" still means something two environments later.
-- `category` is `managed | samb | other`. It groups the list; it decides nothing.
+  `managed`" still means something two environments later. Gateways are listed in name order.
 - `publicUrl`, `intranetUrl` and `label` are **seeds only**: written when the target row is created
   and never again, because an administrator can change them on the Gateways screen and a file that
   reasserted itself at every boot would silently undo them.
@@ -943,9 +942,9 @@ would otherwise fail at the first request instead.
 
 - The visual system lives in `ui/src/portal/brand.css`, loaded after the structural portal stylesheet.
   Legacy token names resolve to the same theme tokens. Prefer an existing class over a new one.
-- Left navigation: dark green vertical gradient, compact brand row, rounded application picker, grouped
+- Left navigation: neutral theme-aware surface with a subtle divider, compact brand row, rounded application picker, grouped
   sections (API · Kafka · Other · Global · Administration).
-- Main content: white canvas, muted green borders, little card chrome except where a boundary
+- Main content: white panels on a near-white canvas in light mode, subtle neutral borders, little card chrome except where a boundary
   means something.
 - Shared controls: solid-accent primary buttons; compact segmented environment
   switchers; rounded rectangular inputs and selects; CodeMirror with a light theme for schema

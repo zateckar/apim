@@ -48,7 +48,6 @@ export function registerAdminRoutes(router: Router): void {
          */
         localities: gatewaysIn(ctx.app.db, environment).map((t) => ({
           name: t.name,
-          category: t.category,
           label: t.label,
           addresses: gatewayAddresses(t),
           paused: Boolean(t.paused),
@@ -72,7 +71,7 @@ export function registerAdminRoutes(router: Router): void {
     json({
       items: ctx.app.db
         .query(
-          `SELECT id, environment, name, category, adapter, enforce, paused
+          `SELECT id, environment, name, adapter, enforce, paused
              FROM target ORDER BY environment, name`,
         )
         .all(),

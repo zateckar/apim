@@ -5,15 +5,15 @@
      Dark green = primary buttons + chip text; light green = highlight surfaces
      (Playground, chip backgrounds, hover ring); white = body background. */
   --brand-dark: #0e3a2f;
-  --brand-light: #78faae;
+  --brand-light: #b9e9cf;
 
   --bg: #ffffff;
-  --bg-subtle: oklch(0.985 0.005 155);
-  --bg-muted: oklch(0.96 0.008 155);
+  --bg-subtle: oklch(0.985 0.002 155);
+  --bg-muted: oklch(0.965 0.004 155);
   --surface: #ffffff;
   --surface-raised: #ffffff;
-  --border: oklch(0.9 0.012 155);
-  --border-strong: oklch(0.82 0.02 155);
+  --border: oklch(0.91 0.005 155);
+  --border-strong: oklch(0.81 0.009 155);
   --divider: oklch(0.94 0.008 155);
 
   --fg: oklch(0.22 0.01 260);
@@ -146,7 +146,7 @@ a { color: inherit; text-decoration: none; }
   background: var(--accent);
   color: var(--accent-fg);
 }
-.icon-btn.attention:hover { background: var(--accent-hover, var(--accent)); color: var(--accent); }
+.icon-btn.attention:hover { background: var(--accent-hover); color: var(--accent-fg); }
 
 .btn {
   display: inline-flex; align-items: center; gap: 8px;
@@ -193,22 +193,16 @@ a { color: inherit; text-decoration: none; }
   border-color: transparent;
   box-shadow: 0 1px 2px 0 var(--accent-ring);
 }
-.btn.secondary:hover { background: var(--accent-hover); color: var(--accent); }
-/* Cancel / Close affordance. Stays tertiary at rest (white surface +
-   neutral border) — the destructive intent shows up only on hover, so
-   the dismissive option doesn't visually compete with the primary
-   action it sits next to. Border + text shift to the err palette with
-   a soft red background fill. Apply this modifier ON TOP of `.btn` to
-   any Cancel/Close/dismiss button (NOT to Back / Refresh / generic
-   navigation, which should hover neutrally). */
+.btn.secondary:hover { background: var(--accent-hover); color: var(--accent-fg); }
+/* Dismissal is neutral; red is reserved for an action that removes or revokes something. */
 .btn.cancel:hover {
-  border-color: var(--err);
-  color: var(--err);
-  background: var(--err-soft);
+  border-color: var(--border-strong);
+  color: var(--fg);
+  background: var(--bg-muted);
 }
 .btn.ghost { border-color: transparent; background: transparent; }
 .btn.ghost:hover { background: var(--bg-muted); border-color: transparent; }
-.btn.ghost.cancel:hover { background: var(--err-soft); color: var(--err); border-color: var(--err); }
+.btn.ghost.cancel:hover { background: var(--bg-muted); color: var(--fg); border-color: var(--border); }
 .btn.sm { padding: 5px 9px; font-size: 12px; border-radius: var(--r-sm); }
 .btn.danger { color: var(--err); }
 .btn.danger:hover { background: var(--err-soft); border-color: var(--err); }
@@ -259,8 +253,8 @@ a { color: inherit; text-decoration: none; }
 
 /* Gateway toggle pair — single row split 50/50. Each half is a big tap
    target whose colour broadcasts the on/off state at a glance. Bright
-   green when enabled, bright red when disabled, muted grey when the
-   category has no gateway in this environment. */
+   green when enabled, bright red when disabled, muted grey when this
+   environment has no gateway at all. */
 .gateway-toggle-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1416,7 +1410,7 @@ a { color: inherit; text-decoration: none; }
   color: inherit;
 }
 .notif-item:hover { background: var(--bg-subtle); }
-.notif-item.is-unread { background: var(--accent-ring, var(--bg-subtle)); }
+.notif-item.is-unread { background: var(--accent-soft); }
 .notif-item.is-unread:hover { background: var(--bg-subtle); }
 .notif-ic {
   width: 26px; height: 26px;
@@ -1455,7 +1449,7 @@ a { color: inherit; text-decoration: none; }
 .notif-message p { margin: 10px 0; color: var(--fg-muted); white-space: pre-wrap; }
 .notif-body-line { color: var(--fg-muted); }
 .notif-text { display: flex; flex-direction: column; gap: 4px; min-width: 0; flex: 1; }
-.notif-title { font-size: 12.5px; line-height: 1.35; }
+.notif-title { font-size: 14px; line-height: 1.5; }
 .notif-meta {
   display: flex;
   flex-wrap: wrap;
@@ -3290,7 +3284,7 @@ a { color: inherit; text-decoration: none; }
   text-overflow: ellipsis; max-width: 320px; }
 .uptime-stats { margin-left: auto; color: var(--fg-muted); font-size: 11.5px; font-variant-numeric: tabular-nums; }
 
-/* The dark green surface each monitor's dots + chart sit on (matches the
+/* The neutral surface each monitor's dots + chart sit on (matches the
    healthy hero card's tone/radius family). Status colors are scoped here as
    custom properties so the marks and the chart's down-dot share one source
    of truth. Equal top/bottom padding — same pattern as `.health-env-card`
@@ -3298,12 +3292,13 @@ a { color: inherit; text-decoration: none; }
    monitor block's chart sitting visibly closer to the synthetics card's
    bottom edge than its top/left/right rhythm. */
 .uptime-surface {
-  background: var(--brand-dark);
-  border-radius: 12px;
+  background: var(--bg-subtle);
+  border: 1px solid var(--border);
+  border-radius: var(--r-md);
   padding: 14px 16px;
-  --uptime-up: var(--brand-light);
-  --uptime-down: #ff8a7a;
-  --uptime-empty: rgba(255, 255, 255, 0.16);
+  --uptime-up: var(--ok);
+  --uptime-down: var(--err);
+  --uptime-empty: var(--border);
 }
 
 /* Marks: bigger than the old in-card strip (18px vs 14px) now that the
@@ -3327,14 +3322,14 @@ a { color: inherit; text-decoration: none; }
 .synth-chart-ylabel {
   position: absolute; left: 0; right: 0;
   transform: translateY(50%);
-  font-size: 10px; line-height: 1; color: rgba(255, 255, 255, 0.55);
+  font-size: 12px; line-height: 1; color: var(--fg-muted);
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 .synth-chart-plot { flex: 1; min-width: 0; position: relative; }
 .synth-chart-svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.synth-gridline { stroke: rgba(255, 255, 255, 0.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.synth-area { fill: color-mix(in oklab, var(--brand-light) 28%, transparent); stroke: none; }
-.synth-line { fill: none; stroke: var(--brand-light); stroke-width: 2; vector-effect: non-scaling-stroke; }
+.synth-gridline { stroke: var(--border); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.synth-area { fill: var(--accent-soft); stroke: none; }
+.synth-line { fill: none; stroke: var(--accent); stroke-width: 2; vector-effect: non-scaling-stroke; }
 /* Plain (non-stretched) HTML overlay for down markers — sits over the
    svg at the same position/size, but is never itself distorted by the
    svg's unequal preserveAspectRatio="none" x/y scale, so the dots inside
@@ -3344,21 +3339,21 @@ a { color: inherit; text-decoration: none; }
   position: absolute;
   width: 7px; height: 7px;
   border-radius: 50%;
-  background: #ff8a7a;
+  background: var(--err);
   transform: translate(-50%, -50%);
 }
 .synth-hover-rect { fill: transparent; cursor: pointer; }
-.synth-hover-rect:hover { fill: rgba(255, 255, 255, 0.08); }
+.synth-hover-rect:hover { fill: var(--accent-ring); }
 
 .synth-chart-xaxis-row { display: flex; gap: 8px; margin-top: 4px; }
 .synth-chart-xaxis { flex: 1; min-width: 0; position: relative; height: 12px; }
 .synth-chart-xlabel {
   position: absolute; top: 0;
-  font-size: 10px; line-height: 1; color: rgba(255, 255, 255, 0.5);
+  font-size: 12px; line-height: 1; color: var(--fg-muted);
   white-space: nowrap;
 }
 
-.health-impact { margin: 2px 0 0; padding-left: 16px; list-style: disc; font-size: 12px; color: rgba(255, 255, 255, 0.92); }
+.health-impact { margin: 2px 0 0; padding-left: 16px; list-style: disc; font-size: 13px; color: var(--fg-muted); }
 .health-impact li { margin: 2px 0; }
 
 /* Admin detail: per-env component groups. */
@@ -3828,18 +3823,17 @@ a { color: inherit; text-decoration: none; }
   --line: var(--border); --panel: var(--surface); --panel-2: var(--bg-muted);
   --accent-ink: var(--accent); --danger: var(--err); --warn-bg: var(--warn-soft);
   --radius: var(--r-md); --mono: var(--font-mono);
-  --sidebar-bg: oklch(0.25 0.035 165);
-  --sidebar-end: oklch(0.20 0.025 165);
-  --sidebar-fg: oklch(0.94 0.012 155);
-  --sidebar-muted: oklch(0.77 0.025 155);
-  --sidebar-hover: oklch(0.32 0.04 165);
+  --sidebar-bg: var(--surface);
+  --sidebar-fg: var(--fg);
+  --sidebar-muted: var(--fg-muted);
+  --sidebar-hover: var(--bg-muted);
   --overlay: oklch(0.15 0.02 165 / 0.45);
 }
 .native-portal { --sidebar-w: 232px; }
 .native-portal .sidebar {
   width: var(--sidebar-w); height: 100dvh; min-height: 0;
-  background: linear-gradient(160deg, var(--sidebar-bg), var(--sidebar-end));
-  color: var(--sidebar-fg); border: 0; overflow: visible;
+  background: var(--sidebar-bg);
+  color: var(--sidebar-fg); border-right: 1px solid var(--border); overflow: visible;
 }
 .native-portal .sidebar::after { display: none; }
 .native-portal .sidebar .brand { height: 64px; padding: 16px; flex-shrink: 0; }
@@ -3848,16 +3842,16 @@ a { color: inherit; text-decoration: none; }
 .native-portal .sidebar .app-picker { margin: 0 12px 12px; padding: 10px; background: var(--sidebar-hover); flex-shrink: 0; }
 .native-portal .sidebar .app-picker-label { color: var(--sidebar-muted); margin-bottom: 4px; }
 .native-portal .sidebar nav { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 10px 12px; }
-.native-portal .sidebar .nav-item { min-height: 32px; padding: 6px 10px; margin: 1px 0; font-size: 13px; color: var(--sidebar-muted); }
+.native-portal .sidebar .nav-item { min-height: 32px; padding: 6px 10px; margin: 1px 0; font-size: 14px; color: var(--sidebar-muted); }
 .native-portal .sidebar .nav-item:hover { background: var(--sidebar-hover); color: var(--sidebar-fg); }
-.native-portal .sidebar .nav-item.active { background: var(--sidebar-hover); color: var(--brand-light); box-shadow: inset 2px 0 var(--brand-light); }
-.native-portal .sidebar .nav-group-title { justify-content: flex-start; color: var(--sidebar-muted); font-size: 10px; letter-spacing: .07em; margin: 0 10px 4px; }
+.native-portal .sidebar .nav-item.active { background: var(--accent-soft); color: var(--accent); box-shadow: none; font-weight: 600; }
+.native-portal .sidebar .nav-group-title { justify-content: flex-start; color: var(--fg-subtle); font-size: 12px; letter-spacing: 0; text-transform: none; margin: 0 10px 4px; }
 .native-portal .sidebar .nav-group-title::before,
 .native-portal .sidebar .nav-group-title::after { display: none; }
 .native-portal .sidebar .nav-section:has(> .nav-group-title) { margin-top: 12px; }
 .native-portal .sidebar .user { padding: 12px 16px; flex-shrink: 0; border-color: var(--sidebar-hover); margin-top: 0; }
-.native-portal .sidebar .user strong { color: var(--sidebar-fg); font-size: 12px; }
-.native-portal .sidebar .user small { color: var(--sidebar-muted); font-size: 11px; }
+.native-portal .sidebar .user strong { color: var(--sidebar-fg); font-size: 14px; }
+.native-portal .sidebar .user small { color: var(--sidebar-muted); font-size: 12px; }
 .native-main { margin-left: var(--sidebar-w); }
 .native-portal .topbar { height: 52px; padding: 0 24px; color: var(--fg); position: sticky; top: 0; z-index: 20; }
 .native-portal .breadcrumbs { min-width: 0; gap: 8px; font-size: 12px; }
@@ -3867,8 +3861,8 @@ a { color: inherit; text-decoration: none; }
 .native-page-head { gap: 16px; margin-bottom: 20px; align-items: center; }
 .native-page-head > div { min-width: 0; }
 .native-page-head h1 { font-size: 25px; line-height: 1.25; margin: 4px 0 6px; font-weight: 650; }
-.native-page-purpose { line-height: 1.5; }
-.native-portal .eyebrow { font-size: 11px; font-weight: 600; }
+.native-page-purpose { font-size: 14px; line-height: 1.5; }
+.native-portal .eyebrow { font-size: 12px; font-weight: 500; }
 .native-portal .native-actions { gap: 8px; }
 .native-portal .card { border-radius: var(--r-md); margin-bottom: 16px; box-shadow: none; }
 .native-portal .card-head, .native-modal .card-head { padding: 12px 16px; flex-wrap: wrap; }
@@ -3901,12 +3895,12 @@ a { color: inherit; text-decoration: none; }
 .native-portal .empty p { margin: 6px auto 12px; font-size: 13px; line-height: 1.5; }
 .native-portal .kpi-row { gap: 12px; margin-bottom: 12px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .native-portal .kpi-card { padding: 16px; gap: 8px; min-width: 0; }
-.native-portal .kpi-label { text-transform: none; font-size: 12px; letter-spacing: 0; color: var(--fg-muted); font-weight: 500; }
+.native-portal .kpi-label { text-transform: none; font-size: 14px; letter-spacing: 0; color: var(--fg-muted); font-weight: 500; }
 .native-portal .kpi-value { font-size: 26px; font-variant-numeric: tabular-nums; }
-.native-portal .kpi-card > .kpi-label:last-child { font-weight: 400; font-size: 11px; }
-.native-portal :is(.tbl, .native-legacy table) { font-size: 13px; }
+.native-portal .kpi-card > .kpi-label:last-child { font-weight: 400; font-size: 13px; line-height: 1.5; }
+.native-portal :is(.tbl, .native-legacy table) { font-size: 14px; }
 .native-portal :is(.tbl, .native-legacy table) :is(th, td) { padding: 10px 12px; border-color: var(--border); }
-.native-portal :is(.tbl, .native-legacy table) th { background: var(--bg-subtle); text-transform: none; letter-spacing: 0; color: var(--fg-muted); font-size: 12px; font-weight: 600; }
+.native-portal :is(.tbl, .native-legacy table) th { background: var(--bg-subtle); text-transform: none; letter-spacing: 0; color: var(--fg-muted); font-size: 13px; font-weight: 600; }
 .native-portal :is(.tbl, .native-legacy table) tbody tr:hover { background: var(--bg-subtle); }
 .native-portal .native-legacy td a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 .native-portal :is(.kv, .glossary) { grid-template-columns: minmax(110px, max-content) minmax(0, 1fr); }
@@ -3915,7 +3909,7 @@ a { color: inherit; text-decoration: none; }
 .native-portal :is(.row, .field, .stack, .stats, .market-grid, .listing) { min-width: 0; }
 .native-portal .market-grid { grid-template-columns: repeat(auto-fill, minmax(min(300px, 100%), 1fr)); }
 .native-portal .workspace-tabs { margin-bottom: 16px; }
-.native-portal .workspace-tabs button { min-height: 34px; font-size: 12px; padding: 6px 10px; }
+.native-portal .workspace-tabs button { min-height: 38px; font-size: 14px; padding: 6px 10px; }
 .native-portal :is(.pill, .pill.muted, .listing-icon, .envpicker) { background: var(--bg-muted); color: var(--fg-muted); }
 .native-portal .envpicker .env.active { background: var(--surface); color: var(--accent); }
 .native-portal .unit.attached { background: var(--bg-subtle); border-color: var(--border-strong); }
@@ -3986,3 +3980,85 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 700px) { .native-portal .health-hero { grid-template-columns: 1fr; } }
 .native-portal .health-overview .page-actions { display: flex; justify-content: flex-end; margin-bottom: 12px; }
 .native-portal .health-overview .health-hero { margin-bottom: 16px; }
+
+/* frontend-visual-system: the same readable working surface in every screen vocabulary. */
+.native-portal .sidebar .brand .name { text-transform: none; font-size: 15px; }
+.native-portal .sidebar .logo { color: var(--accent); background: var(--accent-soft); width: 30px; height: 30px; }
+.native-portal .sidebar .app-picker { background: transparent; padding: 0; }
+.native-portal .sidebar .app-picker-label { font-size: 12px; text-transform: none; letter-spacing: 0; padding: 0 8px; }
+.native-portal .sidebar .app-picker-btn { background: var(--bg-subtle); }
+.native-portal .sidebar .app-picker-btn .title { text-transform: none; }
+.native-portal .topbar .chip.neutral { background: transparent; border: 0; color: var(--fg-muted); }
+.native-portal .topbar .btn.ghost { background: transparent; border-color: transparent; }
+.native-portal .topbar .btn.ghost:hover { background: var(--bg-muted); }
+.native-portal .native-page-head > .native-actions { flex-shrink: 0; }
+.native-portal :is(.native-field .lbl, .field label, .field > .lbl) { font-size: 14px; font-weight: 500; color: var(--fg); }
+.native-portal :is(.native-field .hint, .field .hint, .small) { font-size: 13px; line-height: 1.5; }
+.native-portal .card-head h3 { font-size: 15px; }
+.native-portal .card-head .native-actions { margin-left: auto; }
+.native-portal .card-head .catalog-search { margin-left: auto; }
+.native-portal .btn, .native-modal .btn { font-size: 14px; }
+.native-portal .btn.sm, .native-modal .btn.sm { font-size: 13px; }
+.native-portal .empty { background: transparent; padding: 32px 16px; }
+.native-portal .empty strong { font-size: 16px; font-weight: 600; }
+.native-portal .empty p { max-width: 54ch; font-size: 14px; }
+.native-portal :is(.tbl, .native-legacy table) :is(td.num, th.num, td.right, th.right) { text-align: right; font-variant-numeric: tabular-nums; }
+.native-portal .native-legacy tbody th { background: transparent; text-transform: none; }
+.native-portal .native-legacy tbody th .small { font-weight: 400; }
+.native-portal .stat .label { text-transform: none; letter-spacing: 0; font-size: 13px; }
+.native-portal { --chart-ok: color-mix(in oklab, var(--ok) 65%, var(--surface)); --chart-warn: color-mix(in oklab, var(--warn) 65%, var(--surface)); --chart-error: color-mix(in oklab, var(--err) 65%, var(--surface)); }
+.native-portal .bar-ok { fill: var(--chart-ok); }
+.native-portal .bar-rejected { fill: var(--chart-warn); }
+.native-portal .bar-upstream { fill: var(--chart-error); }
+.native-portal .legend .swatch.bar-ok { background: var(--chart-ok); }
+.native-portal .legend .swatch.bar-rejected { background: var(--chart-warn); }
+.native-portal .legend .swatch.bar-upstream { background: var(--chart-error); }
+.page-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
+.page-toolbar h2 { margin: 0; font-size: 15px; font-weight: 600; }
+.page-toolbar p { margin: 0; }
+.page-toolbar .row { align-items: center; }
+.native-portal .page-toolbar select { width: auto; }
+.native-portal .uptime-range-btn { font-size: 13px; min-height: 32px; }
+.native-portal .uptime-range-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--border); }
+.native-portal .notif-body { padding: 0; }
+.native-portal .notif-item { border-radius: 0; border-bottom: 1px solid var(--divider); padding: 14px; }
+.native-portal .notif-item.is-unread { background: var(--bg-subtle); }
+.native-portal .notif-item.is-unread .notif-title { font-weight: 600; }
+.native-portal .notif-item:hover { background: var(--accent-soft); }
+.native-portal .notif-meta { font-size: 12px; }
+.native-portal .notif-title { overflow-wrap: anywhere; }
+.native-portal .domain-name { text-transform: capitalize; letter-spacing: 0; font-size: 14px; }
+.native-portal .domain-head { padding: 14px 16px; }
+.catalog-unused-domains { margin-top: 8px; }
+.catalog-unused-domains summary { padding: 12px 0; color: var(--fg-muted); cursor: pointer; }
+.catalog-unused-domains .domain-section { margin-top: 6px; }
+.native-portal .facet-row { gap: 8px; }
+.native-portal .catalog-filters > .field { flex: 1 1 180px; }
+.native-portal .catalog-filters > .catalog-query { flex: 2 1 320px; }
+.native-portal .facet-label { font-size: 12px; text-transform: none; letter-spacing: 0; }
+.native-portal .chip.active { background: var(--accent-soft); color: var(--accent); border-color: var(--border-strong); }
+.native-portal .workspace-catalog .discover-item { border-color: var(--border); padding: 16px; }
+.native-portal .workspace-catalog .di-type-legend { background: var(--surface); }
+.native-portal .workspace-catalog .di-owner-legend { color: var(--fg-muted); }
+.native-portal .version-picker { background: var(--bg-subtle); color: var(--fg); border-color: var(--border); }
+.native-portal .api-workspace .workspace-properties .card-head { padding: 12px 16px; background: var(--surface); }
+.native-portal .gateway-settings table { table-layout: fixed; }
+.native-portal .gateway-settings thead th:first-child { width: 45%; }
+.native-portal .gateway-settings th, .native-portal .gateway-settings td { overflow-wrap: anywhere; }
+.native-portal .gateway-settings tbody td { vertical-align: top; }
+.native-portal .settings-save { margin: 16px 0; padding: 12px 0; border-top: 1px solid var(--border); }
+.native-portal pre, .native-modal pre { color: var(--fg); font-family: var(--font-mono); }
+.native-portal .product-members { display: flex; flex-wrap: wrap; gap: 6px 16px; margin: 0 0 12px; }
+.native-portal .product-members a { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
+.product-editor summary { color: var(--fg-muted); cursor: pointer; padding: 8px 0; }
+.product-editor[open] summary { margin-bottom: 8px; }
+.native-portal .product-editor .action { margin-bottom: 12px; }
+.native-portal .tabs button { font-size: 14px; min-height: 38px; padding: 8px 12px; }
+@media (max-width: 700px) {
+  .native-portal .catalog-filters > .field { flex-basis: 100%; }
+  .native-portal .native-page-head > .native-actions { flex-shrink: 1; }
+  .native-portal .kpi-row { grid-template-columns: 1fr; }
+  .native-portal .gateway-settings table { min-width: 620px; }
+  .native-portal .page-toolbar { align-items: flex-start; }
+  .native-portal .native-actions .btn { white-space: normal; text-align: left; }
+}

@@ -8,6 +8,15 @@ returned in full over the portal's API.
 
 ## Requirements
 
+### Requirement: Keep certificate upload focused
+
+#### Scenario: Uploading the first certificate
+
+- GIVEN an application with no certificates in the selected environment
+- WHEN the upload form is opened
+- THEN the empty-state prompt SHALL be replaced by the upload form and its Cancel action
+- AND cancelling SHALL restore the empty-state prompt
+
 ### Requirement: A certificate belongs to one application and one environment
 
 #### Scenario: A certificate is registered

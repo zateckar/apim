@@ -23,9 +23,10 @@ const TABS = [
   "history",
 ];
 
-test("every tab of an API workspace renders", async ({ page }) => {
+for (const width of [390, 1440]) test(`every tab of an API workspace renders at ${width}px`, async ({ page }) => {
   const errors = watchErrors(page);
   await openPortal(page);
+  await page.setViewportSize({ width, height: 900 });
   const application = await applicationWithApis(page);
   test.skip(application === null, "nothing this user's applications publish is on this estate");
   await page.goto(`/${application}/apis`);
@@ -43,6 +44,8 @@ test("every tab of an API workspace renders", async ({ page }) => {
     // still there afterwards rather than a blank frame where a thrown render used to be.
     await expect(page.getByRole("tab", { name: new RegExp(`^${tab}$`, "i") })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("main.native-content")).not.toBeEmpty();
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
+    if (tab === "history") await expect(page.getByRole("heading", { name: "Deployment progress" })).toHaveCount(0);
   }
 
   expectNoErrors(errors);

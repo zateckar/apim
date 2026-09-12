@@ -17,7 +17,7 @@ registry says which component answers each of them. The shell resolves nothing o
 
 - GIVEN a signed-in user
 - WHEN any screen renders
-- THEN it SHALL sit beside a neutral branded sidebar, separated from the main column by a subtle border, with both surfaces following the selected theme
+- THEN it SHALL sit beside a neutral branded sidebar, separated from the main column by a subtle border, with both content surfaces following the selected theme and a continuous dark-green brand row and topbar
 - AND the main column SHALL carry a topbar, then a page head with an eyebrow, an `h1` and the
   screen's one-line purpose, then the screen's content
 - AND a screen SHALL render no heading of its own repeating that title, because a second heading
@@ -202,7 +202,7 @@ The rule SHALL be enforced structurally rather than by review.
 - AND the group of surrounding systems SHALL be labelled *External systems* rather than
   *Integrations*, which reads as a development slug for the thing this portal is
 - AND every entry SHALL be derived from the route table's own `nav` grouping, with no second list
-  of labels beside it — a screen leaves the navigation by losing its `nav` and in no other way
+  of labels beside it; each entry SHALL declare its meaningful outline icon in that same metadata — a screen leaves the navigation by losing its `nav` and in no other way
 - AND every screen the table marks admin-only SHALL be in the Administration group and every screen
   in that group SHALL be admin-only, so a gated screen cannot be listed where a member would press
   it and receive a refusal

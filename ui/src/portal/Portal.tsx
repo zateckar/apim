@@ -82,6 +82,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
   /** A sidebar entry. Highlighted by section, so an API's workspace lights up the list it came from. */
   function navItem(entry: RouteDef) {
     const url = addressOf(entry, applicationId);
+    const Icon = I[entry.nav!.icon];
     const first = entry.patterns[0]!.split("/").filter(Boolean)[0] ?? "dashboard";
     return (
       <a
@@ -96,6 +97,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           go(url);
         }}
       >
+        <span className="nav-icon" aria-hidden="true"><Icon size={18} /></span>
         {entry.nav!.label}
       </a>
     );
@@ -175,7 +177,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                 time I was here. A chip that only states a number leaves that question unanswered
                 and the answer in a file nobody using the portal can open. */}
             <button
-              className="btn ghost sm"
+              className="btn ghost sm topbar-version"
               aria-label={`Portal version ${portalVersion()} — what changed`}
               onClick={() => setChanges(true)}
             >
@@ -192,7 +194,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             {/* Deployments in flight, which is a different question from "what happened that I
                 have not seen" — that one is the bell's, and it counts unread rather than active. */}
             <button
-              className="btn ghost sm"
+              className={`btn ghost sm ${active.length ? "has-activity" : ""}`}
               aria-label={`${active.length} changes in progress`}
               title={`${active.length} changes in progress`}
               onClick={() => go(`/${applicationId}/activity`)}

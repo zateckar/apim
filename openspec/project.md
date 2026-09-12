@@ -942,11 +942,11 @@ would otherwise fail at the first request instead.
 
 - The visual system lives in `ui/src/portal/brand.css`, loaded after the structural portal stylesheet.
   Legacy token names resolve to the same theme tokens. Prefer an existing class over a new one.
-- Left navigation: neutral theme-aware surface with a subtle divider, compact brand row, rounded application picker, grouped
+- Left navigation: neutral theme-aware surface with a subtle divider, dark-green brand row aligned with the topbar, rounded application picker with initials, grouped
   sections (API · Kafka · Other · Global · Administration).
 - Main content: white panels on a near-white canvas in light mode, subtle neutral borders, little card chrome except where a boundary
   means something.
-- Shared controls: solid-accent primary buttons; compact segmented environment
+- Shared controls: mint primary buttons with dark-green text; compact segmented environment
   switchers; rounded rectangular inputs and selects; CodeMirror with a light theme for schema
   editing; a three-step `.stepper` for the publish wizard.
 - Chip variants: bare `.chip` (neutral), `.ok`, `.warn`, `.err`, `.info`, `.violet`, `.accent` —

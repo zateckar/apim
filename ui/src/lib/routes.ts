@@ -52,7 +52,7 @@ export interface RouteDef {
   /** Only screens that consume the shell's selected environment offer its switcher. */
   environmentScoped?: boolean;
   /** The sidebar entry. Absent for a screen you arrive at rather than navigate to. */
-  nav?: { group: NavGroup; label: string };
+  nav?: { group: NavGroup; label: string; icon: keyof typeof import("../portal/icons") };
   /**
    * The sidebar offers this only to an administrator. It gates the *link*, not the screen: the
    * shell hides authority it cannot exercise, and the control plane refuses what it must on every
@@ -79,7 +79,7 @@ export const ROUTES: RouteDef[] = [
     title: "Dashboard",
     purpose: "What needs your attention in this application, and what you can do next.",
     scope: "application",
-    nav: { group: "Overview", label: "Dashboard" },
+    nav: { group: "Overview", label: "Dashboard", icon: "Dashboard" },
   },
   {
     id: "apis",
@@ -88,7 +88,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The REST and SOAP APIs this application publishes or subscribes to, and where each version is live.",
     scope: "application",
-    nav: { group: "API", label: "APIs" },
+    nav: { group: "API", label: "APIs", icon: "Api" },
   },
   {
     id: "mcp",
@@ -97,7 +97,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The MCP servers this application publishes or subscribes to, and the tools each one offers.",
     scope: "application",
-    nav: { group: "API", label: "MCP Servers" },
+    nav: { group: "API", label: "MCP Servers", icon: "Link" },
   },
   {
     id: "a2a",
@@ -106,7 +106,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The A2A agents this application publishes or subscribes to, and the skills each one advertises.",
     scope: "application",
-    nav: { group: "API", label: "A2A Agents" },
+    nav: { group: "API", label: "A2A Agents", icon: "Activity" },
   },
   {
     id: "api",
@@ -147,7 +147,7 @@ export const ROUTES: RouteDef[] = [
     title: "Products",
     purpose: "The bundles consumers subscribe to, and who has subscribed to them.",
     scope: "application",
-    nav: { group: "API", label: "Products" },
+    nav: { group: "API", label: "Products", icon: "Tag" },
     plainChrome: true,
   },
   {
@@ -157,7 +157,7 @@ export const ROUTES: RouteDef[] = [
     title: "Subscriptions",
     purpose: "The APIs this application may call, in each environment, and their keys.",
     scope: "application",
-    nav: { group: "API", label: "Subscriptions" },
+    nav: { group: "API", label: "Subscriptions", icon: "Key" },
   },
   {
     id: "subscription",
@@ -175,7 +175,7 @@ export const ROUTES: RouteDef[] = [
     title: "Approvals",
     purpose: "Requests to call what this application publishes, waiting on somebody here.",
     scope: "application",
-    nav: { group: "API", label: "Approvals" },
+    nav: { group: "API", label: "Approvals", icon: "Check" },
   },
   {
     id: "kafka",
@@ -184,7 +184,7 @@ export const ROUTES: RouteDef[] = [
     title: "Kafka Topics",
     purpose: "The topics this application owns, and who is allowed to produce to or consume them.",
     scope: "application",
-    nav: { group: "Kafka", label: "Kafka Topics" },
+    nav: { group: "Kafka", label: "Kafka Topics", icon: "Kafka" },
   },
   {
     id: "kafka-proxy",
@@ -193,7 +193,7 @@ export const ROUTES: RouteDef[] = [
     title: "Kafka REST Proxy",
     purpose: "Reaching those topics over HTTP, for callers that cannot speak the Kafka protocol.",
     scope: "application",
-    nav: { group: "Kafka", label: "Kafka REST Proxy" },
+    nav: { group: "Kafka", label: "Kafka REST Proxy", icon: "Globe" },
   },
   {
     id: "certificates",
@@ -202,7 +202,7 @@ export const ROUTES: RouteDef[] = [
     title: "Certificates",
     purpose: "The client certificates this application presents, and when each of them expires.",
     scope: "application",
-    nav: { group: "Other", label: "Certificates" },
+    nav: { group: "Other", label: "Certificates", icon: "Cert" },
     plainChrome: true,
   },
   {
@@ -215,7 +215,7 @@ export const ROUTES: RouteDef[] = [
     title: "External systems",
     purpose: "The six systems around this portal, what each was asked, and what it answered.",
     scope: "application",
-    nav: { group: "Other", label: "External systems" },
+    nav: { group: "Other", label: "External systems", icon: "Link" },
   },
   {
     id: "mail",
@@ -226,7 +226,7 @@ export const ROUTES: RouteDef[] = [
     title: "Mail",
     purpose: "Every message this portal sent about this application, and what was in it.",
     scope: "application",
-    nav: { group: "Other", label: "Mail" },
+    nav: { group: "Other", label: "Mail", icon: "Mail" },
   },
   {
     id: "activity",
@@ -234,7 +234,7 @@ export const ROUTES: RouteDef[] = [
     title: "Activity",
     purpose: "Changes this application has made, and how far each one has reached the gateways.",
     scope: "application",
-    nav: { group: "Other", label: "Activity" },
+    nav: { group: "Other", label: "Activity", icon: "Clock" },
   },
 
   // ------------------------------------------------------------------ the same for everybody
@@ -252,7 +252,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "Every API and Kafka topic you are allowed to see, what it does, and how to start calling it.",
     scope: "global",
-    nav: { group: "Global", label: "Catalog" },
+    nav: { group: "Global", label: "Catalog", icon: "Apps" },
     plainChrome: true,
   },
   {
@@ -278,7 +278,7 @@ export const ROUTES: RouteDef[] = [
     title: "FixMe diagnostics",
     purpose: "What the FixMe service reports about the estate, and what it was asked.",
     scope: "global",
-    nav: { group: "Global", label: "FixMe diagnostics" },
+    nav: { group: "Global", label: "FixMe diagnostics", icon: "Wrench" },
   },
   {
     id: "how",
@@ -286,7 +286,7 @@ export const ROUTES: RouteDef[] = [
     title: "How this works",
     purpose: "The six things you can do here, the two-tier model behind them, and every term defined.",
     scope: "global",
-    nav: { group: "Global", label: "How this works" },
+    nav: { group: "Global", label: "How this works", icon: "Book" },
     plainChrome: true,
   },
   {
@@ -295,7 +295,7 @@ export const ROUTES: RouteDef[] = [
     title: "Your account",
     purpose: "How you sign in, which applications you are in, and where else you are signed in.",
     scope: "global",
-    nav: { group: "Global", label: "Your account" },
+    nav: { group: "Global", label: "Your account", icon: "Users" },
     plainChrome: true,
   },
 
@@ -309,7 +309,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "Each environment's gateway: what configuration its replicas are running, and anything one has refused.",
     scope: "global",
-    nav: { group: "Administration", label: "Health Status" },
+    nav: { group: "Administration", label: "Health Status", icon: "Activity" },
     // The link is gated; the screen is not. Which environment is healthy decides whether a publisher
     // promotes this afternoon, and a screen only admins could read made them ask in chat — so the
     // convergence detail inside it is admin-only and the summary above it is open.
@@ -323,7 +323,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "Add a gateway, publish the hostname consumers call it on, and mint or revoke the replicas behind it.",
     scope: "global",
-    nav: { group: "Administration", label: "Gateways" },
+    nav: { group: "Administration", label: "Gateways", icon: "Server" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -334,7 +334,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The ceilings, caches and counters every gateway enforces — set once for the fleet, an environment or one gateway.",
     scope: "global",
-    nav: { group: "Administration", label: "Gateway settings" },
+    nav: { group: "Administration", label: "Gateway settings", icon: "Settings" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -344,7 +344,7 @@ export const ROUTES: RouteDef[] = [
     title: "Applications",
     purpose: "Who owns what. Every API, product and subscription belongs to exactly one application.",
     scope: "global",
-    nav: { group: "Administration", label: "Applications" },
+    nav: { group: "Administration", label: "Applications", icon: "Apps" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -362,7 +362,7 @@ export const ROUTES: RouteDef[] = [
     title: "People",
     purpose: "Everybody this portal knows, how they sign in, and what each of them can do.",
     scope: "global",
-    nav: { group: "Administration", label: "People" },
+    nav: { group: "Administration", label: "People", icon: "Users" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -381,7 +381,7 @@ export const ROUTES: RouteDef[] = [
     title: "Telemetry",
     purpose: "Calls per minute across the estate: served, refused by the gateway, and failed upstream.",
     scope: "global",
-    nav: { group: "Administration", label: "Telemetry" },
+    nav: { group: "Administration", label: "Telemetry", icon: "Sliders" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -392,7 +392,7 @@ export const ROUTES: RouteDef[] = [
     title: "Global policy",
     purpose: "Policy units attached to a whole environment, and the APIs that override them.",
     scope: "global",
-    nav: { group: "Administration", label: "Global policy" },
+    nav: { group: "Administration", label: "Global policy", icon: "Shield" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -404,7 +404,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The certificate authorities each environment's gateways trust, the identities they present, and every exception that is still open.",
     scope: "global",
-    nav: { group: "Administration", label: "Trust" },
+    nav: { group: "Administration", label: "Trust", icon: "Cert" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -414,7 +414,7 @@ export const ROUTES: RouteDef[] = [
     title: "Audit",
     purpose: "Who changed what, when, and what happened as a result.",
     scope: "global",
-    nav: { group: "Administration", label: "Audit" },
+    nav: { group: "Administration", label: "Audit", icon: "Book" },
     adminOnly: true,
     plainChrome: true,
   },

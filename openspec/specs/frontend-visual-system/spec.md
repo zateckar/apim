@@ -55,9 +55,9 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 - GIVEN the portal
 - WHEN the sidebar renders
-- THEN it SHALL be a neutral surface matching the selected theme, with a subtle right border, a compact brand row, grouped navigation sections and a
+- THEN it SHALL be a neutral surface matching the selected theme, with a subtle right border, a dark-green brand row aligned with the topbar, grouped navigation sections and a
   user footer
-- AND the selected navigation entry SHALL use a soft accent fill and readable accent text; navigation labels SHALL not repeat an identical decorative icon on every entry
+- AND the selected navigation entry SHALL use a mint fill and dark-green text; every navigation label SHALL have a meaningful outline icon declared in the route table
 - AND the application picker and environment switcher SHALL use compact rounded controls with a
   clearly marked selection
 
@@ -258,7 +258,7 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 - GIVEN a publish or a new-version action
 - WHEN it renders
-- THEN it SHALL use the same solid-accent primary button as other committing actions
+- THEN it SHALL use the same mint-filled, dark-green-text primary button as other committing actions
 
 #### Scenario: A button written in the older vocabulary is rendered
 

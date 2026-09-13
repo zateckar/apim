@@ -8,6 +8,28 @@ an order. See *Release States* in `openspec/project.md`.
 
 ## Requirements
 
+### Requirement: Keep version and revision previews attached to the chosen source
+
+#### Scenario: A new version is published from the workspace
+
+- GIVEN an API bound to a subset of gateways
+- WHEN its new-version dialog publishes
+- THEN it SHALL carry the saved gateway selection into the new resource
+- AND the dialog SHALL explain that access follows the selected product's subscriptions
+
+#### Scenario: A different revision is selected
+
+- GIVEN an open comparison or rollback preview
+- WHEN another revision is selected
+- THEN the preview SHALL be reset for that revision
+- AND a rollback confirmation SHALL NOT reuse the previous revision's plan
+
+#### Scenario: Promotion is opened with an unsaved draft
+
+- GIVEN the workspace's promotion dialog
+- WHEN it explains what will be promoted
+- THEN it SHALL name saved configuration and tell the publisher to save pending edits first
+
 ### Requirement: Two versions of an API are two resources
 
 #### Scenario: A new version is created
@@ -206,3 +228,14 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN it SHALL contain the routes, policies and subscriptions of that environment and nothing about
   the chain
 - AND the data plane SHALL never learn that environments have an order
+
+### Requirement: Use positive integer version identifiers
+
+#### Scenario: A version is written
+
+- GIVEN a new resource, a publish, a version clone or an explicit version edit
+- WHEN its apiVersion is validated
+- THEN it SHALL match `^v[1-9][0-9]{0,30}$`: v1, v2 and so on, at most 32 characters
+- AND dates, arbitrary words, v0, leading zeroes, uppercase V and decimal versions SHALL be refused by both the portal and control plane
+- AND versions stored before this rule SHALL remain readable and SHALL NOT be renamed automatically
+- AND the next-version suggestion SHALL choose a free valid identifier without losing precision for large numbers

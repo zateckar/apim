@@ -8,6 +8,7 @@ import {
 import { AUTH_UNITS, operationUnitKey } from "../../shared/policy.ts";
 import type { User } from "./auth.ts";
 import { buildRoutes, limitsFor } from "./config-build.ts";
+import { denyRulesFor } from "./deny-rules.ts";
 import type { DB } from "./db.ts";
 import type { App } from "./router.ts";
 
@@ -527,7 +528,12 @@ function ownedByScope(db: DB, scope: Scope, resourceId: string): boolean {
 export function configErrorsFor(app: App, environment: string, scope?: Scope): ConfigError[] {
   const cached = scope?.configErrors?.get(environment);
   if (cached) return cached;
-  const { errors } = buildRoutes(app.db, environment, limitsFor(app.config.integrations));
+  const { errors } = buildRoutes(
+    app.db,
+    environment,
+    limitsFor(app.config.integrations),
+    denyRulesFor(app.db, app.config.publicUrl),
+  );
   const list = errors ?? [];
   scope?.configErrors?.set(environment, list);
   return list;

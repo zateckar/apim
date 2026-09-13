@@ -35,17 +35,13 @@ let cp: TestCp;
 let ca: GeneratedCertificate;
 
 /**
- * The sample `INTEGRATIONS_FILE` allows only `http` on loopback, so a TLS fixture backend is not
- * reachable from the control plane under it. The test brings its own rule rather than widening the
- * shipped file, which would weaken the default for everyone (review `[P2-14]`).
+ * Egress is allowed by default, so a TLS fixture backend on loopback needs only the denied ranges
+ * relaxed. The test brings its own copy rather than widening the shipped file, which would weaken
+ * the default for everyone (review `[P2-14]`).
  */
 function integrationsWithLocalTls(): Integrations {
   const integrations = readIntegrations("config/integrations.json");
-  integrations.egressAllowlist.push({
-    scheme: "https",
-    hostPattern: "127.0.0.1",
-    portRange: [1024, 65535],
-  });
+  integrations.denyCidrs = integrations.denyCidrs.filter((cidr) => !cidr.startsWith("127."));
   return integrations;
 }
 

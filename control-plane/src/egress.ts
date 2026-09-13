@@ -3,23 +3,49 @@ import { readFileSync } from "node:fs";
 import { ipInCidr, ipv4ToInt } from "../../shared/net.ts";
 
 /**
- * Design section 5.3: moving a URL out of policy does not close SSRF, because the owner still
- * writes it and the platform still fetches it. Every owner-supplied URL — backend bindings, spec
- * imports and MCP/A2A discovery alike — passes this allowlist at write time, and redirects are
- * never followed.
+ * Design section 5.3, as revised in v1.4.0: moving a URL out of policy does not close SSRF, because
+ * the owner still writes it and the platform still fetches it. Every owner-supplied URL — backend
+ * bindings, spec imports and MCP/A2A discovery alike — passes this check at write time, and
+ * redirects are never followed.
  *
- * `INTEGRATIONS_FILE` is also where every *reference* a policy may name resolves: JWT issuers,
+ * What changed is which way round the boundary is stated. It used to be an **allowlist** here:
+ * every backend host had to be registered in `INTEGRATIONS_FILE` and the control plane restarted.
+ * At a self-service estate's size that made registering an API a ticket, and a list that is a
+ * ticket is a list nobody reads. Egress is now allowed by default and forbidden two ways:
+ *
+ *  - `denyCidrs`, still in the file, applied **after** DNS resolution, which nothing clickable can
+ *    widen. See `egress-governance`, *Keep the denied ranges in the file*.
+ *  - deny **rules**, which an administrator states in the portal with a reason, and which take
+ *    effect on routes already running — the config builder omits a route whose backend matches one.
+ *
+ * `INTEGRATIONS_FILE` is still where every *reference* a policy may name resolves: JWT issuers,
  * OAuth token providers, HMAC schemes and shared secrets. That is what keeps design section 5's
- * promise that no URL an owner writes is fetched and no secret an owner writes is stored.
+ * promise that no secret an owner writes is stored.
  *
- * Not implemented in the MVP, and stated rather than implied: per-request DNS pinning against
- * rebinding. The write-time resolution below closes the static case only.
+ * Not implemented, and stated rather than implied: per-request DNS pinning against rebinding. The
+ * write-time resolution below closes the static case only.
  */
-export interface EgressRule {
-  scheme: "http" | "https";
-  hostPattern: string;
+
+/** A port set. Neither field means every port. */
+export interface PortSpec {
   ports?: number[];
   portRange?: [number, number];
+}
+
+/**
+ * One administrator-stated host the estate does not reach. Held in `egress_deny_rule`, not in the
+ * file, because at this estate's size this is the half that changes — and the half whose changes
+ * want a reason, an author and an audit line attached.
+ */
+export interface DenyRule extends PortSpec {
+  id: string;
+  /** `null` applies to every environment; a name applies to that one only. */
+  environment: string | null;
+  /** `null` matches both schemes. */
+  scheme: "http" | "https" | null;
+  /** An exact host, or `*.suffix` — which does not match the bare suffix. */
+  hostPattern: string;
+  reason: string;
 }
 
 /**
@@ -92,7 +118,11 @@ export interface SharedSecretDef {
 }
 
 export interface Integrations {
-  egressAllowlist: EgressRule[];
+  /**
+   * IPv4 ranges nothing may reach, applied after resolution. IPv4-only by construction —
+   * `shared/net.ts` says so — which is why `checkEgress` refuses an IPv6 literal outright rather
+   * than letting it past a range that could never match it.
+   */
   denyCidrs: string[];
   xml?: XmlLimits;
   validationCeilings?: ValidationCeilings;
@@ -191,19 +221,67 @@ function portOf(url: URL): number {
   return url.protocol === "https:" ? 443 : 80;
 }
 
-function portAllowed(rule: EgressRule, port: number): boolean {
-  if (rule.ports?.includes(port)) return true;
-  if (rule.portRange && port >= rule.portRange[0] && port <= rule.portRange[1]) return true;
+/** A rule declaring neither `ports` nor `portRange` covers every port. */
+function portMatches(spec: PortSpec, port: number): boolean {
+  if (!spec.ports && !spec.portRange) return true;
+  if (spec.ports?.includes(port)) return true;
+  if (spec.portRange && port >= spec.portRange[0] && port <= spec.portRange[1]) return true;
   return false;
+}
+
+/**
+ * The first rule that forbids this URL, or `null`.
+ *
+ * `environment` is the one whose gateways would carry the binding. Passing `null` — a spec import or
+ * an MCP/A2A discovery fetch, which happen before the definition is an act in any one environment —
+ * consults **estate-wide** rules only, because an environment-scoped rule is a statement about that
+ * environment's gateways rather than about the platform.
+ */
+export function matchingDenyRule(
+  rawUrl: string,
+  rules: DenyRule[],
+  environment: string | null,
+): DenyRule | null {
+  let url: URL;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+  const scheme = url.protocol.slice(0, -1) as "http" | "https";
+  const port = portOf(url);
+  for (const rule of rules) {
+    if (rule.environment !== null && rule.environment !== environment) continue;
+    if (rule.scheme !== null && rule.scheme !== scheme) continue;
+    if (!hostMatches(url.hostname, rule.hostPattern)) continue;
+    if (!portMatches(rule, port)) continue;
+    return rule;
+  }
+  return null;
 }
 
 export { ipInCidr, ipv4ToInt } from "../../shared/net.ts";
 
+/**
+ * What a URL is checked against. `rules` is omitted at boot deliberately: `OIDC_ISSUER`, `ELK_URL`
+ * and the playground targets are set by the operator in the environment, not written by an owner,
+ * and running them through an administrator-editable control would let a rule created in the portal
+ * brick the next restart (`runtime-configuration`, *An administrator's deny rule cannot prevent a
+ * restart*).
+ */
+export interface EgressScope {
+  integrations: Integrations;
+  rules?: DenyRule[];
+  /** The environment the URL would be used in; `null` consults estate-wide rules only. */
+  environment?: string | null;
+}
+
 /** Empty array means the URL may be fetched. */
 export async function checkEgress(
   rawUrl: string,
-  integrations: Integrations,
-  where = "url",
+  where: string,
+  scope: EgressScope,
 ): Promise<string[]> {
   let url: URL;
   try {
@@ -217,21 +295,26 @@ export async function checkEgress(
   if (url.username || url.password) {
     return [`${where}: credentials in the URL are not allowed`];
   }
-
-  const scheme = url.protocol.slice(0, -1) as "http" | "https";
-  const port = portOf(url);
-  const matched = integrations.egressAllowlist.some(
-    (rule) =>
-      rule.scheme === scheme && hostMatches(url.hostname, rule.hostPattern) && portAllowed(rule, port),
-  );
-  if (!matched) {
+  // `URL` keeps the brackets on an IPv6 literal, which is the only host form that reaches here
+  // wearing them. Refused rather than resolved: `denyCidrs` is IPv4-only, so `http://[::1]:9000`
+  // would otherwise walk straight past a denied `127.0.0.0/8`.
+  if (url.hostname.startsWith("[")) {
     return [
-      `${where}: ${scheme}://${url.hostname}:${port} is not in the egress allowlist ` +
-        `(admin-registered in INTEGRATIONS_FILE, design section 5.3)`,
+      `${where}: ${url.hostname} is an IPv6 literal, which cannot be checked against the denied ` +
+        "ranges — use a hostname, or an IPv4 address",
     ];
   }
 
-  const denied = await resolvesIntoDeniedRange(url.hostname, integrations.denyCidrs);
+  const rule = matchingDenyRule(rawUrl, scope.rules ?? [], scope.environment ?? null);
+  if (rule) {
+    const scopeName = rule.environment === null ? "every environment" : rule.environment;
+    return [
+      `${where}: ${url.hostname} is blocked by the rule "${rule.hostPattern}" (${scopeName}) — ` +
+        `${rule.reason}`,
+    ];
+  }
+
+  const denied = await resolvesIntoDeniedRange(url.hostname, scope.integrations.denyCidrs);
   if (denied) return [`${where}: resolves to ${denied.ip}, inside denied range ${denied.cidr}`];
   return [];
 }

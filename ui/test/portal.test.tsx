@@ -166,8 +166,9 @@ describe("the portal shell", () => {
   test("the next version identifier follows the series, and gets its own path", () => {
     expect(nextVersion(["v1"])).toBe("v2");
     expect(nextVersion(["v1", "v2", "v10"])).toBe("v11");
-    // An API versioned some other way gets a suffix rather than a guess that collides.
-    expect(nextVersion(["2024-01"])).toBe("2024-01-next");
+    // A legacy identifier starts the numeric series without renaming the existing version.
+    expect(nextVersion(["2024-01"])).toBe("v1");
+    expect(nextVersion(["v9999999999999999999999999999999", "v1"])).toBe("v2");
     // Both versions serve at once, so the path has to differ.
     expect(versionedPath("/checkout", "v1", "v2")).toBe("/checkout/v2");
     expect(versionedPath("/checkout/v1", "v1", "v2")).toBe("/checkout/v2");

@@ -1,5 +1,7 @@
-/** IPv4 CIDR matching, used by the control plane's egress allowlist and the data plane's
- *  trusted-proxy boundary (design sections 5.3 and 8.1). Real IPv6 literals never match. */
+/** IPv4 CIDR matching, used by the control plane's denied egress ranges and the data plane's
+ *  trusted-proxy boundary (design sections 5.3 and 8.1). Real IPv6 literals never match — which is
+ *  why `checkEgress` refuses an IPv6 literal host outright rather than admitting one past a range
+ *  that could never have matched it. */
 
 /**
  * `::ffff:10.89.1.1` is an ordinary IPv4 peer, not an IPv6 one.

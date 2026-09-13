@@ -51,7 +51,8 @@ variant uses and letting the rest of the spine work unchanged.
 
 - GIVEN any discovery URL
 - WHEN it is fetched
-- THEN it SHALL be checked against the egress allowlist first, exactly as a definition import is
+- THEN it SHALL be checked against the denied ranges and the deny rules first, exactly as a
+  definition import is (`egress-governance`)
 
 ### Requirement: Protocol methods are operations like any other
 

@@ -1,5 +1,7 @@
 import { api } from "../api";
-import { Panel, Notice, Skeleton, EmptyState, useAsync } from "../components";
+import { useState } from "react";
+import { Refresh } from "../portal/icons";
+import { Panel, Notice, Skeleton, EmptyState, TextField, useAsync } from "../components";
 import { formatDateTime } from "../lib/datetime";
 
 interface AuditRow {
@@ -14,17 +16,21 @@ interface AuditRow {
 
 export function AuditView() {
   const audit = useAsync(() => api.get<{ items: AuditRow[] }>("/api/audit?limit=200"), []);
+  const [query, setQuery] = useState("");
+  const rows = (audit.data?.items ?? []).filter(row => `${row.actor} ${row.action} ${row.subject} ${row.outcome}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
     <>
-      <p className="muted small">
-        The latest 200 events. Open an event's details to inspect the recorded change.
-      </p>
+      <div className="directory-toolbar audit-toolbar">
+        <TextField label="Search recent events" value={query} onChange={setQuery} placeholder="Actor, action, subject or outcome" />
+        <span className="muted small">{rows.length} of the latest {audit.data?.items.length ?? 0} events · up to 200</span>
+        <button className="btn" onClick={audit.reload}><Refresh /> Refresh events</button>
+      </div>
       <Notice kind="error">{audit.error}</Notice>
       <Panel flush>
-        {audit.loading ? <Skeleton rows={5} /> : !audit.data?.items.length ? (
+        {audit.error ? <p className="muted">Audit events could not be loaded. Retry with Refresh events.</p> : audit.loading ? <Skeleton rows={5} /> : !audit.data?.items.length ? (
           <EmptyState title="No audit events yet" detail="Sign-ins and changes to the platform appear here." action={<button className="btn sm" onClick={audit.reload}>Refresh events</button>} />
-        ) : (
+        ) : rows.length === 0 ? <EmptyState title="No matching events" detail="Search covers the latest 200 events loaded here." action={<button className="btn" onClick={() => setQuery("")}>Clear search</button>} /> : (
         <table>
           <thead>
             <tr>
@@ -37,7 +43,7 @@ export function AuditView() {
             </tr>
           </thead>
           <tbody>
-            {(audit.data?.items ?? []).map((row) => (
+            {rows.map((row) => (
               <tr key={row.id}>
                 <td className="muted">{formatDateTime(row.at)}</td>
                 <td>{row.actor}</td>

@@ -63,14 +63,15 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
 
   return (
     <>
-      <div className="object-head">
+      <div className="page-toolbar"><Link to="/subscriptions">← Subscriptions</Link></div>
+      <div className="object-head subscription-resource-head">
         <div>
           <h3>
             {subscription.applicationName} <span className="muted">→</span> {subscription.productName}{" "}
             <StatusChip chip={subscriptionChip(subscription.state)} />
           </h3>
           <p className="muted small">
-            In <span className="pill">{subscription.environment}</span> — keys are per{" "}
+            In <span className="pill">{subscription.environment.toUpperCase()}</span> — keys are per{" "}
             <Term name="environment" />, so this one works nowhere else.
           </p>
         </div>
@@ -95,7 +96,7 @@ export function SubscriptionView({ subscriptionId }: { subscriptionId: string })
       )}
 
       <Panel
-        title="What it has spent"
+        title="Quota usage"
         hint="Quota is counted across the whole fleet and aggregated on the gateways' poll, so this is the number the gateway is enforcing against."
       >
         {usage.error && <Notice kind="error">{usage.error}</Notice>}

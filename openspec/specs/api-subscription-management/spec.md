@@ -7,6 +7,31 @@ who may see a key, and what each side of the relationship is allowed to do to th
 
 ## Requirements
 
+### Requirement: Distinguish configured limits and known subscriptions from missing data
+
+#### Scenario: Limits are reviewed
+
+- GIVEN the subscription wizard's Review step
+- WHEN effective policy is loading or unavailable
+- THEN each limit SHALL say loading or unknown rather than absent
+- AND loaded limits SHALL be described as this API's configured limits in the selected environment, not guarantees about other APIs in the product or gateway activation
+- AND quota periods SHALL retain their exact duration, and per-instance rate limits SHALL name replicas
+
+#### Scenario: A subscription request completes
+
+- GIVEN a pending or activating subscription
+- WHEN its completion panel renders
+- THEN it SHALL show the selected environment's live published gateway addresses, with their networks, when available
+- AND it SHALL NOT invent a hostname, scheme or credential header
+- AND calling guidance SHALL link to the consumer listing
+
+#### Scenario: Products are displayed before subscriptions load
+
+- GIVEN a product whose subscriber list has not loaded or failed
+- WHEN its card renders
+- THEN the count SHALL be unavailable and SHALL NOT say nobody subscribes
+- AND the API membership picker SHALL read the complete paginated resource list
+
 ### Requirement: Subscriptions are to products, never directly to an API
 
 #### Scenario: A consumer wants to call an API
@@ -41,6 +66,7 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN each product SHALL show links to its current APIs and its subscriptions
 - AND its membership editor SHALL start collapsed under "Edit APIs in this product"
 - AND collapsing the editor SHALL retain pending edits and indicate unsaved changes in its summary
+- AND a Create a product control above the list SHALL reveal the creation form; cancellation or successful creation SHALL close it
 
 #### Scenario: A product is deleted
 
@@ -319,3 +345,16 @@ who may see a key, and what each side of the relationship is allowed to do to th
   environment, and a copyable example
 - AND the example SHALL be derived from the API's own `auth.subscriptionKey` unit rather than
   assumed
+
+### Requirement: Offer meaningful creation and subscription choices
+
+#### Scenario: A draft is edited
+
+- GIVEN a product creation or subscription form
+- WHEN its fields are edited
+- THEN product names SHALL be checked against the name pattern and complete estate product list before creation
+- AND a single subscribable product SHALL be stated without a redundant picker
+- AND purpose length SHALL gate submission
+- AND inline application creation SHALL be offered only to administrators and SHALL check directory name length and duplicates
+
+- AND the subscription application choices SHALL include only applications the user can act for (all for an administrator)

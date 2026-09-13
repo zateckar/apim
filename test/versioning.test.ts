@@ -183,6 +183,28 @@ describe("versions are resources", () => {
     expect((await bad.json()).detail).toContain("apiVersion");
   });
 
+  test("all version-writing endpoints reject non-numeric identifiers", async () => {
+    const original = await publishApi(cp, { name: "version-rules", backendUrl: "http://127.0.0.1:9999" });
+    const detail = await (await cp.call("GET", `/api/resources/${original.resourceId}`, { cookie: original.pavel })).json();
+    for (const apiVersion of ["XXX", "v0", "v01", "V2", "v1.0", "2024-01", `v${"9".repeat(32)}`]) {
+      for (const [method, path, body] of [
+        ["POST", "/api/resources", { name: "new-version-rules", applicationId: "application_platform", apiVersion }],
+        ["POST", "/api/publish", { name: "new-version-rules", applicationId: "application_platform", apiVersion }],
+        ["POST", `/api/resources/${original.resourceId}/versions`, { apiVersion }],
+        ["PATCH", `/api/resources/${original.resourceId}`, { apiVersion }],
+      ] as const) {
+        const response = await cp.call(method, path, {
+          cookie: original.pavel, body,
+          headers: { "if-match": detail.etag, "idempotency-key": crypto.randomUUID() },
+        });
+        expect(response.status, `${method} ${path} ${apiVersion}`).toBe(400);
+        expect((await response.json()).detail).toContain("apiVersion");
+      }
+    }
+    const family = await (await cp.call("GET", "/api/resources?application=application_platform&name=version-rules", { cookie: original.pavel })).json();
+    expect(family.items).toHaveLength(1);
+  });
+
   test("the family is listable and the detail view lists its versions", async () => {
     const v1 = await publishApi(cp, {
       name: "family",

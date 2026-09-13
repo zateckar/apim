@@ -1,3 +1,4 @@
+import { integerError } from "../lib/form-validation";
 import { useMemo, useState } from "react";
 import {
   api,
@@ -125,6 +126,7 @@ export function GatewaySettingsView() {
 
       {model.data && layer && (
         <>
+          <div className="settings-scope">
           <Field label="Applies to" hint={layer.reach}>
             <select value={selected} onChange={(event) => setSelected(event.target.value)}>
               {layers.map((entry) => (
@@ -137,6 +139,7 @@ export function GatewaySettingsView() {
               ))}
             </select>
           </Field>
+          </div>
           {/* Keyed on the layer so switching layers discards half-typed edits rather than carrying
               them onto a different set of gateways, which would be the worst kind of surprise. */}
           <LayerEditor
@@ -187,12 +190,18 @@ function LayerEditor({
       okMessage,
     );
     if (ok) {
-      setEdits({});
+      setEdits(current => Object.fromEntries(Object.entries(current).filter(([key]) => !(key in values))));
       onChanged();
     }
   };
 
+  const errors = Object.fromEntries(Object.entries(edits).flatMap(([key, raw]) => {
+    const def = model.defs[key]!;
+    const error = raw.trim() && def.kind !== "flag" ? integerError(Number(raw), def.min ?? 0, def.max) : null;
+    return error ? [[key, error]] : [];
+  }));
   const save = () => {
+    if (Object.keys(errors).length) return;
     const values: Record<string, SettingValue | null> = {};
     for (const [key, raw] of Object.entries(edits)) {
       if (raw.trim() === "") values[key] = null;
@@ -226,7 +235,10 @@ function LayerEditor({
               const def = model.defs[key]!;
               const source = effective[key];
               const row = own.get(key);
-              const inherited = source?.value ?? def.default;
+              const gateway = model.gateways.find(entry => entry.id === layer.scopeId);
+              const inherited = layer.scope === "fleet" ? def.default
+                : layer.scope === "environment" ? model.effective.fleet[key]?.value ?? def.default
+                : model.effective.environments[gateway?.environment ?? ""]?.[key]?.value ?? def.default;
               const current = edits[key] ?? (row ? String(row.value) : "");
               return (
                 <tr key={key}>
@@ -261,6 +273,9 @@ function LayerEditor({
                       <input
                         aria-label={def.label}
                         type="number"
+                        step={1}
+                        aria-invalid={Boolean(errors[key])}
+                        aria-describedby={errors[key] ? `setting-${key}-error` : undefined}
                         min={def.min}
                         max={def.max}
                         placeholder={`inherit ${inherited}`}
@@ -268,6 +283,7 @@ function LayerEditor({
                         onChange={(event) => setEdits({ ...edits, [key]: event.target.value })}
                       />
                     )}
+                    {errors[key] && <p id={`setting-${key}-error`} className="field-error">{errors[key]}</p>}
                     <div className="muted small">
                       {def.kind === "flag"
                         ? "Empty inherits."
@@ -281,7 +297,7 @@ function LayerEditor({
       </table>
 
       <div className="row settings-save">
-        <button className="btn primary" disabled={action.busy || pending === 0} onClick={save}>
+        <button className="btn primary" disabled={action.busy || pending === 0 || Object.keys(errors).length > 0} onClick={save}>
           Save {pending === 0 ? "" : pending} change{pending === 1 ? "" : "s"}
         </button>
         <button className="ghost" disabled={pending === 0} onClick={() => setEdits({})}>

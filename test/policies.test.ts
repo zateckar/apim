@@ -47,14 +47,7 @@ let cp: TestCp;
 let seq = 0;
 
 function integrationsWith(extra: Partial<Integrations>): Integrations {
-  return {
-    egressAllowlist: [
-      { scheme: "http", hostPattern: "127.0.0.1", portRange: [1024, 65535] },
-      { scheme: "http", hostPattern: "localhost", portRange: [1024, 65535] },
-    ],
-    denyCidrs: ["169.254.0.0/16"],
-    ...extra,
-  } as Integrations;
+  return { denyCidrs: ["169.254.0.0/16"], ...extra } as Integrations;
 }
 
 function makeCpWith(extra: Partial<Integrations>): TestCp {

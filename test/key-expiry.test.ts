@@ -29,7 +29,7 @@ afterEach(async () => {
 
 /** How many keys the environment's document offers for this subscription. */
 function keyHashes(subscriptionId: string): string[] {
-  const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+  const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
   return config.subscriptions.find((s) => s.id === subscriptionId)?.keyHashes ?? [];
 }
 

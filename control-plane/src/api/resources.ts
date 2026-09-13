@@ -26,6 +26,7 @@ import { capabilitiesFor } from "../auth.ts";
 import { policyFor } from "../config-build.ts";
 import { newId, nowIso } from "../db.ts";
 import { checkEgress } from "../egress.ts";
+import { egressScope } from "../deny-rules.ts";
 import { enqueueJob, runDueJobs } from "../jobs.ts";
 import { normalizeSpec, toOpenApi31 } from "../normalize.ts";
 import { reindexResource } from "../search.ts";
@@ -107,7 +108,7 @@ function versionsOf(ctx: Ctx, row: ResourceRow) {
 function assertApiVersion(value: string): void {
   if (!API_VERSION_PATTERN.test(value)) {
     throw badRequest(
-      "apiVersion: expected 1-32 characters matching ^[A-Za-z0-9][A-Za-z0-9._-]*$, e.g. \"v1\" or \"2024-11-01\"",
+      "apiVersion: use v followed by a positive integer, for example v1 or v2 (maximum 32 characters)",
     );
   }
 }
@@ -131,9 +132,19 @@ function operationIdsOf(ctx: Ctx, resourceId: string): Set<string> | null {
   }
 }
 
-/** Design section 5.3: the same allowlist that gates a backend gates a server-side spec fetch. */
+/**
+ * Design section 5.3: the same boundary that gates a backend gates a server-side spec fetch.
+ *
+ * Estate-wide rules only (`environment: null`): an import happens while a definition is being
+ * published and is not yet an act in any one environment, and an environment-scoped rule is a
+ * statement about that environment's gateways.
+ */
 async function fetchSpec(ctx: Ctx, specUrl: string): Promise<string> {
-  const errors = await checkEgress(specUrl, ctx.app.config.integrations, "specUrl");
+  const errors = await checkEgress(
+    specUrl,
+    "specUrl",
+    egressScope(ctx.app.db, ctx.app.config, null),
+  );
   if (errors.length > 0) throw badRequest(errors.join("; "));
 
   // G4 §8.5: through the estate's trust anchors, so a spec served by an internal host with an
@@ -224,7 +235,7 @@ export async function revisionSource(
 
   if (body.discoverUrl && row.kind === "mcp") {
     const manifest = await discoverMcp(body.discoverUrl, {
-      integrations: ctx.app.config.integrations,
+      egress: egressScope(ctx.app.db, ctx.app.config, null),
       maxBytes,
       fetchImpl: trustedFetch(ctx.app.db),
     });
@@ -234,7 +245,7 @@ export async function revisionSource(
   }
   if (body.discoverUrl && row.kind === "a2a") {
     const { raw } = await discoverA2a(body.discoverUrl, {
-      integrations: ctx.app.config.integrations,
+      egress: egressScope(ctx.app.db, ctx.app.config, null),
       maxBytes,
       fetchImpl: trustedFetch(ctx.app.db),
     });
@@ -1635,7 +1646,7 @@ export function registerResourceRoutes(router: Router): void {
       throw badRequest(`unknown environment "${environment}"`);
     }
 
-    const read = await readPool(body, ctx.app.config.integrations);
+    const read = await readPool(body, egressScope(ctx.app.db, ctx.app.config, environment));
     if (!read) throw badRequest("expected a non-empty `pool` or `urls` array");
     const { pool, rule } = read;
 

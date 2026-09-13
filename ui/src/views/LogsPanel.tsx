@@ -87,10 +87,12 @@ export function LogsPanel({
         ? api.get<LogPage>(`/api/logs?${query}&limit=${PAGE_SIZE}&cursor=${cursorOf(offset)}`)
         : Promise.resolve(null),
     [query.toString(), offset, canRead],
+    `${query}:${offset}:${canRead}`,
   );
   const chart = useAsync(
     () => (canRead ? api.get<LogHistogram>(`/api/logs/histogram?${query}&buckets=48`) : Promise.resolve(null)),
     [query.toString(), canRead],
+    `${query}:${canRead}`,
   );
 
   function retarget(from: number, to: number) {

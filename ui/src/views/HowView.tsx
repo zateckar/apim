@@ -15,9 +15,9 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     title: "Publish an API",
     who: "You have a definition and you want other applications to be able to call it.",
     steps: [
-      "Import the definition — upload a file, give a URL, or point at an MCP server or A2A agent and let the portal read its card.",
-      "Say where it answers: a host and a base path in this environment, and the backend it forwards to.",
-      "Review, then release. The gateways pick it up at their next poll.",
+      "Identify the API: choose its name, type, version and domain to preview its published path.",
+      "Define its contract by uploading, pasting or importing a definition.",
+      "Choose the backend and gateways in Route, review their URLs, then publish to the first environment.",
     ],
     ends: "The API is live in DEV, with its address shown, and in a product of its own that consumers can subscribe to. You can try it, add a policy, bundle it with other APIs, or promote it.",
     to: "/apis/new",
@@ -26,9 +26,9 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     title: "Promote it to the next environment",
     who: "It works in DEV and you want it in TEST, then PROD.",
     steps: [
-      "Pick the revision and the environment to promote it into.",
-      "Read the plan: what will be created, what is kept as it is, and anything that would block the promotion.",
-      "Confirm. What is applied is exactly the plan you were shown.",
+      "Save changes in the source environment, then choose Promote to the next environment.",
+      "Supply the target backend URL for its first promotion; existing target backend settings are retained unless you replace them.",
+      "Promote, then follow deployment progress in Activity.",
     ],
     ends: "That revision is live in the next environment. Its policies, route and backend there are that environment's own.",
     to: "/apis",
@@ -38,21 +38,21 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     who: "The contract has changed in a way that would break the callers you already have.",
     steps: [
       "Choose the new version identifier — v2 beside v1.",
-      "Choose what to copy across: policies, routes, or nothing.",
-      "Review. The old version keeps serving until you deprecate and retire it.",
+      "Review the new path and choose its product. The definition on screen, saved backends, gateways and policies are copied.",
+      "Publish to the first environment. The old version keeps serving.",
     ],
-    ends: "Two versions side by side, each with its own base path, subscribers and policies.",
+    ends: "Two versions with separate paths. Versions in the same product share its subscriptions.",
     to: "/apis",
   },
   {
     title: "Subscribe to an API",
     who: "You want to call something somebody else publishes.",
     steps: [
-      "Choose the application that will do the calling, or create one.",
+      "Choose an application you may act for. Administrators can also create one here.",
       "Choose the environment. Keys are per environment, so a DEV key never works in PROD.",
       "Review the terms — the rate limit and quota you are agreeing to — and confirm.",
     ],
-    ends: "The key, shown once, with a ready-made curl command and a link into the playground.",
+    ends: "A pending or activating subscription. Open the subscription to reveal its key after access becomes active.",
     to: "/catalog",
   },
   {
@@ -106,34 +106,31 @@ export function HowView() {
         hint="Almost every surprise in this portal comes from getting this backwards."
       >
         <p>
-          A <Term name="definition">definition</Term> travels. Everything else stays where it is put.
+          Publishing and promotion deploy an API. Subscriptions grant an application access to a product in one environment.
         </p>
         <p>
-          When you <Term name="promote">promote</Term>, the <Term name="revision" /> — the contract
-          itself — is what moves from DEV to TEST to PROD. Its{" "}
-          <Term name="policy">policies</Term>, its <Term name="route" />, the{" "}
-          <Term name="backend" /> it forwards to and every <Term name="subscription" /> to it belong
-          to one <Term name="environment">environment</Term> and are edited there. That is why a
-          promotion shows you a plan first: the things that do not travel are the things it has to
-          create for you, and you should see the list before it happens.
+          When you <Term name="promote">promote</Term>, the saved API configuration is used to deploy
+          into the next <Term name="environment">environment</Term>. Review the target backend
+          carefully: it is required for the first promotion, and existing target backend settings
+          are retained unless replaced. Follow Activity to see when deployment finishes.
         </p>
         <p className="muted">
           The practical consequence: a key that works in DEV will not work in PROD, and a rate limit
-          you set in DEV is not the one PROD is running. Both are deliberate.
+          configured in DEV does not prove what PROD is running. Check the target environment's settings.
         </p>
       </Panel>
 
       <Panel
-        title="The six things you can do here"
+        title={`${JOURNEYS.length} things you can do here`}
         hint="Each one is a guided flow that checks every step against the same rules the server would."
       >
-        <div className="stack">
-          {JOURNEYS.map((journey) => (
-            <div key={journey.title} className="unit">
+        <div className="journey-grid">
+          {JOURNEYS.map((journey, index) => (
+            <div key={journey.title} className="unit journey">
               <header>
-                <h4>{journey.title}</h4>
+                <h4><span className="journey-number">{index + 1}</span>{journey.title}</h4>
                 {journey.to && (
-                  <Link to={journey.to} className="small">
+                  <Link to={journey.to} className="btn sm">
                     Start →
                   </Link>
                 )}

@@ -89,6 +89,7 @@ export function RevisionsPanel({
     <>
       <Panel
         title="Revisions"
+        className="revision-history"
         hint="One upload of the definition each, newest first. A revision becomes immutable the moment it is released."
       >
         <table>
@@ -184,6 +185,7 @@ export function RevisionsPanel({
 
       {compare && (
         <DiffCard
+          key={`${compare.from}:${compare.to}`}
           from={compare.from}
           to={compare.to}
           revisions={items}
@@ -193,6 +195,7 @@ export function RevisionsPanel({
 
       {rollback && environment && (
         <RollBackCard
+          key={`${rollback.id}:${environment}`}
           resourceId={resourceId}
           revision={rollback}
           live={items.find((row) => row.releasedIn[environment] === "live") ?? null}
@@ -461,6 +464,7 @@ function DiffCard({
   const diff = useAsync(
     () => api.get<RevisionDiff>(`/api/revisions/${to}/diff?from=${fromId}`),
     [to, fromId],
+    `${to}:${fromId}`,
   );
   const toRev = revisions.find((revision) => revision.id === to);
 

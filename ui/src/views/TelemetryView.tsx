@@ -44,14 +44,14 @@ function bytes(value: number): string {
 
 function Totals({ totals }: { totals: TelemetryTotals }) {
   return (
-    <div className="stats">
+    <div className="stats telemetry-totals">
       <div className="stat">
         <span className="value">{totals.requests.toLocaleString()}</span>
         <span className="label">requests</span>
       </div>
       <div className="stat">
         <span className="value ok">{totals.ok.toLocaleString()}</span>
-        <span className="label">ok</span>
+        <span className="label">Served</span>
       </div>
       <div className="stat">
         <span className="value rejected">{totals.gatewayRejections.toLocaleString()}</span>
@@ -84,18 +84,22 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
   const summary = useAsync(
     () => api.get<TelemetrySummary>(`/api/telemetry/summary?${query}`),
     [environment, sinceMin],
+    query,
   );
   const resources = useAsync(
     () => api.get<{ items: TelemetryResourceRow[] }>(`/api/telemetry/resources?${query}`),
     [environment, sinceMin],
+    query,
   );
   const consumers = useAsync(
     () => api.get<{ items: TelemetryConsumerRow[] }>(`/api/telemetry/consumers?${query}`),
     [environment, sinceMin],
+    query,
   );
   const instances = useAsync(
     () => api.get<{ items: TelemetryInstanceRow[] }>(`/api/telemetry/instances?${query}`),
     [environment, sinceMin],
+    query,
   );
 
   return (
@@ -130,7 +134,7 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
       <Notice kind="error">{summary.error}</Notice>
 
       {summary.data && (
-        <Panel title={`${environment} · last ${sinceMin} minutes`}>
+        <Panel title={`${environment.toUpperCase()} · last ${sinceMin} minutes`} className="telemetry-overview">
           <Totals totals={summary.data.totals} />
           <p className="hint">
             Error rate {(summary.data.totals.errorRate * 100).toFixed(1)}%. A gateway rejection

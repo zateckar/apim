@@ -97,7 +97,7 @@ describe("renewing a certificate", () => {
     });
     expect(bound.status).toBe(200);
 
-    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     const listedBefore = before.certificates.find((c) => c.id === uploaded.id)!;
     expect(listedBefore).toBeDefined();
 
@@ -112,7 +112,7 @@ describe("renewing a certificate", () => {
       published.resourceId,
     );
 
-    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     const listedAfter = after.certificates.find((c) => c.id === uploaded.id)!;
     expect(listedAfter.id).toBe(listedBefore.id);
     // A new thumbprint under the same id: a new cache entry the gateway has to fetch before it can

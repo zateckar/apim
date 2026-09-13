@@ -1,15 +1,20 @@
+import { integerError } from "../lib/form-validation";
 import { useState } from "react";
+import * as I from "./icons";
 import type { Session } from "../App";
 import { api } from "../api";
 import {
   DangerZone,
+  TextField,
   EmptyState,
   Field,
   Link,
   Modal,
   Notice,
   Panel,
+  OperationList,
   StatusChip,
+  Skeleton,
   go,
   useAction,
   useAsync,
@@ -22,6 +27,19 @@ import {
 } from "../lib/status";
 import { SubscriptionKeys } from "../views/SubscriptionKeys";
 import { DomainPicker } from "./apis";
+
+export function Activity({ items }: { items: any[] }) {
+  const [scope, setScope] = useState("all");
+  const active = items.filter(item => !["complete", "superseded"].includes(item.state));
+  return <Panel title="Changes and deployment progress" className="activity-page" actions={
+    <div className="seg" role="group" aria-label="Activity filter">
+      <button aria-pressed={scope === "all"} className={scope === "all" ? "active" : ""} onClick={() => setScope("all")}>All changes · {items.length}</button>
+      <button aria-pressed={scope === "active"} className={scope === "active" ? "active" : ""} onClick={() => setScope("active")}>In progress · {active.length}</button>
+    </div>
+  }>
+    {scope === "active" && active.length === 0 ? <EmptyState title="No changes in progress" detail="There is no rollout waiting to finish." action={<button className="btn" onClick={() => setScope("all")}>View all changes</button>} /> : <OperationList items={scope === "active" ? active : items} />}
+  </Panel>;
+}
 
 export function SubscribeDialog({
   session: s,
@@ -82,7 +100,7 @@ export function SubscribeDialog({
             product requires publisher approval through simulated SkoNET.
           </p>
           <Notice kind="error">{data.error ?? w.error}</Notice>
-          <Field label="Product">
+          {products.length === 1 ? <p>Product: <strong>{products[0].name}</strong></p> : <Field label="Product">
             <select
               required
               value={productId || products[0]?.id || ""}
@@ -97,8 +115,8 @@ export function SubscribeDialog({
                 </option>
               ))}
             </select>
-          </Field>
-          <Field label="Purpose">
+          </Field>}
+          <Field label="Purpose" hint="3–500 characters describing what your application will use this product for.">
             <textarea
               required
               minLength={3}
@@ -109,7 +127,7 @@ export function SubscribeDialog({
           </Field>
           <button
             className="btn primary"
-            disabled={w.busy || !products.length || !s.application}
+            disabled={w.busy || !products.length || !s.application || purpose.trim().length < 3 || purpose.trim().length > 500}
           >
             Request subscription
           </button>
@@ -173,12 +191,14 @@ export function Subscriptions({
         : r.applicationId === s.application),
   );
   const keyRow = rows.find((r) => r.id === keyId);
+  if (data.error || products.error) return <Notice kind="error">{data.error ?? products.error}</Notice>;
+  if (!data.data || !products.data) return <Skeleton rows={4} />;
   return (
     // The heading says how many and where, not "Subscriptions" again under an `<h1>Subscriptions`.
     // Where matters more here than anywhere else in the portal: a subscription is to a product in
     // one environment and its keys work only there, so a list that did not name the environment
     // was the empty state's own warning going unheeded by the populated case.
-    <Panel title={`${rows.length} in ${s.environment.toUpperCase()}`}>
+    <Panel className="subscription-list" title={`${rows.length} in ${s.environment.toUpperCase()}`} actions={<Link className="btn" to="/catalog"><I.Search /> Find a product</Link>}>
       <Notice kind="error">{data.error ?? products.error ?? w.error}</Notice>
       {rows.length ? (
         rows.map((r) => (
@@ -216,7 +236,7 @@ export function Subscriptions({
                 )}
               {r.state === "active" && mine(s, r) && (
                 <button className="btn" onClick={() => setKeyId(r.id)}>
-                  Keys
+                  <I.Key /> Keys
                 </button>
               )}
               {["pending", "active", "activating"].includes(r.state) && (
@@ -318,9 +338,11 @@ export function Approvals({
     w = useAction();
   const [selected, setSelected] = useState<any>(null),
     [reason, setReason] = useState("");
-  const rows = data.data?.items.filter((e) => e.integration === "skonet") ?? [];
+  const rows = data.data?.items.filter((e) => e.integration === "skonet" && e.approval?.environment === s.environment) ?? [];
+  if (data.error) return <Notice kind="error">{data.error}</Notice>;
+  if (!data.data) return <Skeleton rows={4} />;
   return (
-    <Panel title="SkoNET approvals · simulated">
+    <Panel className="approval-list" title={`SkoNET approvals · ${s.environment.toUpperCase()} · simulated`} actions={<span className="chip">{rows.filter(row => row.state === "awaiting-decision" && row.approval.state === "pending").length} awaiting a decision</span>}>
       <p>
         Decide requests for products and Kafka topics owned by this application.
         Approved access is provisioned automatically.
@@ -331,12 +353,12 @@ export function Approvals({
           <div className="native-row" key={e.id}>
             <div>
               <strong>
-                {e.kind} · {s.applicationName(e.payload.consumer)}
+                {e.approval.name} · {s.applicationName(e.payload.consumer)}
               </strong>
               <p>{e.payload.purpose}</p>
-              <StatusChip chip={integrationEventChip(e.state)} />
+              <StatusChip chip={e.approval.state === "pending" ? integrationEventChip(e.state) : e.kind === "kafka.request" ? kafkaGrantChip(e.approval.state) : subscriptionChip(e.approval.state)} />
             </div>
-            {e.state === "awaiting-decision" && (
+            {e.state === "awaiting-decision" && e.approval.state === "pending" && (
               <button
                 className="btn primary"
                 onClick={() => {
@@ -344,7 +366,7 @@ export function Approvals({
                   setReason("");
                 }}
               >
-                Review request
+                Review request <I.ChevRight />
               </button>
             )}
           </div>
@@ -356,8 +378,9 @@ export function Approvals({
           action={<Link to={`/${s.application}/products`}>Check your products →</Link>}
         />
       )}
-      {selected && (
+      {selected && rows.some(row => row.id === selected.id && row.approval.state === "pending") && (
         <Modal title="Review access request" close={() => setSelected(null)}>
+          <p>{selected.approval.name} · {s.applicationName(selected.payload.consumer)} · {selected.approval.environment.toUpperCase()}</p>
           <p>{selected.payload.purpose}</p>
           <Field label="Decision reason">
             <textarea
@@ -411,16 +434,16 @@ export function Integrations({
     w = useAction();
   return (
     <>
-      <Panel title={fixme ? "FixMe diagnostics" : "Application integrations"}>
+      <Panel title={fixme ? "Run a diagnostic check" : "Application integrations"}>
         <p>
           External services are simulated. Requests, responses, email
           notifications and approval decisions are persisted.
         </p>
         <Notice kind="error">{data.error ?? w.error}</Notice>
-        <div className="native-actions">
+        <div className="integration-actions">
           {(fixme ? ["fixme"] : ["leanix", "ldapws", "fixme"]).map((name) => (
             <button
-              className="btn"
+              className="integration-action"
               key={name}
               disabled={w.busy || !s.application}
               onClick={() =>
@@ -433,16 +456,20 @@ export function Integrations({
                 })
               }
             >
-              {name === "leanix"
+              <span className="integration-action-icon" aria-hidden="true">{name === "leanix" ? <I.Book size={22} /> : name === "ldapws" ? <I.Users size={22} /> : <I.Wrench size={22} />}</span>
+              <strong>{name === "leanix"
                 ? "Refresh LeanIX metadata"
                 : name === "ldapws"
                   ? "Look up application contacts"
-                  : "Run FixMe diagnostics"}
+                  : "Run FixMe diagnostics"}</strong>
+              <span>{name === "leanix" ? "Update the business metadata for this application." : name === "ldapws" ? "Find the people responsible for this application." : "Run simulated checks and inspect the recorded results."}</span>
+              <span className="integration-action-link">{name === "fixme" ? "Run check" : "Refresh"} →</span>
             </button>
           ))}
         </div>
       </Panel>
-      <Panel title="Integration activity and mock mailbox">
+      <Panel title={fixme ? "Diagnostic history" : "Integration history"}>
+        {!data.loading && !(data.data?.items ?? []).some(e => !fixme || e.integration === "fixme") && <EmptyState title="No recorded runs" detail="Run a check above to record its result here." action={<button className="btn" onClick={data.reload}><I.Refresh /> Refresh history</button>} />}
         {data.data?.items
           .filter((e) => !fixme || e.integration === "fixme")
           .map((e) => (
@@ -501,17 +528,31 @@ export function Kafka({
         t.state !== "deleted" &&
         (!proxyOnly || t.proxy_enabled),
     ) ?? [];
+  const topicNameProblem = !/^[A-Za-z0-9][A-Za-z0-9._-]{1,100}$/.test(name) ? "Use 2–101 letters, digits, dots, underscores or hyphens." : topics.data?.items.some(topic => topic.environment === s.environment && topic.name === name) ? "This topic name already exists in this environment." : null;
+  const partitionProblem = integerError(draft.partitions, selected && !create ? selected.partitions : 1, 100);
+  const createBlocked = Boolean(topicNameProblem || partitionProblem || !taxonomy.domain || topics.loading || topics.error);
+  function startCreating() {
+    setSelected(null);
+    setName("");
+    setDraft({ partitions: 3, description: "" });
+    setTaxonomy({ domain: "", subdomain: "" });
+    setCreate(true);
+  }
+  const currentAccess = (access.data?.items ?? []).find(a => a.topic_id === selected?.id && a.application_id === s.application && ["pending", "activating", "active", "revoking"].includes(a.state));
+  if (topics.error || access.error) return <Notice kind="error">{topics.error ?? access.error}</Notice>;
+  if (!topics.data || !access.data) return <Skeleton rows={4} />;
   return (
     <>
       <Panel
+        className="kafka-topics"
         title={
           proxyOnly
             ? "Kafka REST Proxy · simulated"
             : "Kafka topics · simulated"
         }
         actions={
-          <button className="btn primary" onClick={() => setCreate(true)}>
-            Create topic
+          <button className="btn primary" disabled={!s.application} onClick={startCreating}>
+            <I.Plus /> Create topic
           </button>
         }
       >
@@ -546,7 +587,7 @@ export function Kafka({
                   });
                 }}
               >
-                Open topic
+                Open topic <I.ChevRight />
               </button>
             </div>
           ))
@@ -555,7 +596,7 @@ export function Kafka({
             title={`No topics in ${s.environment.toUpperCase()}`}
             detail="A topic belongs to one application and one environment, and carries a domain so it is filed beside that application's APIs in the catalogue."
             action={
-              <button className="btn sm" onClick={() => setCreate(true)}>
+              <button className="btn sm" disabled={!s.application} onClick={startCreating}>
                 Create a topic
               </button>
             }
@@ -566,7 +607,7 @@ export function Kafka({
           deleted until every grant is withdrawn. Showing only this application's own grants left a
           topic's owner told to "revoke topic subscriptions first" with no way to find, let alone
           revoke, the one holding it up (finding 5). The server already returned both. */}
-      <Panel title="Topic access">
+      <Panel title="Topic access" className="kafka-access">
         {(() => {
           const granted = (access.data?.items ?? []).filter(
             (a) => a.environment === s.environment,
@@ -635,9 +676,11 @@ export function Kafka({
       </Panel>
       {create && (
         <Modal title="Create Kafka topic" close={() => setCreate(false)}>
+          <p>Owned by {s.applicationName(s.application)} in {s.environment.toUpperCase()}.</p>
           <form
             onSubmit={(e) => {
               e.preventDefault();
+              if (createBlocked) return;
               void w.run(async () => {
                 await api.post("/api/kafka/topics", {
                   applicationId: s.application,
@@ -656,13 +699,8 @@ export function Kafka({
               });
             }}
           >
-            <Field label="Topic name">
-              <input
-                required
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
+            <TextField label="Topic name" value={name} onChange={setName} required maxLength={101}
+              hint="2–101 letters, digits, dots, underscores or hyphens; unique in this environment." error={name ? topicNameProblem : null} />
             {/* A topic is a catalog item, so it is classified like every other one: this is how
                 somebody browsing the estate by domain finds it. */}
             <DomainPicker
@@ -670,7 +708,7 @@ export function Kafka({
               subdomain={taxonomy.subdomain}
               onChange={setTaxonomy}
             />
-            <Field label="Partitions">
+            <Field label="Partitions" hint="Whole numbers from 1 to 100. Partitions can only increase later.">
               <input
                 type="number"
                 min={1}
@@ -691,7 +729,9 @@ export function Kafka({
               />
             </Field>
             <Notice kind="error">{w.error}</Notice>
-            <button className="btn primary" disabled={w.busy}>
+            {partitionProblem && <p className="field-error">{partitionProblem}</p>}
+            {!taxonomy.domain && <p className="hint">Choose a domain before creating the topic.</p>}
+            <button className="btn primary" disabled={w.busy || createBlocked}>
               Create topic
             </button>
           </form>
@@ -728,10 +768,11 @@ export function Kafka({
                 subdomain={taxonomy.subdomain}
                 onChange={setTaxonomy}
               />
+              {partitionProblem && <p className="field-error">{partitionProblem}</p>}
               <div className="native-actions">
                 <button
                   className="btn primary"
-                  disabled={w.busy || !taxonomy.domain}
+                  disabled={w.busy || !taxonomy.domain || Boolean(partitionProblem)}
                   onClick={() =>
                     void w.run(async () => {
                       await api.patch(`/api/kafka/topics/${selected.id}`, {
@@ -788,12 +829,7 @@ export function Kafka({
               />
             </>
           )}
-          {access.data?.items.some(
-            (a) =>
-              a.topic_id === selected.id &&
-              a.application_id === s.application &&
-              a.state === "active",
-          ) ? (
+          {currentAccess?.state === "active" ? (
             <>
               <Field label="Message">
                 <textarea
@@ -826,6 +862,8 @@ export function Kafka({
               </div>
               <pre>{JSON.stringify(messages, null, 2)}</pre>
             </>
+          ) : currentAccess ? (
+            <p>Access for {s.applicationName(s.application)} is {kafkaGrantChip(currentAccess.state).label.toLowerCase()}. Wait for this request to finish before requesting again.</p>
           ) : (
             <form
               onSubmit={(e) => {
@@ -851,7 +889,7 @@ export function Kafka({
               </Field>
               <button
                 className="btn primary"
-                disabled={w.busy || selected.state !== "ready"}
+                disabled={w.busy || selected.state !== "ready" || !s.application || access.loading || Boolean(access.error) || purpose.trim().length < 3}
               >
                 Request access
               </button>

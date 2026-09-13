@@ -151,6 +151,7 @@ Modules named by more than one capability spec:
 | `request-logs` | Per-request access logs, from ELK or the mock, and the hour-long body capture window |
 | `ai-gateway-mcp-a2a` | The two RPC variants and the rewritten agent card |
 | `backend-integration-surface` | The backend pool, the breaker, named backend-auth schemes |
+| `egress-governance` | What the platform may reach: the denied ranges, and the admin's deny rules |
 | `app-certificates` | The client identity the estate presents, and renewal in place |
 | `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
 | `dashboard-health` | Health Status, uptime, telemetry, the application dashboard, FixMe |
@@ -383,6 +384,9 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET · POST | `/api/trust/exceptions` | ses |
 | POST | `/api/trust/exceptions/:id/check` | ses |
 | DELETE | `/api/trust/exceptions/:id` | ses |
+| GET · POST | `/api/trust/deny-rules` | ses |
+| POST | `/api/trust/deny-rules/preview` | ses |
+| DELETE | `/api/trust/deny-rules/:id` | ses |
 
 ### Playground and Kafka
 
@@ -438,7 +442,9 @@ Tables, by the capability that owns them:
   `operation`. `gateway_setting` is sparse and keyed `(scope, scope_id, key)`: `scope_id` is `''`
   for the fleet, the environment's name, or a **target id**, so a gateway's overrides follow it
   through a rename and leave with it when it is deleted.
-- **Trust** — `certificate`, `trust_anchor`, `tls_exception`.
+- **Trust** — `certificate`, `trust_anchor`, `tls_exception`, `egress_deny_rule`. The last is
+  estate-wide when its `environment` is `NULL`, and its removal is dated rather than destructive,
+  like an anchor's.
 - **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`.
 - **Logs** — `body_capture`. The lines themselves live in the log index, never here.
 - **Everything else** — `audit`, `integration_event`, `playground_call`, `schema_version`.
@@ -516,8 +522,8 @@ domainPrefix(domain, subdomain)         = '/' + [slugify(domain), slugifyPath(su
 - The path is **stored without** its version segment, because the gateway appends it from the
   API's own `apiVersion`. `stripVersionSegment(path, apiVersion)` is the guard that keeps a
   hand-edited path from becoming `/sales/orders/v2/v2`.
-- `API_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/` — it prefills a base path, so it
-  stays path-safe.
+- `API_VERSION_PATTERN = /^v[1-9][0-9]{0,30}$/` — a lowercase `v` followed by a positive integer,
+  without leading zeroes; maximum 32 characters.
 - API name pattern: `/^[a-z0-9][a-z0-9-]{1,60}$/`.
 
 ### The Taxonomy
@@ -830,9 +836,10 @@ variable, never a silent downgrade.
 | `REVISION_KEEP_COUNT` | `5` | at least 1 |
 | `REVISION_KEEP_DAYS` | `365` | |
 | `MAX_TRUST_ANCHORS` | `16` | at least 1 |
+| `MAX_EGRESS_DENY_RULES` | `64` | at least 1; every rule is evaluated on every write and build |
 | `DASHBOARD_DEFAULT_SINCE_MIN` | `1440` | at least 1 |
 | `LOGS_PROVIDER` | `mock` | `elk` or `mock`; **no fallback** from `elk` to `mock` |
-| `ELK_URL` | *(none)* | required with `elk`, and must be in the egress allowlist |
+| `ELK_URL` | *(none)* | required with `elk`, and must not resolve into a denied range |
 | `ELK_API_KEY` *or* `ELK_USERNAME`/`ELK_PASSWORD` | *(none)* | one is required with `elk` |
 | `ELK_INDEX` | `apim-access-*` | |
 | `ELK_UPTIME_INDEX` | `heartbeat-*` | a separate index: Heartbeat writes one document per check |
@@ -849,11 +856,14 @@ Refusals checked at boot, before anything serves:
 - `DEV_AUTH` is retired; setting it without `AUTH_PROVIDERS` is a startup failure that says so.
 - `OIDC_REDIRECT_URI`'s origin must equal `PUBLIC_URL`'s, or the callback sets the session cookie
   on an origin that is never sent back and the user completes sign-in and arrives signed out.
-- `OIDC_ISSUER`, `ELK_URL` and every `gatewayUrls` entry are checked against the egress allowlist
-  at boot, on the string, without a network call.
+- `OIDC_ISSUER`, `ELK_URL` and every `gatewayUrls` entry are checked against the **denied ranges**
+  at boot, on the string, without a request. An administrator's deny rules are deliberately not
+  consulted here: these three are operator-set, and a rule created in the portal must not be able to
+  prevent the next restart.
 - Every target's environment must be in `PROMOTION_CHAIN`.
-- `REVISION_KEEP_COUNT`, `MAX_TRUST_ANCHORS` and `DASHBOARD_DEFAULT_SINCE_MIN` refuse `0`
-  by name: zero is a legal integer and a destructive value for all three.
+- `REVISION_KEEP_COUNT`, `MAX_TRUST_ANCHORS`, `MAX_EGRESS_DENY_RULES` and
+  `DASHBOARD_DEFAULT_SINCE_MIN` refuse `0` by name: zero is a legal integer and a destructive value
+  for all four.
 
 ### Data Plane
 
@@ -933,10 +943,27 @@ TargetDef = { environment, adapter, name?, enforce, paused, config,
 ### `INTEGRATIONS_FILE`
 
 The admin-registered references a policy may name, plus the estate's ceilings:
-`egressAllowlist[]`, `denyCidrs[]`, `xml` limits, `validationCeilings`, `tlsExceptionMaxDays`,
-and the issuer / token-provider / HMAC / secret registries. A dangling reference is a **boot
-failure** naming both the reference and where it is used — a policy pointing at a missing secret
-would otherwise fail at the first request instead.
+`denyCidrs[]`, `xml` limits, `validationCeilings`, `tlsExceptionMaxDays`, and the issuer /
+token-provider / HMAC / secret registries. A dangling reference is a **boot failure** naming both
+the reference and where it is used — a policy pointing at a missing secret would otherwise fail at
+the first request instead.
+
+`egressAllowlist[]` was retired in v1.4.0. The platform no longer requires a host to be registered
+before it may be a backend; it denies networks here and denies hosts by administrator rule in the
+portal. A file still declaring the key is a **boot failure** that says so and names the screen that
+replaced it, because ignoring it would leave an operator trusting a list nothing reads. See
+`egress-governance`.
+
+`denyCidrs[]` is the half that stays here, because nothing clickable should be able to widen it. It
+is applied **after** DNS resolution, to every owner-supplied URL. The deployable shape denies
+`169.254.0.0/16` (the instance metadata service), loopback (`127.0.0.0/8`, `::1/128`) and the
+control plane's own origin, which is derived from `PUBLIC_URL` rather than written down. It
+deliberately does **not** deny RFC1918: this estate's backends are internal, and denying
+`10.0.0.0/8`, `172.16.0.0/12` and `192.168.0.0/16` would refuse almost all of them. The
+repository's `config/integrations.json` permits loopback so the local stack's backends on
+`127.0.0.1` work, and says so in the file. The image carries that same copy at
+`/app/config.sample/` as a sample to edit rather than a default it mounts — deny `127.0.0.0/8`
+there before deploying.
 
 ## Visual Identity Summary
 

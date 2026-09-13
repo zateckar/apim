@@ -226,7 +226,7 @@ describe("body capture", () => {
 
   /** What the fleet would be handed right now for this API's route. */
   function routeInConfig() {
-    const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     return config.routes.find((route) => route.resourceId === published.resourceId)!;
   }
 

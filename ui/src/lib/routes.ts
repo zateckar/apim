@@ -284,7 +284,7 @@ export const ROUTES: RouteDef[] = [
     id: "how",
     patterns: ["/how"],
     title: "How this works",
-    purpose: "The six things you can do here, the two-tier model behind them, and every term defined.",
+    purpose: "The workflows available here, the two-tier model behind them, and every term defined.",
     scope: "global",
     nav: { group: "Global", label: "How this works", icon: "Book" },
     plainChrome: true,

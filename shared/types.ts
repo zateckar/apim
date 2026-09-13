@@ -271,5 +271,5 @@ export type OriginalFormat =
   | "mcp-manifest"
   | "a2a-agent-card";
 
-/** `^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$` — it prefills a base path, so it stays path-safe. */
-export const API_VERSION_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/;
+/** Contract versions are positive integer identifiers: v1, v2, … (api-versioning-and-stage). */
+export const API_VERSION_PATTERN = /^v[1-9][0-9]{0,30}$/;

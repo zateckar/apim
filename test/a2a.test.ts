@@ -2,6 +2,7 @@ import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   FIXTURE_DOMAIN,
+  denyRule,
   FIXTURE_SUBDOMAIN,
   makeCp,
   makeDp,
@@ -29,10 +30,6 @@ let seq = 0;
 
 function integrations(): Integrations {
   return {
-    egressAllowlist: [
-      { scheme: "http", hostPattern: "127.0.0.1", portRange: [1024, 65535] },
-      { scheme: "http", hostPattern: "localhost", portRange: [1024, 65535] },
-    ],
     denyCidrs: ["169.254.0.0/16"],
   } as Integrations;
 }
@@ -145,10 +142,19 @@ describe("discovery", () => {
     expect((await response.json()).detail).toContain("could not be reached");
   });
 
-  test("a URL outside the egress allowlist is refused before anything is fetched", async () => {
+  test("a URL inside a denied range is refused before anything is fetched", async () => {
+    const { response } = await publishA2a("http://169.254.169.254");
+    expect(response.status).toBe(400);
+    expect((await response.json()).detail).toContain("denied range");
+  });
+
+  test("a URL an administrator has blocked is refused before anything is fetched", async () => {
+    denyRule(cp, { hostPattern: "*.example.com", reason: "Agents are not published from this domain" });
     const { response } = await publishA2a("http://agent.example.com:8080");
     expect(response.status).toBe(400);
-    expect((await response.json()).detail).toContain("not in the egress allowlist");
+    const detail = (await response.json()).detail;
+    expect(detail).toContain("*.example.com");
+    expect(detail).toContain("Agents are not published from this domain");
   });
 
   test("an uploaded card works, and something that is not a card is refused", async () => {

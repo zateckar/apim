@@ -6,6 +6,7 @@ import { newId, nowIso, type DB } from "./db.ts";
 import { writeAudit } from "./audit.ts";
 import { compileMissingArtifacts } from "./artifacts.ts";
 import { appliedDigest, buildRoutes, COMPILER_VERSION, limitsFor } from "./config-build.ts";
+import { denyRulesFor } from "./deny-rules.ts";
 import { applySeededUnits, computePlan, planDigest, type ReleasePlan } from "./promotion.ts";
 import { pruneOldRows } from "./telemetry.ts";
 
@@ -176,12 +177,16 @@ function reconcile(app: App, payload: ReconcilePayload): string {
       );
       db.run("UPDATE release SET state = 'converged', reason = NULL WHERE id = ?", [release.id]);
 
-      const route = buildRoutes(db, target.environment, limitsFor(app.config.integrations)).routes.find(
-        (r) => r.resourceId === payload.resourceId,
-      );
+      const route = buildRoutes(
+        db,
+        target.environment,
+        limitsFor(app.config.integrations),
+        denyRulesFor(db, app.config.publicUrl),
+      ).routes.find((r) => r.resourceId === payload.resourceId);
       if (!route) {
         throw new Error(
-          "the resource has no route or backend binding in this environment, so nothing can be published",
+          "the resource has no route or backend binding in this environment, so nothing can be published — " +
+            "or its backend is blocked by a deny rule, which the environment's configuration says in as many words",
         );
       }
 

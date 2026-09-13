@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Children, cloneElement, isValidElement, type ReactElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "./api";
 import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow } from "./lib/attention";
 import { define } from "./lib/glossary";
@@ -54,12 +54,15 @@ export interface Async<T> {
   reload: () => void;
 }
 
-export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): Async<T> {
+export function useAsync<T>(fn: () => Promise<T>, deps: unknown[], scope?: unknown): Async<T> {
   const [data, setData] = useState<T | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [cause, setCause] = useState<unknown>(null);
   const [loading, setLoading] = useState(true);
   const [tick, setTick] = useState(0);
+  // A changed query must not label the previous result as its own. Background refreshes within
+  // one scope retain their data; see portal-shell-navigation, asynchronous context changes.
+  const [loadedScope, setLoadedScope] = useState<unknown>(scope);
 
   useEffect(() => {
     let live = true;
@@ -70,21 +73,25 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[]): Async<T> {
         setData(result);
         setError(null);
         setCause(null);
+        setLoadedScope(scope);
       })
       .catch((err) => {
         if (!live) return;
         setError(describe(err));
         setCause(err);
+        setData(null);
+        setLoadedScope(scope);
       })
       .finally(() => live && setLoading(false));
     return () => {
       live = false;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, tick]);
+  }, [...deps, tick, scope]);
 
   const reload = useCallback(() => setTick((t) => t + 1), []);
-  return { data, error, cause, loading, reload };
+  const current = Object.is(scope, loadedScope);
+  return { data: current ? data : null, error: current ? error : null, cause: current ? cause : null, loading: loading || !current, reload };
 }
 
 export function describe(err: unknown): string {
@@ -192,11 +199,19 @@ export function Field({
   hint?: string;
   children: ReactNode;
 }) {
+  const id = useId();
   return (
     <label className="native-field">
-      <span className="lbl">{label}</span>
-      {children}
-      {hint && <span className="hint">{hint}</span>}
+      <span id={`${id}-label`} className="lbl">{label}</span>
+      {Children.map(children, child => {
+        if (!isValidElement(child) || !["input", "select", "textarea"].includes(String(child.type))) return child;
+        const control = child as ReactElement<Record<string, unknown>>;
+        return cloneElement(control, {
+          "aria-labelledby": control.props["aria-labelledby"] ?? (control.props["aria-label"] ? undefined : `${id}-label`),
+          "aria-describedby": [control.props["aria-describedby"], hint ? `${id}-hint` : null].filter(Boolean).join(" ") || undefined,
+        });
+      })}
+      {hint && <span id={`${id}-hint`} className="hint">{hint}</span>}
     </label>
   );
 }
@@ -207,35 +222,58 @@ export function Field({
  * input rather than name it, so a screen reader announced an unlabelled box.
  */
 export function TextField({
-  label,
-  value,
-  onChange,
-  placeholder,
-  type = "text",
-  inputId,
+  label, value, onChange, placeholder, type = "text", inputId,
+  hint, error, required, pattern, min, max, step, maxLength, autoComplete,
 }: {
   label: string;
   value: string | number;
   onChange: (next: string) => void;
   placeholder?: string;
-  type?: "text" | "number";
-  /** A stable id, for the rare caller that has to move the caret here from somewhere else. */
+  type?: "text" | "number" | "email" | "url" | "password";
   inputId?: string;
+  hint?: string;
+  error?: string | null;
+  required?: boolean;
+  pattern?: string;
+  min?: number;
+  max?: number;
+  step?: number;
+  maxLength?: number;
+  autoComplete?: string;
 }) {
   const generated = useId();
   const id = inputId ?? generated;
   return (
-    <div className="field">
+    <div className={`field${type === "number" ? " field-number" : ""}`}>
       <label htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        type={type}
-        value={value}
-        placeholder={placeholder}
-        onChange={(event) => onChange(event.target.value)}
-      />
+      <input id={id} type={type} value={value} placeholder={placeholder}
+        required={required} pattern={pattern} min={min} max={max} step={step}
+        maxLength={maxLength} autoComplete={autoComplete}
+        aria-invalid={Boolean(error)} aria-describedby={error || hint ? `${id}-help` : undefined}
+        onChange={(event) => onChange(event.target.value)} />
+      {(error || hint) && <span id={`${id}-help`} className={error ? "field-error" : "hint"}>{error || hint}</span>}
     </div>
   );
+}
+
+/** Small exclusive choices stay visible and use native radio keyboard behaviour. */
+export function ChoiceField({ label, value, onChange, options, disabled, hint }: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: ReadonlyArray<{ value: string; label: string }>;
+  disabled?: boolean;
+  hint?: string;
+}) {
+  const id = useId();
+  return <fieldset className="choice-field" disabled={disabled} aria-describedby={hint ? `${id}-help` : undefined}>
+    <legend>{label}</legend>
+    <div className="choice-options">{options.map(option => <label key={option.value} className={value === option.value ? "choice-option selected" : "choice-option"}>
+      <input type="radio" name={id} value={option.value} checked={value === option.value} onChange={() => onChange(option.value)} />
+      <span>{option.label}</span>
+    </label>)}</div>
+    {hint && <p id={`${id}-help`} className="hint">{hint}</p>}
+  </fieldset>;
 }
 
 export function Digest({ value }: { value?: string | null }) {

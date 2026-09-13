@@ -1,6 +1,6 @@
 import { formatDate, formatDateTime } from "../lib/datetime";
 import { useState } from "react";
-import { api, type Me, type SessionView } from "../api";
+import { api, type AuthProviders, type Me, type SessionView } from "../api";
 import { Panel, EmptyState, Link, Notice, Term, useAction, useAsync } from "../components";
 
 /**
@@ -17,7 +17,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
 
   return (
     <>
-      <Panel title="Who you are here">
+      <Panel title="Who you are here" className="account-profile">
         <dl className="kv">
           <dt>Name</dt>
           <dd>{user.name}</dd>
@@ -61,7 +61,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
         {(me.applications ?? []).length === 0 ? (
           <EmptyState
             title="You are not in any application"
-            detail="You can read the catalog and subscribe, but you cannot publish or change anything until an administrator puts you in an application."
+            detail={user.isAdmin ? "As an administrator, you can act for every application without explicit membership." : "You can read the catalog. An administrator must add you to an application before you can subscribe, publish or change what it owns."}
             action={<Link to="/catalog">Browse the catalog →</Link>}
           />
         ) : (
@@ -76,7 +76,7 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
               {(me.applications ?? []).map((application) => (
                 <tr key={application.applicationId}>
                   <td>
-                    <strong>{application.applicationName}</strong>
+                    <Link to={`/${application.applicationId}/dashboard`}><strong>{application.applicationName}</strong> →</Link>
                   </td>
                   <td className="muted">
                     {application.source === "idp" ? (
@@ -232,18 +232,20 @@ function shortAgent(agent: string | null): string {
 }
 
 function ChangePassword({ onChanged }: { onChanged: () => void }) {
+  const config = useAsync(() => api.get<AuthProviders>("/api/auth/providers"), []);
   const [current, setCurrent] = useState("");
   const [next, setNext] = useState("");
   const [again, setAgain] = useState("");
   const action = useAction();
-  const ready = current.length > 0 && next.length > 0 && next === again;
+  const minLength = config.data?.passwordMinLength ?? 12;
+  const ready = !config.loading && !config.error && current.length > 0 && next.length >= minLength && next.length <= 200 && next === again;
 
   return (
     <Panel
       title="Change your password"
       hint="Every other browser you are signed in on is signed out. This one stays."
     >
-      <Notice kind="error">{action.error}</Notice>
+      <Notice kind="error">{action.error ?? config.error}</Notice>
       {action.message && <Notice kind="ok">{action.message}</Notice>}
       <form
         onSubmit={async (event) => {
@@ -275,12 +277,16 @@ function ChangePassword({ onChanged }: { onChanged: () => void }) {
           <label htmlFor="account-new-password">New password</label>
           <input
             id="account-new-password"
+            minLength={minLength} maxLength={200}
+            aria-describedby="password-length"
+            aria-invalid={next.length > 0 && next.length < minLength}
             type="password"
             autoComplete="new-password"
             value={next}
             onChange={(event) => setNext(event.target.value)}
           />
         </div>
+        <p id="password-length" className={next.length > 0 && next.length < minLength ? "field-error" : "hint"}>Use {minLength}–200 characters.</p>
         <div className="field">
           <label htmlFor="account-new-password-again">And again</label>
           <input
@@ -292,8 +298,8 @@ function ChangePassword({ onChanged }: { onChanged: () => void }) {
           />
         </div>
         {again.length > 0 && next !== again && <p className="muted small">The two do not match.</p>}
-        <button className="primary" type="submit" disabled={!ready || action.busy}>
-          {action.busy ? "Saving…" : "Change it"}
+        <button className="btn primary" type="submit" disabled={!ready || action.busy}>
+          {action.busy ? "Saving…" : "Change password"}
         </button>
       </form>
     </Panel>

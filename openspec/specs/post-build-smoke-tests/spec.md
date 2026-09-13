@@ -8,6 +8,25 @@ something belongs in `test/`, against a control plane the test owns.
 
 ## Requirements
 
+### Requirement: Verify dependent choices and draft scope without changing the estate
+
+#### Scenario: Logical workflow regressions are checked
+
+- GIVEN a running portal
+- WHEN the logical workflow browser tests run
+- THEN they SHALL check gateway-dependent URLs, invalidation of copy previews, inherited settings, context changes, approval scope and asynchronous search results
+- AND any configuration request SHALL be intercepted with a test response before it reaches the estate
+
+
+### Requirement: Verify list controls without changing the estate
+
+#### Scenario: Page actions are checked
+
+- GIVEN a running portal
+- WHEN the page-action smoke tests run
+- THEN they SHALL verify that application and audit search can recover from no matches, product creation can be opened and cancelled without saving, and Activity can switch between its filters
+- AND they SHALL make no publishing, configuration, subscription or deletion requests
+
 ### Requirement: Check detail layouts as well as navigation pages
 
 #### Scenario: Workspace tabs render on a phone or desktop
@@ -180,3 +199,10 @@ something belongs in `test/`, against a control plane the test owns.
 - AND the suite SHALL check that mobile navigation closes with Escape and restores focus
 - AND Telemetry SHALL be checked against the shell's selected environment
 - AND workspace panel checks SHALL use accessible tab roles and selected state
+
+#### Scenario: Invalid form drafts are tested without writing to the estate
+
+- GIVEN a running portal
+- WHEN the browser smoke suite exercises forms
+- THEN it SHALL verify duplicate API names, numeric version formats, contextual resource types, taxonomy dependency resets, invalid product names and numeric gateway overrides
+- AND it SHALL edit and abandon drafts without publishing, creating or saving objects

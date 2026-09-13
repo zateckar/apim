@@ -1,3 +1,4 @@
+import { listAll } from "../portal/client";
 import { useState } from "react";
 import type { Session } from "../App";
 import {
@@ -37,7 +38,7 @@ const STEPS = ["Application", "Environment", "Review"];
 
 export function SubscribeWizard({ resourceId, session }: { resourceId: string; session: Session }) {
   const listing = useAsync(() => api.get<MarketListingDetail>(`/api/catalog/${resourceId}`), [resourceId]);
-  const applications = useAsync(() => api.get<{ items: Application[] }>("/api/applications"), []);
+  const applications = useAsync(() => listAll<Application>("/api/applications"), []);
 
   const [step, setStep] = useState(0);
   const [applicationId, setApplicationId] = useState("");
@@ -69,7 +70,8 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
 
   return (
     <>
-      <div className="object-head">
+      <div className="page-toolbar"><Link to={`/catalog/${resourceId}`}>← Back to API</Link></div>
+      <div className="object-head subscription-resource-head">
         <div>
           <h3>
             {api_.icon && <span className="listing-icon">{api_.icon}</span>} {api_.title}{" "}
@@ -94,7 +96,8 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
         <>
           {step === 0 && (
             <ChooseApplication
-              applications={applications.data.items}
+              applications={applications.data.items.filter(app => session.user.isAdmin || session.user.applications.includes(app.id))}
+              canCreate={session.user.isAdmin}
               value={applicationId}
               applicationId={session.application}
               onChange={setApplicationId}
@@ -111,7 +114,8 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
                 {session.meta.chain.map((candidate) => (
                   <button
                     key={candidate}
-                    className={candidate === environment ? "chip active" : "chip"}
+                    className={candidate === environment ? "environment-choice active" : "environment-choice"}
+                    aria-pressed={candidate === environment}
                     disabled={!live.includes(candidate)}
                     title={
                       live.includes(candidate)
@@ -182,6 +186,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
 }
 
 function ChooseApplication({
+  canCreate,
   applications,
   value,
   applicationId,
@@ -190,6 +195,7 @@ function ChooseApplication({
   onNext,
 }: {
   applications: Application[];
+  canCreate: boolean;
   value: string;
   applicationId: string;
   onChange: (next: string) => void;
@@ -198,6 +204,7 @@ function ChooseApplication({
 }) {
   const [name, setName] = useState("");
   const action = useAction();
+  const nameProblem = name.trim().length < 2 || name.trim().length > 80 ? "Use 2–80 characters." : applications.some(app => app.name.toLowerCase() === name.trim().toLowerCase()) ? "This application already exists. Select it above." : null;
 
   return (
     <Panel
@@ -209,11 +216,11 @@ function ChooseApplication({
       {applications.length === 0 ? (
         <EmptyState
           title="You have no applications yet"
-          detail="Create one now — it takes a name, and it is the thing your key will belong to."
-          action={null}
+          detail={canCreate ? "Create an application below to own the subscription." : "Ask an administrator to grant you application membership."}
+          action={<Link to="/account">View your account →</Link>}
         />
       ) : (
-        <ul className="plain">
+        <ul className="plain subscriber-applications">
           {applications.map((application) => (
             <li key={application.id}>
               <label className="check-inline">
@@ -232,11 +239,11 @@ function ChooseApplication({
       )}
 
       {/* Creating one here rather than sending somebody to another screen and back `[P3-05]`. */}
-      <div className="subform">
-        <TextField label="…or create one" value={name} onChange={setName} placeholder="checkout-service" />
+      {canCreate && <div className="subform">
+        <TextField maxLength={80} error={name ? nameProblem : null} hint="2–80 characters, unique in the directory." label="…or create one" value={name} onChange={setName} placeholder="checkout-service" />
         <button
           className="ghost"
-          disabled={action.busy || name.trim().length === 0}
+          disabled={action.busy || Boolean(nameProblem)}
           onClick={async () => {
             const ok = await action.run(async () => {
               const created = await api.post<Application>("/api/applications", { name, applicationId });
@@ -248,7 +255,7 @@ function ChooseApplication({
         >
           Create application
         </button>
-      </div>
+      </div>}
 
       <div className="action" style={{ marginTop: 14 }}>
         <button disabled={!value} onClick={onNext} title={value ? undefined : "Choose an application first."}>
@@ -293,7 +300,7 @@ function ReviewTerms({
   const quota = document.quota as { calls: number; periodSec: number } | undefined;
 
   return (
-    <Panel title="What you are agreeing to" hint="Read from what the gateway is actually running here, not from a default.">
+    <Panel title="What you are agreeing to" hint="Configured limits for this API in the selected environment. Other APIs in the product may have different limits.">
       <Notice kind="error">{action.error}</Notice>
       {/* Without the effective policy the limits below would read "None set here", which is a
           claim rather than a gap. Say which it is before somebody agrees to it. */}
@@ -321,11 +328,11 @@ function ReviewTerms({
           <Term name="rate limit" />
         </dt>
         <dd>
-          {rateLimit ? (
+          {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : rateLimit ? (
             <>
               {rateLimit.calls} calls every {rateLimit.periodSec} seconds
               {rateLimit.per === "instance" && (
-                <span className="muted"> — counted per gateway, so the fleet total is higher</span>
+                <span className="muted"> — counted per replica, so the fleet total is higher</span>
               )}
             </>
           ) : (
@@ -336,9 +343,9 @@ function ReviewTerms({
           <Term name="quota" />
         </dt>
         <dd>
-          {quota ? (
+          {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : quota ? (
             <>
-              {quota.calls.toLocaleString()} calls per {Math.round(quota.periodSec / 86400)} days,
+              {quota.calls.toLocaleString()} calls per {quota.periodSec} seconds,
               counted across the whole fleet
             </>
           ) : (
@@ -425,9 +432,6 @@ export function Requested({
   resourceId: string;
 }) {
   const endpoint = listing.endpoints.find((candidate) => candidate.environment === environment);
-  const url = endpoint
-    ? `https://${endpoint.host === "*" ? "<gateway-host>" : endpoint.host}${endpoint.basePath === "/" ? "" : endpoint.basePath}`
-    : "<the API's address>";
   const own = state === "activating";
 
   return (
@@ -447,11 +451,16 @@ export function Requested({
         active — so there is nothing to copy from this page. Reveal it on the subscription when it
         is, and every reveal is audited.
       </p>
-      <p className="muted small">The call it will make:</p>
-      <div className="pre">{`curl "${url}/…" -H "X-Api-Key: <your key>"`}</div>
+      {endpoint?.live && endpoint.urls.length > 0 ? <>
+        <p className="muted small">Published addresses in {environment.toUpperCase()}:</p>
+        <ul className="url-list">{endpoint.urls.map(entry => <li key={`${entry.gateway}:${entry.url}`}>
+          <span className="badge">{entry.network === "intranet" ? "Intranet" : "Internet"}</span>
+          <span className="mono">{entry.url}</span><span className="muted small">{entry.gateway}</span>
+        </li>)}</ul>
+      </> : <p className="muted small">No live gateway address is published in {environment.toUpperCase()} yet.</p>}
       <div className="inline" style={{ marginTop: 14 }}>
         <Link to={`/subscriptions/${subscriptionId}`}>Open the subscription and reveal the key →</Link>
-        <Link to={`/apis/${resourceId}/try`}>Try it from here instead</Link>
+        <Link to={`/catalog/${resourceId}`}>View calling instructions and Try it →</Link>
         <Link to="/catalog">Find another API</Link>
       </div>
     </Panel>

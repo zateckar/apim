@@ -1,3 +1,4 @@
+import { API_VERSION_PATTERN } from "../../shared/types.ts";
 import type { App, Ctx } from "./router.ts";
 import {
   Router,
@@ -16,6 +17,7 @@ import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
 import { domainError, domainPrefix, publishedPath } from "../../shared/domains.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
 import { checkEgress } from "./egress.ts";
+import { denyRulesFor, egressScope } from "./deny-rules.ts";
 import { readPool, type PoolInput } from "./backend-pool.ts";
 import {
   buildConfig,
@@ -251,7 +253,7 @@ async function settings(
   // shorthand the publish and promotion forms send, `pool`/`rule` is what the properties form
   // sends once there is more than one. Both land on the reader the binding endpoint uses, so a
   // pool cannot mean one thing here and another there.
-  const read = await readPool(body, ctx.app.config.integrations);
+  const read = await readPool(body, egressScope(ctx.app.db, ctx.app.config, environment));
   if (read) {
     backend = {
       ...read,
@@ -262,8 +264,8 @@ async function settings(
   } else if (body.backendUrl !== undefined) {
     const errors = await checkEgress(
       body.backendUrl,
-      ctx.app.config.integrations,
       "backendUrl",
+      egressScope(ctx.app.db, ctx.app.config, environment),
     );
     if (errors.length) throw badRequest(errors.join("; "));
     backend = {
@@ -545,8 +547,8 @@ export function registerOperationRoutes(router: Router) {
       throw badRequest("kind: rest, soap, mcp or a2a");
     if (!body.name || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.name))
       throw badRequest("name: 2–61 lowercase letters, digits or hyphens");
-    if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(version))
-      throw badRequest("invalid API version");
+    if (!API_VERSION_PATTERN.test(version))
+      throw badRequest("apiVersion: use v followed by a positive integer, for example v1 or v2 (maximum 32 characters)");
     // A product is no longer something the publisher has to have decided. Naming one is still
     // accepted, and choosing an existing one still is, but the common case — one API, sold on its
     // own — makes its own. Requiring it meant every first publish stopped to invent a bundle for a
@@ -896,7 +898,7 @@ export function registerOperationRoutes(router: Router) {
  * converged on anything; it is an environment that is down.
  */
 export function fleetApplied(app: App, environment: string): boolean {
-  if (buildConfig(app.db, app.kek, environment, app.config.integrations).errors.length) {
+  if (buildConfig(app.db, app.kek, environment, app.config).errors.length) {
     return false;
   }
   const targets = gatewaysIn(app.db, environment);
@@ -904,8 +906,8 @@ export function fleetApplied(app: App, environment: string): boolean {
     targets.map((t) => [
       t.id,
       targets.length === 1
-        ? buildConfig(app.db, app.kek, environment, app.config.integrations).digest
-        : buildConfig(app.db, app.kek, environment, app.config.integrations, t.id).digest,
+        ? buildConfig(app.db, app.kek, environment, app.config).digest
+        : buildConfig(app.db, app.kek, environment, app.config, t.id).digest,
     ]),
   );
   const abandonedBefore = Date.now() - app.config.instanceAbandonedAfterSec * 1000;
@@ -1067,6 +1069,7 @@ export function runOperations(app: App): void {
           db,
           operation.environment,
           limitsFor(app.config.integrations),
+          denyRulesFor(db, app.config.publicUrl),
         );
         const route = built.routes.find(
           (r) => r.resourceId === operation.resource_id,
@@ -1080,7 +1083,7 @@ export function runOperations(app: App): void {
           db,
           app.kek,
           operation.environment,
-          app.config.integrations,
+          app.config,
         );
         // One row per gateway it was put on: `applied` answers "what does this gateway have", and
         // with several in an environment that is a different answer per gateway.

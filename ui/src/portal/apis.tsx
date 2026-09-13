@@ -1,3 +1,4 @@
+import { nameError, versionError, httpUrlError, NAME_PATTERN, NAME_HINT, VERSION_HINT } from "../lib/form-validation";
 import { PolicyForm } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { LogsPanel } from "../views/LogsPanel";
@@ -8,6 +9,8 @@ import type { Session } from "../App";
 import { api, type Locality } from "../api";
 import {
   EmptyState,
+  ChoiceField,
+  TextField,
   Field,
   Link,
   Modal,
@@ -87,8 +90,8 @@ export function DomainPicker({
 }) {
   const found = findDomain(domain);
   return (
-    <>
-      <Field label="Domain">
+    <div className="taxonomy-fields" role="group" aria-label="Catalog location">
+      <Field label="Domain" hint="Choose the domain first; it determines the sub-domains below.">
         <select
           required
           disabled={disabled}
@@ -105,7 +108,7 @@ export function DomainPicker({
           ))}
         </select>
       </Field>
-      <Field label="Sub-domain">
+      <Field label="Sub-domain (optional)" hint={found ? `Options belong to ${found.name}. Changing the domain clears this choice.` : "Select a domain to see its sub-domains."}>
         <select
           disabled={disabled || !found || found.subdomains.length === 0}
           value={subdomain}
@@ -127,7 +130,7 @@ export function DomainPicker({
           )}
         </select>
       </Field>
-    </>
+    </div>
   );
 }
 
@@ -278,12 +281,14 @@ export function PathPreview({
  * versioned some other way falls back to a suffix rather than to a guess that collides.
  */
 export function nextVersion(existing: string[]): string {
-  const numbers = existing
-    .map((value) => /^v(\d+)$/.exec(value)?.[1])
-    .filter((value): value is string => value !== undefined)
-    .map(Number);
-  if (numbers.length) return `v${Math.max(...numbers) + 1}`;
-  return `${existing[existing.length - 1] ?? "v1"}-next`;
+  const numbers = existing.map(value => /^v([1-9][0-9]{0,30})$/.exec(value)?.[1])
+    .filter((value): value is string => value !== undefined).map(value => BigInt(value));
+  const largest = numbers.reduce((max, value) => value > max ? value : max, 0n);
+  const next = `v${largest + 1n}`;
+  if (!versionError(next)) return next;
+  let available = 1n;
+  while (numbers.includes(available)) available++;
+  return `v${available}`;
 }
 
 /**
@@ -307,7 +312,7 @@ export function versionRefusal(
   // nothing is an error message for a mistake nobody has made yet.
   if (!wanted) return null;
   const clash = existing.find((value) => value.trim().toLowerCase() === wanted);
-  if (clash === undefined) return null;
+  if (clash === undefined) return versionError(identifier);
   return (
     `${name} already has a version called ${clash}. Its versions are ${existing.join(", ")} — and ` +
     `two that differ only by case would be one version to anybody reading the address.`
@@ -346,10 +351,14 @@ const PUBLISH_STEPS = [
 ] as const;
 
 export function Publish({ session: s }: { session: Session }) {
+  const requestedKind = new URLSearchParams(location.search).get("kind");
+  const fixedKind = requestedKind === "mcp" || requestedKind === "a2a" ? requestedKind : null;
+  const noun = fixedKind === "mcp" ? "MCP server" : fixedKind === "a2a" ? "A2A agent" : "API";
+  const resources = useAsync(() => listAll<{ id: string; name: string; applicationId: string }>("/api/resources"), [s.application]);
   const [step, setStep] = useState(0);
   const w = useAction();
   const [kind, setKind] = useState(
-      new URLSearchParams(location.search).get("kind") ?? "rest",
+      fixedKind ?? (requestedKind === "soap" ? "soap" : "rest"),
     ),
     [name, setName] = useState(""),
     [apiVersion, setApiVersion] = useState("v1"),
@@ -369,22 +378,27 @@ export function Publish({ session: s }: { session: Session }) {
   const [gateways, setGateways] = useState<string[] | null>(null);
   const selected = gateways ?? localities.map((l) => l.name);
 
+  const duplicate = resources.data?.items.find(resource => resource.applicationId === s.application && resource.name.toLowerCase() === name.trim().toLowerCase());
+  const nameProblem = nameError(name) ?? (duplicate ? `This application already has ${name}. Open its workspace to edit it or create a new version.` : null);
+  const versionProblem = versionError(apiVersion);
+
   /** What is still missing from a step, in one sentence, or `null` when it is answered. */
   function missing(at: number): string | null {
     if (at === 0) {
-      if (!/^[a-z0-9][a-z0-9-]{1,60}$/.test(name))
-        return "A name: 2–61 lowercase letters, digits or hyphens. It is the middle of the address.";
-      if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$/.test(apiVersion))
-        return "A version. It is the last segment of the address, so both versions can answer at once.";
+      if (nameProblem) return nameProblem;
+      if (versionProblem) return versionProblem;
+      if (resources.loading) return "Checking existing names…";
+      if (resources.error) return "Reload the existing names before continuing.";
       if (!domain) return "A domain. It is the first segment of the address and how the catalog is browsed.";
       return null;
     }
     if (at === 1) {
-      if (source === "url" && !url.trim()) return "The URL to import the definition from.";
+      if (source === "url" && httpUrlError(url)) return "Definition URL: " + httpUrlError(url);
+      if (httpUrlError(docsUrl, true)) return "Documentation link: " + httpUrlError(docsUrl, true);
       if (source !== "url" && !spec.trim()) return "A definition — paste one, or upload a file.";
       return null;
     }
-    if (!backendUrl.trim()) return "Somewhere to forward to in DEV.";
+    if (httpUrlError(backendUrl)) return `Backend URL: ${httpUrlError(backendUrl)}`;
     if (selected.length === 0) return "At least one gateway to answer on.";
     return null;
   }
@@ -397,7 +411,7 @@ export function Publish({ session: s }: { session: Session }) {
   const blocked = missing(at);
 
   return (
-    <Panel title={`Publish to ${first.toUpperCase()}`}>
+    <Panel title={`Publish ${noun} to ${first.toUpperCase()}`} className="publish-flow">
       <div className="stepper">
         {PUBLISH_STEPS.map((entry, index) => (
           <Fragment key={entry.key}>
@@ -418,6 +432,7 @@ export function Publish({ session: s }: { session: Session }) {
       <form
         onSubmit={(e) => {
           e.preventDefault();
+          if (blocked || w.busy) return;
           // Enter on any step but the last advances rather than publishing: a form that submits
           // from the middle is how somebody publishes an API they had not finished describing.
           if (at !== last) {
@@ -455,63 +470,35 @@ export function Publish({ session: s }: { session: Session }) {
 
         {at === 0 && (
           <>
-            <div className="native-form-grid">
-              <Field label="API name">
-                <input
-                  autoFocus
-                  pattern="[a-z0-9][a-z0-9-]{1,60}"
-                  value={name}
-                  onChange={(e) => setName(e.target.value)}
-                />
-              </Field>
-              <Field label="Type">
-                <select value={kind} onChange={(e) => setKind(e.target.value)}>
-                  {["rest", "soap", "mcp", "a2a"].map((k) => (
-                    <option key={k} value={k}>
-                      {k.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-              </Field>
-              <Field label="Version">
-                <input
-                  pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
-                  value={apiVersion}
-                  onChange={(e) => setApiVersion(e.target.value)}
-                />
-              </Field>
-              <DomainPicker
-                domain={domain}
-                subdomain={subdomain}
-                onChange={(next) => {
-                  setDomain(next.domain);
-                  setSubdomain(next.subdomain);
-                }}
-              />
+            <div className="publish-identity">
+              <TextField label={`${noun} name`} value={name} onChange={setName} required pattern={NAME_PATTERN}
+                hint={NAME_HINT} error={name ? nameProblem : null} maxLength={61} />
+              <div className="publish-short-fields">
+                {fixedKind ? <div className="native-field"><span className="lbl">Type</span><strong>{fixedKind.toUpperCase()}</strong></div> :
+                  <ChoiceField label="Type" value={kind} onChange={setKind} options={[{value: "rest", label: "REST"}, {value: "soap", label: "SOAP"}]} />}
+                <TextField label="Version" value={apiVersion} onChange={setApiVersion} required pattern="v[1-9][0-9]{0,30}"
+                  hint={VERSION_HINT} error={apiVersion ? versionProblem : null} maxLength={32} />
+              </div>
             </div>
-            <PathPreview
-              localities={localities}
-              selected={selected}
-              path={
-                domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
-              }
-            />
+            {duplicate && <p><Link to={`/${s.application}/apis/${duplicate.id}`}>Open {duplicate.name} workspace →</Link></p>}
+            {resources.error && <><Notice kind="error">{resources.error}</Notice><button type="button" className="btn" onClick={resources.reload}>Retry name check</button></>}
+            <DomainPicker domain={domain} subdomain={subdomain} onChange={(next) => { setDomain(next.domain); setSubdomain(next.subdomain); }} />
+            {!nameProblem && !versionProblem && domain && (
+              <Field label="Published path">
+                <code>{publishedPath({ domain, subdomain, name, apiVersion })}</code>
+              </Field>
+            )}
             <p className="muted">
-              The domain is the first segment of the address and the version is the last, which is
-              what makes the catalog browsable by domain and a URL legible without looking anything
-              up. Everything on this step is part of the address, which is why it is asked first.
+              Address: domain / sub-domain (if chosen) / name / version.
+              {" "}Full URLs appear after you choose gateways in the Route step.
             </p>
           </>
         )}
 
         {at === 1 && (
           <>
-            <Field label="Definition source">
-              <select value={source} onChange={(e) => setSource(e.target.value)}>
-                <option value="text">Upload or paste definition</option>
-                <option value="url">Import from URL</option>
-              </select>
-            </Field>
+            <ChoiceField label="Definition source" value={source} onChange={setSource}
+              options={[{value: "text", label: "Upload or paste"}, {value: "url", label: "Import from URL"}]} />
             {source === "url" ? (
               <Field
                 label={
@@ -574,7 +561,7 @@ export function Publish({ session: s }: { session: Session }) {
         {at === 2 && (
           <>
             <div className="native-form-grid">
-              <Field label="DEV backend URL">
+              <Field label={`${first.toUpperCase()} backend URL`}>
                 <input
                   type="url"
                   value={backendUrl}
@@ -629,7 +616,7 @@ export function Publish({ session: s }: { session: Session }) {
               className="btn primary"
               disabled={w.busy || !s.application || Boolean(blocked)}
             >
-              {w.busy ? "Publishing…" : "Publish to DEV"}
+              {w.busy ? "Publishing…" : `Publish to ${first.toUpperCase()}`}
             </button>
           )}
           {at === last && (
@@ -1178,7 +1165,7 @@ function EditorForm({
             />
             <PathPreview localities={localities} selected={gateways} path={basePath} />
             <p className="muted">
-              These are the addresses consumers are given in {s.environment.toUpperCase()}. Each
+              Preview of the addresses after saving in {s.environment.toUpperCase()}. Each
               is a gateway's published hostname; its replicas are behind it and are never
               addressed directly.
             </p>
@@ -1375,7 +1362,7 @@ function EditorForm({
             }}
           >
             <p>
-              Your API definition and settings will be promoted automatically.
+              Your saved API definition and settings will be promoted automatically. Save any pending edits before promoting.
               Existing target backend settings are retained.
             </p>
             <Field
@@ -1463,6 +1450,7 @@ function NewVersion({
               subdomain: d.resource.subdomain ?? null,
               basePath: path,
               pool: d.settings.backend.pool,
+              gateways: d.settings.gateways,
               rule: d.settings.backend.rule ?? "failover",
               policy: d.settings.policy,
               ...(d.settings.backend.clientCertRef
@@ -1492,7 +1480,7 @@ function NewVersion({
         <Field label="Version identifier">
           <input
             required
-            pattern="[A-Za-z0-9][A-Za-z0-9._-]{0,31}"
+            pattern="v[1-9][0-9]{0,30}"
             aria-invalid={refusal ? true : undefined}
             value={identifier}
             onChange={(e) => {
@@ -1524,8 +1512,8 @@ function NewVersion({
         </Field>
         <p className="muted">
           Carried over: the definition on screen, the {first.toUpperCase()}{" "}
-          backends and the policies. Not carried over: subscriptions, and
-          anything set in a later environment.
+          backends, gateway selection and saved policies. Access comes from the selected product's
+          subscriptions. Settings in later environments are not carried over.
         </p>
         <button className="btn primary" disabled={w.busy || !productId || refusal !== null}>
           {w.busy ? "Publishing…" : `Publish ${identifier} to ${first.toUpperCase()}`}

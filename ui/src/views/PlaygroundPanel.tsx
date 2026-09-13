@@ -164,8 +164,8 @@ function Console({
   }, [operation]);
 
   const bodyBytes = new TextEncoder().encode(body).length;
-  const overBodyLimit = bodyBytes > form.limits.maxBodyBytes;
-  const missing = operation?.pathParams.filter((p) => !(pathParams[p.name] ?? "").trim()) ?? [];
+  const overBodyLimit = !agentCard && bodyBytes > form.limits.maxBodyBytes;
+  const missing = agentCard ? [] : operation?.pathParams.filter((p) => !(pathParams[p.name] ?? "").trim()) ?? [];
   const needsKey = form.key !== null;
   const noSubscription = needsKey && !subscriptionId;
 
@@ -196,7 +196,7 @@ function Console({
         pathParams,
         query: entries(query),
         headers: entries(headers),
-        body: body || null,
+        body: agentCard ? null : body || null,
       });
       setResult(response);
       setHistoryTick((tick) => tick + 1);
@@ -260,7 +260,7 @@ function Console({
         </Panel>
       )}
 
-      <Panel>
+      <Panel title="Request" className="playground-request">
         <div className="row wrap" style={{ marginBottom: 12 }}>
           <div className="field">
             <label htmlFor="pg-operation">Operation</label>
@@ -288,7 +288,7 @@ function Console({
                 <select
                   id="pg-subscription"
                   value={subscriptionId}
-                  onChange={(event) => setSubscriptionId(event.target.value)}
+                  onChange={(event) => { setSubscriptionId(event.target.value); setKeyKind("primary"); }}
                 >
                   <option value="">choose a subscription…</option>
                   {form.subscriptions.map((subscription) => (
@@ -302,6 +302,8 @@ function Console({
                 <label htmlFor="pg-keykind">Key</label>
                 <select
                   id="pg-keykind"
+                  disabled={!subscriptionId}
+                  aria-describedby="pg-key-help"
                   value={keyKind}
                   onChange={(event) => setKeyKind(event.target.value as "primary" | "secondary")}
                 >
@@ -313,6 +315,7 @@ function Console({
                     secondary
                   </option>
                 </select>
+                <p id="pg-key-help" className="hint">Keys belong to the selected subscription. Secondary is available only after a second key is created.</p>
               </div>
             </>
           )}
@@ -403,7 +406,7 @@ function Console({
         )}
 
         <div className="action" style={{ marginTop: 8 }}>
-          <button disabled={busy || blocked !== null} onClick={send} title={blocked ?? undefined}>
+          <button className="btn primary" disabled={busy || blocked !== null} onClick={send} title={blocked ?? undefined}>
             {busy ? "Sending…" : "Send"}
           </button>
           {blocked && <span className="action-reason">{blocked}</span>}

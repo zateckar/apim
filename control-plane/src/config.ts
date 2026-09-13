@@ -3,6 +3,7 @@ import { MAX_QUOTA_ENTRIES } from "../../shared/quota.ts";
 import { TELEMETRY_DEFAULTS } from "../../shared/telemetry.ts";
 import { SUBSCRIPTION_KEY_DEFAULTS } from "../../shared/types.ts";
 import { DEFAULT_ARTIFACT_MAX_BYTES } from "./artifacts.ts";
+import { DEFAULT_MAX_DENY_RULES } from "./deny-rules.ts";
 import {
   checkEgress,
   DEFAULT_TLS_EXCEPTION_MAX_DAYS,
@@ -228,6 +229,8 @@ export interface CpConfig {
   revisionKeepDays: number;
   /** Live anchors per environment. The document carries every one of them, so it is bounded. */
   maxTrustAnchors: number;
+  /** Live egress deny rules. Every one is evaluated on every write and every configuration build. */
+  maxEgressDenyRules: number;
   dashboardDefaultSinceMin: number;
   /** Where per-request access logs are read from. The control plane never stores them. */
   logs: LogsConfig;
@@ -315,9 +318,19 @@ function readOidc(providers: AuthProvider[]): OidcConfig | null {
 }
 
 export function readIntegrations(path: string): Integrations {
-  const parsed = JSON.parse(readFileSync(path, "utf8")) as Integrations;
-  if (!Array.isArray(parsed.egressAllowlist)) {
-    throw new Error(`${path}: egressAllowlist must be an array (design section 5.3)`);
+  const parsed = JSON.parse(readFileSync(path, "utf8")) as Integrations & {
+    egressAllowlist?: unknown;
+  };
+  // Retired in v1.4.0, and a **failure** rather than an ignored key: the platform no longer
+  // allowlists egress, so a file still carrying one would leave an operator believing they are
+  // protected by a list nothing reads — the one failure mode worse than having no list at all.
+  if (parsed.egressAllowlist !== undefined) {
+    throw new Error(
+      `${path}: egressAllowlist is retired. Egress is allowed by default and forbidden two ways: ` +
+        "denyCidrs here, which nothing in the portal can widen, and per-host deny rules an " +
+        "administrator states on the Trust screen under \"Blocked backends\". Remove this key, and " +
+        "re-state anything it was protecting as a deny rule. See openspec/specs/egress-governance.",
+    );
   }
   if (!Array.isArray(parsed.denyCidrs)) throw new Error(`${path}: denyCidrs must be an array`);
   // The ceilings are admin config with safe defaults rather than required keys, so an existing v1
@@ -417,7 +430,9 @@ export function gatewayUrlsFor(config: CpConfig, environment: string): GatewayUr
 /**
  * Design section 5.3 applies to the playground's target as much as to a spec import, even though
  * no part of the composed URL came from a caller. Checked at boot because a playground that can
- * reach nothing should say so at startup, naming the target and the rule — not at the first click.
+ * reach nothing should say so at startup, naming the target — not at the first click.
+ *
+ * The denied **ranges** only: see `assertIssuerAllowed` for why no deny rule is consulted here.
  */
 export async function assertGatewayUrlsAllowed(config: CpConfig): Promise<void> {
   const problems: string[] = [];
@@ -425,15 +440,15 @@ export async function assertGatewayUrlsAllowed(config: CpConfig): Promise<void> 
     for (const gateway of parseGatewayUrls(target, `target "${target.environment}"`)) {
       const errors = await checkEgress(
         gateway.url,
-        config.integrations,
         `${target.environment} gateway "${gateway.label}"`,
+        { integrations: config.integrations },
       );
       problems.push(...errors);
     }
   }
   if (problems.length > 0) {
     throw new Error(
-      `TARGETS_FILE names gateway URLs the egress allowlist refuses:\n  ${problems.join("\n  ")}`,
+      `TARGETS_FILE names gateway URLs the denied ranges refuse:\n  ${problems.join("\n  ")}`,
     );
   }
 }
@@ -517,6 +532,7 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
     revisionKeepCount: intFromEnv("REVISION_KEEP_COUNT", 5),
     revisionKeepDays: intFromEnv("REVISION_KEEP_DAYS", 365),
     maxTrustAnchors: intFromEnv("MAX_TRUST_ANCHORS", 16),
+    maxEgressDenyRules: intFromEnv("MAX_EGRESS_DENY_RULES", DEFAULT_MAX_DENY_RULES),
     dashboardDefaultSinceMin: intFromEnv("DASHBOARD_DEFAULT_SINCE_MIN", 1440),
     logs: readLogs(),
     ...overrides,
@@ -528,6 +544,9 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
     throw new Error("REVISION_KEEP_COUNT: expected at least 1 — retention keeps the newest N revisions");
   }
   if (config.maxTrustAnchors < 1) throw new Error("MAX_TRUST_ANCHORS: expected at least 1");
+  // Zero would not mean "no limit", it would mean no rule can be created — the administrator
+  // locked out of the control, with nothing saying why.
+  if (config.maxEgressDenyRules < 1) throw new Error("MAX_EGRESS_DENY_RULES: expected at least 1");
   if (config.dashboardDefaultSinceMin < 1) throw new Error("DASHBOARD_DEFAULT_SINCE_MIN: expected at least 1");
   if (config.promotionChain.length === 0) throw new Error("PROMOTION_CHAIN: expected at least one environment");
   const chainSet = new Set(config.promotionChain);
@@ -613,18 +632,26 @@ export function assertAuthConfig(config: CpConfig): void {
 
 /**
  * Design §5.3 applies to the identity provider as much as to a spec import. Checked at boot on the
- * *string*, with no network call `[P1-15]`: a misconfigured allowlist has to be a startup failure
- * naming the host, but fetching discovery here would make the control plane refuse to start while
+ * *string*, with no discovery call `[P1-15]`: a host inside a denied range has to be a startup
+ * failure naming it, but fetching discovery here would make the control plane refuse to start while
  * Keycloak restarts — an availability coupling nobody asked for. The endpoints the discovery
  * document names are checked when it is first fetched.
+ *
+ * The denied **ranges** only, deliberately. `OIDC_ISSUER`, `ELK_URL` and the playground targets are
+ * set by the operator in the environment rather than written by an owner; running them through the
+ * administrator-editable deny rules would let a rule created in the portal prevent the next restart
+ * (`runtime-configuration`, *An administrator's deny rule cannot prevent a restart*).
  */
 export async function assertIssuerAllowed(config: CpConfig): Promise<void> {
   if (!config.oidc) return;
-  const errors = await checkEgress(config.oidc.issuer, config.integrations, "OIDC_ISSUER");
+  const errors = await checkEgress(config.oidc.issuer, "OIDC_ISSUER", {
+    integrations: config.integrations,
+  });
   if (errors.length > 0) {
     throw new Error(
-      `OIDC_ISSUER is not reachable under the egress allowlist:\n  ${errors.join("\n  ")}\n` +
-        `Add the identity provider's host to ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}.`,
+      `OIDC_ISSUER is not reachable:\n  ${errors.join("\n  ")}\n` +
+        `Adjust denyCidrs in ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}, or ` +
+        "give the identity provider an address outside the denied ranges.",
     );
   }
 }
@@ -636,11 +663,12 @@ export async function assertIssuerAllowed(config: CpConfig): Promise<void> {
  */
 export async function assertLogsUrlAllowed(config: CpConfig): Promise<void> {
   if (config.logs.provider !== "elk" || !config.logs.url) return;
-  const errors = await checkEgress(config.logs.url, config.integrations, "ELK_URL");
+  const errors = await checkEgress(config.logs.url, "ELK_URL", { integrations: config.integrations });
   if (errors.length > 0) {
     throw new Error(
-      `ELK_URL is not reachable under the egress allowlist:\n  ${errors.join("\n  ")}\n` +
-        `Add the log cluster's host to ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}.`,
+      `ELK_URL is not reachable:\n  ${errors.join("\n  ")}\n` +
+        `Adjust denyCidrs in ${process.env.INTEGRATIONS_FILE ?? "config/integrations.json"}, or ` +
+        "give the log cluster an address outside the denied ranges.",
     );
   }
 }

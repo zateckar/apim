@@ -87,7 +87,7 @@ describe("what reaches the gateway", () => {
       policy: { timeoutMs: 4321 },
     });
 
-    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     const route = before.routes.find((r) => r.resourceId === api.resourceId)!;
     expect((route.policy as Record<string, unknown>).timeoutMs).toBe(4321);
 
@@ -98,7 +98,7 @@ describe("what reaches the gateway", () => {
     );
     expect(off.status).toBe(200);
 
-    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     const now = after.routes.find((r) => r.resourceId === api.resourceId)!;
     expect((now.policy as Record<string, unknown>).timeoutMs).toBeUndefined();
     // The unit is not "sent as off": it is not sent, and the reserved key is not sent either.
@@ -140,7 +140,7 @@ describe("what reaches the gateway", () => {
       { cookie: api.pavel },
     );
     expect(back.status).toBe(204);
-    const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations);
+    const config = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config);
     const route = config.routes.find((r) => r.resourceId === api.resourceId)!;
     expect((route.policy as Record<string, unknown>).timeoutMs).toBe(4321);
   });

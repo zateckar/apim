@@ -9,6 +9,24 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 ## Requirements
 
+### Requirement: Keep browser and application name validation consistent
+
+#### Scenario: A name field uses a native pattern
+
+- GIVEN a name field accepts lowercase letters, digits and hyphens
+- WHEN the browser compiles its pattern using Unicode sets mode
+- THEN the pattern SHALL be valid and SHALL enforce the same bounds as the application validator
+
+
+### Requirement: Distinguish unread data from an empty result
+
+#### Scenario: An inventory or summary read has not succeeded
+
+- GIVEN loading or failed data
+- WHEN an inventory, count or limit renders
+- THEN it SHALL NOT claim absence or zero on the strength of that missing data
+- AND changing a scoped query SHALL hide the previous scope's result while preserving ordinary refresh behavior within the same scope
+
 ### Requirement: Define colour once, as tokens, in two schemes
 
 #### Scenario: A colour is needed
@@ -62,6 +80,12 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
   clearly marked selection
 
 #### Scenario: An application card is rendered
+
+- GIVEN an application option is selected, hovered or keyboard focused
+- WHEN its background is dark green
+- THEN its name, metadata and selection indicator SHALL use contrasting light text in both themes
+
+#### Scenario: Application metadata is rendered
 
 - GIVEN an application with a LeanIX id
 - WHEN it is rendered in the picker
@@ -355,19 +379,44 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 
 ### Requirement: Keep all screens compact and readable in both themes
 
+#### Scenario: Page layouts reflect their purpose
+
+- GIVEN the portal's list, detail, wizard, operational and guidance routes
+- WHEN they render
+- THEN directory filters and creation actions SHALL be separated, and detail pages SHALL provide a return link to their list
+- AND application ownership counts SHALL be displayed individually, while account application memberships SHALL link to their dashboards
+- AND the guide SHALL display its six journeys in a responsive two-column grid with numbered headings and visible Start links
+- AND subscription and Kafka rows SHALL distinguish their descriptive content from status and action controls
+- AND integration actions SHALL show an icon, their purpose and an action cue, with diagnostic history separate from the action
+- AND Mail SHALL indicate expandable messages and show a prominent link for acting on an opened message
+- AND consumer resource headers, subscription environment choices, publish steps, telemetry totals, gateway settings scope and revision identifiers SHALL each have explicit visual grouping
+- AND the catalog's resource rows SHALL use separators instead of nested boxes, and expanded catalog domains SHALL have a soft selection fill
+- AND trust registration and copying SHALL sit beside each other on wide screens and stack on narrow screens
+- AND logs SHALL group their filters, and the playground SHALL label its request form and emphasize Send
+
 #### Scenario: A shared surface renders
 
 - GIVEN a list, form, dashboard, health card or administration screen
 - WHEN it renders in either theme
 - THEN panels SHALL use 16px body padding, compact section headers, subtle borders and neutral surfaces
 - AND status fills SHALL be soft tints with readable state text; health verdicts SHALL retain explicit labels
-- AND primary actions SHALL use the accent fill with contrasting text in both idle and hover states
+- AND primary actions SHALL use the mint action fill with dark-green text in both idle and hover states
 - AND dashboard helper text SHALL use sentence case rather than all capitals
 - AND legacy colour and font tokens SHALL resolve to the same theme tokens as branded components
 - AND commonly used field labels, workspace tabs and table values SHALL be at least 14px, with secondary metadata at least 12px in the shared page chrome
 - AND unread mail SHALL use a subtle background, a leading dot and stronger subject text instead of a saturated row fill
 - AND uptime charts SHALL use neutral surfaces with theme-aware axes, lines and status marks
 - AND numeric table columns SHALL retain right alignment in both screen vocabularies
+
+#### Scenario: A page offers choices and actions
+
+- GIVEN a dashboard, editor, catalog or administration page
+- WHEN it renders
+- THEN clickable dashboard statistics SHALL carry a trailing arrow and a visible hover state
+- AND selected tabs SHALL combine a soft accent fill with an underline
+- AND section headers and nested forms SHALL use subtle neutral surfaces
+- AND gateway creation and saving, and certificate upload, SHALL use the primary button hierarchy, with neutral cancellation controls
+- AND policy choices SHALL have soft category-coloured icon tiles, readable descriptions and an explicit addition cue; colour SHALL supplement text rather than replace it
 
 #### Scenario: Controls govern the content below them
 
@@ -397,3 +446,40 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - WHEN the user presses Up, Down, Home or End on an option
 - THEN focus SHALL move between available applications
 - AND Escape or selecting an option SHALL return focus to the trigger
+
+### Requirement: Design forms around the decision and validate before submission
+
+#### Scenario: A form is designed or reviewed
+
+- GIVEN any creation or editing form in the portal
+- WHEN its controls are chosen
+- THEN it SHALL show only options relevant to the current resource, application and environment
+- AND a single possible value SHOULD be stated rather than presented as a choice
+- AND two or three short exclusive choices SHOULD use visible native radios; long or changing lists MAY use selects
+- AND short values such as versions and counts SHALL use bounded widths, while URLs and descriptions SHALL have room to be read
+- AND related fields SHALL be grouped in dependency order; dependent choices SHALL explain their prerequisite and stale dependent values SHALL be reset
+- AND optional fields SHALL say they are optional and explain what an empty value means when it changes behaviour
+
+#### Scenario: A value can be checked locally
+
+- GIVEN a known format, range, required value or loaded duplicate
+- WHEN a form is edited
+- THEN it SHALL show the constraint and a useful correction near the field, without depending on a submit error or disabled-button tooltip
+- AND invalid values SHALL block advancement or saving, including button handlers outside HTML forms
+- AND field errors SHALL use text as well as colour and shared text inputs SHALL associate the error through aria-describedby and aria-invalid
+- AND the server SHALL remain authoritative for uniqueness, authorization, configured bounds and concurrent changes
+- AND secrets SHALL use password inputs, email fields email inputs, URLs URL inputs and integer counts bounded number inputs
+
+#### Scenario: The rules apply outside publishing
+
+- GIVEN Products, Applications, People, Gateways, Gateway settings, Kafka, Trust, Account or subscription forms
+- WHEN an invalid draft is entered
+- THEN known name formats, loaded name conflicts, numeric bounds, password length, URL syntax and conditional TLS fields SHALL be checked before submission where applicable
+- AND gateway settings SHALL preserve empty-as-inherit, while rejecting fractional or out-of-range explicit values
+- AND choosing a different playground subscription SHALL reset its key choice to primary
+
+#### Scenario: A field has explanatory text
+
+- GIVEN a labelled input or select with a hint
+- WHEN assistive technology reads it
+- THEN the control name SHALL be its concise label, and the hint SHALL be associated as a description rather than appended to its name

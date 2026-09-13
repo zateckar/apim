@@ -8,6 +8,23 @@ broker itself is simulated in this phase, and every response says so.
 
 ## Requirements
 
+### Requirement: Keep topic creation separate from existing topic drafts
+
+#### Scenario: Creation follows inspection
+
+- GIVEN a topic that was inspected or edited
+- WHEN Create topic is opened
+- THEN the form SHALL start with an empty name, description and taxonomy and three partitions
+- AND it SHALL state the owning application and environment
+
+#### Scenario: Access is already being processed
+
+- GIVEN an application with pending, activating or revoking access to the selected topic
+- WHEN the topic dialog renders
+- THEN it SHALL show that state rather than offer a duplicate access request
+- AND access requests SHALL wait for the access list and a valid purpose
+- AND topic and access read failures SHALL NOT appear as empty inventories
+
 ### Requirement: A topic is a catalogue item owned by an application
 
 #### Scenario: A topic is created
@@ -132,3 +149,13 @@ broker itself is simulated in this phase, and every response says so.
 - THEN the audit detail SHALL record that it was simulated
 - AND the reason SHALL be that an audit trail that cannot distinguish a simulated action from a real
   one is an audit trail nobody can use afterwards
+
+### Requirement: Validate topic drafts in the portal
+
+#### Scenario: A draft is edited
+
+- GIVEN a topic creation or editing form
+- WHEN its fields are edited
+- THEN the portal SHALL reject invalid topic names and loaded duplicates in the environment before creation
+- AND partition counts SHALL be integers from 1 to 100 and SHALL NOT decrease on edit
+- AND domain and sub-domain controls SHALL state their dependency

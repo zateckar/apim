@@ -157,15 +157,19 @@ services:
 
       # ═══════════════════════════════════════════════════════ optional: ceilings and retention
       # Every one of these is a bound with a defined behaviour past it, which is why they are
-      # settings rather than constants. Three of them refuse `0` by name — REVISION_KEEP_COUNT,
-      # MAX_TRUST_ANCHORS and DASHBOARD_DEFAULT_SINCE_MIN — because zero is a legal integer and a
-      # destructive value for all three.
+      # settings rather than constants. Four of them refuse `0` by name — REVISION_KEEP_COUNT,
+      # MAX_TRUST_ANCHORS, MAX_EGRESS_DENY_RULES and DASHBOARD_DEFAULT_SINCE_MIN — because zero is
+      # a legal integer and a destructive value for all four.
       MAX_SPEC_BYTES: ${MAX_SPEC_BYTES:-}
       ARTIFACT_MAX_BYTES: ${ARTIFACT_MAX_BYTES:-}
       CATALOG_PAGE_SIZE: ${CATALOG_PAGE_SIZE:-}
       REVISION_KEEP_COUNT: ${REVISION_KEEP_COUNT:-}
       REVISION_KEEP_DAYS: ${REVISION_KEEP_DAYS:-}
       MAX_TRUST_ANCHORS: ${MAX_TRUST_ANCHORS:-}
+      # Live egress deny rules across the estate. Every one is evaluated against every pool member
+      # on every write and every configuration build, so the count is a bound on that work rather
+      # than a preference. Consolidate with a `*.suffix` pattern before raising it.
+      MAX_EGRESS_DENY_RULES: ${MAX_EGRESS_DENY_RULES:-}
       DASHBOARD_DEFAULT_SINCE_MIN: ${DASHBOARD_DEFAULT_SINCE_MIN:-}
       # Telemetry and usage. The flush interval is also the quota RPO, because a lost flush is what
       # quota can be behind by.
@@ -194,8 +198,8 @@ services:
       # `mock` generates deterministic simulated traffic from the published estate, and every screen
       # that shows it says so. `elk` reads a real index. There is deliberately **no fallback** from
       # `elk` to `mock`: a portal that quietly invented traffic while the log cluster was down would
-      # present fiction as observation. With `elk`, ELK_URL is required, it must be in the egress
-      # allowlist, and either ELK_API_KEY or ELK_USERNAME/ELK_PASSWORD must be set.
+      # present fiction as observation. With `elk`, ELK_URL is required, it must resolve outside
+      # the denied ranges, and either ELK_API_KEY or ELK_USERNAME/ELK_PASSWORD must be set.
       #
       # The three that repeat their default do so for the `??` reason above: an empty LOGS_PROVIDER
       # is a startup failure, and an empty index name searches nothing.

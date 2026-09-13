@@ -1,3 +1,5 @@
+import { listAll } from "../portal/client";
+import * as I from "../portal/icons";
 import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import { api, type ApplicationDetail, type ApplicationRow, type User } from "../api";
@@ -7,6 +9,7 @@ import {
   EmptyState,
   TextField,
   Link,
+  go,
   Notice,
   Skeleton,
   Term,
@@ -28,26 +31,40 @@ import { ALLOWED, permitAdmin } from "../lib/capabilities";
  * themselves added to in order to own another application's APIs.
  */
 export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappedGroups: string[] }) {
-  const list = useAsync(() => api.get<{ items: ApplicationRow[] }>("/api/applications"), []);
+  const list = useAsync(() => listAll<ApplicationRow>("/api/applications"), []);
   const [creating, setCreating] = useState<string | null>(null);
-  const rows = list.data?.items ?? [];
+  const [query, setQuery] = useState("");
+  const rows = (list.data?.items ?? []).filter(row => `${row.name} ${row.id} ${row.sourceGroup ?? ""}`.toLowerCase().includes(query.trim().toLowerCase()));
 
   return (
     <>
       <Panel
         title="Who owns what"
-        hint="Every API, product and application belongs to exactly one application. Being in that application is what lets you change them."
+        hint="Applications own resources and grant their members permission to manage them."
+        actions={user.isAdmin && creating === null && <button className="btn primary" onClick={() => setCreating("")}><I.Plus /> Create an application</button>}
       >
         <Notice kind="error">{list.error}</Notice>
+        <div className="directory-toolbar"><TextField label="Find an application" value={query} onChange={setQuery} placeholder="Name, ID or directory group" /><span className="muted small">{rows.length} applications</span></div>
+        {user.isAdmin && creating !== null && (
+          <CreateApplication
+            key={creating}
+            sourceGroup={creating}
+            taken={(list.data?.items ?? []).map(application => application.name)}
+            onDone={(created) => {
+              setCreating(null);
+              if (created) list.reload();
+            }}
+          />
+        )}
         {list.loading && <Skeleton rows={3} />}
-        {!list.loading && rows.length === 0 ? (
+        {!list.loading && !list.error && rows.length === 0 ? (
           <EmptyState
-            title="No applications yet"
-            detail="Nothing can be published until there is an application to own it."
+            title={query ? "No matching applications" : "No applications yet"}
+            detail={query ? "Try another name, ID or directory group." : "Nothing can be published until there is an application to own it."}
             action={
-              <button className="ghost" onClick={() => setCreating("")}>
-                Create the first application
-              </button>
+              query || user.isAdmin ? <button className="btn" onClick={() => query ? setQuery("") : setCreating("")}>
+                {query ? "Clear search" : "Create the first application"}
+              </button> : <Link to="/account">View your memberships</Link>
             }
           />
         ) : (
@@ -80,20 +97,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
           </table>
         )}
 
-        {user.isAdmin && creating === null && (
-          <button className="ghost" onClick={() => setCreating("")}>
-            Create an application
-          </button>
-        )}
-        {creating !== null && (
-          <CreateApplication
-            sourceGroup={creating}
-            onDone={(created) => {
-              setCreating(null);
-              if (created) list.reload();
-            }}
-          />
-        )}
+
       </Panel>
 
       {user.isAdmin && unmappedGroups.length > 0 && (
@@ -125,21 +129,24 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
 }
 
 function CreateApplication({
+  taken,
   sourceGroup,
   onDone,
 }: {
+  taken: string[];
   sourceGroup: string;
   onDone: (created: boolean) => void;
 }) {
   const [name, setName] = useState("");
   const [group, setGroup] = useState(sourceGroup);
   const action = useAction();
+  const problem = name.trim().length < 2 || name.trim().length > 80 ? "Use 2–80 characters." : taken.some(existing => existing.toLowerCase() === name.trim().toLowerCase()) ? "An application with this name already exists." : null;
 
   return (
     <div className="subcard">
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <TextField label="Name" value={name} onChange={setName} placeholder="Orders" />
+        <TextField label="Name" hint="2–80 characters; unique in the application directory." error={name ? problem : null} maxLength={80} value={name} onChange={setName} placeholder="Orders" />
         <TextField
           label="Identity provider group (optional)"
           value={group}
@@ -154,9 +161,10 @@ function CreateApplication({
       </p>
       <div className="row">
         <button
-          className="primary"
-          disabled={action.busy || name.trim().length < 2}
+          className="btn primary"
+          disabled={action.busy || Boolean(problem)}
           onClick={async () => {
+            if (problem) return;
             const ok = await action.run(() =>
               api.post("/api/applications", {
                 name: name.trim(),
@@ -166,7 +174,7 @@ function CreateApplication({
             if (ok) onDone(true);
           }}
         >
-          Create it
+          Create application
         </button>
         <button className="ghost" onClick={() => onDone(false)}>
           Cancel
@@ -190,15 +198,12 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
 
   return (
     <>
+      <div className="page-toolbar"><Link to="/applications">← Applications</Link></div>
       <Panel title={application.name}>
         <Notice kind="error">{action.error}</Notice>
         {action.message && <Notice kind="ok">{action.message}</Notice>}
+        <div className="ownership-summary">{Object.entries(application.owns).map(([kind, count]) => <div key={kind}><strong>{count}</strong><span>{kind === "resources" ? "APIs" : kind === "processes" ? "Process records" : kind}</span></div>)}</div>
         <dl className="kv">
-          <dt>Owns</dt>
-          <dd>
-            {application.owns.resources} API(s), {application.owns.products} product(s),{" "}
-            {application.owns.subscriptions} subscription(s), {application.owns.certificates} certificate(s), {application.owns.processes} process record(s)
-          </dd>
           {user.isAdmin && (
             <>
               <dt>Granted by the group</dt>
@@ -277,7 +282,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
               error={action.error}
               onConfirm={async () => {
                 const ok = await action.run(() => api.del(`/api/applications/${application.id}`));
-                if (ok) window.history.pushState({}, "", "/applications");
+                if (ok) go("/applications");
               }}
             />
           )}

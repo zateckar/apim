@@ -5,7 +5,7 @@ import {
   operationsFromCard,
 } from "../../shared/a2a.ts";
 import type { A2aBinding, A2aSkill, ApiModel } from "../../shared/types.ts";
-import { checkEgress, type Integrations } from "./egress.ts";
+import { checkEgress, type EgressScope } from "./egress.ts";
 import { badGateway, badRequest } from "./router.ts";
 import type { NormalizeResult } from "./normalize.ts";
 
@@ -25,7 +25,8 @@ import type { NormalizeResult } from "./normalize.ts";
  */
 
 export interface DiscoverA2aOptions {
-  integrations: Integrations;
+  /** Estate-wide deny rules and the denied ranges: discovery is a fetch like a spec import. */
+  egress: EgressScope;
   maxBytes: number;
   timeoutMs?: number;
   fetchImpl?: typeof fetch;
@@ -139,7 +140,7 @@ export async function discoverA2a(
   const unreachable: string[] = [];
 
   for (const candidate of candidates) {
-    const errors = await checkEgress(candidate, options.integrations, "discoverUrl");
+    const errors = await checkEgress(candidate, "discoverUrl", options.egress);
     if (errors.length > 0) throw badRequest(errors.join("; "));
 
     let response: Response;

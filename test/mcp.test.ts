@@ -2,6 +2,7 @@ import { activeSubscription } from './helpers.ts';
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import {
   FIXTURE_DOMAIN,
+  denyRule,
   FIXTURE_SUBDOMAIN,
   makeCp,
   makeDp,
@@ -28,13 +29,7 @@ let cp: TestCp;
 let seq = 0;
 
 function integrations(): Integrations {
-  return {
-    egressAllowlist: [
-      { scheme: "http", hostPattern: "127.0.0.1", portRange: [1024, 65535] },
-      { scheme: "http", hostPattern: "localhost", portRange: [1024, 65535] },
-    ],
-    denyCidrs: ["169.254.0.0/16"],
-  } as Integrations;
+  return { denyCidrs: ["169.254.0.0/16"] } as Integrations;
 }
 
 beforeEach(() => {
@@ -158,10 +153,21 @@ describe("discovery", () => {
     }
   });
 
-  test("a URL outside the egress allowlist is refused before anything is fetched", async () => {
+  test("a URL inside a denied range is refused before anything is fetched", async () => {
+    const { response } = await publishMcp("http://169.254.169.254/mcp");
+    expect(response.status).toBe(400);
+    expect((await response.json()).detail).toContain("denied range");
+  });
+
+  // Discovery is a fetch the control plane makes, so an administrator's rule governs it exactly as
+  // it governs a backend — and estate-wide, because a publish is not yet an act in any environment.
+  test("a URL an administrator has blocked is refused before anything is fetched", async () => {
+    denyRule(cp, { hostPattern: "mcp.example.com", reason: "Not an approved MCP server host" });
     const { response } = await publishMcp("http://mcp.example.com:8080/mcp");
     expect(response.status).toBe(400);
-    expect((await response.json()).detail).toContain("not in the egress allowlist");
+    const detail = (await response.json()).detail;
+    expect(detail).toContain("mcp.example.com");
+    expect(detail).toContain("Not an approved MCP server host");
   });
 
   test("discoverUrl on a rest API says what to use instead", async () => {

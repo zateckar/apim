@@ -9,7 +9,7 @@ import {
   type User,
   type ValidationCounters,
 } from "../api";
-import { Panel, EnvironmentPicker, Link, Notice, useAction, useAsync } from "../components";
+import { Panel, EnvironmentPicker, Link, Notice, Skeleton, useAction, useAsync } from "../components";
 
 /**
  * The global policy tier (goal G2, deviation D18) — one environment's defaults, applied under
@@ -45,6 +45,8 @@ export function GlobalPolicyView({
 
   const attachable = policy.data?.attachable ?? [];
   const attached = new Map((policy.data?.units ?? []).map((unit) => [unit.unitKey, unit]));
+  if (policy.error) return <Notice kind="error">{policy.error}</Notice>;
+  if (!policy.data) return <Skeleton rows={4} />;
 
   return (
     <>
@@ -108,7 +110,7 @@ export function GlobalPolicyView({
         reload={policy.reload}
       />
 
-      <Panel title={`Global units in ${environment}`}>
+      <Panel title={`Global units in ${environment.toUpperCase()}`} className="global-policy-units">
         {attachable.map((unitKey) => {
           const catalogue = meta.policyUnits.find((unit) => unit.key === unitKey);
           return (
@@ -167,7 +169,7 @@ export function GlobalPolicyView({
                 <td className="muted">{row.updatedBy}</td>
               </tr>
             ))}
-            {(downgrades.data?.items.length ?? 0) === 0 && (
+            {downgrades.data?.items.length === 0 && (
               <tr>
                 <td colSpan={6} className="muted">
                   Nothing is downgraded here — every route validates at the default.
@@ -360,14 +362,14 @@ function GlobalUnit({
       </header>
       <p className="desc">{description}</p>
 
-      {attached && !open && <pre className="pre">{JSON.stringify(attached.value, null, 2)}</pre>}
+      {attached && !open && <details className="policy-value"><summary>Current configuration</summary><pre className="pre">{JSON.stringify(attached.value, null, 2)}</pre></details>}
 
       {open && (
         <>
           <Notice kind="error">{action.error}</Notice>
           <Notice kind="ok">{action.message}</Notice>
           <div className="field">
-            <textarea value={json} onChange={(event) => setJson(event.target.value)} />
+            <textarea aria-label={`${title} configuration`} value={json} onChange={(event) => setJson(event.target.value)} />
           </div>
           <div className="inline" style={{ marginTop: 10 }}>
             <button
@@ -455,7 +457,7 @@ function CopyFrom({
       <div className="row">
         <div className="field">
           <label>Copy from</label>
-          <select value={from} onChange={(event) => setFrom(event.target.value)}>
+          <select value={from} disabled={action.busy} onChange={(event) => { setFrom(event.target.value); setPlan(null); }}>
             {others.map((name) => (
               <option key={name} value={name}>
                 {name}

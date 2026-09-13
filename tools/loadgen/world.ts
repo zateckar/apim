@@ -325,13 +325,11 @@ export async function buildWorld(gatewayCount = 2): Promise<PerfWorld> {
   const tlsBackendServer = startBackend(tlsBackend);
   const tlsBackendUrl = `https://127.0.0.1:${tlsBackendServer.port}`;
 
-  // The shipped allowlist permits only http on loopback, and a run must not need the file edited.
+  // Loopback backends on both schemes, and a run must not need the file edited. Since egress is
+  // allowed by default, clearing the denied ranges is all this takes — the repository's own file
+  // already permits loopback, but a deployment's would not.
   const integrations = readIntegrations(process.env.INTEGRATIONS_FILE ?? "config/integrations.json");
-  integrations.egressAllowlist.push({
-    scheme: "https",
-    hostPattern: "127.0.0.1",
-    portRange: [1024, 65535],
-  });
+  integrations.denyCidrs = integrations.denyCidrs.filter((cidr) => !cidr.startsWith("127."));
 
   const config = loadConfig({
     dbPath: join(dir, "perf.sqlite"),

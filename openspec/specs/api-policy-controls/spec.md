@@ -8,6 +8,21 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 
 ## Requirements
 
+### Requirement: Invalidate a copy preview when its source changes
+
+#### Scenario: A different source environment is selected
+
+- GIVEN a global-policy copy preview
+- WHEN the source changes
+- THEN the preview SHALL be cleared and applying SHALL require a new preview
+- AND the source control SHALL be disabled while previewing or applying
+
+#### Scenario: Policy data cannot be read
+
+- GIVEN a loading or failed global-policy or downgrade read
+- WHEN its page renders
+- THEN it SHALL NOT claim there are zero policies or that no route is downgraded
+
 ### Requirement: Policy is a closed vocabulary, not a language
 
 #### Scenario: A policy document is written
@@ -129,6 +144,13 @@ has never served.
 
 ### Requirement: Edit policy as units, not as a document
 
+#### Scenario: Global policy values are inspected
+
+- GIVEN an attached global unit whose editor is closed
+- WHEN the global policy page renders
+- THEN its current configuration SHALL be available in a disclosure, keeping the list of units scannable
+- AND opening the editor SHALL show a labelled configuration field
+
 #### Scenario: The policy panel renders
 
 - GIVEN a resource in an environment
@@ -142,9 +164,11 @@ has never served.
 
 - GIVEN the add-unit picker
 - WHEN it opens
-- THEN the units SHALL be grouped by what they do — authentication, access, limits, transport,
-  backend, response — and each SHALL carry a one-line description
-- AND a unit already present SHALL be shown as such rather than offered twice
+- THEN the available units SHALL be grouped in gateway pipeline order — inbound, upstream,
+  outbound — and each SHALL carry a description and a category icon
+- AND each available row SHALL be a keyboard-accessible button that adds the unit to the local draft and opens its editor
+- AND unavailable choices SHALL retain a visible explanation
+- AND a unit already present SHALL remain in the attached list rather than be offered twice
 
 #### Scenario: A unit is detached
 

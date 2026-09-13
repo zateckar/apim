@@ -13,6 +13,14 @@ every request, and never sample.
 
 ## Requirements
 
+### Requirement: Keep log results tied to their filters
+
+#### Scenario: The query or page changes
+
+- GIVEN displayed log rows and a histogram
+- WHEN a time range, filter or result page changes
+- THEN the previous query's result SHALL NOT be shown as the new query's result while it loads
+
 ### Requirement: The control plane queries logs; it never stores them
 
 #### Scenario: The Logs tab is opened

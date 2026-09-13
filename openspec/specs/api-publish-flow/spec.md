@@ -54,9 +54,11 @@ Step one SHALL ask only for what forms the published address.
 
 - GIVEN the Identify step
 - WHEN it renders
-- THEN it SHALL ask for the API name, the type (`REST`, `SOAP`, `MCP`, `A2A`), the version, and the
+- THEN it SHALL ask for the API name, the type (visible `REST`/`SOAP` radio choices for APIs; fixed `MCP` or `A2A` when reached from those sections), the version, and the
   domain with its optional sub-domain
-- AND a live preview of the resulting published path SHALL be shown
+- AND a live preview of the resulting published path SHALL be shown once the identity fields are valid
+- AND Identify SHALL show only the gateway-independent path, with no gateway hostnames, and explain
+  that full URLs appear after choosing gateways in Route
 - AND the step SHALL explain that the domain is the first segment of the address and the version
   the last, which is what makes the catalogue browsable and a URL legible without looking anything
   up
@@ -67,7 +69,7 @@ Step one SHALL ask only for what forms the published address.
 - WHEN it is checked
 - THEN the name SHALL match `^[a-z0-9][a-z0-9-]{1,60}$` — "2–61 lowercase letters, digits or
   hyphens"
-- AND the version SHALL match `^[A-Za-z0-9][A-Za-z0-9._-]{0,31}$`
+- AND the version SHALL match `^v[1-9][0-9]{0,30}$`
 - AND a domain SHALL be required, with no "unclassified" escape, because a catalogue you cannot
   browse by domain is a list and one API without a domain makes the grouping incomplete
 
@@ -87,8 +89,9 @@ Step one SHALL ask only for what forms the published address.
 
 - GIVEN an import URL
 - WHEN the control plane fetches it
-- THEN the URL SHALL be checked against the egress allowlist before any request is made
-- AND a refused host SHALL produce a `400` naming the rule
+- THEN the URL SHALL be checked against the denied ranges and the deny rules before any request is
+  made
+- AND a refused host SHALL produce a `400` naming what matched
 
 #### Scenario: A definition is normalized
 
@@ -112,7 +115,8 @@ Step one SHALL ask only for what forms the published address.
 - WHEN it renders
 - THEN it SHALL ask for the backend URL in the first environment of the chain and which of the
   environment's gateways the API answers on
-- AND the published path preview SHALL be shown again, now per selected gateway
+- AND full published URLs SHALL appear below the gateway selection, using only selected gateways'
+  Internet and Intranet addresses, and SHALL update when the selection changes
 - AND it SHALL NOT ask for a product
 
 ### Requirement: Give an API its own product unless told otherwise
@@ -214,7 +218,7 @@ Step one SHALL ask only for what forms the published address.
 
 - GIVEN a backend URL
 - WHEN it is validated
-- THEN it SHALL be checked against the egress allowlist
+- THEN it SHALL be checked against the denied ranges and the deny rules (`egress-governance`)
 - AND an absent backend SHALL be refused with "backendUrl is required for `<ENVIRONMENT>`"
 
 #### Scenario: A single URL and a pool are both accepted
@@ -291,3 +295,23 @@ Step one SHALL ask only for what forms the published address.
   the derived path
 - AND it SHALL be derived by the **same function** the control plane validates against, so what the
   preview says is what the gateway will answer on
+
+### Requirement: Validate identity and URLs before leaving their step
+
+#### Scenario: A name is already in use
+
+- GIVEN the new-resource wizard and its application's existing resources
+- WHEN an existing name is entered, regardless of version
+- THEN Next SHALL be disabled and the name field SHALL explain the conflict and link to its workspace for editing or creating a new version
+- AND the check SHALL wait for the complete paginated resource list; a read failure SHALL offer Retry and prevent advancement
+- AND the control plane SHALL continue to enforce name/version uniqueness for every caller, including the separate new-version workflow
+
+#### Scenario: A field needs correction
+
+- GIVEN an invalid name, version or HTTP URL on a publishing step
+- WHEN the publisher tries to advance through Next or the stepper
+- THEN that step SHALL remain incomplete and a visible correction SHALL be shown
+- AND the version rule SHALL be shared with the control plane
+- AND name and version errors SHALL be associated with their inputs for assistive technology
+- AND the domain and optional sub-domain SHALL appear in one group, stating that changing the domain clears the sub-domain
+- AND the definition-source alternatives SHALL remain visible as radio choices

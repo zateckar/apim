@@ -10,8 +10,8 @@ import type { OidcConfig } from "../control-plane/src/config.ts";
  * real RS256 signatures, real PKCE (the token endpoint refuses a verifier that does not hash to the
  * challenge the authorization request carried).
  *
- * It is one Bun server on 127.0.0.1, which the repository's egress allowlist permits — so the
- * control plane's own `checkEgress` runs against it rather than being bypassed.
+ * It is one Bun server on 127.0.0.1, which the repository's denied ranges permit — so the control
+ * plane's own `checkEgress` runs against it rather than being bypassed.
  */
 
 export interface IssuedCode {

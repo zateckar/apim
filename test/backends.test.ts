@@ -398,7 +398,7 @@ describe("binding a pool", () => {
     }
   });
 
-  test("every URL in a pool passes the egress allowlist", async () => {
+  test("every URL in a pool passes the egress check", async () => {
     const backend = startBackend();
     try {
       const api = await publishApi(cp, { backendUrl: backend.url, spec: SPEC });

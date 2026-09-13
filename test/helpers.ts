@@ -15,6 +15,8 @@ import {
   type TelemetryReport,
 } from "../shared/telemetry.ts";
 import { loadConfig } from "../control-plane/src/config.ts";
+import { newId, nowIso } from "../control-plane/src/db.ts";
+import { invalidateDenyRules } from "../control-plane/src/deny-rules.ts";
 import { dispatch, type App, type Router } from "../control-plane/src/router.ts";
 import { seedBaseline } from "../control-plane/src/seed.ts";
 import { createApp, createRouter, startServer } from "../control-plane/src/server.ts";
@@ -227,6 +229,41 @@ export function setFleetSettings(cp: TestCp, values: Partial<GatewaySettings>): 
   );
 }
 
+/**
+ * An administrator's egress deny rule, written straight into the table.
+ *
+ * The cache `liveDenyRules` keeps is per database and invalidated on write, so a test that inserts
+ * a row has to say so — otherwise a rule added after the first binding write would not be seen, and
+ * the test would pass for the wrong reason.
+ */
+export function denyRule(
+  cp: TestCp,
+  rule: {
+    hostPattern: string;
+    reason: string;
+    environment?: string | null;
+    scheme?: "http" | "https" | null;
+    ports?: number[];
+  },
+): void {
+  cp.app.db.run(
+    `INSERT INTO egress_deny_rule
+       (id, environment, scheme, host_pattern, ports_json, reason, created_by, created_at)
+     VALUES (?,?,?,?,?,?,?,?)`,
+    [
+      newId("deny"),
+      rule.environment ?? null,
+      rule.scheme ?? null,
+      rule.hostPattern,
+      rule.ports ? JSON.stringify(rule.ports) : null,
+      rule.reason,
+      "test",
+      nowIso(),
+    ],
+  );
+  invalidateDenyRules(cp.app.db);
+}
+
 export interface PublishOptions {
   backendUrl: string;
   basePath?: string;
@@ -432,7 +469,7 @@ export async function activeSubscription(cp: TestCp, cookie: string, productId: 
   const decision=await cp.call("POST",`/api/integration-events/${event.id}/decision`,{cookie:await cp.login("alice"),body:{decision:"approved"}});
   if(!decision.ok)throw new Error(await decision.text());
  }
- const digest=buildConfig(cp.app.db,cp.app.kek,environment,cp.app.config.integrations).digest;
+ const digest=buildConfig(cp.app.db,cp.app.kek,environment,cp.app.config).digest;
  for(const instance of cp.instances.filter(i=>i.environment===environment)) {
   const ack=await cp.call("POST","/api/gateway/poll",{headers:{authorization:`Bearer ${instance.token}`},body:{wireVersion:CONFIG_VERSION,instance:{name:instance.name,runId:"fixture",startedAt:new Date().toISOString(),activeDigest:digest,requestsTotal:0,process:{}}}});
   if(!ack.ok)throw new Error(await ack.text());

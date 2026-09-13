@@ -1,3 +1,4 @@
+import { nameError, NAME_HINT, NAME_PATTERN } from "../lib/form-validation";
 import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import {
@@ -121,8 +122,10 @@ export function TrustAnchors({
         </p>
       </Panel>
 
-      <Register environment={environment} onRegistered={anchors.reload} />
-      <CopyFrom meta={meta} environment={environment} onCopied={anchors.reload} />
+      <div className="trust-authority-actions">
+        <Register taken={items.map(item => item.name)} environment={environment} onRegistered={anchors.reload} />
+        <CopyFrom meta={meta} environment={environment} onCopied={anchors.reload} />
+      </div>
     </>
   );
 }
@@ -188,12 +191,13 @@ function AnchorRow({ row, onChanged }: { row: TrustAnchorRow; onChanged: () => v
 }
 
 /** Parse, look, then register. Nothing is stored by the preview, so nobody trusts blind. */
-function Register({ environment, onRegistered }: { environment: string; onRegistered: () => void }) {
+function Register({ environment, onRegistered, taken }: { environment: string; onRegistered: () => void; taken: string[] }) {
   const [pem, setPem] = useState("");
   const [name, setName] = useState("");
   const [preview, setPreview] = useState<TrustAnchorPreview | null>(null);
   const previewAction = useAction();
   const registerAction = useAction();
+  const nameProblem = nameError(name) ?? (taken.includes(name) ? "An authority with this name is already registered in this environment." : null);
 
   return (
     <Panel
@@ -207,6 +211,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
         <label htmlFor="anchor-pem">Certificate (PEM)</label>
         <textarea
           id="anchor-pem"
+          disabled={previewAction.busy || registerAction.busy}
           value={pem}
           placeholder={"-----BEGIN CERTIFICATE-----\n…\n-----END CERTIFICATE-----"}
           onChange={(event) => {
@@ -245,7 +250,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
             </Notice>
           )}
           <TextField
-            label="Name it"
+            label="Name it" hint={NAME_HINT} pattern={NAME_PATTERN} maxLength={61} error={name ? nameProblem : null}
             value={name}
             onChange={setName}
             placeholder="corp-internal-root"
@@ -255,7 +260,7 @@ function Register({ environment, onRegistered }: { environment: string; onRegist
             else, including when somebody removes it.
           </p>
           <button
-            disabled={registerAction.busy || name.trim().length < 2}
+            disabled={registerAction.busy || Boolean(nameProblem)}
             onClick={async () => {
               const ok = await registerAction.run(
                 () => api.post("/api/trust/anchors", { environment, name, pem }),
@@ -310,6 +315,7 @@ function CopyFrom({
   const source = useAsync(
     () => (from ? api.get<TrustAnchorList>(`/api/trust/anchors?environment=${from}`) : Promise.resolve(null)),
     [from],
+    from,
   );
   const action = useAction();
 
@@ -329,6 +335,7 @@ function CopyFrom({
           <label htmlFor="copy-from">From</label>
           <select
             id="copy-from"
+            disabled={action.busy}
             value={from}
             onChange={(event) => {
               setFrom(event.target.value);
@@ -351,7 +358,7 @@ function CopyFrom({
         <Notice kind="error">
           {from.toUpperCase()}'s authorities could not be listed: {source.error}
         </Notice>
-      ) : candidates.length === 0 ? (
+      ) : source.loading ? <Skeleton rows={3} /> : candidates.length === 0 ? (
         <p className="muted small">{from.toUpperCase()} trusts no authorities of its own.</p>
       ) : (
         <ul className="plain">
@@ -360,6 +367,7 @@ function CopyFrom({
               <label className="check-inline">
                 <input
                   type="checkbox"
+                  disabled={action.busy}
                   checked={chosen.includes(row.id)}
                   onChange={(event) => {
                     setPlan(null);
@@ -404,7 +412,7 @@ function CopyFrom({
       <div className="inline">
         <button
           className="ghost"
-          disabled={action.busy || chosen.length === 0}
+          disabled={action.busy || source.loading || Boolean(source.error) || chosen.length === 0}
           onClick={async () => {
             await action.run(async () => {
               setPlan(

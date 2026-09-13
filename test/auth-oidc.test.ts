@@ -126,15 +126,17 @@ describe("starting a sign-in", () => {
     expect(problem.detail).toContain("someone-elses-issuer.example");
   });
 
-  test("an endpoint the document names outside the egress allowlist is refused", async () => {
-    // The issuer being allowed says nothing about where its document points the token exchange.
+  test("an endpoint the document names inside a denied range is refused", async () => {
+    // The issuer being reachable says nothing about where its document points the token exchange.
+    // This is the one place the provider's own document chooses a host, so it is checked even
+    // though the issuer itself was cleared at boot.
     idp.stop();
-    idp = startStubIdp({ discoveryExtras: { token_endpoint: "https://metadata.example.internal/token" } });
+    idp = startStubIdp({ discoveryExtras: { token_endpoint: "http://169.254.169.254/token" } });
     const cp = oidcCp();
     const problem = await problemOf(await cp.call("GET", "/auth/login"));
     expect(problem.status).toBe(502);
     expect(problem.detail).toContain("token_endpoint");
-    expect(problem.detail).toContain("egress allowlist");
+    expect(problem.detail).toContain("denied range");
   });
 
   test("the identity provider is not contacted at boot", async () => {

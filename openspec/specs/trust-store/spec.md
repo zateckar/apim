@@ -6,7 +6,35 @@ Define the other direction of trust: what each environment's gateways are willin
 a backend. Two things live here — the certificate authorities an environment trusts, and the dated
 exceptions that relax verification for one backend.
 
+The portal puts these on `/trust` beside the client identities the estate presents
+(`app-certificates`) and the rules for what it may reach at all (`egress-governance`). They share a
+screen because they are one question asked from several sides; they are separate capabilities
+because they are separate contracts, and the governance report is where all of them are asked about
+the estate rather than about an API.
+
 ## Requirements
+
+### Requirement: Keep trust previews tied to the material and source reviewed
+
+#### Scenario: A certificate preview is pending
+
+- GIVEN a PEM preview or registration in flight
+- WHEN the form renders
+- THEN the PEM input SHALL be disabled until the request finishes so the displayed preview describes the submitted material
+
+#### Scenario: Copy selection changes
+
+- GIVEN a source environment or authority selection
+- WHEN it changes
+- THEN the previous plan SHALL be cleared
+- AND source and authority controls SHALL be disabled during a preview or copy
+- AND loading a different source SHALL NOT show the previous source's authorities
+
+#### Scenario: Governance is unavailable
+
+- GIVEN a loading or failed governance read
+- WHEN the report renders
+- THEN it SHALL show loading or the failure rather than claim there are no exceptions
 
 ### Requirement: Trust anchors are an environment decision, not a per-process one
 
@@ -150,3 +178,13 @@ exceptions that relax verification for one backend.
 - THEN a row SHALL be raised naming the resource, the environment and the date
 - AND the reason SHALL be that an exception expiring unnoticed is a route that starts failing for a
   cause nobody connected to a decision made weeks earlier
+
+### Requirement: Validate trust drafts before saving
+
+#### Scenario: A draft is edited
+
+- GIVEN an authority registration or TLS exception form
+- WHEN its fields are edited
+- THEN authority names SHALL use the documented lowercase name pattern
+- AND exceptions SHALL require an API, a reason of at least 20 characters, a positive integer lifetime, and a valid SHA-256 thumbprint when pin mode is selected
+- AND optional backend URL syntax SHALL be checked locally; the control plane SHALL enforce the configured maximum lifetime

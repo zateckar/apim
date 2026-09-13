@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
 import type { Session } from "./App";
-import { Link, OperationList, Panel } from "./components";
+import { EmptyState, Link, Panel } from "./components";
 import type { Match } from "./lib/routes";
 import { Publish, Editor } from "./portal/apis";
 import { Catalog } from "./portal/catalog";
 import { Dashboard } from "./portal/dashboard";
-import { Subscriptions, Approvals, Integrations, Kafka } from "./portal/processes";
+import { Subscriptions, Approvals, Integrations, Kafka, Activity } from "./portal/processes";
 import { Mailbox } from "./portal/notifications";
 import { AccountView } from "./views/AccountView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
@@ -87,11 +87,7 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   ),
   integrations: ({ session, tick }) => <Integrations session={session} tick={tick} fixme={false} />,
   mail: ({ session, tick }) => <Mailbox session={session} tick={tick} />,
-  activity: ({ operations }) => (
-    <Panel title="Changes and deployment progress">
-      <OperationList items={operations} />
-    </Panel>
-  ),
+  activity: ({ operations }) => <Activity items={operations} />,
 
   // ------------------------------------------------------------------ the same for everybody
   catalog: ({ session }) => <MarketView user={session.user} meta={session.meta} />,
@@ -169,10 +165,7 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   // ------------------------------------------------------------------ and the address that is not
   "not-found": () => (
     <Panel>
-      <p className="muted">
-        Nothing in the portal answers to that address. <Link to="/">Go back to the dashboard</Link>,
-        or read <Link to="/how">How this works</Link>.
-      </p>
+      <EmptyState title="This page could not be found" detail="The address may be incomplete or the page may have moved." action={<Link className="btn primary" to="/">Go back to the dashboard</Link>} />
     </Panel>
   ),
 };

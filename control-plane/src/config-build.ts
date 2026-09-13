@@ -1,6 +1,8 @@
 import { digestOf, sha256Hex } from "../../shared/canonical.ts";
 import type { ArtifactRef } from "../../shared/artifact.ts";
 import { readBackendPool } from "../../shared/backend.ts";
+import { matchingDenyRule, type DenyRule } from "./egress.ts";
+import { denyRulesFor } from "./deny-rules.ts";
 import {
   CONFIG_VERSION,
   type ConfigBackendTls,
@@ -302,6 +304,7 @@ export function buildRoutes(
   db: DB,
   environment: string,
   limits: ConfigLimits,
+  denyRules: DenyRule[],
   targetId?: string,
 ): { routes: ConfigRoute[]; errors: GatewayConfig["errors"] } {
   const rows = db
@@ -370,6 +373,32 @@ export function buildRoutes(
       ? (JSON.parse(row.index_json) as ConfigOperation[])
       : [];
     const backend = readBackendPool(JSON.parse(row.backend_json));
+
+    // The second enforcement point for an administrator's deny rules, and the one that makes them
+    // mean anything (`egress-governance`). Write-time refusal only governs what is saved next; a
+    // rule created today has to reach a route that has been serving for months, and this is where
+    // it does — the route is omitted from the document, so every instance stops serving it within
+    // one poll. Nothing new travels, so CONFIG_VERSION is untouched.
+    //
+    // One blocked member takes the whole route out rather than being dropped from the pool.
+    // Quietly serving a route with fewer backends changes its capacity and its failover order
+    // without anybody asking, and leaves a rule that was meant to stop traffic to a host looking
+    // like it did nothing. An API that does not answer is visible; a pool silently one member
+    // short is not — the same argument the invalid-document case above makes.
+    const blocked = backend.pool
+      .map((entry) => ({ entry, rule: matchingDenyRule(entry.url, denyRules, environment) }))
+      .find((candidate) => candidate.rule !== null);
+    if (blocked?.rule) {
+      errors.push({
+        resourceId: row.resource_id,
+        resourceName: `${row.resource_name} ${row.api_version}`,
+        detail:
+          `backend ${blocked.entry.url} is blocked by the deny rule "${blocked.rule.hostPattern}", ` +
+          `so this route is not being served: ${blocked.rule.reason}`,
+      });
+      continue;
+    }
+
     const logBodiesUntil = logBodiesUntilFor(db, row.resource_id, environment, now);
 
     routes.push({
@@ -588,15 +617,32 @@ export function limitsFor(integrations: Integrations): ConfigLimits {
   };
 }
 
+/**
+ * What a build reads out of the control plane's configuration. The whole `CpConfig` satisfies it,
+ * which is what every caller passes — `publicUrl` is here because the platform denies its own
+ * origin as a backend without an administrator having written that rule down.
+ */
+export interface BuildInput {
+  integrations: Integrations;
+  publicUrl: string;
+}
+
 export function buildConfig(
   db: DB,
   kek: Buffer,
   environment: string,
-  integrations: Integrations,
+  config: BuildInput,
   targetId?: string,
 ): GatewayConfig {
+  const { integrations } = config;
   const limits = limitsFor(integrations);
-  const { routes, errors } = buildRoutes(db, environment, limits, targetId);
+  const { routes, errors } = buildRoutes(
+    db,
+    environment,
+    limits,
+    denyRulesFor(db, config.publicUrl),
+    targetId,
+  );
   const subscriptions = buildSubscriptions(db, kek, environment);
   const certificates = buildCertificates(db, environment);
   const body = {
@@ -625,8 +671,13 @@ export function buildConfig(
 }
 
 /** Every artifact digest this environment's config references — the scope check on the channel. */
-export function artifactDigestsFor(db: DB, environment: string, integrations: Integrations): Set<string> {
-  const { routes } = buildRoutes(db, environment, limitsFor(integrations));
+export function artifactDigestsFor(db: DB, environment: string, config: BuildInput): Set<string> {
+  const { routes } = buildRoutes(
+    db,
+    environment,
+    limitsFor(config.integrations),
+    denyRulesFor(db, config.publicUrl),
+  );
   const digests = new Set<string>();
   for (const route of routes) for (const artifact of route.artifacts) digests.add(artifact.digest);
   return digests;

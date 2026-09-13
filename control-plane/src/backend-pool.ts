@@ -1,5 +1,5 @@
 import { badRequest } from "./router.ts";
-import { checkEgress, type Integrations } from "./egress.ts";
+import { checkEgress, type EgressScope } from "./egress.ts";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../shared/backend.ts";
 import type { BackendEntry } from "../../shared/config-doc.ts";
 
@@ -21,12 +21,14 @@ export interface ReadPool {
  * is how a pool set through one and a pool set through the other came to mean slightly different
  * things; a caller should not be able to reach a state through one door that the other refuses.
  *
- * Every URL passes the egress allowlist at write time (design section 5.3), because a pool is
- * exactly as safe as its least-checked member.
+ * Every URL passes the egress check at write time (design section 5.3, `egress-governance`) —
+ * the denied ranges and the administrator's deny rules — because a pool is exactly as safe as its
+ * least-checked member. `scope.environment` is the one the binding is for, so an
+ * environment-scoped rule applies where it was meant to and nowhere else.
  */
 export async function readPool(
   body: PoolInput,
-  integrations: Integrations,
+  scope: EgressScope,
 ): Promise<ReadPool | null> {
   const pool: BackendEntry[] = [];
   if (Array.isArray(body.pool)) {
@@ -61,7 +63,7 @@ export async function readPool(
     if (seen.has(entry.url))
       throw badRequest(`${entry.url} appears twice; use \`weight\` instead`);
     seen.add(entry.url);
-    const errors = await checkEgress(entry.url, integrations, "pool");
+    const errors = await checkEgress(entry.url, "pool", scope);
     if (errors.length > 0) throw badRequest(errors.join("; "));
   }
 

@@ -241,9 +241,12 @@ if (import.meta.main) {
   const config = loadConfig();
   assertAuthConfig(config);
   // The playground's targets and the identity provider are both admin configuration, so they are
-  // checked against the egress allowlist here — once, loudly — rather than on the request path
+  // checked against the denied ranges here — once, loudly — rather than on the request path
   // (plan §11). Neither check touches the network: a control plane that would not start while
   // Keycloak restarts is an availability coupling nobody asked for `[P1-15]`.
+  //
+  // The ranges, not the administrator's deny rules: these three are operator-set, and a rule
+  // created in the portal must not be able to prevent the next restart.
   await assertGatewayUrlsAllowed(config);
   await assertIssuerAllowed(config);
   await assertLogsUrlAllowed(config);

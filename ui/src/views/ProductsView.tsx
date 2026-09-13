@@ -1,3 +1,5 @@
+import { nameError, NAME_HINT, NAME_PATTERN } from "../lib/form-validation";
+import { listAll } from "../portal/client";
 import { useState } from "react";
 import type { Session } from "../App";
 import { api, type Product, type Resource, type Subscription } from "../api";
@@ -95,8 +97,9 @@ function MemberPicker({
   );
 }
 export function ProductsView({ session }: { session: Session }) {
-  const products = useAsync(() => api.get<{ items: Product[] }>("/api/products"), []);
-  const resources = useAsync(() => api.get<{ items: Resource[] }>("/api/resources?application=mine"), []);
+  const [creating, setCreating] = useState(false);
+  const products = useAsync(() => listAll<Product>("/api/products"), []);
+  const resources = useAsync(() => listAll<Resource>("/api/resources?application=mine"), []);
   const subscriptions = useAsync(() => api.get<{ items: Subscription[] }>("/api/subscriptions"), []);
 
   // `resources` feeds the members picker and `subscriptions` the counts; either failing leaves a
@@ -109,6 +112,18 @@ export function ProductsView({ session }: { session: Session }) {
 
   return (
     <>
+      <div className="page-toolbar">
+        <span className="muted">{shown.length} products · bundle APIs for consumers</span>
+        <button className={creating ? "btn" : "btn primary"} onClick={() => setCreating(!creating)}>{creating ? "Cancel" : "+ Create a product"}</button>
+      </div>
+      {creating && <div id="new-product">
+        <NewProduct
+          taken={products.data.items.map(product => product.name)}
+          applicationId={session.application}
+          resources={resources.data.items.filter(r => r.applicationId === session.application)}
+          onCreated={() => { setCreating(false); products.reload(); }}
+        />
+      </div>}
       {subscriptions.error && (
         <Notice kind="warn">
           Subscriber counts are unavailable ({subscriptions.error}); the products below are correct.
@@ -121,7 +136,7 @@ export function ProductsView({ session }: { session: Session }) {
           action={
             <button
               className="btn sm"
-              onClick={() => document.getElementById("new-product-name")?.focus()}
+              onClick={() => { setCreating(true); requestAnimationFrame(() => document.getElementById("new-product-name")?.focus()); }}
             >
               Create the first one
             </button>
@@ -136,6 +151,7 @@ export function ProductsView({ session }: { session: Session }) {
             subscriptions={(subscriptions.data?.items ?? []).filter(
               (row) => row.productId === product.id,
             )}
+            subscriptionsKnown={subscriptions.data !== null && !subscriptions.error}
             onChanged={() => {
               products.reload();
               subscriptions.reload();
@@ -144,13 +160,7 @@ export function ProductsView({ session }: { session: Session }) {
         ))
       )}
 
-      <div id="new-product">
-        <NewProduct
-          applicationId={session.application}
-          resources={resources.data.items.filter(r => r.applicationId === session.application)}
-          onCreated={products.reload}
-        />
-      </div>
+
     </>
   );
 }
@@ -159,11 +169,13 @@ function ProductCard({
   product,
   resources,
   subscriptions,
+  subscriptionsKnown,
   onChanged,
 }: {
   product: Product;
   resources: Resource[];
   subscriptions: Subscription[];
+  subscriptionsKnown: boolean;
   onChanged: () => void;
 }) {
   const canEdit = permit("members", product.capabilities, { application: product.applicationId });
@@ -179,7 +191,7 @@ function ProductCard({
       // It used to open "Owned by application_platform" — a raw id, and a redundant one: the
       // screen only lists products the selected application owns, so the answer was always the
       // application named in the picker two inches away.
-      hint={`${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.`}
+      hint={subscriptionsKnown ? `${subscriptions.length} subscription${subscriptions.length === 1 ? "" : "s"}.` : "Subscriber counts are unavailable."}
     >
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
@@ -220,7 +232,7 @@ function ProductCard({
       </details>
 
       <h4 className="section-sub">Who has subscribed</h4>
-      {subscriptions.length === 0 ? (
+      {!subscriptionsKnown ? <p className="muted">Subscriptions have not been loaded.</p> : subscriptions.length === 0 ? (
         <p className="muted small">
           Nobody yet. It appears in the <Link to="/catalog">Catalog</Link> for anybody allowed to see
           its APIs.
@@ -268,17 +280,20 @@ function ProductCard({
 }
 
 function NewProduct({
+  taken,
   applicationId,
   resources,
   onCreated,
 }: {
   applicationId: string;
+  taken: string[];
   resources: Resource[];
   onCreated: () => void;
 }) {
   const [name, setName] = useState("");
   const [selected, setSelected] = useState<string[]>([]);
   const action = useAction();
+  const problem = nameError(name) ?? (taken.includes(name) ? "A product with this name already exists. Choose another name." : null);
 
   return (
     <Panel
@@ -292,6 +307,7 @@ function NewProduct({
         value={name}
         onChange={setName}
         placeholder="orders-product"
+        hint={NAME_HINT} error={name ? problem : null} pattern={NAME_PATTERN} maxLength={61}
       />
       <MemberPicker
         id="new-product-members"
@@ -303,8 +319,9 @@ function NewProduct({
       <div className="native-actions">
         <button
           className="btn primary"
-          disabled={action.busy || name.trim().length === 0}
+          disabled={action.busy || Boolean(problem)}
           onClick={async () => {
+            if (problem) return;
             const ok = await action.run(() =>
               api.post("/api/products", { name, applicationId, resourceIds: selected }),
             );

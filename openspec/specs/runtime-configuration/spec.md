@@ -140,32 +140,42 @@ The environment model SHALL be internally consistent at boot.
 - AND an absent `gatewayUrls` SHALL be legitimate, disabling the playground in that environment,
   which the playground endpoint SHALL say in as many words and name `TARGETS_FILE`
 
-### Requirement: Check every outbound host against the egress allowlist at boot
+### Requirement: Check every outbound host against the denied ranges at boot
 
-Any host the control plane will itself fetch SHALL be checked against the allowlist at startup, on
-the configured string, without a network call.
+Any host the control plane will itself fetch SHALL be checked at startup, on the configured string,
+without a network call beyond resolving it. The ranges and rules themselves are `egress-governance`'s;
+what this capability owns is that the check happens before the first request rather than during it.
 
-#### Scenario: The identity provider is not allowlisted
+#### Scenario: The identity provider is denied
 
-- GIVEN `AUTH_PROVIDERS` includes `oidc` and `OIDC_ISSUER`'s host is not in the egress allowlist
+- GIVEN `AUTH_PROVIDERS` includes `oidc` and `OIDC_ISSUER`'s host resolves into a denied range
 - WHEN the control plane starts
-- THEN startup SHALL fail, quoting the allowlist error and naming `INTEGRATIONS_FILE`
+- THEN startup SHALL fail, quoting the refusal and naming `INTEGRATIONS_FILE`
 - AND no discovery request SHALL be made during this check, because fetching here would make the
   control plane refuse to start while the identity provider restarts
 
-#### Scenario: The log cluster is not allowlisted
+#### Scenario: The log cluster is denied
 
-- GIVEN `LOGS_PROVIDER=elk` and `ELK_URL`'s host is not allowlisted
+- GIVEN `LOGS_PROVIDER=elk` and `ELK_URL`'s host resolves into a denied range
 - WHEN the control plane starts
 - THEN startup SHALL fail naming `ELK_URL` and the integrations file
 
-#### Scenario: A playground gateway URL is not allowlisted
+#### Scenario: A playground gateway URL is denied
 
-- GIVEN a `config.gatewayUrls` entry names a host the allowlist refuses
+- GIVEN a `config.gatewayUrls` entry names a host the denied ranges refuse
 - WHEN the control plane starts
 - THEN startup SHALL fail, listing every refused entry with its environment and label
 - AND the reason SHALL be that a playground that can reach nothing should say so at startup, not
   at the first click
+
+#### Scenario: An administrator's deny rule cannot prevent a restart
+
+- GIVEN any set of deny rules an administrator has created in the portal
+- WHEN the control plane starts
+- THEN these three checks SHALL consider the denied **ranges** only, and SHALL ignore the rules
+- AND the reason SHALL be that `OIDC_ISSUER`, `ELK_URL` and the playground targets are set by the
+  operator in the environment, not written by an owner — running them through an owner-facing control
+  would let a rule created in the portal brick the next restart
 
 ### Requirement: Refuse a dangling integration reference at boot
 

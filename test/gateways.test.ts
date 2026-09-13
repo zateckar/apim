@@ -156,8 +156,8 @@ describe("publishing on a subset of an environment's gateways", () => {
     const onprem = targets.find((t) => t.name === "onprem")!;
 
     const path = "/it/solution/cloud-only/v1";
-    const onLocal = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, local.id);
-    const onOnprem = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, onprem.id);
+    const onLocal = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, local.id);
+    const onOnprem = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, onprem.id);
     expect(onLocal.routes.map((r) => r.basePath)).toContain(path);
     expect(onOnprem.routes.map((r) => r.basePath)).not.toContain(path);
     // Two gateways serving different route sets are two different documents, and the digest is

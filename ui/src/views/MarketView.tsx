@@ -48,6 +48,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
   const listing = useAsync(
     () => api.get<{ items: MarketCard[]; total: number; truncated: boolean }>(`/api/catalog?${query}`),
     [q, kind, tag, application, sort],
+    query.toString(),
   );
   const facets = useAsync(() => api.get<MarketFacets>("/api/catalog/facets"), []);
 
@@ -133,7 +134,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
 
       {listing.loading && items.length === 0 && <p className="muted">Searching…</p>}
 
-      {!listing.loading && items.length === 0 && (
+      {!listing.loading && !listing.error && items.length === 0 && (
         <Panel>
           {filtered ? (
             <>
@@ -148,6 +149,7 @@ export function MarketView({ user, meta }: { user: User; meta: Meta }) {
                   setQ("");
                   setKind(null);
                   setTag(null);
+                  setApplication("");
                 }}
               >
                 Clear filters

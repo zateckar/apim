@@ -8,6 +8,14 @@ returned in full over the portal's API.
 
 ## Requirements
 
+### Requirement: Distinguish an unread certificate list from an empty one
+
+#### Scenario: Certificates are loading or unavailable
+
+- GIVEN a certificate list that has not loaded or has failed
+- WHEN the page renders
+- THEN it SHALL show loading or the read failure instead of offering to upload the first certificate
+
 ### Requirement: Keep certificate upload focused
 
 #### Scenario: Uploading the first certificate
@@ -144,3 +152,11 @@ A renewal SHALL replace the material under the same id.
 - WHEN it renders
 - THEN it SHALL show only that application's client certificates for the selected environment
 - AND environment-wide authorities, TLS exceptions and governance SHALL remain on the Trust page rather than appear as tabs under the application title
+
+#### Scenario: An upload draft is incomplete or duplicates a certificate
+
+- GIVEN the upload form
+- WHEN a name violates the 2–61 lowercase-letter, digit or hyphen pattern, duplicates a loaded certificate, or certificate/key material is missing
+- THEN Upload SHALL remain disabled and the name field SHALL explain format or duplicate errors
+- AND a duplicate SHALL direct the owner toward renewal in place
+- AND certificate, chain and private-key editors SHALL have associated labels

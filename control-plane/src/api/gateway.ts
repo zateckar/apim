@@ -60,7 +60,7 @@ function artifactReachableFrom(ctx: Ctx, digest: string): boolean {
     ctx.app.db,
     ctx.app.kek,
     ctx.instance!.environment,
-    ctx.app.config.integrations,
+    ctx.app.config,
     ctx.instance!.targetId,
   );
   return config.routes.some((route) => route.artifacts.some((ref) => ref.digest === digest));
@@ -165,7 +165,7 @@ export function registerGatewayRoutes(router: Router): void {
       ctx.app.db,
       ctx.app.kek,
       environment,
-      ctx.app.config.integrations,
+      ctx.app.config,
       instance.targetId,
     );
     const unchanged = body.instance?.activeDigest === config.digest;
@@ -277,7 +277,7 @@ export function registerGatewayRoutes(router: Router): void {
     if (!ctx.app.config.promotionChain.includes(environment)) {
       throw notFound(`unknown environment "${environment}"`);
     }
-    return json(buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations), {
+    return json(buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config), {
       headers: { "cache-control": "no-store" },
     });
   });

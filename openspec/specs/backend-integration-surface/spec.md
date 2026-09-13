@@ -23,7 +23,12 @@ presents. Backends live in `binding`, per environment, **never in policy**.
 
 - GIVEN any pool member
 - WHEN it is saved
-- THEN it SHALL pass the egress allowlist at **write** time, and the refusal SHALL name the rule
+- THEN it SHALL be checked at **write** time against the estate's egress governance — the denied
+  network ranges and the administrator's deny rules — and each refusal SHALL name what matched
+- AND a pool SHALL be exactly as safe as its least-checked member, so every member SHALL be checked
+  rather than the first
+- AND see `egress-governance`, which owns the rules themselves and their second enforcement point at
+  configuration build
 
 #### Scenario: A pool exceeds its bounds
 

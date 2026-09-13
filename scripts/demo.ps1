@@ -240,7 +240,7 @@ $v1 = Api POST "/api/resources" @{ kind = "rest"; name = "petstore"; application
 Note "resource $($v1.id)"
 $revision = Api POST "/api/resources/$($v1.id)/revisions" @{ specUrl = "https://petstore.swagger.io/v2/swagger.json" }
 Check "imported revision" $revision.rev 1
-Note "the fetch passed the egress allowlist and followed no redirects (design section 5.3)"
+Note "the fetch passed the denied ranges and the deny rules, and followed no redirects (design section 5.3)"
 
 # DEV points at the real petstore; TEST and PROD point at the local simulator. Backends are
 # per environment (design section 6.1), and this is what that means in practice.

@@ -1,4 +1,6 @@
+import { httpUrlError } from "../lib/form-validation";
 import { formatDateTime } from "../lib/datetime";
+import * as I from "../portal/icons";
 import { useState } from "react";
 import { api, type FleetHealth, type GatewayRow } from "../api";
 import { Panel, DangerZone, TextField, Notice, Pill, useAction, useAsync } from "../components";
@@ -88,9 +90,13 @@ function AddGateway({
   const [publicUrl, setPublicUrl] = useState("");
   const [intranetUrl, setIntranetUrl] = useState("");
 
+  const nameProblem = !/^[a-z0-9][a-z0-9-]{0,31}$/.test(name.trim()) ? "Use 1–32 lowercase letters, digits or hyphens." : taken.includes(name.trim()) ? "This gateway name is already used in this environment." : null;
+  const invalid = Boolean(nameProblem || httpUrlError(publicUrl, true) || httpUrlError(intranetUrl, true));
+
   if (!open) {
     return (
-      <button className="ghost small" onClick={() => setOpen(true)}>
+      <button className="btn" onClick={() => setOpen(true)}>
+        <I.Plus />
         Add a gateway to {environment}
       </button>
     );
@@ -99,7 +105,7 @@ function AddGateway({
   return (
     <Panel title={`New gateway in ${environment}`}>
       <Notice kind="error">{action.error}</Notice>
-      <TextField label="Name" value={name} onChange={setName} />
+      <TextField label="Name" value={name} onChange={setName} error={name ? nameProblem : null} maxLength={32} />
       <p className="hint">
         Lower-case letters, digits and hyphens — <code>managed</code>, <code>onprem</code>. It is
         how an API says where it is published, and it should be the same name in every environment
@@ -107,11 +113,12 @@ function AddGateway({
         {taken.length > 0 && ` Already taken here: ${taken.join(", ")}.`}
       </p>
       <TextField label="Locality" value={label} onChange={setLabel} />
-      <TextField label="Internet address" value={publicUrl} onChange={setPublicUrl} />
-      <TextField label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <TextField label="Internet address (optional)" type="url" value={publicUrl} onChange={setPublicUrl} error={httpUrlError(publicUrl, true)} placeholder="https://gateway.example.com" />
+      <TextField label="Intranet address (optional)" type="url" value={intranetUrl} onChange={setIntranetUrl} error={httpUrlError(intranetUrl, true)} placeholder="https://gateway.internal" />
       <div className="row">
         <button
-          disabled={action.busy || name.trim() === ""}
+          className="btn primary"
+          disabled={action.busy || invalid}
           onClick={async () => {
             const ok = await action.run(
               () =>
@@ -184,14 +191,14 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
 
-      <TextField label="Internet address" value={publicUrl} onChange={setPublicUrl} />
+      <TextField label="Internet address (optional)" type="url" value={publicUrl} onChange={setPublicUrl} error={httpUrlError(publicUrl, true)} placeholder="https://gateway.example.com" />
       <p className="hint">
         The reverse proxy in front of this gateway's replicas — an origin with an optional path
         prefix, no query string. Every API URL the portal shows a consumer for this gateway is
         built from it, so changing it changes what every consumer is told to call. It does not
         move any traffic by itself.
       </p>
-      <TextField label="Intranet address" value={intranetUrl} onChange={setIntranetUrl} />
+      <TextField label="Intranet address (optional)" type="url" value={intranetUrl} onChange={setIntranetUrl} error={httpUrlError(intranetUrl, true)} placeholder="https://gateway.internal" />
       <p className="hint">
         The same gateway's inside-only name, if it has one. Two DNS names for one deployment are
         two addresses, not two gateways: an API published here is reachable at both.
@@ -205,7 +212,8 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
 
       <div className="row">
         <button
-          disabled={action.busy || !dirty}
+          className="btn primary"
+          disabled={action.busy || !dirty || Boolean(httpUrlError(publicUrl, true) || httpUrlError(intranetUrl, true))}
           onClick={async () => {
             const ok = await action.run(
               () =>
@@ -219,7 +227,7 @@ function Gateway({ row, onChanged }: { row: GatewayRow; onChanged: () => void })
             if (ok) onChanged();
           }}
         >
-          Save
+          <I.Save /> Save changes
         </button>
         <button
           className="ghost"
@@ -286,6 +294,8 @@ function Replicas({
   // The endpoint answers for the whole environment, and this card is one gateway in it.
   const instances = (health.data?.instances ?? []).filter((i) => i.gateway === gateway);
   const liveCount = instances.filter((i) => !i.revoked).length;
+  const nameProblem = !/^[a-z0-9][a-z0-9-]{0,31}$/.test(name.trim()) ? "Use 1–32 lowercase letters, digits or hyphens." : instances.some(instance => !instance.revoked && instance.name === name.trim()) ? "An active replica already uses this name." : null;
+  const invalid = Boolean(nameProblem) || health.loading || Boolean(health.error);
 
   return (
     <>
@@ -349,14 +359,10 @@ function Replicas({
 
       <Notice kind="error">{action.error}</Notice>
       <div className="row">
-        <input
-          placeholder={`new replica name, e.g. ${gateway}-${liveCount + 1}`}
-          aria-label={`New replica name for ${environment}/${gateway}`}
-          value={name}
-          onChange={(event) => setName(event.target.value)}
-        />
+        <TextField label={`New replica name for ${environment}/${gateway}`} value={name} onChange={setName} placeholder={`${gateway}-${liveCount + 1}`} hint="1–32 lowercase letters, digits or hyphens." error={name ? nameProblem : null} maxLength={32} />
         <button
-          disabled={action.busy || name.trim() === "" || liveCount >= max}
+          className="btn primary"
+          disabled={action.busy || invalid || liveCount >= max}
           onClick={async () => {
             const created = await api
               .post<{ name: string; token: string }>(`/api/targets/${environment}/instances`, {

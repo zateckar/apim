@@ -8,6 +8,39 @@ Administration group.
 
 ## Requirements
 
+### Requirement: Keep administration actions consistent with their prerequisites
+
+#### Scenario: A member sees an empty application directory
+
+- GIVEN a non-administrator
+- WHEN the directory has no applications
+- THEN the empty state SHALL direct them to their memberships and SHALL NOT open application creation
+
+#### Scenario: A different unmapped group is selected
+
+- GIVEN an open application creation form
+- WHEN another unmapped group is chosen
+- THEN the form SHALL show that group's value rather than retain the previous group's draft
+
+#### Scenario: An application is successfully deleted
+
+- GIVEN an allowed deletion
+- WHEN it completes
+- THEN navigation SHALL open the Applications list as well as changing the address bar
+
+#### Scenario: An administrator views their own account
+
+- GIVEN the role controls
+- WHEN they render for the signed-in administrator
+- THEN self-demotion SHALL be disabled with its reason
+- AND password reset inputs SHALL mask the draft password
+
+#### Scenario: Directory or audit reads fail
+
+- GIVEN an unsuccessful read
+- WHEN the page renders
+- THEN it SHALL show the failure without claiming the directory or audit is empty
+
 ### Requirement: Administration screens are readable by everybody and writable by administrators
 
 #### Scenario: A member deep-links into an administration screen
@@ -76,6 +109,8 @@ Administration group.
 - WHEN Applications renders
 - THEN every application SHALL be listed with its members, its LeanIX metadata when known, and what
   it owns — APIs, products, certificates and Kafka topics
+- AND the loaded list SHALL be searchable by name, id and directory group, with a visible result count and a clear-search action when nothing matches
+- AND creation SHALL be offered in the section header, and application detail SHALL show ownership counts separately from editable identity fields
 
 #### Scenario: An application is created
 
@@ -192,3 +227,16 @@ Administration group.
 - THEN it SHALL show the latest 200 events with date and time, actor, action, subject and outcome
 - AND each nonempty detail SHALL be available through a View details disclosure rather than expanded JSON in every row
 - AND loading SHALL show a skeleton, and an empty audit SHALL offer Refresh events
+- AND a search control SHALL filter the loaded events by actor, action, subject and outcome, state that it searches at most the latest 200 events, and offer Clear search when nothing matches
+- AND Refresh events SHALL remain available above a populated table
+
+### Requirement: Check directory and gateway drafts before submission
+
+#### Scenario: A draft is edited
+
+- GIVEN an application, local account, gateway or replica creation form
+- WHEN its fields are edited
+- THEN the portal SHALL check its known name format and loaded duplicates in the correct scope; gateway names are per environment and active replica names per gateway
+- AND complete name lists SHALL be used for directory creation checks
+- AND local account passwords SHALL be masked and validated against the advertised minimum length and the 200-character maximum
+- AND optional email and gateway URL fields SHALL show syntax errors before saving

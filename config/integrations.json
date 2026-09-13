@@ -1,17 +1,10 @@
 {
   "_comment": "INTEGRATIONS_FILE (design section 11). Nothing secret lives here in a real deployment — a shared secret carries a file path, not a value. Every reference an owner may write in a policy resolves through this file, so no owner ever writes a URL or a credential the gateway will use. A dangling reference is a boot failure that names both the ref and where it is used, rather than a request that fails months later.",
 
-  "_egress": "Design section 5.3. Gates every URL an owner can make the platform fetch: backend bindings, server-side spec imports, and MCP/A2A discovery. Rules match on scheme + host + port; hostPattern is an exact host or *.suffix. denyCidrs is applied after DNS resolution, so a name that resolves into link-local or RFC1918 space is refused however it was spelled.",
-  "_egressLocalTls": "The https rules for 127.0.0.1 and localhost are the twins of the http ones below them, and exist so that the local TLS backend (tools/backend --tls) can be bound to. That backend is what makes goal G4 demonstrable by hand: an internal certificate authority no public store has heard of, registered per environment, after which the gateway verifies the backend with no TLS exception. Remove both https rules in a real deployment along with the http ones.",
-  "egressAllowlist": [
-    { "scheme": "https", "hostPattern": "petstore.swagger.io", "ports": [443] },
-    { "scheme": "https", "hostPattern": "*.swagger.io", "ports": [443] },
-    { "scheme": "http", "hostPattern": "127.0.0.1", "portRange": [1024, 65535] },
-    { "scheme": "http", "hostPattern": "localhost", "portRange": [1024, 65535] },
-    { "scheme": "https", "hostPattern": "127.0.0.1", "portRange": [1024, 65535] },
-    { "scheme": "https", "hostPattern": "localhost", "portRange": [1024, 65535] }
-  ],
-  "denyCidrs": ["169.254.0.0/16", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
+  "_egress": "Design section 5.3, as revised in v1.4.0 — see openspec/specs/egress-governance. `egressAllowlist` is RETIRED: a file still declaring it is a boot failure, deliberately, because ignoring it would leave an operator trusting a list nothing reads. Egress is allowed by default and forbidden two ways: these ranges, and the per-host deny rules an administrator states in the portal under Trust → Blocked backends. Rules are the half that changes; ranges are the half no portal action can widen.",
+  "_denyCidrs": "Applied AFTER DNS resolution, to every URL an owner writes — a backend, a spec import, an MCP or A2A discovery document. IPv4 only, by construction (shared/net.ts); an IPv6 literal host is refused outright wherever a URL is written, rather than admitted past a range that could never match it. The control plane also denies its own PUBLIC_URL origin without being told.",
+  "_denyCidrsLocal": "THIS IS THE LOCAL COPY AND MUST NOT BE DEPLOYED. Loopback is absent so the demo's backends, MCP server and A2A agent on 127.0.0.1:90xx are reachable. The image carries this same file at /app/config.sample/ as a sample to edit, not as a default it mounts: add \"127.0.0.0/8\" before deploying, or a backend is any process inside the container. RFC1918 is deliberately absent and should stay absent: this estate's backends are internal, and denying 10/8, 172.16/12 and 192.168/16 would refuse almost every legitimate binding. Deny a narrower internal range here if your estate has one.",
+  "denyCidrs": ["169.254.0.0/16"],
 
   "_xml": "Design section 5.1's `always` block for the soap variant. These are ceilings, not policy: no route setting turns them off, and DTDs, entities and processing instructions are refused outright rather than expanded safely.",
   "_xmlMaxBytes": "maxBytes bounds a *parsed document*: the WSDL and its XSDs at import time, and — since D12', which retires the original D12 — a SOAP body the gateway validates against those schemas. It is still not the request-size limit: an unvalidated soap route streams its body and is bounded by validate.always.maxBodyBytes like any other, so raising that for large posts does not require touching this.",

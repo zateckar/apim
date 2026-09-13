@@ -8,6 +8,21 @@ decision surface real.
 
 ## Requirements
 
+### Requirement: Review the access being granted
+
+#### Scenario: Approval history is returned
+
+- GIVEN a subscription or Kafka approval event
+- WHEN integration history is read
+- THEN it SHALL include the current access state, product or topic name, and environment resolved from the underlying access record
+
+#### Scenario: An approval is reviewed
+
+- GIVEN the selected application and environment
+- WHEN Approvals renders
+- THEN it SHALL show only approvals in that environment and name the product or topic, consumer and environment in the review dialog
+- AND cancelled or otherwise resolved access SHALL NOT offer a decision even if its outbox event still says awaiting-decision
+
 ### Requirement: An approval request is an outbox event, not a synchronous call
 
 #### Scenario: Access to another application's product is requested

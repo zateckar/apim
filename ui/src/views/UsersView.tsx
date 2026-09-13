@@ -1,7 +1,10 @@
+import { listAll } from "../portal/client";
+import * as I from "../portal/icons";
 import { formatDate, formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import {
   api,
+  type AuthProviders,
   type DirectoryUser,
   type DirectoryUserDetail,
   type ApplicationRow,
@@ -45,6 +48,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
         }`,
       ),
     [query, provider],
+    `${query}:${provider}`,
   );
 
   const rows = list.data?.items ?? [];
@@ -54,10 +58,11 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
     <>
       <Panel
         title="Everybody this portal knows"
-        hint="An account arrives here the first time somebody signs in through the identity provider. You do not create those."
+        hint="Directory accounts appear on first sign-in. Local accounts are created here."
+        actions={canCreate && <button className={creating ? "btn" : "btn primary"} onClick={() => setCreating(open => !open)}>{creating ? <I.X /> : <I.Plus />}{creating ? "Cancel" : "Create a local account"}</button>}
       >
         <Notice kind="error">{list.error}</Notice>
-        <div className="row">
+        <div className="directory-toolbar">
           <TextField label="Search" value={query} onChange={setQuery} placeholder="name, username or email" />
           <div className="field">
             <label htmlFor="provider-filter">Signs in with</label>
@@ -74,11 +79,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
               ))}
             </select>
           </div>
-          {canCreate && (
-            <button className="ghost" onClick={() => setCreating((open) => !open)}>
-              {creating ? "Cancel" : "Create a local account"}
-            </button>
-          )}
+          <span className="muted small">{rows.length} people</span>
         </div>
 
         {creating && (
@@ -91,7 +92,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
         )}
 
         {list.loading && <Skeleton rows={4} />}
-        {!list.loading && rows.length === 0 ? (
+        {!list.loading && !list.error && rows.length === 0 ? (
           <EmptyState
             title="Nobody matches"
             detail="Either the search is too narrow, or nobody has signed in yet. An account appears the first time somebody does."
@@ -151,29 +152,37 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
 }
 
 function CreateUser({ onCreated }: { onCreated: () => void }) {
+  const config = useAsync(() => api.get<AuthProviders>("/api/auth/providers"), []);
+  const existing = useAsync(() => listAll<DirectoryUser>("/api/users?provider=local"), []);
   const [username, setUsername] = useState("");
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const action = useAction();
+  const usernameProblem = /^[a-zA-Z0-9][a-zA-Z0-9._-]{1,63}$/.test(username.trim()) ? null : "Use 2–64 letters, digits, dots, underscores or hyphens; start with a letter or digit.";
+  const passwordProblem = password.length < (config.data?.passwordMinLength ?? 12) || password.length > 200 ? `Use ${config.data?.passwordMinLength ?? 12}–200 characters.` : password.toLowerCase() === username.trim().toLowerCase() || (email && password.toLowerCase() === email.trim().toLowerCase()) ? "The password cannot be the username or email address." : null;
+  const emailProblem = email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ? "Enter an email address, or leave this optional field empty." : null;
+  const duplicate = existing.data?.items.some(user => user.username.toLowerCase() === username.trim().toLowerCase());
+  const invalid = Boolean(usernameProblem || duplicate || passwordProblem || emailProblem || config.loading || config.error || existing.loading || existing.error);
 
   return (
     <div className="subcard">
-      <Notice kind="error">{action.error}</Notice>
+      <Notice kind="error">{action.error ?? config.error ?? existing.error}</Notice>
       <div className="row">
-        <TextField label="Username" value={username} onChange={setUsername} placeholder="dana" />
+        <TextField error={username ? usernameProblem ?? (duplicate ? "A local account with this username already exists." : null) : null} hint="2–64 characters." maxLength={64} label="Username" value={username} onChange={setUsername} placeholder="dana" />
         <TextField label="Name" value={displayName} onChange={setDisplayName} placeholder="Dana Developer" />
-        <TextField label="Email" value={email} onChange={setEmail} placeholder="dana@example.com" />
-        <TextField label="First password" value={password} onChange={setPassword} />
+        <TextField type="email" error={emailProblem} label="Email (optional)" value={email} onChange={setEmail} placeholder="dana@example.com" />
+        <TextField label="First password" type="password" autoComplete="new-password" value={password} onChange={setPassword} maxLength={200} hint={`At least ${config.data?.passwordMinLength ?? 12} characters.`} error={password ? passwordProblem : null} />
       </div>
       <p className="muted small">
         They will have to choose a different one the first time they sign in — this one passed
         through you, so it cannot be the one they keep.
       </p>
       <button
-        className="primary"
-        disabled={action.busy || username.trim().length < 2 || password.length === 0}
+        className="btn primary"
+        disabled={action.busy || invalid}
         onClick={async () => {
+          if (invalid) return;
           const ok = await action.run(() =>
             api.post("/api/users", {
               username: username.trim(),
@@ -215,7 +224,8 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
 
   return (
     <>
-      <Panel title={row.displayName}>
+      <div className="page-toolbar"><Link to="/users">← People</Link><span className="badge">{row.effectiveRole === "admin" ? "Administrator" : "Member"}</span></div>
+      <Panel title={row.displayName} className="person-profile">
         <Notice kind="error">{action.error}</Notice>
         {action.message && <Notice kind="ok">{action.message}</Notice>}
         <dl className="kv">
@@ -285,7 +295,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           </button>
           <button
             className="ghost"
-            disabled={action.busy || row.role === "member"}
+            disabled={action.busy || isSelf || row.role === "member"}
             title={isSelf ? "You cannot remove your own administrator role" : undefined}
             onClick={() => patch({ role: "member" }, "They are a member now.")}
           >
@@ -302,7 +312,7 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
         {row.memberships.length === 0 ? (
           <EmptyState
             title="Not in any application"
-            detail="They can read the catalog and subscribe, but cannot publish or change anything."
+            detail="They can read the catalog. Application membership is required to subscribe, publish or change anything; administrators can act for every application."
             action={<Link to="/applications">See the applications →</Link>}
           />
         ) : (
@@ -522,7 +532,7 @@ function ResetPassword({
       <Notice kind="error">{action.error}</Notice>
       {action.message && <Notice kind="ok">{action.message}</Notice>}
       <div className="row">
-        <TextField label={`A new password for ${name}`} value={password} onChange={setPassword} />
+        <TextField label={`A new password for ${name}`} type="password" autoComplete="new-password" value={password} onChange={setPassword} />
         <button
           className="ghost"
           disabled={action.busy || password.length === 0}

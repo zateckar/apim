@@ -11,6 +11,33 @@ registry says which component answers each of them. The shell resolves nothing o
 
 ## Requirements
 
+### Requirement: Keep screen state attached to its context
+
+#### Scenario: The displayed context changes
+
+- GIVEN a page with an open dialog, local draft, or completed wizard
+- WHEN the address, selected application, or the page's selected environment changes
+- THEN the page SHALL start with state for the new context rather than reuse the previous context's draft or result
+- AND the notifications popover SHALL close and reload when the application changes
+- AND background polling within the same context SHALL NOT reset drafts
+
+#### Scenario: An asynchronous query changes scope
+
+- GIVEN a result for one application, resource, filter or time range
+- WHEN a scoped query changes
+- THEN its previous result SHALL NOT be presented as the new query's result while loading
+- AND a refresh within the same scope MAY retain the existing result until it completes
+
+#### Scenario: How this works is opened
+
+- GIVEN the published UI workflows
+- WHEN the guidance renders
+- THEN publishing SHALL describe Identify, Define and Route in order
+- AND promotion SHALL describe saved configuration, the target backend and deployment progress
+- AND new-version guidance SHALL explain the copied settings and product-based access
+- AND subscription guidance SHALL explain pending or activating access and later key reveal
+- AND the journey count SHALL be derived from the rendered journeys
+
 ### Requirement: Render a two-column shell around every screen
 
 #### Scenario: Any screen is opened
@@ -219,6 +246,14 @@ The rule SHALL be enforced structurally rather than by review.
   returns one, and otherwise reload the portal
 
 ### Requirement: The topbar answers four standing questions
+
+#### Scenario: Activity is opened
+
+- GIVEN the selected application's operations
+- WHEN Activity renders
+- THEN it SHALL offer All changes and In progress filters, each with a count
+- AND In progress SHALL use the same state definition as the topbar count, excluding complete and superseded operations
+- AND an empty In progress view SHALL offer a return to All changes
 
 #### Scenario: The topbar renders
 

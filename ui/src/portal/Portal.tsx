@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useRef, useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
 import { Notice, useAction, useAsync, useTicker, go } from "../components";
@@ -44,6 +44,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
         `/api/operations?applicationId=${encodeURIComponent(applicationId)}`,
       ),
     [applicationId, tick],
+    applicationId,
   );
   const [theme, setTheme] = useState(() => localStorage.getItem("portal-theme") ?? "light");
   useEffect(() => {
@@ -201,7 +202,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             >
               <I.Activity /> {active.length}
             </button>
-            <NotificationsBell applicationId={applicationId} tick={tick} />
+            <NotificationsBell key={applicationId} applicationId={applicationId} tick={tick} />
           </div>
         </header>
         {changes && <ChangeLog close={() => setChanges(false)} />}
@@ -254,6 +255,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           <Notice kind="error">{operations.error}</Notice>
           {/* Screens written before this shell bring no table styling of their own; `.native-legacy`
               lends them the estate's. Which ones need it is declared in the route table. */}
+          <Fragment key={`${path}:${applicationId}:${route.environmentScoped ? s.environment : ""}`}>
           {route.plainChrome ? (
             <div className="native-legacy">
               {screenFor({ match, session: effective, operations: items, tick })}
@@ -261,6 +263,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           ) : (
             screenFor({ match, session: effective, operations: items, tick })
           )}
+          </Fragment>
         </main>
       </div>
     </div>

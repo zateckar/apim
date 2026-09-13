@@ -162,7 +162,8 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 
 - GIVEN an edited pool
 - WHEN it is saved
-- THEN every URL SHALL be checked against the egress allowlist, and a refusal SHALL name the rule
+- THEN every URL SHALL be checked against the denied ranges and the deny rules, and a refusal SHALL
+  name what matched
 - AND the same reader SHALL be used as on publish, so a pool cannot mean one thing in the wizard
   and another here
 

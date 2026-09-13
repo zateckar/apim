@@ -241,6 +241,7 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
   const [openId, setOpenId] = useState<string | null>(null);
   return (
     <Panel
+      className="mailbox-page"
       title={`Mail for ${s.applicationName(s.application)}`}
       actions={
         <div className="native-actions">
@@ -294,6 +295,7 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
                     <span className="notif-when">{formatDateTime(item.at)}</span>
                   </span>
                 </span>
+                <span className="mail-expand" aria-hidden="true">{expanded ? <I.ChevDown /> : <I.ChevRight />}</span>
               </button>
               {expanded && (
                 <div className="notif-message">
@@ -311,8 +313,8 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
                   </div>
                   <p>{item.body || "This message carried no body beyond its subject line."}</p>
                   {item.href && (
-                    <button className="btn sm" onClick={() => go(item.href!)}>
-                      Go to the screen that acts on this
+                    <button className="btn primary sm" onClick={() => go(item.href!)}>
+                      Open related page <I.ChevRight />
                     </button>
                   )}
                 </div>

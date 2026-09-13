@@ -5,7 +5,7 @@ import {
   operationsFromManifest,
 } from "../../shared/mcp.ts";
 import type { ApiModel, McpBinding, McpTool } from "../../shared/types.ts";
-import { checkEgress, type Integrations } from "./egress.ts";
+import { checkEgress, type EgressScope } from "./egress.ts";
 import { badGateway, badRequest } from "./router.ts";
 import type { NormalizeResult } from "./normalize.ts";
 
@@ -41,7 +41,8 @@ export interface McpManifest {
 }
 
 export interface DiscoverOptions {
-  integrations: Integrations;
+  /** Estate-wide deny rules and the denied ranges: discovery is a fetch like a spec import. */
+  egress: EgressScope;
   maxBytes: number;
   timeoutMs?: number;
   /** Injectable so a test drives a server object rather than a socket. */
@@ -172,7 +173,7 @@ function readTool(entry: Record<string, unknown>): McpTool | null {
  * always returns a cursor would otherwise page forever.
  */
 export async function discoverMcp(discoverUrl: string, options: DiscoverOptions): Promise<McpManifest> {
-  const errors = await checkEgress(discoverUrl, options.integrations, "discoverUrl");
+  const errors = await checkEgress(discoverUrl, "discoverUrl", options.egress);
   if (errors.length > 0) throw badRequest(errors.join("; "));
 
   const call = rpcCaller(discoverUrl, options);

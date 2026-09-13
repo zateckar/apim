@@ -79,7 +79,7 @@ export async function provisionHarnessSubscription(
       app.db,
       app.kek,
       "dev",
-      app.config.integrations,
+      app.config,
       target.target_id,
     ).digest;
     await call(

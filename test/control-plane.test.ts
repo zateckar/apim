@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { CONFIG_VERSION, type GatewayConfig } from "../shared/config-doc.ts";
-import { makeCp, MINI_SPEC, poll, publishApi, type TestCp } from "./helpers.ts";
+import { denyRule, makeCp, MINI_SPEC, poll, publishApi, type TestCp } from "./helpers.ts";
 
 let cp: TestCp;
 
@@ -362,7 +362,7 @@ describe("authorization, CSRF and concurrency", () => {
 });
 
 describe("input handling", () => {
-  test("a spec URL outside the egress allowlist is refused and never fetched", async () => {
+  test("a spec URL inside a denied range is refused and never fetched", async () => {
     const pavel = await cp.login("pavel");
     const resource = await (
       await cp.call("POST", "/api/resources", {
@@ -375,10 +375,32 @@ describe("input handling", () => {
       body: { specUrl: "http://169.254.169.254/latest/meta-data" },
     });
     expect(response.status).toBe(400);
-    expect((await response.json()).detail).toContain("egress allowlist");
+    expect((await response.json()).detail).toContain("denied range");
   });
 
-  test("a backend URL outside the egress allowlist is refused", async () => {
+  // The inversion, stated as a test: egress is allowed by default, so a host nobody has blocked is
+  // a legitimate backend and no administrator has to register it first. This is the behaviour the
+  // retired allowlist made impossible, and the reason the whole capability changed shape.
+  test("a backend URL nobody has blocked is accepted without being registered first", async () => {
+    const pavel = await cp.login("pavel");
+    const resource = await (
+      await cp.call("POST", "/api/resources", {
+        cookie: pavel,
+        body: { kind: "rest", name: "ordinarybackend", applicationId: "application_platform" },
+      })
+    ).json();
+    const response = await cp.call("PUT", `/api/resources/${resource.id}/binding`, {
+      cookie: pavel,
+      body: { environment: "dev", urls: ["https://backend.example.com/api"] },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  test("a backend URL an administrator has blocked is refused, naming the rule and its reason", async () => {
+    denyRule(cp, {
+      hostPattern: "*.evil.example",
+      reason: "Exfiltration host from ticket SEC-4412; remove when the finding is closed",
+    });
     const pavel = await cp.login("pavel");
     const resource = await (
       await cp.call("POST", "/api/resources", {
@@ -388,9 +410,48 @@ describe("input handling", () => {
     ).json();
     const response = await cp.call("PUT", `/api/resources/${resource.id}/binding`, {
       cookie: pavel,
-      body: { environment: "dev", urls: ["https://evil.example/api"] },
+      body: { environment: "dev", urls: ["https://api.evil.example/api"] },
     });
     expect(response.status).toBe(400);
+    const detail = (await response.json()).detail;
+    expect(detail).toContain("*.evil.example");
+    expect(detail).toContain("SEC-4412");
+  });
+
+  // `*.suffix` does not match the bare suffix — the one matching rule that is easy to get wrong and
+  // whose failure mode is a rule that looks like it covers a host it does not.
+  test("a wildcard rule does not match the bare suffix", async () => {
+    denyRule(cp, { hostPattern: "*.evil.example", reason: "Only subdomains are blocked here, deliberately" });
+    const pavel = await cp.login("pavel");
+    const resource = await (
+      await cp.call("POST", "/api/resources", {
+        cookie: pavel,
+        body: { kind: "rest", name: "baresuffix", applicationId: "application_platform" },
+      })
+    ).json();
+    const response = await cp.call("PUT", `/api/resources/${resource.id}/binding`, {
+      cookie: pavel,
+      body: { environment: "dev", urls: ["https://evil.example/api"] },
+    });
+    expect(response.status).toBe(200);
+  });
+
+  // The half denyCidrs cannot check: shared/net.ts is IPv4-only, so an IPv6 literal admitted here
+  // would walk straight past a denied 127.0.0.0/8.
+  test("an IPv6 literal is refused outright rather than checked against the ranges", async () => {
+    const pavel = await cp.login("pavel");
+    const resource = await (
+      await cp.call("POST", "/api/resources", {
+        cookie: pavel,
+        body: { kind: "rest", name: "sixliteral", applicationId: "application_platform" },
+      })
+    ).json();
+    const response = await cp.call("PUT", `/api/resources/${resource.id}/binding`, {
+      cookie: pavel,
+      body: { environment: "dev", urls: ["http://[::1]:9000/api"] },
+    });
+    expect(response.status).toBe(400);
+    expect((await response.json()).detail).toContain("IPv6 literal");
   });
 
   test("a policy unit that fails validation is refused with the reason", async () => {

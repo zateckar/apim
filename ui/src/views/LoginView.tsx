@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Api } from "../portal/icons";
 import { api, type AuthProviders } from "../api";
 import { Panel, Notice, useAction, useAsync } from "../components";
 
@@ -48,6 +49,7 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
 
   return (
     <div className="login">
+      <div className="signin-brand"><Api size={24} /><strong>Integration Portal</strong></div>
       <Panel title="Sign in" hint="The Integration Portal publishes, governs and serves APIs.">
         {config.providers.map((provider, index) => (
           <div key={provider} className="signin-method">
@@ -153,7 +155,7 @@ function DevUsers({
       {users.map((user) => (
         <button
           key={user.id}
-          className="ghost wide"
+          className="ghost wide dev-user"
           disabled={action.busy}
           onClick={async () => {
             const ok = await action.run(() => api.post("/api/auth/dev-login", { userId: user.id }));

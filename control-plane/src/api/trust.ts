@@ -5,6 +5,19 @@ import { encrypt } from "../crypto.ts";
 import { newId, nowIso } from "../db.ts";
 import { checkEgress, DEFAULT_TLS_EXCEPTION_MAX_DAYS } from "../egress.ts";
 import {
+  denyRulesFor,
+  DenyRuleError,
+  egressScope,
+  invalidateDenyRules,
+  listDenyRules,
+  liveDenyRules,
+  MIN_REASON_LENGTH,
+  parseDenyRuleDraft,
+  routesMatchingRule,
+  SELF_RULE_ID,
+  type DenyRuleDraft,
+} from "../deny-rules.ts";
+import {
   caBundleFor,
   invalidateTrustBundle,
   liveAnchorsFor,
@@ -49,6 +62,16 @@ import { assertCan, environmentOf, getResource, touch } from "./common.ts";
 
 const MODES = ["pin", "skip-hostname", "insecure"] as const;
 type ExceptionMode = (typeof MODES)[number];
+
+/** Every draft refusal is a `400` naming the field, like every other write on this API. */
+function parseOrRefuse(input: Partial<DenyRuleDraft>): DenyRuleDraft {
+  try {
+    return parseDenyRuleDraft(input);
+  } catch (err) {
+    if (err instanceof DenyRuleError) throw badRequest(err.message);
+    throw err;
+  }
+}
 
 // `requireAdmin` moved to `router.ts` in v5, where all seven admin carve-outs now live.
 
@@ -885,7 +908,7 @@ export function registerTrustRoutes(router: Router): void {
     const anchors = liveAnchorsFor(ctx.app.db, row.environment);
     const bundle = caBundleFor(ctx.app.db, row.environment);
     const backends = await Promise.all(
-      urls.map((url) => probeBackend(ctx, url, bundle)),
+      urls.map((url) => probeBackend(ctx, url, bundle, row.environment)),
     );
 
     return json({
@@ -898,6 +921,143 @@ export function registerTrustRoutes(router: Router): void {
       // do not — which is exactly the mistake this endpoint exists to prevent.
       wouldVerify: backends.every((backend) => backend.wouldVerify),
     });
+  });
+
+  // ---------------------------------------------------------------- deny rules (egress-governance)
+
+  /**
+   * The hosts this estate does not reach, and what each one is currently taking out of service.
+   *
+   * `blocking` is on the list rather than behind a second click because a rule that blocks nothing
+   * and a rule that is holding twelve routes down look identical otherwise, and they are not the
+   * same object to anybody deciding whether to remove one.
+   */
+  router.add("GET", "/api/trust/deny-rules", "session", (ctx) => {
+    requireAdmin(ctx, "the egress deny rules are admin-only");
+    const items = listDenyRules(ctx.app.db).map((rule) => ({
+      ...rule,
+      blocking: routesMatchingRule(ctx.app.db, rule),
+    }));
+    return json({
+      items,
+      // Stated rather than implied, because the screen has to say it and a second reader of this
+      // API should not have to discover it: this rule exists whatever the table holds.
+      platformRules: denyRulesFor(ctx.app.db, ctx.app.config.publicUrl)
+        .filter((rule) => rule.id === SELF_RULE_ID)
+        .map((rule) => ({ ...rule, blocking: routesMatchingRule(ctx.app.db, rule) })),
+      maxRules: ctx.app.config.maxEgressDenyRules,
+    });
+  });
+
+  /**
+   * What this rule would do, before it is written.
+   *
+   * A rule saved here takes routes out of service across the fleet within one poll, so the blast
+   * radius is shown first — the same instinct as previewing an anchor before registering it, and
+   * showing a copy's difference before applying it (`egress-governance`, *Show what a rule would
+   * block before it is saved*).
+   */
+  router.add("POST", "/api/trust/deny-rules/preview", "session", async (ctx) => {
+    requireAdmin(ctx, "the egress deny rules are admin-only");
+    const body = await readJson<Partial<DenyRuleDraft>>(ctx);
+    // The reason is not required to preview: an administrator is entitled to ask what a pattern
+    // would do before they have decided whether to justify it.
+    const draft = parseOrRefuse({ ...body, reason: body.reason ?? "x".repeat(MIN_REASON_LENGTH) });
+    const blocking = routesMatchingRule(ctx.app.db, draft);
+    return json({ blocking, count: blocking.length });
+  });
+
+  router.add("POST", "/api/trust/deny-rules", "session", async (ctx) => {
+    const user = requireAdmin(ctx, "creating an egress deny rule is admin-only");
+    const draft = parseOrRefuse(await readJson<Partial<DenyRuleDraft>>(ctx));
+    if (draft.environment !== null) environmentIn(ctx, draft.environment);
+
+    const live = liveDenyRules(ctx.app.db).length;
+    if (live >= ctx.app.config.maxEgressDenyRules) {
+      throw conflict(
+        `this estate already has ${live} deny rules, which is MAX_EGRESS_DENY_RULES. Every rule is ` +
+          "evaluated against every pool member on every write and every configuration build; " +
+          "consolidate with a *.suffix pattern, or raise the variable",
+      );
+    }
+
+    const id = newId("deny");
+    try {
+      ctx.app.db.run(
+        `INSERT INTO egress_deny_rule
+           (id, environment, scheme, host_pattern, ports_json, port_range_json, reason, created_by, created_at)
+         VALUES (?,?,?,?,?,?,?,?,?)`,
+        [
+          id,
+          draft.environment,
+          draft.scheme,
+          draft.hostPattern,
+          draft.ports ? JSON.stringify(draft.ports) : null,
+          draft.portRange ? JSON.stringify(draft.portRange) : null,
+          draft.reason,
+          user.id,
+          nowIso(),
+        ],
+      );
+    } catch (err) {
+      if (String((err as Error).message).includes("UNIQUE")) {
+        throw conflict(
+          `a live rule for "${draft.hostPattern}" already covers ` +
+            `${draft.environment ?? "every environment"}. Remove that one, or narrow this one.`,
+        );
+      }
+      throw err;
+    }
+    invalidateDenyRules(ctx.app.db);
+
+    const blocking = routesMatchingRule(ctx.app.db, draft);
+    writeAudit(ctx.app.db, {
+      actor: user.id,
+      action: "egress-deny-rule.create",
+      subject: draft.environment ? `environment:${draft.environment}` : "estate",
+      outcome: "ok",
+      // The blast radius goes in the audit line, not just on the screen: "how many routes did this
+      // take down, and did whoever wrote it know" is the question asked after the incident.
+      detail: {
+        ruleId: id,
+        hostPattern: draft.hostPattern,
+        reason: draft.reason,
+        blocked: blocking.length,
+      },
+    });
+    return json({ id, ...draft, blocking }, { status: 201 });
+  });
+
+  router.add("DELETE", "/api/trust/deny-rules/:id", "session", (ctx) => {
+    const user = requireAdmin(ctx, "removing an egress deny rule is admin-only");
+    if (ctx.params.id === SELF_RULE_ID) {
+      throw forbidden(
+        "this rule is stated by the platform rather than by an administrator: it denies the " +
+          "portal's own address (PUBLIC_URL), and a route pointed back at the control plane is " +
+          "what the whole boundary exists to prevent",
+      );
+    }
+    const row = ctx.app.db
+      .query<
+        { id: string; environment: string | null; host_pattern: string; removed_at: string | null },
+        [string]
+      >("SELECT id, environment, host_pattern, removed_at FROM egress_deny_rule WHERE id = ?")
+      .get(ctx.params.id!);
+    if (!row) throw notFound(`no egress deny rule ${ctx.params.id}`);
+
+    // Dated, not deleted, for the same reason a trust anchor's removal is.
+    if (!row.removed_at) {
+      ctx.app.db.run("UPDATE egress_deny_rule SET removed_at = ? WHERE id = ?", [nowIso(), row.id]);
+      invalidateDenyRules(ctx.app.db);
+    }
+    writeAudit(ctx.app.db, {
+      actor: user.id,
+      action: "egress-deny-rule.remove",
+      subject: row.environment ? `environment:${row.environment}` : "estate",
+      outcome: "ok",
+      detail: { ruleId: row.id, hostPattern: row.host_pattern },
+    });
+    return new Response(null, { status: 204 });
   });
 
   /**
@@ -959,7 +1119,23 @@ export function registerTrustRoutes(router: Router): void {
         }
       });
 
+    // Every rule, with what it is holding down. A rule blocking nothing is still listed: it is the
+    // estate's stated position, and it is what a rule written ahead of an incident looks like.
+    const denyRules = denyRulesFor(ctx.app.db, ctx.app.config.publicUrl).map((rule) => ({
+      id: rule.id,
+      environment: rule.environment,
+      scheme: rule.scheme,
+      hostPattern: rule.hostPattern,
+      reason: rule.reason,
+      platform: rule.id === SELF_RULE_ID,
+      blocking: routesMatchingRule(ctx.app.db, rule),
+    }));
+
     return json({
+      denyRules,
+      blockedRoutes: denyRules.flatMap((rule) =>
+        rule.blocking.map((route) => ({ ...route, hostPattern: rule.hostPattern, reason: rule.reason })),
+      ),
       tlsExceptions: tls.map((row) => ({
         id: row.id,
         resourceId: row.resource_id,
@@ -1114,8 +1290,15 @@ async function probeBackend(
   ctx: Ctx,
   url: string,
   bundle: string | null,
+  environment: string,
 ): Promise<{ url: string; wouldVerify: boolean; detail: string }> {
-  const errors = await checkEgress(url, ctx.app.config.integrations, "backendUrl");
+  // The environment's deny rules apply: probing a host is reaching it, and an exception whose
+  // backend has since been blocked should say so here rather than open a connection to it.
+  const errors = await checkEgress(
+    url,
+    "backendUrl",
+    egressScope(ctx.app.db, ctx.app.config, environment),
+  );
   if (errors.length > 0) return { url, wouldVerify: false, detail: errors.join("; ") };
   if (new URL(url).protocol !== "https:") {
     return {

@@ -143,7 +143,7 @@ describe("your own account", () => {
       <AccountView me={meFor({ ...member, applications: [] }, { applications: [] })} reload={() => {}} />,
     );
     expect(html).toContain("You are not in any application");
-    expect(html).toContain("cannot publish or change anything");
+    expect(html).toContain("before you can subscribe, publish or change");
     // An empty state carries the next action, always.
     expect(html).toMatch(/<a [^>]*href="\/catalog"/);
   });

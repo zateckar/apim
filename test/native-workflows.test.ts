@@ -53,7 +53,7 @@ async function ack(environment: string, only?: string[]) {
     cp.app.db,
     cp.app.kek,
     environment,
-    cp.app.config.integrations,
+    cp.app.config,
   ).digest;
   for (const instance of instances) {
     const token = `test-${instance.id}`;
@@ -117,6 +117,10 @@ describe("native application workflows", () => {
         "SELECT id FROM integration_event WHERE subject=? AND integration='skonet'",
       )
       .get(first.id)!;
+    const pendingEvents = await (await call("GET", "/api/integration-events?applicationId=application_platform", "pavel")).json();
+    expect(pendingEvents.items.find((item: any) => item.id === event.id).approval).toEqual({
+      environment: "dev", name: "sample-product", state: "pending",
+    });
     expect(
       (
         await call(
@@ -133,6 +137,8 @@ describe("native application workflows", () => {
     });
     expect(second.status).toBe(201);
     expect((await second.json()).id).not.toBe(first.id);
+    const resolvedEvents = await (await call("GET", "/api/integration-events?applicationId=application_platform", "pavel")).json();
+    expect(resolvedEvents.items.find((item: any) => item.id === event.id).approval.state).toBe("rejected");
     expect(
       cp.app.db
         .query<{ state: string }, [string]>(
@@ -279,7 +285,7 @@ describe("native application workflows", () => {
     expect(sub.state).toBe("pending");
     expect(sub.primaryKey).toBeUndefined();
     expect(
-      buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations)
+      buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config)
         .subscriptions,
     ).toHaveLength(0);
     expect(
@@ -346,7 +352,7 @@ describe("native application workflows", () => {
     ).json();
     expect(revoke.state).toBe("revoking");
     expect(
-      buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations)
+      buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config)
         .subscriptions,
     ).toHaveLength(0);
     await ack("dev");
@@ -587,7 +593,7 @@ describe("native application workflows", () => {
       cp.app.db,
       cp.app.kek,
       "dev",
-      cp.app.config.integrations,
+      cp.app.config,
     );
     const route = built.routes.find((r) => r.resourceId === op.resourceId)!;
     expect(route.backend.pool).toEqual(pool);
@@ -660,7 +666,7 @@ describe("native application workflows", () => {
       cp.app.db,
       cp.app.kek,
       "dev",
-      cp.app.config.integrations,
+      cp.app.config,
     );
     expect(
       built.routes

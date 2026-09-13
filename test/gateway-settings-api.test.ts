@@ -207,8 +207,8 @@ describe("the configuration document", () => {
     await patch({ scope: "fleet", scopeId: "", values: { maxConcurrentRequests: 4096 } });
     await patch({ scope: "gateway", scopeId: onprem, values: { maxConcurrentRequests: 512 } });
 
-    const forManaged = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, managed.id);
-    const forOnprem = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, onprem);
+    const forManaged = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, managed.id);
+    const forOnprem = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, onprem);
     expect(forManaged.settings.maxConcurrentRequests).toBe(4096);
     expect(forOnprem.settings.maxConcurrentRequests).toBe(512);
     // Two gateways in one environment, two documents, and the difference is visible in the digest
@@ -218,9 +218,9 @@ describe("the configuration document", () => {
 
   test("a settings change is a new digest, so the fleet view already tracks it", () => {
     const gateway = devGateway();
-    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, gateway.id);
+    const before = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, gateway.id);
     setFleetSettings(cp, { responseCacheMaxEntries: 50 });
-    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations, gateway.id);
+    const after = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config, gateway.id);
     expect(after.digest).not.toBe(before.digest);
     expect(after.settings.responseCacheMaxEntries).toBe(50);
   });

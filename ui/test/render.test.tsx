@@ -192,7 +192,7 @@ describe("the wizards", () => {
     expect(html).toContain("Next: Define");
     expect(html).toMatch(/<button type="submit" class="btn primary" disabled=""/);
     // And the reason is a sentence on the screen rather than a title attribute on the dead button.
-    expect(html).toContain("Still needed: A name");
+    expect(html).toContain("Still needed: 2–61 lowercase letters");
     // Everything past the first step is out of reach until the step before it is answered, and it is
     // disabled rather than hidden — so the shape of what is being asked is visible from screen one.
     expect(html.match(/class="step [^"]*"[^>]*disabled=""/g) ?? []).toHaveLength(2);
@@ -233,7 +233,8 @@ describe("what a journey ends with", () => {
       docsUrl: null,
       applicationId: "application_platform",
       lifecycle: "active",
-      endpoints: [{ environment: "dev", host: "gw.dev.internal", basePath: "/petstore/v1", live: true }],
+      endpoints: [{ environment: "dev", host: "*", basePath: "/petstore/v1", live: true,
+        urls: [{ gateway: "managed", network: "intranet", url: "http://gw.dev.internal/petstore/v1" }] }],
       products: [],
       operations: [],
       versions: [],
@@ -251,16 +252,17 @@ describe("what a journey ends with", () => {
     );
   };
 
-  test("subscribing ends with where the key comes from, a call that works, and where to go", () => {
+  test("subscribing shows configured addresses and points to the consumer's calling guidance", () => {
     const html = state("pending");
     // The key is not on this page and the panel must not imply it was.
     expect(html).not.toContain("only time the key is shown");
     expect(html).toContain("revealable once the subscription is");
-    // A curl that names the real host and the real header, with the key left as the one blank.
-    expect(html).toContain("https://gw.dev.internal/petstore/v1");
-    expect(html).toContain("X-Api-Key: &lt;your key&gt;");
+    expect(html).toContain("http://gw.dev.internal/petstore/v1");
+    expect(html).toContain("Intranet");
+    expect(html).not.toContain("X-Api-Key");
+    expect(html).not.toContain("gateway-host");
     expect(html).toContain('href="/subscriptions/sub_1"');
-    expect(html).toContain('href="/apis/res_1/try"');
+    expect(html).toContain('href="/catalog/res_1"');
   });
 
   test("it names which of the two waits this is", () => {
@@ -289,10 +291,11 @@ describe("how this works", () => {
     }
   });
 
-  test("states the two-tier model in the first card", () => {
-    // The sentence is broken up by <Term> markup, so match the parts between the tooltips.
-    expect(html).toContain("travels. Everything else stays where it is put.");
-    expect(html).toContain("the contract itself — is what moves from DEV to TEST to PROD");
+  test("describes the actual publishing and access sequence", () => {
+    expect(html).toContain("saved API configuration");
+    expect(html).toContain("Choose the backend and gateways in Route");
+    expect(html).toContain("reveal its key after access becomes active");
+    expect(html).not.toContain("The key, shown once");
     expect(html).toContain("a key that works in DEV will not work in PROD");
   });
 

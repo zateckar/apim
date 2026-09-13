@@ -3,7 +3,7 @@
  * breaker per instance per backend.
  *
  * Design section 5.3 puts backends in `binding`, per environment, never in policy — an owner names
- * a pool and a rule, and the URLs pass the egress allowlist at write time. What lives here is the
+ * a pool and a rule, and the URLs pass the egress check at write time. What lives here is the
  * shape both planes agree on and the selection rules, so "which backend does this request go to"
  * has one answer written once.
  */

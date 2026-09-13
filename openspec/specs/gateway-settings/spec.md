@@ -17,6 +17,21 @@ and `data-plane-gateway` for what each bound does when it is reached.
 
 ## Requirements
 
+### Requirement: Preview the value that clearing an override would restore
+
+#### Scenario: Inheritance is offered
+
+- GIVEN a setting overridden at the selected layer
+- WHEN its inherit choice or placeholder renders
+- THEN it SHALL show the parent layer's effective value, or the built-in default for the fleet
+- AND it SHALL NOT use the selected layer's current override as its inherited value
+
+#### Scenario: A sensitive switch is saved beside other drafts
+
+- GIVEN unsaved numeric or flag overrides and an access-log switch
+- WHEN the access-log switch is saved separately
+- THEN unrelated pending edits SHALL remain available for Save or Discard
+
 ### Requirement: A setting exists only if a running instance can apply it without restarting
 
 The setting vocabulary SHALL be declared in one place, `shared/gateway-settings.ts`, and the
@@ -348,3 +363,12 @@ The portal SHALL offer an administrator one place to read and change every setti
 - AND the screen SHALL NOT report convergence itself, because Health Status already answers that
   per replica by digest and a second, weaker copy of that answer is the two-places-to-look problem
   this capability exists to end
+
+### Requirement: Validate explicit overrides before saving
+
+#### Scenario: A draft is edited
+
+- GIVEN a draft gateway setting override
+- WHEN its fields are edited
+- THEN the portal SHALL show a field error and disable Save for fractional or out-of-range numeric values
+- AND an empty field SHALL continue to mean inherit

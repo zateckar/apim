@@ -52,5 +52,5 @@ test("Telemetry follows the shell environment", async ({ page }) => {
   const environment = (await last.innerText()).toLowerCase();
   await last.click();
   await expect(last).toHaveAttribute("aria-pressed", "true");
-  await expect(page.locator(".card-head h3").first()).toContainText(environment);
+  await expect(page.locator(".card-head h3").first()).toContainText(environment.toUpperCase());
 });

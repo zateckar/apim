@@ -91,7 +91,8 @@ export function HealthView({ user }: { user: User }) {
 
   return (
     <div className="health-overview">
-      <div className="page-actions">
+      <div className="page-actions health-toolbar">
+        <div className="native-actions"><Link to="/telemetry">Traffic &amp; errors →</Link>{user.isAdmin && <Link to="/gateways">Manage gateways →</Link>}</div>
         <button className="btn" onClick={() => void refresh()} disabled={health.loading}>
           {health.loading ? "Probing…" : "Refresh"}
         </button>
@@ -204,6 +205,7 @@ function Synthetics({ admin }: { admin: boolean }) {
   const history = useAsync(
     () => api.get<SyntheticsSnapshot>(`/api/health/synthetics?range=${range}`),
     [range],
+    range,
   );
   const snapshot = history.data;
   const groups = useMemo(() => snapshot?.environments ?? [], [snapshot]);

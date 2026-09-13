@@ -4,6 +4,7 @@ import { buildRoutes, limitsFor } from "./config-build.ts";
 import { gatewayUrlsFor, type GatewayUrl } from "./config.ts";
 import { decrypt } from "./crypto.ts";
 import { checkEgress } from "./egress.ts";
+import { denyRulesFor } from "./deny-rules.ts";
 import { badRequest, conflict, forbidden, notFound, type App } from "./router.ts";
 import { trustedFetch } from "./trust-store.ts";
 
@@ -270,7 +271,12 @@ export function routeFor(
   environment: string,
   resource: { id: string; name: string; api_version: string },
 ): ConfigRoute {
-  const { routes, errors } = buildRoutes(app.db, environment, limitsFor(app.config.integrations));
+  const { routes, errors } = buildRoutes(
+    app.db,
+    environment,
+    limitsFor(app.config.integrations),
+    denyRulesFor(app.db, app.config.publicUrl),
+  );
   const route = routes.find((candidate) => candidate.resourceId === resource.id);
   if (route) return route;
 
@@ -457,10 +463,13 @@ export interface PlaygroundResult {
  * base64 rather than mangled.
  */
 export async function forwardCall(app: App, composed: ComposedCall): Promise<PlaygroundResult> {
-  const errors = await checkEgress(composed.url, app.config.integrations, "gateway");
+  const errors = await checkEgress(composed.url, "gateway", { integrations: app.config.integrations });
   // Even though no part of this URL came from the caller: design section 5.3 names this check as
   // what makes the endpoint safe, and a configuration that would let it reach elsewhere is worth
   // hearing about here rather than never.
+  //
+  // The denied ranges only, as at boot. This URL is composed from TARGETS_FILE, which is operator
+  // configuration — a deny rule aimed at a backend should not silently disable the playground.
   if (errors.length > 0) throw conflict(errors.join("; "));
 
   const started = performance.now();

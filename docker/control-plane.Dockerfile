@@ -41,9 +41,10 @@ COPY control-plane/ ./control-plane/
 COPY scripts/ ./scripts/
 COPY --from=ui /build/ui/dist/ ./ui/dist/
 
-# The repository's own configuration, as a sample rather than a default. Its egress allowlist
-# permits loopback so the local stack works, and an image that shipped that as its default would be
-# a production deployment with a hole in it. `docker cp` these out, edit them, mount them.
+# The repository's own configuration, as a sample rather than a default. Its denied ranges omit
+# loopback so the local stack's backends on 127.0.0.1 work, and an image that shipped that as its
+# default would be a production deployment with a hole in it — deny 127.0.0.0/8 in anything real.
+# `docker cp` these out, edit them, mount them.
 COPY config/ ./config.sample/
 
 # The database and the key encryption key. `/data` is a volume, so neither survives in a layer.

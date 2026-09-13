@@ -68,7 +68,7 @@ export function MarketListing({
       </p>
       {/* The object header, the same chrome the owner's API page uses — a consumer arriving here
           and an owner arriving there must not feel like they are in two different products. */}
-      <div className="object-head">
+      <div className="object-head consumer-resource-head">
         <div className="inline" style={{ alignItems: "flex-start" }}>
           <span className="listing-icon big" aria-hidden>
             {item.icon || "🔗"}
@@ -89,6 +89,7 @@ export function MarketListing({
           {item.subscribed && <StatusChip chip={{ label: "You subscribe", tone: "live", title: "one of your applications holds a key for this" }} />}
           <span className="action">
             <button
+              className="btn primary"
               disabled={item.products.length === 0}
               title={
                 item.products.length === 0
@@ -180,8 +181,8 @@ function operationsLabel(kind: string): string {
 
 function Overview({ item }: { item: MarketListingDetail }) {
   return (
-    <>
-      <Panel title="What it is">
+    <div className="listing-overview">
+      <Panel title="What it is" className="listing-description">
         {item.description?.trim() ? <DescriptionMarkdown source={item.description} /> : <p className="muted">No description provided.</p>}
         {item.tags.length > 0 && (
           <div className="listing-tags">
@@ -293,7 +294,7 @@ function Overview({ item }: { item: MarketListingDetail }) {
           {item.subscriberCount} subscriber{item.subscriberCount === 1 ? "" : "s"}
         </p>
       </Panel>
-    </>
+    </div>
   );
 }
 
@@ -437,7 +438,7 @@ function GettingStarted({ item }: { item: MarketListingDetail }) {
             <pre className="pre">{item.example.text}</pre>
           </>
         ) : (
-          <p className="muted">No route is configured yet, so there is no address to call.</p>
+          <p className="muted">No calling example is available yet. Check the published addresses and release status in Overview.</p>
         )}
         {item.products.length === 0 && (
           <p className="muted" style={{ marginBottom: 0 }}>

@@ -753,7 +753,50 @@ export interface TlsExceptionRow {
   expiresInDays: number;
 }
 
+/** One released route a deny rule is currently taking out of service. */
+export interface BlockedRoute {
+  resourceId: string;
+  resourceName: string;
+  applicationId: string;
+  environment: string;
+  backendUrl: string;
+}
+
+export interface DenyRuleRow {
+  id: string;
+  /** `null` applies to every environment. */
+  environment: string | null;
+  /** `null` matches both schemes. */
+  scheme: "http" | "https" | null;
+  hostPattern: string;
+  ports?: number[];
+  portRange?: [number, number];
+  reason: string;
+  createdBy: string;
+  createdAt: string;
+  blocking: BlockedRoute[];
+}
+
+/** The rule the platform states about its own address. Listed, never removable. */
+export type PlatformDenyRule = Omit<DenyRuleRow, "createdBy" | "createdAt">;
+
+export interface DenyRuleList {
+  items: DenyRuleRow[];
+  platformRules: PlatformDenyRule[];
+  maxRules: number;
+}
+
 export interface GovernanceReport {
+  denyRules: Array<{
+    id: string;
+    environment: string | null;
+    scheme: "http" | "https" | null;
+    hostPattern: string;
+    reason: string;
+    platform: boolean;
+    blocking: BlockedRoute[];
+  }>;
+  blockedRoutes: Array<BlockedRoute & { hostPattern: string; reason: string }>;
   tlsExceptions: Array<{
     id: string;
     resourceId: string;

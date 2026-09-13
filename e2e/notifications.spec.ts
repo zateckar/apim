@@ -49,7 +49,9 @@ test("the bell opens, and marking everything read survives a reload", async ({ p
   );
 
   // …and the mailbox, which reads the same state, agrees rather than showing them unread again.
+  const loaded = page.waitForResponse(response => response.url().includes("/api/notifications?") && response.ok());
   await page.goto(`/${application}/mail`);
+  await (await loaded).json();
   await expect(screenTitle(page)).toHaveText("Mail");
   await expect(page.locator(".notif-item.is-unread")).toHaveCount(0);
 
@@ -59,10 +61,12 @@ test("the bell opens, and marking everything read survives a reload", async ({ p
 test("the mailbox opens a message with its addressee and what it is about", async ({ page }) => {
   const errors = watchErrors(page);
   const application = await openPortal(page, "/");
+  const loaded = page.waitForResponse(response => response.url().includes("/api/notifications?") && response.ok());
   await page.goto(`/${application}/mail`);
+  const feed = await (await loaded).json();
 
   const items = page.locator(".notif-item");
-  test.skip((await items.count()) === 0, "no mail for this application yet");
+  test.skip(feed.items.length === 0, "no mail for this application yet");
 
   await items.first().click();
   const message = page.locator(".notif-message").first();

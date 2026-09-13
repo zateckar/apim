@@ -53,6 +53,7 @@ export function Dashboard({
         `/api/dashboard?applicationId=${encodeURIComponent(s.application)}&environment=${encodeURIComponent(s.environment)}&sinceMin=${sinceMin}`,
       ),
     [s.environment, sinceMin, s.application, tick],
+    `${s.application}:${s.environment}:${sinceMin}`,
   );
   const d = data.data;
   const traffic = d?.owner.traffic;
@@ -284,7 +285,7 @@ function Kpi({
 }) {
   const body = (
     <>
-      <span className="kpi-label">{label}</span>
+      <span className="kpi-label kpi-heading">{label}{onOpen && <span aria-hidden="true"><I.ChevRight size={16} /></span>}</span>
       <div className="kpi-value-row">
         {value === null ? (
           <span className="skl" style={{ width: 64, height: 28 }} aria-hidden="true" />

@@ -46,6 +46,13 @@ export interface UnitDef {
   global: boolean;
 }
 
+// Category colour helps scan the catalogue; the title remains the identifier.
+const GROUP_ICONS = { identity: I.Shield, traffic: I.Activity, shape: I.Edit, backend: I.Server, protocol: I.Globe };
+function PolicyIcon({ group }: { group: UnitDef["group"] }) {
+  const Icon = GROUP_ICONS[group];
+  return <span className={`policy-category policy-category-${group}`} aria-hidden="true"><Icon size={18} /></span>;
+}
+
 /**
  * Where in the pipeline each unit runs. The catalogue's `group` says what a unit is *about*;
  * this says *when* it happens, which is the question somebody reading a list of policies down the
@@ -372,7 +379,7 @@ export function PolicyForm({
           disabled={disabled || available.length === 0}
           onClick={() => setAdding(true)}
         >
-          Add policy
+          <I.Plus /> Add policy
         </button>
         <span className="muted">
           {attached.length} attached · {available.length} available for a {kind.toUpperCase()} API
@@ -381,6 +388,7 @@ export function PolicyForm({
 
       {adding && (
         <Modal title="Add a policy" close={() => setAdding(false)}>
+          <p className="muted">Choose a policy, then configure it before saving your changes.</p>
           {/* Grouped by pipeline phase, the same way the attached list is: a policy that appears
               under Inbound when you add it should not appear under something else afterwards. */}
           {PHASES.map((phase) => {
@@ -401,16 +409,10 @@ export function PolicyForm({
                         ? NEEDS_POOL[unit.key]
                         : null;
                   return (
-                    <div className="native-row" key={unit.key}>
-                      <div>
-                        <strong>{unit.title}</strong>{" "}
-                        <span className="mono muted">{unit.key}</span>
-                        <p>{unit.description}</p>
-                        {blocked && <p className="muted">{blocked}</p>}
-                      </div>
                       <button
+                        key={unit.key}
                         type="button"
-                        className="btn"
+                        className="policy-choice"
                         disabled={Boolean(blocked)}
                         onClick={() => {
                           set(unit.key, removed[unit.key] ?? unit.defaultValue);
@@ -418,9 +420,14 @@ export function PolicyForm({
                           setAdding(false);
                         }}
                       >
-                        Add
+                        <PolicyIcon group={unit.group} />
+                        <span className="policy-choice-copy">
+                          <strong>{unit.title}</strong>
+                          <span>{unit.description}</span>
+                          {blocked && <span className="policy-choice-reason">{blocked}</span>}
+                        </span>
+                        <span className="policy-choice-arrow" aria-hidden="true"><I.Plus /></span>
                       </button>
-                    </div>
                   );
                 })}
               </div>
@@ -479,6 +486,7 @@ function PolicyCard({
   return (
     <div className="policy-item">
       <div className={`policy-card${enabled ? "" : " off"}`}>
+        <PolicyIcon group={unit.group} />
         <div className="policy-card-body">
           <div className="policy-card-title">
             {unit.title} <span className="mono muted">{unit.key}</span>

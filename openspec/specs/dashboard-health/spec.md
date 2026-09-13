@@ -8,6 +8,21 @@ attention and how much traffic there has been. Plus the telemetry both read from
 
 ## Requirements
 
+### Requirement: Keep displayed metrics tied to the selected window
+
+#### Scenario: A time range changes
+
+- GIVEN dashboard, telemetry or synthetic uptime data for one time range
+- WHEN another range is selected
+- THEN the previous metrics SHALL NOT be labelled as results for the new range
+
+#### Scenario: Rate-limit arithmetic shows no live replicas
+
+- GIVEN an environment reporting zero live replicas
+- WHEN its fleet arithmetic renders
+- THEN the multiplier SHALL be zero, without substituting one
+- AND an unread replica inventory SHALL NOT be presented as zero replicas
+
 ### Requirement: Probe each component on its own timer
 
 #### Scenario: The Health screen is opened

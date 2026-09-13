@@ -79,13 +79,17 @@ export function resetOidcCaches(): void {
 }
 
 async function fetchJson(app: App, url: string, init: RequestInit, what: string): Promise<Response> {
-  // The identity provider is an outbound target like any other, so design §5.3's allowlist and
+  // The identity provider is an outbound target like any other, so design §5.3's denied ranges and
   // G4's trust anchors both apply — which is what lets an internal Keycloak behind an internal CA
   // work without turning verification off.
-  const errors = await checkEgress(url, app.config.integrations, what);
+  //
+  // The denied **ranges** only, matching the boot check: the identity provider is operator-set, and
+  // an administrator's deny rule that could break sign-in is a rule that locks everyone out of the
+  // screen where it would be removed.
+  const errors = await checkEgress(url, what, { integrations: app.config.integrations });
   if (errors.length > 0) {
     throw badGateway(
-      `the identity provider's ${what} is not reachable under the egress allowlist: ${errors.join("; ")}`,
+      `the identity provider's ${what} is not reachable: ${errors.join("; ")}`,
     );
   }
   // `trustedFetch` is the control plane's own outbound fetch: system roots plus every registered
@@ -132,14 +136,17 @@ export async function discover(app: App, oidc: OidcConfig): Promise<Discovery> {
       );
     }
     // Every endpoint, not just the issuer: a document may point `token_endpoint` or `jwks_uri` at
-    // a different host, and an allowlist that only ever saw the issuer would not have covered it.
+    // a different host, and a check that only ever saw the issuer would not have covered it. This
+    // is the one place the provider's own document chooses the host, so the denied ranges matter
+    // here even though the issuer itself was cleared at boot.
     for (const [field, value] of Object.entries(doc)) {
       if (typeof value !== "string" || !/^https?:\/\//.test(value)) continue;
-      const errors = await checkEgress(value, app.config.integrations, `discovery ${field}`);
+      const errors = await checkEgress(value, `discovery ${field}`, {
+        integrations: app.config.integrations,
+      });
       if (errors.length > 0) {
         throw badGateway(
-          `the identity provider's ${field} (${value}) is not reachable under the egress ` +
-            `allowlist: ${errors.join("; ")}`,
+          `the identity provider's ${field} (${value}) is not reachable: ${errors.join("; ")}`,
         );
       }
     }

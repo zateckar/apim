@@ -10,6 +10,21 @@ They are two lists because they answer two questions, and each is exactly one sc
 
 ## Requirements
 
+### Requirement: Keep catalog filters and calling guidance truthful
+
+#### Scenario: Filters are cleared
+
+- GIVEN an empty filtered result
+- WHEN Clear filters is used
+- THEN search text, kind, tag and application SHALL all be cleared
+- AND a failed search SHALL NOT be described as no matches
+
+#### Scenario: A calling example is unavailable
+
+- GIVEN a listing without an example
+- WHEN Getting started renders
+- THEN it SHALL direct the reader to addresses and release status in Overview rather than infer that no route exists
+
 ### Requirement: List what an application publishes and what it may call
 
 #### Scenario: The APIs section is opened

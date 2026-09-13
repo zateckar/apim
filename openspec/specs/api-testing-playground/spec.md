@@ -8,6 +8,15 @@ respect.
 
 ## Requirements
 
+### Requirement: Validate the selected operation's inputs only
+
+#### Scenario: The agent card is selected
+
+- GIVEN an operation draft with missing path parameters or a large body
+- WHEN the caller selects GET the agent card
+- THEN those hidden operation fields SHALL NOT block the request
+- AND the request SHALL carry no operation body
+
 ### Requirement: The caller names no host
 
 There SHALL be no target URL field.
@@ -146,3 +155,12 @@ There SHALL be no target URL field.
 - THEN a warning SHALL be returned naming it
 - AND the reason SHALL be that these are things the caller should know before reading the response
   as the API's fault
+
+### Requirement: Keep key selection consistent with its subscription
+
+#### Scenario: A draft is edited
+
+- GIVEN the request form
+- WHEN its fields are edited
+- THEN changing the selected subscription SHALL reset the key choice to primary
+- AND the key control SHALL be disabled until a subscription is selected and explain that secondary-key availability belongs to that subscription

@@ -118,7 +118,7 @@ async function converge(): Promise<void> {
   // Twice around: the queued release has to be applied before there is a digest to acknowledge,
   // and acknowledged before the operation can complete.
   runOperations(cp.app);
-  const digest = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config.integrations).digest;
+  const digest = buildConfig(cp.app.db, cp.app.kek, "dev", cp.app.config).digest;
   for (const instance of cp.instances.filter((i) => i.environment === "dev")) {
     const ack = await cp.call("POST", "/api/gateway/poll", {
       headers: { authorization: `Bearer ${instance.token}` },

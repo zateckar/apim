@@ -298,11 +298,23 @@ export function registerIntegrationRoutes(router: Router): void {
       .all(...(scope ?? []));
     return json({
       mode: "mock",
-      items: events.map((e) => ({
-        ...e,
-        payload: JSON.parse(e.payload_json),
-        result: e.result_json ? JSON.parse(e.result_json) : null,
-      })),
+      items: events.map((e) => {
+        // Approval context comes from the access being decided, including old outbox events
+        // whose payload predates it (skonet-integration: review the access being granted).
+        const approval = e.integration !== "skonet" ? null : e.kind === "subscription.request"
+          ? ctx.app.db.query<{ environment: string; name: string; state: string }, [string]>(
+              "SELECT s.environment,p.name,s.state FROM subscription s JOIN product p ON p.id=s.product_id WHERE s.id=?",
+            ).get(e.subject)
+          : e.kind === "kafka.request" ? ctx.app.db.query<{ environment: string; name: string; state: string }, [string]>(
+              "SELECT t.environment,t.name,a.state FROM kafka_access a JOIN kafka_topic t ON t.id=a.topic_id WHERE a.id=?",
+            ).get(e.subject) : null;
+        return {
+          ...e,
+          approval,
+          payload: JSON.parse(e.payload_json),
+          result: e.result_json ? JSON.parse(e.result_json) : null,
+        };
+      }),
     });
   });
   router.add(

@@ -8,6 +8,15 @@ rule that decides everything else. See *The Authorization Rule* and *Environment
 
 ## Requirements
 
+### Requirement: Explain missing application membership accurately
+
+#### Scenario: An account has no memberships
+
+- GIVEN an account without explicit application memberships
+- WHEN its account or directory page explains access
+- THEN it SHALL say a member needs application membership to subscribe or publish
+- AND it SHALL distinguish administrators, who may act for every application
+
 ### Requirement: Support three sign-in providers, declared explicitly
 
 `AUTH_PROVIDERS` SHALL be an ordered, comma-separated subset of `local`, `oidc`, `dev`, with no
@@ -384,3 +393,12 @@ The portal SHALL disable an action the caller cannot perform and state why.
 - GIVEN a path that matches a route pattern under a different method
 - WHEN it is called
 - THEN the answer SHALL be `405 Method Not Allowed` naming the method, not `404`
+
+### Requirement: Validate password length before saving
+
+#### Scenario: A draft is edited
+
+- GIVEN an account password-change form
+- WHEN its fields are edited
+- THEN it SHALL read the configured minimum from the public authentication-provider metadata and enforce it with the 200-character maximum before submission
+- AND it SHALL keep confirmation matching and render metadata-loading errors

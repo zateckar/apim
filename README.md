@@ -138,8 +138,8 @@ headroom, not a match, so raising the setting from the portal is an ordinary thi
 raise this and restart the container.
 
 **The image ships no configuration as a default.** The repository's own `config/` is copied to
-`/app/config.sample/` instead, because its egress allowlist permits loopback so the local stack
-works — which is not a default anybody should inherit. Copy them out, edit them, mount them.
+`/app/config.sample/` instead, because it permits egress to loopback so the local stack works —
+which is not a default anybody should inherit. Copy them out, edit them, mount them.
 
 ### Compose, on a clean machine
 
@@ -384,16 +384,26 @@ differ per deployment. Their shapes are in `openspec/project.md` § *Configurati
 environment's gateways answer on. It is what the playground composes a URL from, and what the
 Gateways screen groups instances under.
 
-**`INTEGRATIONS_FILE`** — everything a policy refers to *by name*, plus the boundary of what the
-platform is allowed to reach: the egress allowlist and denied ranges, registered JWT issuers and
-their key sets, registered token providers for backend authentication, registered shared secrets and
-HMAC schemes, the ceilings on XML and validation work, and the maximum length of a TLS exception.
+**`INTEGRATIONS_FILE`** — everything a policy refers to *by name*, plus the networks nothing may
+reach: the denied CIDR ranges, registered JWT issuers and their key sets, registered token providers
+for backend authentication, registered shared secrets and HMAC schemes, the ceilings on XML and
+validation work, and the maximum length of a TLS exception.
 
 This is the file that makes the policy vocabulary safe: an owner can say "require a JWT from the
-corporate issuer", and cannot say "fetch this URL" or "trust this key I am pasting in". It is also
-what makes the playground and every specification import safe against request forgery.
+corporate issuer", and cannot say "fetch this URL" or "trust this key I am pasting in".
 
-The repository's copies under `config/` allow egress to loopback so the local stack works. **Do not
+`denyCidrs` is applied after DNS resolution to every URL an owner writes. Deny `169.254.0.0/16` —
+the instance metadata service — and loopback; the control plane adds its own `PUBLIC_URL` origin
+without being told. Do **not** deny RFC1918 wholesale unless your backends really are all external:
+`10.0.0.0/8` and the rest is where most internal backends live, and denying them refuses almost
+every legitimate binding.
+
+Blocking a specific **host** is not done here. That is an administrator action in the portal, on
+`/trust` → *Blocked backends*, where it takes effect on routes that are already running rather than
+only on the next one written. Rules there are the estate's stated position and are audited; this
+file is the part no portal action can widen.
+
+The repository's copies under `config/` permit egress to loopback so the local stack works. **Do not
 deploy those.** The image has them at `/app/config.sample/` to copy out and edit.
 
 ---
@@ -553,6 +563,33 @@ body cap and a lower concurrency ceiling than it had — so do step 1 first, not
 `BUN_CONFIG_MAX_HTTP_REQUESTS` stays where it is: it is the runtime's, per container. Check it is at
 least the `maxConcurrentRequests` you just set, or that gateway will refuse the document and say so
 on Health Status.
+
+**Upgrading to 1.4: the egress allowlist is retired, and a file that still has one is a startup
+failure.** The control plane no longer requires a backend host to be registered before it may be
+used. `egressAllowlist` in `INTEGRATIONS_FILE` is refused by name at boot — not ignored, because a
+file nothing reads that looks like a security control is worse than no file at all.
+
+This one is a *widening*, so read it before rolling it. Nothing is lost by accident, but hosts that
+were refused yesterday are accepted today unless you say otherwise. In this order:
+
+1. Upgrade the control plane with `egressAllowlist` still in place; it will refuse to start and name
+   the key. That refusal is the prompt, not a problem.
+2. Look at what the allowlist was actually holding back. For most estates the honest answer is
+   "nothing — it was a registration queue", and the key can simply be deleted.
+3. For anything it *was* holding back, add a deny rule on **Trust → Blocked backends** after the
+   portal is up. Rules take effect on routes already running, not only on the next one written, and
+   the form shows you what each rule would stop before you save it.
+4. Check `denyCidrs`. It is the half that stays in the file and the half nothing in the portal can
+   widen. Deny `169.254.0.0/16` and `127.0.0.0/8` at minimum; the control plane adds its own
+   `PUBLIC_URL` origin without being told. Do **not** deny RFC1918 unless your backends really are
+   all external — that would refuse almost every internal binding, and it is the setting most likely
+   to be wrong in a file inherited from the sample.
+5. If your gateways reach the control plane under a name other than `control-plane`, add a deny rule
+   for that name too. The migration ships one for the compose service name, which is the only one
+   the platform can guess.
+
+No gateway change and no document version bump: a blocked route is one the control plane leaves out
+of the configuration, so the fleet needs nothing new to enforce it.
 
 ### What a Kubernetes chart would have to get right
 

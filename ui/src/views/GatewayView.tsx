@@ -23,7 +23,7 @@ function Fleet({ environment }: { environment: string }) {
   const fleet = health.data;
 
   return (
-    <Panel title={environment.toUpperCase()}>
+    <Panel title={environment.toUpperCase()} className="replica-environment">
       <div className="row wrap">
         {/* "In sync" counts every replica that has not been revoked, not only the ones answering.
             Counting only the live ones let a killed replica improve the headline (finding 10).
@@ -161,15 +161,11 @@ function RateLimitArithmetic({ chain }: { chain: string[] }) {
       </p>
       <Notice kind="error">{environments.error}</Notice>
       <ul>
-        {(environments.data?.items ?? chain.map((environment) => ({
-          environment,
-          liveInstances: 0,
-          instances: 0,
-        }))).map((item) => (
+        {(environments.data?.items ?? []).map((item) => (
           <li key={item.environment}>
             <strong>{item.environment}</strong>: {item.liveInstances} replica
             {item.liveInstances === 1 ? "" : "s"} answering of {item.instances} — a limit of{" "}
-            <code>N</code> calls admits up to <code>N x {item.liveInstances || 1}</code> across the
+            <code>N</code> calls admits up to <code>N x {item.liveInstances}</code> across the
             fleet right now.
           </li>
         ))}

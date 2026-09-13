@@ -356,6 +356,7 @@ export function Catalog({
               </div>
             )}
             <div className="catalog-search">
+              <span aria-hidden="true"><I.Search /></span>
               <input
                 aria-label={`Search this application's ${noun.many}`}
                 type="search"

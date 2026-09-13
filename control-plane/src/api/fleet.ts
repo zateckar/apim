@@ -588,7 +588,7 @@ export function healthFor(ctx: Ctx, environment: string) {
   // The environment-wide document: every route it serves anywhere. It is what the admin config
   // projection shows and what `routes` counts, and with one gateway it is byte-identical to that
   // gateway's own config.
-  const config = buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations);
+  const config = buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config);
   const instances = instancesFor(ctx, environment);
   const live = instances.filter((i) => !i.stale && !i.revoked);
   // Every replica that has not been revoked is still part of this gateway, whether or not it is
@@ -601,7 +601,7 @@ export function healthFor(ctx: Ctx, environment: string) {
     const own =
       targets.length === 1
         ? config
-        : buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config.integrations, row.id);
+        : buildConfig(ctx.app.db, ctx.app.kek, environment, ctx.app.config, row.id);
     const mine = instances.filter((i) => i.targetId === row.id);
     const mineExpected = mine.filter((i) => !i.revoked);
     const mineBehind = mineExpected.filter(

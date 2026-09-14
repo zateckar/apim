@@ -95,6 +95,17 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - AND the reason SHALL be that two entry points must not drift on which lifecycle states are
   subscribable
 
+#### Scenario: A subscription is wanted for the API already open
+
+- GIVEN an API's workspace with its subscriptions panel showing
+- WHEN the reader wants access to that API
+- THEN the panel SHALL offer subscribing to it directly, both in its head and from its empty state
+- AND the offered products SHALL be the ones containing that API, so the API is never re-chosen
+- AND the panel SHALL re-read when the dialog closes, because the request lands as a row in it
+- AND the reason SHALL be that the answer to "how do I get a key for this" was a trip to the
+  catalogue to search for the thing already on screen — including for the API's own publisher, who
+  needs a subscription like anybody else to call it
+
 ### Requirement: Approve access, except to your own product
 
 #### Scenario: A consumer subscribes to somebody else's product

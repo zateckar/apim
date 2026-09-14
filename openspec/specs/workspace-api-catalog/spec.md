@@ -60,6 +60,18 @@ They are two lists because they answer two questions, and each is exactly one sc
 - AND the filter SHALL NOT be offered when the list is entirely one of them, because a control that
   cannot change what is shown is a control that operates nothing
 
+#### Scenario: The owner's list is laid out
+
+- GIVEN any number of rows in an application's own list
+- WHEN they render
+- THEN they SHALL be one flat list ordered by name, and SHALL NOT be grouped or folded by domain
+- AND each row's domain SHALL be on the row, and SHALL remain searchable
+- AND each row SHALL carry at most one line of description, as text rather than rendered Markdown,
+  so a row's height does not depend on what somebody wrote in it
+- AND the reason SHALL be that this reader owns these APIs and knows their names: grouping is how
+  the estate-wide **Catalog** is browsed by somebody who does not, and a group header the height of
+  a row bought nothing here but a screenful of four APIs
+
 #### Scenario: The application has nothing yet
 
 - GIVEN an application with no resources and no subscription reaching one

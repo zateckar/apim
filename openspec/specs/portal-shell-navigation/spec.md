@@ -334,12 +334,41 @@ The rule SHALL be enforced structurally rather than by review.
 
 ### Requirement: Keep one live ticker for the whole shell
 
+There SHALL be exactly one background clock in the shell. A screen or a widget SHALL NOT run a
+second interval of its own for the same purpose.
+
 #### Scenario: Something changes without an operation
 
 - GIVEN a subscription moving from revoking to revoked, which adds no operation row
 - WHEN the workspace is open
 - THEN it SHALL refresh from the shell's live ticker rather than from the operation count
 - AND a transient state SHALL NOT persist until a full reload
+
+#### Scenario: Nothing is in flight
+
+- GIVEN a portal with no operation still reaching the gateways
+- WHEN the ticker runs
+- THEN its interval SHALL be the idle one, which SHALL be at least an order of magnitude longer
+  than the busy one
+- AND the queries that hang off the tick — operations, notifications, resources, products,
+  subscriptions — SHALL therefore be issued at that slower cadence rather than every few seconds,
+  because a hundred idle portals otherwise poll the control plane continuously for answers that
+  have not changed
+
+#### Scenario: An operation is still reaching the gateways
+
+- GIVEN at least one operation that is neither complete nor superseded
+- WHEN the ticker runs
+- THEN its interval SHALL be the busy one, so a promotion converging is watched as it happens
+- AND it SHALL return to the idle interval when the last one finishes
+
+#### Scenario: The tab is hidden
+
+- GIVEN a portal in a background tab
+- WHEN the ticker runs
+- THEN it SHALL stop entirely, because a hidden tab is nobody watching
+- AND on becoming visible it SHALL refresh **once** immediately rather than replay the ticks it
+  slept through
 
 #### Scenario: A selected application is reloaded
 

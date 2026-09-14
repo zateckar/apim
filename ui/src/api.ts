@@ -1029,7 +1029,7 @@ export interface PlaygroundResponse {
     query: string;
     /** The key is never in here, by construction on the server (plan §5.2). */
     headers: Record<string, string>;
-    gateway: { label: string; url: string };
+    gateway: PlaygroundGateway;
     keyKind: "primary" | "secondary" | "none";
     subscriptionId: string | null;
     droppedHeaders: string[];
@@ -1110,6 +1110,17 @@ export interface FormOperation {
  * revision this environment is actually serving — so an operation it offers is one the send will
  * accept, and a refusal here is the refusal the send would have given.
  */
+/** One place the console may send to: a gateway's published hostname, or one replica behind it. */
+export interface PlaygroundGateway {
+  /** Unique in the environment, and what the send carries back as `gatewayLabel`. */
+  label: string;
+  /** The origin the request goes to; the base path and the operation's template follow it. */
+  url: string;
+  /** The gateway this address belongs to, or `null` for a replica that names no gateway. */
+  gateway: string | null;
+  kind: "internet" | "intranet" | "replica";
+}
+
 export interface PlaygroundForm {
   resourceId: string;
   resourceName: string;
@@ -1119,7 +1130,12 @@ export interface PlaygroundForm {
   rev: number;
   host: string;
   basePath: string;
-  gateways: Array<{ label: string; url: string }>;
+  /**
+   * Every address this API answers at in this environment, best first: the published hostnames of
+   * the gateways it is on, then the individual replicas behind them. `label` is what the send
+   * names, and the console shows the whole URL it composes rather than a bare path.
+   */
+  gateways: PlaygroundGateway[];
   /** Null when this route accepts anonymous traffic — a fact worth seeing, not an omission. */
   key: { in: string; name: string } | null;
   subscriptions: Array<{

@@ -18,12 +18,10 @@ import {
 import { permit, type Permission } from "../lib/capabilities";
 import { lifecycleChip } from "../lib/status";
 import type { Lifecycle } from "../../../shared/types";
-import { DOMAINS } from "../../../shared/domains";
 import { command, listAll } from "./client";
 import * as I from "./icons";
 import { KindBadge, legendOf, toneClassOf, type Kind } from "./components/KindBadge";
 import { VersionEnvPicker } from "./components/VersionEnvPicker";
-import { DescriptionMarkdown } from "./components/DescriptionMarkdown";
 
 /**
  * What one application publishes, and what it may call: its APIs, its MCP servers, its A2A agents.
@@ -39,8 +37,11 @@ import { DescriptionMarkdown } from "./components/DescriptionMarkdown";
  *
  * Three decisions shape it.
  *
- *  - **Grouped by domain, not by application.** People look for an API by what it does. The
- *    publishing team is incidental, and it is already on the row.
+ *  - **One flat list, densely.** It used to fold into collapsible domain cards, which cost a header
+ *    the height of a row for every domain and put four APIs on a screen. Domain is a *catalogue*
+ *    axis — it is how somebody browses the estate at `/catalog`, where they do not know what they
+ *    are looking for. Here the reader owns these APIs and knows their names; the domain is on each
+ *    row where it belongs, and the search box covers it.
  *  - **Two kinds of row, told apart on the row.** An application's own APIs and the ones it merely
  *    subscribes to are both "the APIs I work with", and the list used to hold only the first — so
  *    the half of the estate a team calls every day was on a different screen, filed under the
@@ -105,8 +106,6 @@ interface Family {
   /** Latest first. The row's chrome is the newest version's; the picker chooses among all of them. */
   versions: Version[];
 }
-
-const OTHER = "Other";
 
 /** How this application reaches one resource it does not own. */
 interface Reach {
@@ -225,7 +224,6 @@ export function Catalog({
 }) {
   const [search, setSearch] = useState("");
   const [showing, setShowing] = useState<Showing>("all");
-  const [folded, setFolded] = useState<ReadonlySet<string>>(new Set());
 
   const data = useAsync(() => listAll<ResourceRow>("/api/resources"), [tick]);
   // Two more calls, because a subscription names a product and a product names the APIs in it, and
@@ -280,6 +278,8 @@ export function Catalog({
   );
   const theirs = families.length - ours.length;
 
+  // One list, by name. The domain still answers the search box — somebody who thinks of an API by
+  // where it sits in the taxonomy can type that — but it no longer decides the shape of the screen.
   const filtered = useMemo(() => {
     const term = search.trim().toLowerCase();
     const scoped =
@@ -288,38 +288,22 @@ export function Catalog({
         : showing === "theirs"
           ? families.filter((family) => family.applicationId !== s.application)
           : families;
-    if (!term) return scoped;
-    return scoped.filter((family) => {
-      const haystack = [
-        family.name,
-        family.domain ?? "",
-        family.subdomain ?? "",
-        s.applicationName(family.applicationId),
-        ...family.versions.map((version) => `${version.apiVersion} ${version.description ?? ""}`),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return haystack.includes(term);
-    });
+    const matched = !term
+      ? scoped
+      : scoped.filter((family) => {
+          const haystack = [
+            family.name,
+            family.domain ?? "",
+            family.subdomain ?? "",
+            s.applicationName(family.applicationId),
+            ...family.versions.map((version) => `${version.apiVersion} ${version.description ?? ""}`),
+          ]
+            .join(" ")
+            .toLowerCase();
+          return haystack.includes(term);
+        });
+    return [...matched].sort((a, b) => a.name.localeCompare(b.name));
   }, [families, ours, search, showing, s]);
-
-  // Filters are applied *before* bucketing, so a group's count is truthful and an emptied group
-  // disappears instead of standing there saying zero.
-  const groups = useMemo(() => {
-    const buckets = new Map<string, Family[]>();
-    for (const family of filtered) {
-      const key = family.domain ?? OTHER;
-      buckets.set(key, [...(buckets.get(key) ?? []), family]);
-    }
-    // In taxonomy order with "Other" last, matching the facets endpoint: the domain list is a fixed
-    // structure the estate is filed into, and one that reorders itself by count is not a structure.
-    return [...DOMAINS.map((entry) => entry.name), OTHER]
-      .filter((name) => buckets.has(name))
-      .map((name) => ({
-        name,
-        families: buckets.get(name)!.sort((a, b) => a.name.localeCompare(b.name)),
-      }));
-  }, [filtered]);
 
   const filtering = Boolean(search.trim()) || showing !== "all";
   // One component draws three screens, so every noun on it is a variable. It used to say "API"
@@ -372,7 +356,7 @@ export function Catalog({
 
         {data.loading && !data.data ? (
           <Skeleton rows={4} />
-        ) : groups.length === 0 ? (
+        ) : filtered.length === 0 ? (
           filtering ? (
             <EmptyState
               title={
@@ -409,48 +393,16 @@ export function Catalog({
             />
           )
         ) : (
-          <div className="discover-list">
-            {groups.map((group) => {
-              // A search that folded its own hits away would defeat itself, so any active filter
-              // opens every group — and the reader's own fold state returns when it is cleared.
-              const open = filtering || !folded.has(group.name);
-              return (
-                <section className={`discover-card ${open ? "open" : ""}`} key={group.name}>
-                  <button
-                    className="discover-card-head"
-                    aria-expanded={open}
-                    onClick={() => {
-                      const next = new Set(folded);
-                      if (next.has(group.name)) next.delete(group.name);
-                      else next.add(group.name);
-                      setFolded(next);
-                    }}
-                  >
-                    <span className="swatch">{group.name.slice(0, 2).toUpperCase()}</span>
-                    <span className="meta">
-                      <span className="n">{group.name}</span>
-                      <span className="s">{count(group.families.length)}</span>
-                    </span>
-                    <I.ChevDown size={14} className={`chev ${open ? "rot" : ""}`} />
-                  </button>
-                  {open && (
-                    <div className="discover-card-body">
-                      <div className="discover-items">
-                        {group.families.map((family) => (
-                          <CatalogRow
-                            key={family.key}
-                            family={family}
-                            session={s}
-                            reach={reach}
-                            onChanged={data.reload}
-                          />
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </section>
-              );
-            })}
+          <div className="discover-items">
+            {filtered.map((family) => (
+              <CatalogRow
+                key={family.key}
+                family={family}
+                session={s}
+                reach={reach}
+                onChanged={data.reload}
+              />
+            ))}
           </div>
         )}
       </Panel>
@@ -532,12 +484,12 @@ function CatalogRow({
           <StatusChip chip={lifecycleChip(version.lifecycle as Lifecycle)} />
           {version.environments.size === 0 && <span className="di-tag">not published</span>}
         </div>
-        <div className="discover-description" data-empty={description ? undefined : ""}>
-          {description ? (
-            <DescriptionMarkdown source={clampSentences(description, 2)} />
-          ) : (
-            <em>No description written.</em>
-          )}
+        {/* One sentence, as text rather than as a rendered Markdown box. The box was two sentences
+            tall plus its own padding on every row, which is most of the reason four APIs filled a
+            screen; and Markdown here would bring a heading or a list into a line that has to stay
+            one line. The whole description is on the listing, which is where somebody reads it. */}
+        <div className="di-summary" data-empty={description ? undefined : ""} title={description}>
+          {description ? clampSentences(description, 1) : "No description written."}
         </div>
       </div>
       <VersionEnvPicker

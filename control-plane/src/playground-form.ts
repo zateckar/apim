@@ -1,9 +1,8 @@
 import type { ConfigOperation, ConfigRoute } from "../../shared/config-doc.ts";
 import type { ApiModel, ApiOperation, ApiParameter } from "../../shared/types.ts";
 import type { User } from "./auth.ts";
-import { gatewayUrlsFor } from "./config.ts";
 import { publicGatewayUrl } from "./api/fleet.ts";
-import { routeFor } from "./playground.ts";
+import { callableGateways, routeFor } from "./playground.ts";
 import { notFound, type App } from "./router.ts";
 
 /**
@@ -78,14 +77,24 @@ export function buildPlaygroundForm(app: App, user: User, resourceId: string, en
 
   const passthrough = route.policy.passthrough;
   const streaming = passthrough?.websocket ? "websocket" : passthrough?.sse ? "sse" : null;
-  const gateways = gatewayUrlsFor(app.config, environment);
+  // Every address this API can be called at here, published hostnames first. The console's target
+  // is therefore the URL its own Properties tab tells a consumer to use, rather than one replica's
+  // address — see `callableGateways`.
+  const gateways = callableGateways(app, environment, resource.id);
   // The address in the copyable `curl` is the reverse proxy's, never a replica's: what somebody
-  // pastes into their own terminal has to keep working after the fleet is resized. The replica
-  // list is only a fallback for an environment whose gateway has no published hostname yet.
-  const origin = publicGatewayUrl(app.db, environment) ?? gateways[0]?.url ?? "";
+  // pastes into their own terminal has to keep working after the fleet is resized.
+  const origin = gateways[0]?.url ?? publicGatewayUrl(app.db, environment) ?? "";
   const base = `${origin}${route.basePath === "/" ? "" : route.basePath}`;
 
   const warnings: string[] = [];
+  // Said on the form rather than only on the send: a console that draws a Send it knows will be
+  // refused has kept the reason to itself until the click (`[P1-24]`).
+  if (gateways.length === 0) {
+    warnings.push(
+      `No gateway in ${environment.toUpperCase()} has an address the portal can call. An ` +
+        "administrator publishes the gateway's hostname on the Gateways screen.",
+    );
+  }
   if (route.policy.ipAllow) {
     warnings.push(
       "This route restricts callers by IP address, and a call from here arrives from the portal's " +

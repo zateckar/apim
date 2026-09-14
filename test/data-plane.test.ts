@@ -287,6 +287,62 @@ describe("what reaches the backend", () => {
     expect(seen.headers["x-request-id"]).toBeTruthy();
   });
 
+  /*
+   * The other half of the test above, and the one worth writing down: that one asserts what the
+   * gateway takes *away*, and nothing asserted that everything else survives. A published API is a
+   * proxy for its backend, so an inbound header no rule mentions reaches it — the exceptions are
+   * named by `headers.request`, never by an allowlist, which would make a published API silently
+   * lossy and leave every owner to discover by experiment which of their headers was eaten.
+   */
+  test("a header no rule mentions is forwarded, and the gateway's own headers win", async () => {
+    const published = await publishApi(cp, {
+      backendUrl: backend.url,
+      basePath: "/petstore",
+      policy: {
+        "auth.subscriptionKey": KEY_UNIT,
+        rewrite: { stripBasePath: true },
+        "headers.request": { set: { "X-Tenant": "platform" }, skip: { "X-Region": "eu" } },
+      },
+    });
+    const dp = makeDp();
+    await dp.client.pollOnce();
+
+    const callerTrace = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01";
+    const response = await get(dp, "/petstore/store/inventory", {
+      "X-Api-Key": published.key!,
+      "X-Tenant-Hint": "nordics",
+      "Accept-Language": "cs-CZ",
+      "X-Tenant": "caller-said-this",
+      "X-Region": "apac",
+      traceparent: callerTrace,
+      "X-Forwarded-Proto": "gopher",
+      "X-Forwarded-Host": "elsewhere.test",
+      "Proxy-Authorization": "Basic Zm9vOmJhcg==",
+    });
+    expect(response.status).toBe(200);
+
+    const seen = backend.requests[0]!;
+    // No rule mentions either, so both arrive as the caller wrote them.
+    expect(seen.headers["x-tenant-hint"]).toBe("nordics");
+    expect(seen.headers["accept-language"]).toBe("cs-CZ");
+    // `set` is the gateway speaking; `skip` is a default, and a default only fills an absence.
+    expect(seen.headers["x-tenant"]).toBe("platform");
+    expect(seen.headers["x-region"]).toBe("apac");
+    // The caller's trace is continued, and its claim about the hop is not: same trace id, and a
+    // `traceparent` naming this gateway as the backend's parent rather than the caller's span.
+    expect(seen.headers.traceparent).toContain("4bf92f3577b34da6a3ce929d0e0e4736");
+    expect(seen.headers.traceparent).not.toBe(callerTrace);
+    expect(seen.headers["x-forwarded-proto"]).toBe("http");
+    // Set from the inbound `Host`, which a constructed `Request` does not carry — so what this
+    // asserts is that the caller's claim did not survive, which is the part that matters.
+    expect(seen.headers["x-forwarded-host"]).not.toBe("elsewhere.test");
+    // Hop-by-hop: it describes the caller's connection to this gateway, not this gateway's to the
+    // backend. `Proxy-Authorization` is the one worth asserting on — `Connection` and `TE` are
+    // stripped here too, but the runtime writes its own onto the outbound socket, so a test of
+    // those would be a test of Bun.
+    expect(seen.headers["proxy-authorization"]).toBeUndefined();
+  });
+
   test("forwardCredentials lets the key through when a route opts in", async () => {
     const published = await publishApi(cp, {
       backendUrl: backend.url,

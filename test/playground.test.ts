@@ -143,6 +143,10 @@ async function world(
 /**
  * A listening gateway, and the target list that names it. The port is only known once the gateway
  * is up, so `config.gatewayUrls` is completed here — in the shape `TARGETS_FILE` has (plan §11).
+ *
+ * The gateway *row*'s published hostname is set to the same port, because that is what the console
+ * now sends to by default: the address a consumer is given, not one replica's. Leaving it at the
+ * value the seed wrote would give this world two different beliefs about where its one gateway is.
  */
 async function startGateway(cp: TestCp, cpUrl: string): Promise<string> {
   const dp = makeDp(cpUrl, cp.token, cp.dir, { name: `pg-${++seq}` });
@@ -153,6 +157,9 @@ async function startGateway(cp: TestCp, cpUrl: string): Promise<string> {
   cleanup.push(() => gateway.stop(true));
   const gatewayUrl = `http://127.0.0.1:${gateway.port}`;
   cp.app.config.targets = targets(gatewayUrl);
+  cp.app.db.run("UPDATE target SET public_url = ?, intranet_url = NULL WHERE environment <> 'prod'", [
+    gatewayUrl,
+  ]);
   return gatewayUrl;
 }
 
@@ -186,7 +193,7 @@ interface Sent {
     path: string;
     query: string;
     headers: Record<string, string>;
-    gateway: { label: string; url: string };
+    gateway: { label: string; url: string; gateway: string | null; kind: string };
     keyKind: string;
     subscriptionId: string | null;
     droppedHeaders: string[];
@@ -294,7 +301,14 @@ describe("the caller names an operation and the platform names the host", () => 
     expect(sent.request.method).toBe("GET");
     expect(sent.request.path).toBe(`${w.api.basePath}/echo`);
     expect(sent.request.query).toBe("verbose=1");
-    expect(sent.request.gateway).toEqual({ label: "dev-1", url: w.gatewayUrl });
+    // The gateway's own published hostname, which is the address a consumer is given — not one of
+    // the replicas behind it, which is what this used to send to.
+    expect(sent.request.gateway).toEqual({
+      label: "local",
+      url: w.gatewayUrl,
+      gateway: "local",
+      kind: "internet",
+    });
     // Through the whole pipeline rather than to the backend: base path stripped, query carried.
     expect(w.backend.requests.at(-1)!.path).toBe("/v2/echo");
     expect(w.backend.requests.at(-1)!.query).toBe("?verbose=1");
@@ -339,17 +353,20 @@ describe("the caller names an operation and the platform names the host", () => 
     expect(problem.detail).toContain('"petId"');
   });
 
-  test("an omitted gateway label uses the first, and the response says which", async () => {
+  test("an omitted gateway label uses the gateway's own hostname, and the response says which", async () => {
     const w = await world();
-    expect((await send(w, w.api.clara, call(w))).request.gateway.label).toBe("dev-1");
+    // The first choice is the gateway this API is published on, addressed the way a consumer
+    // addresses it. The replicas behind it are still offered — that is how a rate limit counted
+    // per instance is demonstrated by hand — but they are no longer what a bare send picks.
+    expect((await send(w, w.api.clara, call(w))).request.gateway.label).toBe("local");
     expect(
-      (await send(w, w.api.clara, call(w, { gatewayLabel: "dev-2" }))).request.gateway.label,
-    ).toBe("dev-2");
+      (await send(w, w.api.clara, call(w, { gatewayLabel: "dev-2" }))).request.gateway.kind,
+    ).toBe("replica");
 
     const problem = await refused(w, w.api.clara, call(w, { gatewayLabel: "somewhere-else" }));
     expect(problem.status).toBe(400);
     expect(problem.detail).toContain('unknown gateway "somewhere-else"');
-    expect(problem.detail).toContain("dev-1, dev-2");
+    expect(problem.detail).toContain("local, dev-1, dev-2");
   });
 
   test("an environment outside the promotion chain is refused by name", async () => {
@@ -651,7 +668,7 @@ describe("history is the caller's own", () => {
     const listed = await history(w, w.api.clara);
     expect(listed.items.map((item) => item.operationId)).toEqual(["addPet", "getEcho"]);
     expect(listed.items[0]!.environment).toBe("dev");
-    expect(listed.items[0]!.gateway).toBe("dev-1");
+    expect(listed.items[0]!.gateway).toBe("local");
     expect(listed.items[0]!.replayable).toBe(true);
     expect(listed.items[0]!.status).toBe(200);
     expect(JSON.stringify(listed)).not.toContain(w.api.key!);
@@ -767,7 +784,7 @@ describe("history is the caller's own", () => {
     expect(detail.operationId).toBe("addPet");
     expect(detail.status).toBe(200);
     expect(detail.subscriptionId).toBe(w.api.subscriptionId);
-    expect(detail.gateway).toBe("dev-1");
+    expect(detail.gateway).toBe("local");
     expect(detail.bytesIn).toBeGreaterThan(0);
     // `audit` is append-only and never pruned, so a body in it is a body kept for ever `[P1-11]`.
     expect(row!.detail).not.toContain("secret-pet-name");
@@ -931,7 +948,7 @@ interface Form {
   kind: string;
   rev: number;
   basePath: string;
-  gateways: Array<{ label: string; url: string }>;
+  gateways: Array<{ label: string; url: string; gateway: string | null; kind: string }>;
   key: { in: string; name: string } | null;
   subscriptions: Array<{ id: string; name: string; hasSecondary: boolean }>;
   needsSubscription: boolean;
@@ -1153,6 +1170,13 @@ describe("the form the console draws", () => {
     expect(drawn.limits.ratePerMin).toBe(w.cp.app.config.playgroundRatePerMin);
     // The one sentence a consumer must read before pressing send (§5.3).
     expect(drawn.note).toContain("rate limit and quota");
-    expect(drawn.gateways.map((gateway) => gateway.label)).toEqual(["dev-1", "dev-2"]);
+    // Published hostnames first, then the replicas behind them, so the console's default target is
+    // the URL the API's own Properties tab tells a consumer to call.
+    expect(drawn.gateways.map((gateway) => gateway.label)).toEqual(["local", "dev-1", "dev-2"]);
+    expect(drawn.gateways.map((gateway) => gateway.kind)).toEqual([
+      "internet",
+      "replica",
+      "replica",
+    ]);
   });
 });

@@ -799,7 +799,6 @@ function EditorForm({
     [certificate, setCertificate] = useState(
       d.settings?.backend?.clientCertRef ?? "",
     ),
-    [targetUrl, setTargetUrl] = useState(""),
     [subscribe, setSubscribe] = useState(false);
   const certificates = useAsync(
     () =>
@@ -1343,45 +1342,128 @@ function EditorForm({
           close={() => setVersion(false)}
         />
       )}
-      {promote && (
-        <Modal
-          title={`Promote to ${next!.toUpperCase()}`}
+      {promote && next && (
+        <PromoteDialog
+          resourceId={d.resource.id}
+          session={s}
+          to={next}
+          // What it answers on here, as the preview's path until the destination has one of its
+          // own — the address is derived from the taxonomy, so it is the same in every environment.
+          basePath={basePath}
           close={() => setPromote(false)}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void w.run(async () => {
-                await command(`/api/resources/${d.resource.id}/promote`, {
-                  environment: next,
-                  ...(targetUrl ? { backendUrl: targetUrl } : {}),
-                });
-                setPromote(false);
-                s.setEnvironment(next!);
-              });
-            }}
-          >
-            <p>
-              Your saved API definition and settings will be promoted automatically. Save any pending edits before promoting.
-              Existing target backend settings are retained.
-            </p>
+        />
+      )}
+    </>
+  );
+}
+
+/**
+ * Promotion into the next environment, and **which of its gateways** the API answers on there.
+ *
+ * The gateway choice belongs here rather than only on the Properties tab, because a promotion is
+ * the first time the API exists in the destination at all: without it the answer was "every gateway
+ * that environment has", and the only way to narrow it was to promote onto all of them and then
+ * take some away — which is a window during which the API is answering somewhere nobody chose.
+ * Gateway names travel by name, not by id, so a locality DEV has and TEST does not is a decision to
+ * be made on this screen rather than a silent drop (`resolveGateways`).
+ *
+ * What it already answers on there is read before the choice is offered. Defaulting to "all" would
+ * quietly widen a second promotion into a locality somebody had previously removed it from; the
+ * control plane's own default for a re-promotion is the existing binding, and this matches it.
+ */
+function PromoteDialog({
+  resourceId,
+  session: s,
+  to,
+  basePath,
+  close,
+}: {
+  resourceId: string;
+  session: Session;
+  to: string;
+  /** The address it answers on today, for the preview before the destination has a route. */
+  basePath: string;
+  close: () => void;
+}) {
+  const w = useAction();
+  const [targetUrl, setTargetUrl] = useState("");
+  const [gateways, setGateways] = useState<string[] | null>(null);
+  const localities: Locality[] =
+    s.meta.environments.find((e) => e.environment === to)?.localities ?? [];
+  // What is already there, so a second promotion neither re-asks for a backend it has nor widens a
+  // locality choice somebody already narrowed.
+  const there = useAsync(
+    () => api.get<any>(`/api/resources/${resourceId}/editor?environment=${to}`),
+    [resourceId, to],
+  );
+  const first = there.data ? !there.data.published : false;
+  const selected =
+    gateways ??
+    (there.data?.settings?.gateways?.length
+      ? [...there.data.settings.gateways]
+      : localities.map((l) => l.name));
+
+  return (
+    <Modal title={`Promote to ${to.toUpperCase()}`} close={close}>
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          void w.run(async () => {
+            await command(`/api/resources/${resourceId}/promote`, {
+              environment: to,
+              gateways: selected,
+              ...(targetUrl ? { backendUrl: targetUrl } : {}),
+            });
+            close();
+            s.setEnvironment(to);
+          });
+        }}
+      >
+        <p>
+          Your saved API definition and settings will be promoted automatically. Save any pending
+          edits before promoting. Existing target backend settings are retained.
+        </p>
+        <Notice kind="error">{there.error}</Notice>
+        {there.loading && !there.data ? (
+          <Skeleton rows={3} />
+        ) : (
+          <>
             <Field
-              label={`${next!.toUpperCase()} backend URL (required for first promotion)`}
+              label={
+                first
+                  ? `${to.toUpperCase()} backend URL (required for the first promotion)`
+                  : `${to.toUpperCase()} backend URL (leave empty to keep the one it has)`
+              }
             >
               <input
                 type="url"
+                required={first}
                 value={targetUrl}
                 onChange={(e) => setTargetUrl(e.target.value)}
               />
             </Field>
-            <Notice kind="error">{w.error}</Notice>
-            <button className="btn primary" disabled={w.busy}>
-              Promote
-            </button>
-          </form>
-        </Modal>
-      )}
-    </>
+            <GatewayPicker
+              localities={localities}
+              selected={selected}
+              environment={to}
+              onChange={setGateways}
+            />
+            <PathPreview
+              localities={localities}
+              selected={selected}
+              path={there.data?.settings?.basePath ?? basePath}
+            />
+          </>
+        )}
+        <Notice kind="error">{w.error}</Notice>
+        <button
+          className="btn primary"
+          disabled={w.busy || there.loading || selected.length === 0}
+        >
+          {w.busy ? "Promoting…" : `Promote to ${to.toUpperCase()}`}
+        </button>
+      </form>
+    </Modal>
   );
 }
 

@@ -2,6 +2,7 @@ import type { ConfigOperation, ConfigRoute } from "../../shared/config-doc.ts";
 import type { User } from "./auth.ts";
 import { buildRoutes, limitsFor } from "./config-build.ts";
 import { gatewayUrlsFor, type GatewayUrl } from "./config.ts";
+import { boundGatewayOrigins } from "./api/fleet.ts";
 import { decrypt } from "./crypto.ts";
 import { checkEgress } from "./egress.ts";
 import { denyRulesFor } from "./deny-rules.ts";
@@ -107,7 +108,7 @@ export function composeCall(app: App, user: User, request: PlaygroundRequest): C
     .get(resourceId);
   if (!resource) throw notFound(`no API ${resourceId}`);
 
-  const gateway = gatewayFor(app, environment, request.gatewayLabel);
+  const gateway = gatewayFor(app, environment, resource.id, request.gatewayLabel);
   const route = routeFor(app, environment, resource);
 
   // A stream cannot be proxied through here and back into a browser without a second streaming
@@ -240,20 +241,92 @@ function reportableSearch(search: URLSearchParams, route: ConfigRoute, keyInQuer
   return copy.toString();
 }
 
-export function gatewayFor(app: App, environment: string, label: string | undefined): GatewayUrl {
-  const gateways = gatewayUrlsFor(app.config, environment);
+/**
+ * One address the console may send to, and what it is.
+ *
+ * `label` is the whole contract with the browser: it is what the select shows and what comes back
+ * on the send, and it is unique within an environment.
+ */
+export interface PlaygroundGateway extends GatewayUrl {
+  /** The gateway (target) whose address this is, or `null` for a replica that names no gateway. */
+  gateway: string | null;
+  /**
+   * `internet` and `intranet` are the gateway's own published hostnames — the addresses a consumer
+   * is actually given. `replica` is one process behind it, from `config.gatewayUrls`.
+   */
+  kind: "internet" | "intranet" | "replica";
+}
+
+/**
+ * Every address this API can be called at in this environment, best first.
+ *
+ * The console used to offer only `config.gatewayUrls`, which are the **replicas** — `dev-1`,
+ * `dev-2`, an address per process. That is the one list the rest of the portal is careful never to
+ * publish (see `publicGatewayUrl`): it changes whenever the fleet is resized, and a URL somebody
+ * copied out of the console was a URL that would stop working. It also meant the console's target
+ * was not the URL the API's own Properties tab had just told them to call, so "it works in the
+ * playground" and "it works" were two different claims.
+ *
+ * So the gateway's **published hostname comes first**, one entry per address it answers on, and
+ * only the gateways this API is actually bound to. The replicas stay on the list underneath: they
+ * are how a rate limit counted per instance is demonstrated by hand, and they are the only thing
+ * left when a gateway has no published hostname yet.
+ */
+export function callableGateways(
+  app: App,
+  environment: string,
+  resourceId: string,
+): PlaygroundGateway[] {
+  const out: PlaygroundGateway[] = [];
+  const taken = new Set<string>();
+  /** Labels are what the caller names, so a collision has to be resolved rather than shadowed. */
+  const push = (entry: PlaygroundGateway) => {
+    let label = entry.label;
+    for (let n = 2; taken.has(label); n++) label = `${entry.label} (${n})`;
+    taken.add(label);
+    out.push({ ...entry, label });
+  };
+
+  for (const address of boundGatewayOrigins(app.db, resourceId, environment)) {
+    push({
+      // The gateway's name is the identity the publisher chose it by, on the Properties tab and in
+      // the promotion; the network only needs saying when one gateway answers on both.
+      label: address.network === "internet" ? address.gateway : `${address.gateway} (intranet)`,
+      url: address.origin,
+      gateway: address.gateway,
+      kind: address.network,
+    });
+  }
+  // Every replica in the environment, not only this API's gateway's: `config.gatewayUrls` is
+  // declared per target but is not attributed to one anywhere the console can read, so narrowing
+  // it would mean guessing.
+  for (const replica of gatewayUrlsFor(app.config, environment)) {
+    push({ ...replica, gateway: null, kind: "replica" });
+  }
+  return out;
+}
+
+export function gatewayFor(
+  app: App,
+  environment: string,
+  resourceId: string,
+  label: string | undefined,
+): PlaygroundGateway {
+  const gateways = callableGateways(app, environment, resourceId);
   if (gateways.length === 0) {
+    // Reaching here means the environment has no `config.gatewayUrls` *and* no gateway this API is
+    // on publishes a hostname — so the remedy is either of the two, and both are named.
     throw conflict(
       `no gateway URL is configured for ${environment.toUpperCase()}, so nothing can be called ` +
-        "there from the portal. An administrator sets config.gatewayUrls for that target in " +
-        "TARGETS_FILE",
+        "there from the portal. An administrator publishes the gateway's own hostname on the " +
+        "Gateways screen, or sets config.gatewayUrls for that target in TARGETS_FILE",
     );
   }
   if (!label) return gateways[0]!;
   const found = gateways.find((gateway) => gateway.label === label);
   if (!found) {
     throw badRequest(
-      `unknown gateway "${label}" in ${environment}; this environment has ` +
+      `unknown gateway "${label}" in ${environment}; this API can be called at ` +
         gateways.map((gateway) => gateway.label).join(", "),
     );
   }

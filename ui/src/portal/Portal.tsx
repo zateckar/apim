@@ -37,7 +37,11 @@ export function Portal({ session: s, path }: { session: Session; path: string })
     }
   }, [named]);
 
-  const tick = useTicker();
+  // The one clock, and what decides how fast it runs. A change still reaching the gateways is worth
+  // watching every few seconds; an estate with nothing in flight is not, and the shell's tick is the
+  // dependency almost every screen's query hangs off (see `useTicker`).
+  const [converging, setConverging] = useState(false);
+  const tick = useTicker(converging);
   const operations = useAsync(
     () =>
       api.get<{ items: any[] }>(
@@ -78,6 +82,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
 
   const items = operations.data?.items ?? [];
   const active = items.filter((o) => !["complete", "superseded"].includes(o.state));
+  useEffect(() => setConverging(active.length > 0), [active.length]);
   const signout = useAction();
 
   /** A sidebar entry. Highlighted by section, so an API's workspace lights up the list it came from. */

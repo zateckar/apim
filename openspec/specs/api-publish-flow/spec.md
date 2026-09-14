@@ -168,6 +168,20 @@ Step one SHALL ask only for what forms the published address.
 - AND an environment with no gateway at all SHALL be refused with a message saying an administrator
   adds one on the Gateways screen
 
+#### Scenario: Gateways are chosen for the environment being promoted into
+
+- GIVEN a promotion into the next environment of the chain
+- WHEN the promotion is composed
+- THEN the destination environment's gateways SHALL be offered for selection, with a preview of the
+  addresses the API will answer at there
+- AND the selection SHALL default to the gateways it already answers on in that environment, and to
+  all of them only when it is not there yet
+- AND the reason SHALL be that a promotion is the first moment the API exists in the destination, so
+  without the choice the only way to narrow it is to promote onto every gateway and then take some
+  away — a window during which the API answers somewhere nobody chose
+- AND gateway **names** SHALL travel, not ids, so a locality the destination does not have is
+  refused by name rather than dropped
+
 ### Requirement: Derive the base path from the taxonomy, and refuse one outside it
 
 #### Scenario: No base path is given

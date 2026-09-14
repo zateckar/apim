@@ -3779,12 +3779,10 @@ a { color: inherit; text-decoration: none; }
 .native-portal .catalog-scope button { padding: 6px 10px; }
 .native-portal .catalog-search input { width: 100%; }
 .native-portal .workspace-catalog .discover-item { border: 1px solid var(--border-strong); padding: 18px; gap: 24px; }
-.native-portal .workspace-catalog .discover-description { background: transparent; padding: 0; margin-top: 6px; }
 .native-portal .workspace-catalog .discover-items { padding: 12px 0 0; gap: 12px; }
 .native-portal .workspace-catalog .di-title .api-kind-badge { margin-left: 0; }
 .native-portal .workspace-catalog .di-title .di-name { flex: 0 1 auto; color: var(--accent); overflow-wrap: anywhere; white-space: normal; }
 .native-portal .workspace-catalog .di-name:hover { text-decoration: underline; text-underline-offset: 3px; }
-.native-portal .workspace-catalog .discover-card-head .swatch { background: var(--bg-muted); color: var(--fg-muted); }
 .native-portal .workspace-catalog :is(.workspace-row-delete, .workspace-row-change-owner) { min-width: 32px; min-height: 32px; }
 .native-portal .api-workspace .workspace-summary { margin: 0 0 20px; overflow-wrap: anywhere; }
 .workspace-tabs { display: flex; overflow-x: auto; gap: 4px; padding: 4px; margin-bottom: 24px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-muted); }
@@ -3930,6 +3928,16 @@ a { color: inherit; text-decoration: none; }
 .native-portal .native-notifications { max-height: calc(100dvh - 76px); overflow-y: auto; top: 60px; }
 .native-modal::backdrop { background: var(--overlay); }
 .native-modal .card-head { position: sticky; top: 0; background: var(--surface); z-index: 1; }
+/* A modal is in the top layer. It is not content of whatever card it happens to be nested inside,
+   and the card's flow rules must not reach it — `.card-body > :last-child { margin-bottom: 0 }`
+   did, and that is how a dialog ends up pinned to the bottom of the screen: an open `<dialog>` is
+   centred by `margin: auto` resolving to equal shares on both sides, so zeroing one of them gives
+   the whole gap to the other. The subscription keys dialog is the last child of its panel's body
+   and sat on the floor; the changelog dialog is not, and looked fine — which is why this survived.
+   Specific enough to beat both `.card-body` child rules, and it restores centring rather than
+   hard-coding an offset. */
+.native-portal .card-body > dialog.native-modal,
+dialog.native-modal { margin: auto; }
 .skip-link { position: fixed; left: 12px; top: -80px; z-index: 100; padding: 10px 16px; background: var(--surface); color: var(--accent); border-radius: var(--r-sm); }
 .skip-link:focus { top: 12px; }
 .nav-backdrop { display: none; }
@@ -4197,18 +4205,59 @@ a { color: inherit; text-decoration: none; }
 .native-portal .workspace-catalog .catalog-search { position: relative; }
 .native-portal .workspace-catalog .catalog-search > span { position: absolute; top: 50%; left: 12px; transform: translateY(-50%); display: flex; color: var(--fg-subtle); }
 .native-portal .workspace-catalog .catalog-search input { padding-left: 36px; }
-.native-portal .workspace-catalog .discover-items { gap: 0; }
-.native-portal .workspace-catalog .discover-item { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 20px 12px; }
+/* The owner's list is a list, not a deck of cards. Rows separated by a rule rather than boxed and
+   spaced, so a screenful is a dozen APIs instead of four — the domain-group headers that used to
+   sit between them are gone, and the per-row summary is one line (see `catalog.tsx`). */
+.native-portal .workspace-catalog .discover-items { gap: 0; padding: 0; }
+.native-portal .workspace-catalog .discover-item { border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 10px 12px; gap: 16px; }
 .native-portal .workspace-catalog .discover-item:last-child { border-bottom: 0; }
 .native-portal .workspace-catalog .discover-item:hover { background: var(--bg-subtle); }
+.native-portal .workspace-catalog .di-meta { gap: 2px; }
+.native-portal .workspace-catalog .di-summary {
+  font-size: 12px; color: var(--fg-muted);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.native-portal .workspace-catalog .di-summary[data-empty] { color: var(--fg-subtle); font-style: italic; }
 .native-portal .domain-head { padding: 20px; border-radius: var(--r-md); }
 .native-portal .domain-head .domain-name { color: var(--accent); font-size: 16px; }
 .native-portal .domain-head[aria-expanded=true] { background: var(--accent-soft); }
 .native-portal .market-grid .listing { padding: 20px; border-color: var(--border); }
 .native-portal .market-grid .listing h3 { font-size: 17px; line-height: 1.4; }
 .native-portal .logs-panel .filter-bar { padding: 16px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-subtle); margin-bottom: 20px; gap: 12px; }
-.native-portal .playground-request .row.wrap { align-items: flex-end; }
-.native-portal .playground-request .row.wrap > .field { flex: 1 1 220px; }
+/* The console's four choices — operation, gateway, subscription, key — in equal columns rather
+   than in a wrapping flex row whose widths depended on how many of them the route needed. The
+   grid collapses to two columns and then to one, and every label stays above its own control. */
+.native-portal .playground-request .pg-controls {
+  display: grid; gap: 10px 16px; margin-bottom: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+.native-portal .playground-request .pg-controls > .field { margin-bottom: 0; min-width: 0; }
+/* The whole URL the send will address, as one line worth copying. */
+.native-portal .playground-request .pg-target {
+  display: flex; align-items: baseline; flex-wrap: wrap; gap: 8px;
+  margin: 0; padding: 9px 12px;
+  background: var(--bg-muted); border: 1px solid var(--border); border-radius: var(--r-sm);
+}
+.native-portal .playground-request .pg-method {
+  font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.06em;
+  padding: 2px 7px; border-radius: var(--r-xs);
+  background: var(--accent-soft); color: var(--accent);
+}
+.native-portal .playground-request .pg-url {
+  flex: 1 1 240px; min-width: 0; overflow-wrap: anywhere; color: var(--fg); font-size: 12.5px;
+}
+.native-portal .playground-request .pg-target-note { margin: 6px 0 0; }
+.native-portal .playground-request .pg-gateway-help { margin-top: 2px; }
+.native-portal .playground-request .pg-path-params {
+  display: grid; gap: 10px 16px; margin-top: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+}
+.native-portal .playground-request .pg-path-params > .field { margin-bottom: 0; }
+/* Query and headers side by side: two lists that are usually "None." should not cost two blocks. */
+.native-portal .playground-request .pg-rows {
+  display: grid; gap: 4px 24px; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+}
+.native-portal .playground-request .pg-send { margin-top: 12px; flex-wrap: wrap; gap: 10px 14px; }
 .native-portal .revision-history td:first-child strong { display: inline-block; padding: 4px 10px; color: var(--accent); background: var(--accent-soft); border-radius: var(--r-sm); }
 .native-portal .subscriber-applications { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr)); gap: 12px; margin: 16px 0; }
 .native-portal .subscriber-applications .check-inline { display: flex; width: 100%; padding: 16px; gap: 10px; cursor: pointer; border: 1px solid var(--border); border-radius: var(--r-md); }

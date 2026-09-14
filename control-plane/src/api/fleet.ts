@@ -241,6 +241,40 @@ export function resolveGateways(
   return { ids, missing };
 }
 
+/**
+ * The **origins** of every gateway an API is published on in an environment — the same list
+ * `publishedUrlsFor` builds, without the base path appended.
+ *
+ * `publishedUrlsFor` answers "where does a consumer send a request", which is a whole URL. The
+ * playground needs the origin on its own, because it appends an operation's own path to it; taking
+ * the whole URL and trimming the base path back off would be the same computation done twice, in
+ * two places that could come to disagree about a route whose base path is `/`.
+ */
+export function boundGatewayOrigins(
+  db: DB,
+  resourceId: string,
+  environment: string,
+): Array<{ gateway: string; label: string | null; network: "internet" | "intranet"; origin: string }> {
+  const targets = db
+    .query<TargetRow, [string, string]>(
+      `SELECT ${TARGET_COLUMNS.split(", ")
+        .map((c) => `t.${c}`)
+        .join(", ")}
+         FROM route_gateway rg JOIN target t ON t.id = rg.target_id
+        WHERE rg.resource_id = ? AND rg.environment = ?
+        ORDER BY t.name`,
+    )
+    .all(resourceId, environment);
+  return targets.flatMap((target) =>
+    gatewayAddresses(target).map((address) => ({
+      gateway: target.name,
+      label: target.label,
+      network: address.network,
+      origin: address.url,
+    })),
+  );
+}
+
 /** Which gateways an API is currently published on in an environment, by name. */
 export function boundGatewayNames(db: DB, resourceId: string, environment: string): string[] {
   return db

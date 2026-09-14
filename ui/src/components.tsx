@@ -667,13 +667,84 @@ export function Modal({
   );
 }
 
-/** The shell's clock. A screen that has to re-read after somebody's action depends on it. */
-export function useTicker() {
+/** While something is converging on the gateways, which is the only thing worth watching closely. */
+export const TICK_BUSY_MS = 3000;
+/** Nothing in flight. Slow enough that a hundred idle tabs are not a load test of our own making. */
+export const TICK_IDLE_MS = 30000;
+
+/**
+ * How long the shell's clock waits, or `null` for "do not run at all".
+ *
+ * A decision rather than three numbers inlined in an effect, so `components.test` can state it:
+ * hidden means no clock, converging means the fast one, and idle means a cadence an order of
+ * magnitude slower than that.
+ */
+export function tickIntervalMs(busy: boolean, hidden: boolean): number | null {
+  if (hidden) return null;
+  return busy ? TICK_BUSY_MS : TICK_IDLE_MS;
+}
+
+/**
+ * The shell's clock. A screen that has to re-read after somebody's action depends on it.
+ *
+ * It used to be a flat three seconds, always, in every tab. Almost every screen takes the tick as a
+ * query dependency — the catalogue re-reads `/api/resources`, `/api/subscriptions` and
+ * `/api/products` on it, the shell re-reads `/api/operations`, the bell re-reads
+ * `/api/notifications` — so one open portal was five requests every three seconds whether or not
+ * anything on the server had changed, and a hundred of them was a load test we were running against
+ * ourselves.
+ *
+ * Two things fix that without giving up the property the ticker exists for.
+ *
+ *  - **The cadence follows the work.** Three seconds while an operation is still reaching the
+ *    gateways, because watching a promotion converge is the case this clock was written for; thirty
+ *    seconds when nothing is in flight, because then it is only catching a change somebody else
+ *    made.
+ *  - **A hidden tab has no clock at all.** A background tab is nobody watching, and it re-reads once
+ *    on the way back rather than accumulating the ticks it slept through.
+ *
+ * The catch-up on return is **owed**, not automatic: it fires only when the interval would already
+ * have elapsed. Visibility is noisier than it looks — alt-tabbing, a second monitor and an embedded
+ * preview pane can flip it several times a minute — and a tick per flip would put the storm back,
+ * on exactly the machines least likely to notice.
+ *
+ * A screen that needs its own data back *now* still calls `reload()` on its own query; the ticker
+ * has never been the mechanism for that.
+ */
+export function useTicker(busy = false) {
   const [tick, setTick] = useState(0);
   useEffect(() => {
-    const id = setInterval(() => setTick((value) => value + 1), 3000);
-    return () => clearInterval(id);
-  }, []);
+    let id: ReturnType<typeof setInterval> | undefined;
+    let last = Date.now();
+    const fire = () => {
+      last = Date.now();
+      setTick((value) => value + 1);
+    };
+    const stop = () => {
+      if (id !== undefined) clearInterval(id);
+      id = undefined;
+    };
+    const start = () => {
+      stop();
+      const every = tickIntervalMs(busy, document.hidden);
+      if (every === null) return;
+      id = setInterval(fire, every);
+    };
+    const onVisibility = () => {
+      const every = tickIntervalMs(busy, document.hidden);
+      // Only what the tab actually missed. Without any catch-up a tab left for an hour shows an
+      // hour-old estate until the first interval elapses; with one per flip, a window that keeps
+      // losing focus re-reads continuously.
+      if (every !== null && Date.now() - last >= every) fire();
+      start();
+    };
+    start();
+    document.addEventListener("visibilitychange", onVisibility);
+    return () => {
+      stop();
+      document.removeEventListener("visibilitychange", onVisibility);
+    };
+  }, [busy]);
   return tick;
 }
 

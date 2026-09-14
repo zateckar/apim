@@ -289,6 +289,61 @@ unvalidated as well, since validation has no schema without an operation.
 - THEN it SHALL be `https://petstore.example/v2/pet/1`
 - AND URL resolution SHALL NOT be used, which would discard the backend's own path segment
 
+### Requirement: Forward the caller's headers, and override only the ones the gateway owns
+
+A published API is a proxy for its backend, and a header the caller sent is part of the request the
+backend is entitled to read: an `Accept-Language`, an `If-None-Match`, a `Prefer`, a correlation
+header the consumer's own estate carries. The gateway SHALL therefore forward **every** inbound
+header by default, and an API owner SHALL name the exceptions in `headers.request` rather than
+naming the inclusions. An allowlist would make a published API silently lossy — a backend feature
+would stop working for no reason the consumer can see, and every owner would have to rediscover by
+experiment which of their own headers the gateway ate.
+
+The exceptions are what belongs to the hop rather than to the caller, and each one is a header the
+gateway itself decides: the hop-by-hop headers, which describe one connection and not the request;
+`Host` and `Content-Length`, which describe the target and the body this gateway is about to send;
+the credential this route authenticated with, stripped before backend auth runs; and the forwarding
+and trace headers the gateway sets about the hop it is making. Those are **overridden**, not merged
+— a caller that sends its own `X-Forwarded-For` or `traceparent` is making a claim, and the value
+the backend reads is the gateway's.
+
+#### Scenario: A caller sends a header no policy mentions
+
+- GIVEN a route whose `headers.request` unit does not name `X-Tenant-Hint`
+- WHEN a request arrives carrying `X-Tenant-Hint: nordics`
+- THEN it SHALL reach the backend unchanged
+- AND this SHALL hold whether or not the route carries a `headers.request` unit at all
+
+#### Scenario: A caller sends a header the policy also sets
+
+- GIVEN a `headers.request` unit with `set` naming `X-Tenant` and `skip` naming `X-Region`
+- WHEN a request arrives carrying both
+- THEN the backend SHALL read the policy's value for `X-Tenant`, because `set` is the gateway
+  speaking and the caller may not forge it
+- AND the backend SHALL read the **caller's** value for `X-Region`, because `skip` supplies a
+  default and a default only applies where there is nothing to default
+
+#### Scenario: A caller sends the forwarding and trace headers
+
+- GIVEN an inbound request carrying `X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host` and
+  `traceparent` of its own
+- WHEN it is forwarded
+- THEN the backend SHALL read this gateway's values for all four
+- AND `traceparent` SHALL name this hop as the backend's parent while continuing the caller's trace,
+  so the caller's trace id survives and its span id does not
+- AND `X-Request-Id` SHALL be the caller's when it sent one, because that is the identifier it will
+  quote back, and a minted one otherwise
+
+#### Scenario: A hop-by-hop header arrives
+
+- GIVEN an inbound `Connection`, `Keep-Alive`, `TE`, `Trailer`, `Transfer-Encoding`, `Upgrade`,
+  `Proxy-Authenticate` or `Proxy-Authorization`
+- WHEN the request is forwarded
+- THEN it SHALL NOT be forwarded, because it describes the caller's connection to this gateway and
+  not the connection this gateway is opening
+- AND `Host` and `Content-Length` SHALL be dropped for the same reason, the runtime setting both
+  from the target and the body actually sent
+
 ### Requirement: Rate limit per instance, and say so
 
 #### Scenario: A limit is enforced

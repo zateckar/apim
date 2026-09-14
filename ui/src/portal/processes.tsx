@@ -178,7 +178,8 @@ export function Subscriptions({
     ),
     w = useAction();
   const [keyId, setKeyId] = useState<string | null>(null),
-    [withdraw, setWithdraw] = useState<any>(null);
+    [withdraw, setWithdraw] = useState<any>(null),
+    [subscribing, setSubscribing] = useState(false);
   const rows = (data.data?.items ?? []).filter(
     (r) =>
       r.environment === s.environment &&
@@ -198,7 +199,23 @@ export function Subscriptions({
     // Where matters more here than anywhere else in the portal: a subscription is to a product in
     // one environment and its keys work only there, so a list that did not name the environment
     // was the empty state's own warning going unheeded by the populated case.
-    <Panel className="subscription-list" title={`${rows.length} in ${s.environment.toUpperCase()}`} actions={<Link className="btn" to="/catalog"><I.Search /> Find a product</Link>}>
+    <Panel
+      className="subscription-list"
+      title={`${rows.length} in ${s.environment.toUpperCase()}`}
+      actions={
+        resourceId ? (
+          // On an API's own workspace the question is never "which API" — it is already open — so
+          // the answer to "how do I get a key for this" should not be a trip to the catalogue and
+          // a search for the thing you are looking at. Owning an API is not the same as being one
+          // of its callers, so a publisher testing their own route needs this too `[P1-10]`.
+          <button className="btn primary" onClick={() => setSubscribing(true)}>
+            <I.Key /> Subscribe to this API
+          </button>
+        ) : (
+          <Link className="btn" to="/catalog"><I.Search /> Find a product</Link>
+        )
+      }
+    >
       <Notice kind="error">{data.error ?? products.error ?? w.error}</Notice>
       {rows.length ? (
         rows.map((r) => (
@@ -256,10 +273,27 @@ export function Subscriptions({
           title={`No subscriptions in ${s.environment.toUpperCase()}`}
           detail="A subscription is to a product in one environment, and its keys work only there — so an application subscribed in DEV has nothing here until it subscribes in this one too."
           action={
-            <button className="btn sm" onClick={() => go("/catalog")}>
-              Find an API to subscribe to
-            </button>
+            resourceId ? (
+              <button className="btn sm" onClick={() => setSubscribing(true)}>
+                Subscribe an application to this API
+              </button>
+            ) : (
+              <button className="btn sm" onClick={() => go("/catalog")}>
+                Find an API to subscribe to
+              </button>
+            )
           }
+        />
+      )}
+      {subscribing && resourceId && (
+        <SubscribeDialog
+          session={s}
+          resourceId={resourceId}
+          close={() => {
+            setSubscribing(false);
+            // The request lands as a `pending` row in this very list, so it reloads on the way out.
+            data.reload();
+          }}
         />
       )}
       {keyRow && (

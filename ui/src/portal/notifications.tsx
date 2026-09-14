@@ -41,7 +41,6 @@ const STORAGE_KEY = "portal-notifications-read";
  * older than anything the feed still returns, so it can never come back unread.
  */
 const REMEMBER = 500;
-const POLL_MS = 60_000;
 
 function loadRead(): string[] {
   try {
@@ -111,14 +110,12 @@ export function NotificationsBell({
   tick: number;
 }) {
   const [open, setOpen] = useState(false);
-  // A minute is the cadence for a background poll; `tick` still refreshes it immediately after
-  // anything the user did, so your own action shows up without waiting for the timer.
-  const [beat, setBeat] = useState(0);
-  useEffect(() => {
-    const timer = window.setInterval(() => setBeat((n) => n + 1), POLL_MS);
-    return () => window.clearInterval(timer);
-  }, []);
-  const feed = useFeed(applicationId, 25, `${tick}:${beat}`);
+  // The shell's ticker and nothing else. There used to be a minute-long beat of its own here as
+  // well, which did nothing: the shell's clock ran every three seconds and was also a dependency
+  // of this feed, so the bell polled twenty times a minute and the timer beside it never decided
+  // anything. One clock, and it already speeds up while a change is reaching the gateways — which
+  // is when the notification worth seeing arrives.
+  const feed = useFeed(applicationId, 25, tick);
   const { isRead, mark } = useReadState();
   const items = feed.data?.items ?? [];
   const unread = items.filter((item) => !isRead(item.id));

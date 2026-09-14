@@ -8,6 +8,9 @@ import {
   Stepper,
   StatusChip,
   Term,
+  TICK_BUSY_MS,
+  TICK_IDLE_MS,
+  tickIntervalMs,
 } from "../src/components.tsx";
 import { HowView } from "../src/views/HowView.tsx";
 import { Publish } from "../src/portal/apis.tsx";
@@ -305,5 +308,30 @@ describe("how this works", () => {
       expect(html, key).toContain(escapeHtml(entry.definition));
       expect(html, key).toContain(`id="term-${key.replace(/\s+/g, "-")}"`);
     }
+  });
+});
+
+/**
+ * The shell's clock, as a decision table.
+ *
+ * The cadence is asserted here rather than by watching a browser, because what matters is the
+ * rule and not a stopwatch reading: one clock, stopped when nobody is looking, fast only while
+ * something is converging. It was a flat three seconds in every tab, and every screen's query
+ * hangs off it — five requests every three seconds per open portal, changed or not.
+ */
+describe("the shell's ticker", () => {
+  test("does not run at all in a hidden tab", () => {
+    expect(tickIntervalMs(false, true)).toBeNull();
+    expect(tickIntervalMs(true, true)).toBeNull();
+  });
+
+  test("is fast only while something is reaching the gateways", () => {
+    expect(tickIntervalMs(true, false)).toBe(TICK_BUSY_MS);
+    expect(tickIntervalMs(false, false)).toBe(TICK_IDLE_MS);
+  });
+
+  test("idles at least an order of magnitude slower than it converges", () => {
+    // The number itself may move; a hundred idle portals polling every few seconds may not.
+    expect(TICK_IDLE_MS).toBeGreaterThanOrEqual(TICK_BUSY_MS * 10);
   });
 });

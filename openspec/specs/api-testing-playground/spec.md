@@ -25,17 +25,51 @@ There SHALL be no target URL field.
 
 - GIVEN a resource, an environment, a gateway label and an operation
 - WHEN the target is composed
-- THEN it SHALL be built from the environment's configured gateway URLs and the **published route**,
-  and from nothing a caller wrote
+- THEN it SHALL be built from an address the platform offers for that resource and the **published
+  route**, and from nothing a caller wrote
 - AND the composed URL SHALL be egress-checked anyway
 - AND there SHALL therefore be no field in which a caller can write a host
 
-#### Scenario: The environment has no configured gateway URL
+#### Scenario: The environment has no address to call
 
-- GIVEN an environment whose targets declare no `config.gatewayUrls`
+- GIVEN an environment where no gateway this resource is on publishes a hostname and whose targets
+  declare no `config.gatewayUrls`
 - WHEN the playground is opened there
-- THEN it SHALL say the playground is not configured for that environment and name `TARGETS_FILE`
+- THEN it SHALL say no gateway URL is configured for that environment, and name both remedies — the
+  gateway's own published hostname and `config.gatewayUrls` in `TARGETS_FILE`
 - AND it SHALL NOT fall back to any other address
+
+### Requirement: Offer the gateway's published address first, and show the whole URL
+
+The addresses the console offers SHALL be, in order: one per published address of each gateway the
+resource is bound to in that environment, then each replica the environment declares in
+`config.gatewayUrls`. Each entry SHALL carry a label unique within the environment, and the label
+SHALL be the whole of what a send names.
+
+#### Scenario: The console draws its target
+
+- GIVEN a resource published on a gateway that has a published hostname
+- WHEN the form renders
+- THEN the gateway choice SHALL be offered whenever there is at least one address, including when
+  there is only one, because it is what says *where* the call goes
+- AND the selected address, the base path and the operation's own template SHALL be shown as one
+  whole URL rather than as a bare path
+- AND a gateway's published address and a replica SHALL be told apart on the control, because a
+  replica's address changes when the fleet is resized and is never published to a consumer
+
+#### Scenario: No gateway label is given
+
+- GIVEN a send that names no gateway
+- WHEN the target is resolved
+- THEN it SHALL use the first offered address, which is a published gateway hostname wherever one
+  exists
+- AND a replica SHALL therefore never be the default while the gateway itself is addressable
+
+#### Scenario: An unknown gateway label is given
+
+- GIVEN a label that is not one of the offered addresses
+- WHEN the send is resolved
+- THEN it SHALL be refused, naming the labels this resource can be called at
 
 ### Requirement: The key never reaches the browser
 

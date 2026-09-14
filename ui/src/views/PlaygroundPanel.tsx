@@ -151,6 +151,21 @@ function Console({
     [form.operations, operationId],
   );
 
+  // The two halves of the gateway list, told apart on the control rather than in a footnote: a
+  // gateway's published hostname is the address a consumer is given, a replica is one process
+  // behind it and is never published (`callableGateways`).
+  const published = form.gateways.filter((entry) => entry.kind !== "replica");
+  const replicas = form.gateways.filter((entry) => entry.kind === "replica");
+  const gateway =
+    form.gateways.find((entry) => entry.label === gatewayLabel) ?? form.gateways[0] ?? null;
+  /** Exactly what the send will address, composed here from the same three parts the server joins. */
+  const targetUrl =
+    (gateway?.url ?? "") +
+    (form.basePath === "/" ? "" : form.basePath) +
+    (agentCard
+      ? (form.agentCard?.path.replace(form.basePath, "") ?? "")
+      : (operation?.template === "/" ? "" : (operation?.template ?? "")));
+
   // Choosing an operation replaces the form with that operation's own prefill. Deliberately not
   // merged with what was typed: a body from the last operation is never valid for this one.
   useEffect(() => {
@@ -261,7 +276,12 @@ function Console({
       )}
 
       <Panel title="Request" className="playground-request">
-        <div className="row wrap" style={{ marginBottom: 12 }}>
+        {/* Four questions, one row: what to call, as whom, with which key, and through which
+            gateway. They used to flow in a wrapping row of `flex: 1 1 220px` fields whose widths
+            depended on how many of them a route happened to need, so the key select and its
+            two-line hint pushed the pair beside it out of alignment. A grid puts each one in a
+            column of its own and each label above its control. */}
+        <div className="pg-controls">
           <div className="field">
             <label htmlFor="pg-operation">Operation</label>
             <select
@@ -280,6 +300,40 @@ function Console({
               {form.agentCard && <option value="__card__">GET the agent card</option>}
             </select>
           </div>
+
+          {/* Always offered, not only when there are several. Which gateway answered is part of
+              reading the result — and with one gateway it is the line that finally says *where*
+              the call went, which is the question a bare path could not answer. */}
+          {form.gateways.length > 0 && (
+            <div className="field">
+              <label htmlFor="pg-gateway">Gateway</label>
+              <select
+                id="pg-gateway"
+                value={gatewayLabel}
+                aria-describedby="pg-gateway-help"
+                onChange={(event) => setGatewayLabel(event.target.value)}
+              >
+                {published.length > 0 && (
+                  <optgroup label="Gateway">
+                    {published.map((entry) => (
+                      <option key={entry.label} value={entry.label}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+                {replicas.length > 0 && (
+                  <optgroup label="One replica directly">
+                    {replicas.map((entry) => (
+                      <option key={entry.label} value={entry.label}>
+                        {entry.label}
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
+              </select>
+            </div>
+          )}
 
           {needsKey && (
             <>
@@ -315,49 +369,47 @@ function Console({
                     secondary
                   </option>
                 </select>
-                <p id="pg-key-help" className="hint">Keys belong to the selected subscription. Secondary is available only after a second key is created.</p>
               </div>
             </>
           )}
-
-          {form.gateways.length > 1 && (
-            <div className="field">
-              <label htmlFor="pg-gateway">Gateway</label>
-              <select
-                id="pg-gateway"
-                value={gatewayLabel}
-                onChange={(event) => setGatewayLabel(event.target.value)}
-              >
-                {form.gateways.map((gateway) => (
-                  <option key={gateway.label} value={gateway.label}>
-                    {gateway.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
         </div>
 
-        {/* The target, composed by the platform. There is no field to edit here, and that is the
-            security property rather than a simplification (§5.3). */}
-        <p className="muted small">
-          <span className="mono">
-            {agentCard ? "GET" : (operation?.method ?? "GET")}{" "}
-            {form.basePath === "/" ? "" : form.basePath}
-            {agentCard ? form.agentCard?.path.replace(form.basePath, "") : (operation?.template ?? "")}
-          </span>{" "}
-          on {environment.toUpperCase()}, revision {form.rev}
+        {/* The target, composed by the platform, **whole**. There is no field to edit here, and
+            that is the security property rather than a simplification (§5.3) — but showing only
+            the path was a different thing: it left the one fact a reader needs to reproduce the
+            call, or to tell DEV's answer from TEST's, off the screen entirely. */}
+        <p className="pg-target">
+          <span className="pg-method">{agentCard ? "GET" : (operation?.method ?? "GET")}</span>
+          <span className="mono pg-url">{targetUrl}</span>
+        </p>
+        <p className="muted small pg-target-note">
+          {gateway
+            ? gateway.kind === "replica"
+              ? `One replica behind ${environment.toUpperCase()}'s gateway — chosen here, never published to a consumer.`
+              : `${gateway.gateway}'s ${gateway.kind === "intranet" ? "intranet" : "published"} address`
+            : "No gateway address"}{" "}
+          · revision {form.rev}
           {form.host !== "*" && <> · Host {form.host}</>}
           {operation?.schemaState === "unsupported-schema" && (
             <> · the gateway cannot validate this operation</>
           )}
         </p>
+        <p id="pg-gateway-help" className="hint pg-gateway-help">
+          A gateway entry is the hostname a consumer is given. A replica is one process behind it —
+          useful for seeing a per-instance rate limit, and never an address to hand out.
+        </p>
+        {needsKey && (
+          <p id="pg-key-help" className="hint">
+            Keys belong to the selected subscription. Secondary is available only after a second key
+            is created.
+          </p>
+        )}
 
         {!agentCard && operation && (
           <>
             {operation.summary && <p className="hint">{operation.summary}</p>}
             {operation.pathParams.length > 0 && (
-              <div className="row wrap">
+              <div className="pg-path-params">
                 {operation.pathParams.map((parameter) => (
                   <div className="field" key={parameter.name}>
                     <label htmlFor={`pp-${parameter.name}`}>
@@ -375,8 +427,12 @@ function Console({
               </div>
             )}
 
-            <Rows title="Query" rows={query} onChange={setQuery} />
-            <Rows title="Headers" rows={headers} onChange={setHeaders} />
+            {/* Side by side: two lists that are usually empty took two full-width blocks and most
+                of the panel's height between them. */}
+            <div className="pg-rows">
+              <Rows title="Query" rows={query} onChange={setQuery} />
+              <Rows title="Headers" rows={headers} onChange={setHeaders} />
+            </div>
 
             {operation.body !== null && (
               <div className="field" style={{ marginTop: 10 }}>
@@ -405,17 +461,15 @@ function Console({
           </p>
         )}
 
-        <div className="action" style={{ marginTop: 8 }}>
+        <div className="action pg-send">
           <button className="btn primary" disabled={busy || blocked !== null} onClick={send} title={blocked ?? undefined}>
             {busy ? "Sending…" : "Send"}
           </button>
           {blocked && <span className="action-reason">{blocked}</span>}
+          {/* Said beside the button, because a consumer who exhausts their own quota from a test
+              console and cannot see why has been misled by us (§5.3). */}
+          <span className="muted small">{form.note}</span>
         </div>
-        {/* Said beside the button, because a consumer who exhausts their own quota from a test
-            console and cannot see why has been misled by us (§5.3). */}
-        <p className="muted small" style={{ marginTop: 8 }}>
-          {form.note}
-        </p>
       </Panel>
 
       {result && <ResultCard result={result} />}

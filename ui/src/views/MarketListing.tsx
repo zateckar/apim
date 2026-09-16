@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { api, type MarketListingDetail, type Meta, type User } from "../api";
+import { api, type Application, type MarketListingDetail, type Meta, type User } from "../api";
 import {
   Panel,
   EmptyState,
@@ -14,6 +14,7 @@ import {
 import { lifecycleChip } from "../lib/status";
 import { PlaygroundPanel } from "./PlaygroundPanel";
 import { DescriptionMarkdown } from "../portal/components/DescriptionMarkdown";
+import { KindBadge, type Kind } from "../portal/components/KindBadge";
 
 /**
  * One listing, in consumer mode (goal G6, plan §9.3).
@@ -24,23 +25,18 @@ import { DescriptionMarkdown } from "../portal/components/DescriptionMarkdown";
  * is the part a dialog had no room for.
  */
 
-const KIND_LABELS: Record<string, string> = {
-  rest: "REST",
-  soap: "SOAP",
-  mcp: "MCP server",
-  a2a: "A2A agent",
-};
-
 type Tab = "overview" | "operations" | "start" | "try" | "versions";
 
 export function MarketListing({
   resourceId,
   user,
   meta,
+  applications = [],
 }: {
   resourceId: string;
   user: User;
   meta: Meta;
+  applications?: Array<Pick<Application, "id" | "name">>;
 }) {
   const listing = useAsync(
     () => api.get<MarketListingDetail>(`/api/catalog/${resourceId}`),
@@ -60,13 +56,14 @@ export function MarketListing({
   }
   if (!listing.data) return <p className="muted">Loading…</p>;
   const item = listing.data;
+  const publisherName = applications.find((application) => application.id === item.applicationId)?.name ?? item.applicationId;
 
   return (
     <>
       <p className="muted">
         <Link to="/catalog">← Catalog</Link>
       </p>
-      {/* The object header, the same chrome the owner's API page uses — a consumer arriving here
+      {/* The object header, the same chrome the owner's resource page uses — a consumer arriving here
           and an owner arriving there must not feel like they are in two different products. */}
       <div className="object-head consumer-resource-head">
         <div className="inline" style={{ alignItems: "flex-start" }}>
@@ -76,11 +73,11 @@ export function MarketListing({
           <div>
             <h3>
               {item.title} <span className="mono muted">{item.apiVersion}</span>{" "}
-              <span className={`badge kind-${item.kind}`}>{KIND_LABELS[item.kind] ?? item.kind}</span>
+              <KindBadge kind={item.kind as Kind} />
               <StatusChip chip={lifecycleChip(item.lifecycle as never)} />
             </h3>
             <p className="muted small">
-              {item.summary ?? "No summary yet."} · owned by {item.applicationId}
+              {item.summary?.trim() || "No summary provided."} · owned by {publisherName}
               {item.unpublished && " · not published anywhere yet"}
             </p>
           </div>
@@ -93,7 +90,7 @@ export function MarketListing({
               disabled={item.products.length === 0}
               title={
                 item.products.length === 0
-                  ? "This API is not in any product yet, and a subscription is to a product — so there is nothing to ask for."
+                  ? "This resource is not in any product yet, and a subscription is to a product — so there is nothing to ask for."
                   : undefined
               }
               onClick={() => go(`/catalog/${item.id}/subscribe`)}
@@ -106,7 +103,7 @@ export function MarketListing({
 
       {item.products.length === 0 && (
         <Notice kind="warn">
-          This API is not in any <Term name="product" /> yet, so there is nothing to subscribe to. A
+          This resource is not in any <Term name="product" /> yet, so there is nothing to subscribe to. A
           product is the subscription unit — its owner adds it to one from{" "}
           <Link to="/products">My products</Link>.
         </Notice>
@@ -139,7 +136,7 @@ export function MarketListing({
 
 /**
  * The consumer's playground, on the consumer's page. Same panel as the owner's Try it tab, because
- * they are the same act — and a consumer who can only try an API by writing code first is a
+ * they are the same act — and a consumer who can only try a resource by writing code first is a
  * consumer who has to trust the documentation.
  */
 function TryIt({ item, meta }: { item: MarketListingDetail; meta: Meta }) {
@@ -150,7 +147,7 @@ function TryIt({ item, meta }: { item: MarketListingDetail; meta: Meta }) {
     return (
       <EmptyState
         title="Not live anywhere yet"
-        detail="This API has no environment currently serving it, so there is nothing to call."
+        detail="This resource has no environment currently serving it, so there is nothing to call."
         action={<Link to="/catalog">Back to the catalog →</Link>}
       />
     );
@@ -304,7 +301,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
       <Panel>
         <p className="muted">
           No contract has been imported yet, so there is nothing to list. Import a definition from
-          the API's own page.
+          the resource's own page.
         </p>
       </Panel>
     );
@@ -369,7 +366,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
   }
 
   return (
-    <Panel title="Operations" hint="From this API's own definition — the same one validation uses.">
+    <Panel title="Operations" hint="From this resource's own definition — the same one validation uses.">
       <table>
         <thead>
           <tr>
@@ -408,7 +405,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
 function GettingStarted({ item }: { item: MarketListingDetail }) {
   return (
     <>
-      <Panel title="1 · Subscribe" hint="Subscribe to a product using the application that will call this API.">
+      <Panel title="1 · Subscribe" hint="Subscribe to a product using the application that will call this resource.">
         <p>
           {item.products.length === 1
             ? "Subscribe through this product:"

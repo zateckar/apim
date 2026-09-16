@@ -219,7 +219,7 @@ already has, kept because losing one costs a working link.
 | `mail` | `/mail` | Mail | application | Other |
 | `activity` | `/activity` | Activity | application | Other |
 | `catalog` | `/catalog` · `/discover` | Catalog | global | Global |
-| `listing` | `/catalog/:resourceId` | API | global | — |
+| `listing` | `/catalog/:resourceId` | Resource | global | — |
 | `subscribe` | `/catalog/:resourceId/subscribe` | Subscribe | global | — |
 | `fixme` | `/fixme` | FixMe diagnostics | global | Global |
 | `how` | `/how` | How this works | global | Global |

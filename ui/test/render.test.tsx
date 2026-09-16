@@ -286,7 +286,7 @@ describe("how this works", () => {
       "Publish an API",
       "Promote it to the next environment",
       "Publish a new version",
-      "Subscribe to an API",
+      "Subscribe to a resource",
       "Call it from here",
       "Run the platform",
     ]) {

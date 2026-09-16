@@ -200,6 +200,20 @@ They are two lists because they answer two questions, and each is exactly one sc
   offered
 - AND filtering SHALL be available by kind, domain, tag, application and environment
 
+#### Scenario: The catalog is scanned
+
+- GIVEN a reader browsing or filtering the Catalog
+- WHEN a result is rendered
+- THEN the result SHALL present its name, kind, version, publisher, short summary and live environments
+  in one compact row
+- AND it SHALL identify whether the resource is available to subscribe to or already subscribed
+- AND it SHALL offer one clear action to open the read-only listing, where the full contract and
+  subscription action live
+- AND the default browse view SHALL keep the domain grouping while a search, filter or explicit sort
+  SHALL show one directly scannable result list
+- AND publisher and tag filters SHALL be tucked behind one secondary filter disclosure so the common
+  search and kind controls remain easy to find
+
 #### Scenario: The result set is very large
 
 - GIVEN more candidates than the ranking ceiling of 2000
@@ -217,11 +231,11 @@ They are two lists because they answer two questions, and each is exactly one sc
 
 ### Requirement: Show a consumer what they need before subscribing
 
-#### Scenario: A listing is opened from the catalogue
+#### Scenario: A resource listing is opened from the catalogue
 
 - GIVEN a visible resource
 - WHEN its listing opens
-- THEN it SHALL show what the API does, its description as rendered Markdown, its documentation
+- THEN it SHALL show what the resource does, its description as rendered Markdown, its documentation
   link when it has one, its operations, its published URL per environment and gateway, its
   lifecycle, and the products it is sold in
 - AND it SHALL offer the subscribe action, or the reason it is unavailable

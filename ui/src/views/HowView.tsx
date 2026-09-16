@@ -45,12 +45,12 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     to: "/apis",
   },
   {
-    title: "Subscribe to an API",
+    title: "Subscribe to a resource",
     who: "You want to call something somebody else publishes.",
     steps: [
-      "Choose an application you may act for. Administrators can also create one here.",
+      "Catalog uses the application selected in the main menu for your subscription.",
       "Choose the environment. Keys are per environment, so a DEV key never works in PROD.",
-      "Review the terms — the rate limit and quota you are agreeing to — and confirm.",
+      "Describe what you will use it for, check the product and limits if needed, and subscribe.",
     ],
     ends: "A pending or activating subscription. Open the subscription to reveal its key after access becomes active.",
     to: "/catalog",
@@ -59,7 +59,7 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     title: "Call it from here",
     who: "You want to see a real response before writing any code.",
     steps: [
-      "Open the API, choose Try it, and pick an operation.",
+      "Open the resource, choose Try it, and pick an operation.",
       "Choose the subscription to call with. The key is added by the portal and never reaches your browser.",
       "Send. The request goes through the gateway like any other call.",
     ],

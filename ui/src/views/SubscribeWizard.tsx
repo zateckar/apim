@@ -1,4 +1,3 @@
-import { listAll } from "../portal/client";
 import { useState } from "react";
 import type { Session } from "../App";
 import {
@@ -10,78 +9,63 @@ import {
 import {
   Panel,
   EmptyState,
-  TextField,
   Link,
   Notice,
   Skeleton,
-  Stepper,
   Term,
   useAction,
   useAsync,
 } from "../components";
 
 /**
- * Subscribing, as three questions (plan §9.2, journey 4).
- *
- * The model people get wrong here is which object holds what, so the wizard teaches it by asking in
- * the right order: the **application** is the thing that calls and the thing keys belong to; the
- * **environment** decides which gateway and therefore which key; the **product** is what is actually
- * subscribed to, because a key that worked per API would have to be reissued every time a bundle
- * changed.
- *
- * Step 3 shows the rate limit and quota being agreed to, read from the effective policy rather than
- * from the defaults — a consumer who is refused with a 429 they were never told about has been
- * misled by us.
+ * The shell supplies the consumer application (api-subscription-management, "Subscribe from
+ * Catalog for the selected application"). Environment and purpose fit in one form.
+ * Limits come from the effective policy so consumers see what they are agreeing to.
  */
-
-const STEPS = ["Application", "Environment", "Review"];
-
 export function SubscribeWizard({ resourceId, session }: { resourceId: string; session: Session }) {
   const listing = useAsync(() => api.get<MarketListingDetail>(`/api/catalog/${resourceId}`), [resourceId]);
-  const applications = useAsync(() => listAll<Application>("/api/applications"), []);
+  const application = session.applications.find((app) => app.id === session.application
+    && (session.user.isAdmin || session.user.applications.includes(app.id)));
 
-  const [step, setStep] = useState(0);
-  const [applicationId, setApplicationId] = useState("");
-  const [environment, setEnvironment] = useState(session.environment);
-  const [productId, setProductId] = useState("");
-  const [done, setDone] = useState<{ id: string; state: string; warnings: string[] } | null>(null);
+  const [done, setDone] = useState<{ id: string; state: string; warnings: string[]; environment: string } | null>(null);
 
-  // Step 1 is a choice between applications; without the list there is no choice to offer, so
-  // both failures stop the wizard rather than leaving an empty picker that looks like "you have
-  // no applications" — which sends people off to register a duplicate.
-  if (listing.error || applications.error) {
-    return <Notice kind="error">{listing.error ?? applications.error}</Notice>;
+  if (listing.error) return <Notice kind="error">{listing.error}</Notice>;
+  if (!listing.data) return <Skeleton rows={6} />;
+  if (!application) {
+    return (
+      <EmptyState
+        title="Select an application in the main menu"
+        detail="You need an application you can act for to subscribe. Ask an administrator for membership if none is available."
+        action={<Link to="/account">View your account</Link>}
+      />
+    );
   }
-  if (!listing.data || !applications.data) return <Skeleton rows={6} />;
   const api_ = listing.data;
 
   if (api_.products.length === 0) {
     return (
       <EmptyState
         title={`${api_.title} is not in any product yet`}
-        detail="Consumers subscribe to a product, never to an API directly — so until its owner puts it in one, there is nothing to ask for."
-        action={<Link to={`/catalog/${resourceId}`}>Back to the API →</Link>}
+        detail="Consumers subscribe to a product, never to a resource directly — so until its owner puts it in one, there is nothing to ask for."
+        action={<Link to={`/catalog/${resourceId}`}>Back to the resource →</Link>}
       />
     );
   }
 
-  const live = api_.endpoints.filter((endpoint) => endpoint.live).map((endpoint) => endpoint.environment);
-  const chosenProduct = api_.products.find((product) => product.id === productId) ?? api_.products[0]!;
-
   return (
     <>
-      <div className="page-toolbar"><Link to={`/catalog/${resourceId}`}>← Back to API</Link></div>
+      <div className="page-toolbar"><Link to={`/catalog/${resourceId}`}>← Back to resource</Link></div>
       <div className="object-head subscription-resource-head">
         <div>
           <h3>
             {api_.icon && <span className="listing-icon">{api_.icon}</span>} {api_.title}{" "}
             <span className="mono muted">{api_.apiVersion}</span>
           </h3>
-          <p className="muted small">{api_.summary ?? "No summary."}</p>
+          <p className="muted small">{api_.summary?.trim() || "No summary provided."}</p>
         </div>
       </div>
 
-      <Stepper steps={STEPS} current={done ? 2 : step} />
+      <p className="muted">Subscribing as <strong>{application.name}</strong>.</p>
 
       {done ? (
         <Requested
@@ -89,203 +73,44 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
           warnings={done.warnings}
           subscriptionId={done.id}
           listing={api_}
-          environment={environment}
+          environment={done.environment}
           resourceId={resourceId}
         />
       ) : (
-        <>
-          {step === 0 && (
-            <ChooseApplication
-              applications={applications.data.items.filter(app => session.user.isAdmin || session.user.applications.includes(app.id))}
-              canCreate={session.user.isAdmin}
-              value={applicationId}
-              applicationId={session.application}
-              onChange={setApplicationId}
-              onCreated={applications.reload}
-              onNext={() => setStep(1)}
-            />
-          )}
-          {step === 1 && (
-            <Panel
-              title="Which environment?"
-              hint="Keys are per environment, so a DEV key never works in PROD. That is deliberate: a test caller cannot reach production by accident."
-            >
-              <div className="row wrap">
-                {session.meta.chain.map((candidate) => (
-                  <button
-                    key={candidate}
-                    className={candidate === environment ? "environment-choice active" : "environment-choice"}
-                    aria-pressed={candidate === environment}
-                    disabled={!live.includes(candidate)}
-                    title={
-                      live.includes(candidate)
-                        ? undefined
-                        : `${api_.title} is not published in ${candidate.toUpperCase()}, so there is nothing to call there.`
-                    }
-                    onClick={() => setEnvironment(candidate)}
-                  >
-                    {candidate.toUpperCase()}
-                  </button>
-                ))}
-              </div>
-              {live.length === 0 && (
-                <Notice kind="warn">
-                  This API is not live in any environment yet, so a subscription to it would have
-                  nothing to call.
-                </Notice>
-              )}
-
-              {api_.products.length > 1 && (
-                <div className="field" style={{ marginTop: 14 }}>
-                  <label htmlFor="sw-product">
-                    <Term name="product" />
-                  </label>
-                  <select
-                    id="sw-product"
-                    value={chosenProduct.id}
-                    onChange={(event) => setProductId(event.target.value)}
-                  >
-                    {api_.products.map((product) => (
-                      <option key={product.id} value={product.id}>
-                        {product.name}
-                        {product.summary ? ` — ${product.summary}` : ""}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="muted small">
-                    This API is in more than one bundle. The key you get works for every API in the
-                    one you pick.
-                  </p>
-                </div>
-              )}
-
-              <div className="inline">
-                <button className="ghost" onClick={() => setStep(0)}>
-                  Back
-                </button>
-                <button disabled={!live.includes(environment)} onClick={() => setStep(2)}>
-                  Next: review the terms
-                </button>
-              </div>
-            </Panel>
-          )}
-          {step === 2 && (
-            <ReviewTerms
-              resourceId={resourceId}
-              environment={environment}
-              product={chosenProduct}
-              application={applications.data.items.find((app) => app.id === applicationId)}
-              onBack={() => setStep(1)}
-              onSubscribed={(id, state, warnings) => setDone({ id, state, warnings })}
-            />
-          )}
-        </>
+        <SubscriptionForm
+          resourceId={resourceId}
+          session={session}
+          listing={api_}
+          application={application}
+          onSubscribed={(id, state, warnings, environment) => setDone({ id, state, warnings, environment })}
+        />
       )}
     </>
   );
 }
 
-function ChooseApplication({
-  canCreate,
-  applications,
-  value,
-  applicationId,
-  onChange,
-  onCreated,
-  onNext,
-}: {
-  applications: Application[];
-  canCreate: boolean;
-  value: string;
-  applicationId: string;
-  onChange: (next: string) => void;
-  onCreated: () => void;
-  onNext: () => void;
-}) {
-  const [name, setName] = useState("");
-  const action = useAction();
-  const nameProblem = name.trim().length < 2 || name.trim().length > 80 ? "Use 2–80 characters." : applications.some(app => app.name.toLowerCase() === name.trim().toLowerCase()) ? "This application already exists. Select it above." : null;
-
-  return (
-    <Panel
-      title="Which application will call this?"
-      hint="An application is the thing that makes the calls — a service, a job, a mobile app. Keys belong to it, so revoking one stops that caller and nobody else."
-    >
-      <Notice kind="error">{action.error}</Notice>
-
-      {applications.length === 0 ? (
-        <EmptyState
-          title="You have no applications yet"
-          detail={canCreate ? "Create an application below to own the subscription." : "Ask an administrator to grant you application membership."}
-          action={<Link to="/account">View your account →</Link>}
-        />
-      ) : (
-        <ul className="plain subscriber-applications">
-          {applications.map((application) => (
-            <li key={application.id}>
-              <label className="check-inline">
-                <input
-                  type="radio"
-                  name="application"
-                  checked={value === application.id}
-                  onChange={() => onChange(application.id)}
-                />
-                <strong>{application.name}</strong>
-                <span className="muted small">{application.applicationId}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-
-      {/* Creating one here rather than sending somebody to another screen and back `[P3-05]`. */}
-      {canCreate && <div className="subform">
-        <TextField maxLength={80} error={name ? nameProblem : null} hint="2–80 characters, unique in the directory." label="…or create one" value={name} onChange={setName} placeholder="checkout-service" />
-        <button
-          className="ghost"
-          disabled={action.busy || Boolean(nameProblem)}
-          onClick={async () => {
-            const ok = await action.run(async () => {
-              const created = await api.post<Application>("/api/applications", { name, applicationId });
-              onChange(created.id);
-              setName("");
-            });
-            if (ok) onCreated();
-          }}
-        >
-          Create application
-        </button>
-      </div>}
-
-      <div className="action" style={{ marginTop: 14 }}>
-        <button disabled={!value} onClick={onNext} title={value ? undefined : "Choose an application first."}>
-          Next: which environment
-        </button>
-        {!value && <span className="action-reason">Choose or create the application that will call.</span>}
-      </div>
-    </Panel>
-  );
-}
-
-function ReviewTerms({
+function SubscriptionForm({
   resourceId,
-  environment,
-  product,
+  session,
+  listing: api_,
   application,
-  onBack,
   onSubscribed,
 }: {
   resourceId: string;
-  environment: string;
-  product: { id: string; name: string };
-  application: Application | undefined;
-  onBack: () => void;
-  onSubscribed: (id: string, state: string, warnings: string[]) => void;
+  session: Session;
+  listing: MarketListingDetail;
+  application: Pick<Application, "id" | "name">;
+  onSubscribed: (id: string, state: string, warnings: string[], environment: string) => void;
 }) {
+  const [environment, setEnvironment] = useState(session.environment);
+  const [productId, setProductId] = useState("");
+  const live = api_.endpoints.filter((endpoint) => endpoint.live).map((endpoint) => endpoint.environment);
+  const product = api_.products.find((product) => product.id === productId) ?? api_.products[0]!;
+
   // The publisher reads this before deciding, and it is the only thing on the approval request that
   // is not a machine-generated id. The server requires 3–500 characters (api-subscription-management,
   // "A subscription is per environment and carries a purpose"); the same bounds are enforced here so
-  // the wizard says what is wrong before the round trip rather than after it.
+  // the form says what is wrong before the round trip rather than after it.
   const [purpose, setPurpose] = useState("");
   const policy = useAsync(
     () =>
@@ -300,104 +125,151 @@ function ReviewTerms({
   const quota = document.quota as { calls: number; periodSec: number } | undefined;
 
   return (
-    <Panel title="What you are agreeing to" hint="Configured limits for this API in the selected environment. Other APIs in the product may have different limits.">
-      <Notice kind="error">{action.error}</Notice>
-      {/* Without the effective policy the limits below would read "None set here", which is a
-          claim rather than a gap. Say which it is before somebody agrees to it. */}
-      {policy.error && (
-        <Notice kind="warn">
-          The limits in force here could not be read ({policy.error}), so the rate limit and quota
-          below are unknown rather than absent. Subscribing still works; check them on the API's
-          page afterwards.
-        </Notice>
-      )}
-      <dl className="kv">
-        <dt>
-          <Term name="application" />
-        </dt>
-        <dd>{application?.name ?? "—"}</dd>
-        <dt>
-          <Term name="product" />
-        </dt>
-        <dd>{product.name}</dd>
-        <dt>
-          <Term name="environment" />
-        </dt>
-        <dd>{environment.toUpperCase()}</dd>
-        <dt>
-          <Term name="rate limit" />
-        </dt>
-        <dd>
-          {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : rateLimit ? (
-            <>
-              {rateLimit.calls} calls every {rateLimit.periodSec} seconds
-              {rateLimit.per === "instance" && (
-                <span className="muted"> — counted per replica, so the fleet total is higher</span>
+    <Panel>
+      <fieldset className="choice-field" disabled={action.busy}>
+        <legend>Environment</legend>
+        <p className="muted small">Keys work only in the selected environment.</p>
+        <div className="row wrap">
+          {session.meta.chain.map((candidate) => (
+            <button
+              key={candidate}
+              className={candidate === environment ? "environment-choice active" : "environment-choice"}
+              aria-pressed={candidate === environment}
+              disabled={!live.includes(candidate)}
+              title={
+                live.includes(candidate)
+                  ? undefined
+                  : `${api_.title} is not published in ${candidate.toUpperCase()}, so there is nothing to call there.`
+              }
+              onClick={() => setEnvironment(candidate)}
+            >
+              {candidate.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        {live.length === 0 && (
+          <Notice kind="warn">
+            This resource is not live in any environment yet, so a subscription to it would have
+            nothing to call.
+          </Notice>
+        )}
+
+        {api_.products.length > 1 && (
+          <div className="field" style={{ marginTop: 14 }}>
+            <label htmlFor="sw-product">
+              <Term name="product" />
+            </label>
+            <select
+              id="sw-product"
+              value={product.id}
+              onChange={(event) => setProductId(event.target.value)}
+            >
+              {api_.products.map((product) => (
+                <option key={product.id} value={product.id}>
+                  {product.name}
+                  {product.summary ? ` — ${product.summary}` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="muted small">
+              This resource is in more than one bundle. The key you get works for every resource in the
+              one you pick.
+            </p>
+          </div>
+        )}
+
+        <Notice kind="error">{action.error}</Notice>
+        {/* Without the effective policy the limits below would read "None set here", which is a
+            claim rather than a gap. Say which it is before somebody agrees to it. */}
+        {policy.error && (
+          <Notice kind="warn">
+            The limits in force here could not be read ({policy.error}), so the rate limit and quota
+            below are unknown rather than absent. Subscribing still works; check them on the resource's
+            page afterwards.
+          </Notice>
+        )}
+
+        <div className="field" style={{ marginTop: 14 }}>
+          <label htmlFor="sw-purpose">What will you use it for?</label>
+          <textarea
+            id="sw-purpose"
+            rows={3}
+            minLength={3}
+            maxLength={500}
+            value={purpose}
+            onChange={(event) => setPurpose(event.target.value)}
+          />
+          <p className="muted small">
+            {product.name} belongs to somebody, and they decide by reading this. Say which system is
+            calling and what it needs — 3 to 500 characters.
+          </p>
+        </div>
+
+        <details>
+          <summary>Product and limits</summary>
+          <p className="muted small">Limits for this resource in the selected environment. Other resources in the product may have different limits.</p>
+          <dl className="kv">
+            <dt>
+              <Term name="product" />
+            </dt>
+            <dd>{product.name}</dd>
+            <dt>
+              <Term name="rate limit" />
+            </dt>
+            <dd>
+              {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : rateLimit ? (
+                <>
+                  {rateLimit.calls} calls every {rateLimit.periodSec} seconds
+                  {rateLimit.per === "instance" && (
+                    <span className="muted"> — counted per replica, so the fleet total is higher</span>
+                  )}
+                </>
+              ) : (
+                <span className="muted">None set here.</span>
               )}
-            </>
-          ) : (
-            <span className="muted">None set here.</span>
-          )}
-        </dd>
-        <dt>
-          <Term name="quota" />
-        </dt>
-        <dd>
-          {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : quota ? (
-            <>
-              {quota.calls.toLocaleString()} calls per {quota.periodSec} seconds,
-              counted across the whole fleet
-            </>
-          ) : (
-            <span className="muted">None set here.</span>
-          )}
-        </dd>
-      </dl>
+            </dd>
+            <dt>
+              <Term name="quota" />
+            </dt>
+            <dd>
+              {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : quota ? (
+                <>
+                  {quota.calls.toLocaleString()} calls per {quota.periodSec} seconds,
+                  counted across the whole fleet
+                </>
+              ) : (
+                <span className="muted">None set here.</span>
+              )}
+            </dd>
+          </dl>
+        </details>
 
-      <div className="field" style={{ marginTop: 14 }}>
-        <label htmlFor="sw-purpose">What will you use it for?</label>
-        <textarea
-          id="sw-purpose"
-          rows={3}
-          minLength={3}
-          maxLength={500}
-          value={purpose}
-          onChange={(event) => setPurpose(event.target.value)}
-        />
-        <p className="muted small">
-          {product.name} belongs to somebody, and they decide by reading this. Say which system is
-          calling and what it needs — 3 to 500 characters.
-        </p>
-      </div>
-
-      <div className="inline">
-        <button className="ghost" onClick={onBack}>
-          Back
-        </button>
-        <button
-          disabled={action.busy || !application || purpose.trim().length < 3}
-          onClick={async () => {
-            await action.run(async () => {
-              // No key comes back. The subscription is `pending` or `activating` at this point and
-              // the key is revealable only once it is `active`, so the panel below says what is
-              // happening rather than showing a secret that does not exist yet.
-              const created = await api.post<{ id: string; state: string; warnings?: string[] }>(
-                `/api/catalog/${product.id}/subscribe`,
-                { applicationId: application!.id, environment, purpose: purpose.trim() },
-              );
-              onSubscribed(created.id, created.state, created.warnings ?? []);
-            });
-          }}
-        >
-          Subscribe
-        </button>
-        {!application && (
-          <span className="action-reason">Go back and choose the application that will call.</span>
-        )}
-        {application && purpose.trim().length < 3 && (
-          <span className="action-reason">Say what you will use it for first.</span>
-        )}
-      </div>
+        <div className="inline">
+          <button
+            disabled={action.busy || !live.includes(environment) || purpose.trim().length < 3 || purpose.trim().length > 500}
+            onClick={async () => {
+              await action.run(async () => {
+                // No key comes back. The subscription is `pending` or `activating` at this point and
+                // the key is revealable only once it is `active`, so the panel below says what is
+                // happening rather than showing a secret that does not exist yet.
+                const created = await api.post<{ id: string; state: string; warnings?: string[] }>(
+                  `/api/catalog/${product.id}/subscribe`,
+                  { applicationId: application.id, environment, purpose: purpose.trim() },
+                );
+                onSubscribed(created.id, created.state, created.warnings ?? [], environment);
+              });
+            }}
+          >
+            Subscribe
+          </button>
+          {!live.includes(environment) && (
+            <span className="action-reason">Choose an environment where this resource is live.</span>
+          )}
+          {purpose.trim().length < 3 && (
+            <span className="action-reason">Say what you will use it for first.</span>
+          )}
+        </div>
+      </fieldset>
     </Panel>
   );
 }
@@ -461,7 +333,7 @@ export function Requested({
       <div className="inline" style={{ marginTop: 14 }}>
         <Link to={`/subscriptions/${subscriptionId}`}>Open the subscription and reveal the key →</Link>
         <Link to={`/catalog/${resourceId}`}>View calling instructions and Try it →</Link>
-        <Link to="/catalog">Find another API</Link>
+        <Link to="/catalog">Find another resource</Link>
       </div>
     </Panel>
   );

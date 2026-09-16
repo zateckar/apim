@@ -86,7 +86,7 @@ test("a card opens the read-only listing, not the publisher's editor", async ({ 
   await expect(card).toBeVisible();
   await card.locator("a").first().click();
 
-  await expect(screenTitle(page)).toHaveText("API");
+  await expect(screenTitle(page)).toHaveText("Resource");
   // The consumer's questions, in the order they are asked — and none of the publisher's controls,
   // which is the whole point of the catalogue opening a listing rather than a workspace.
   for (const tab of ["Overview", "Getting started", "Try it", "Versions"]) {
@@ -96,6 +96,13 @@ test("a card opens the read-only listing, not the publisher's editor", async ({ 
   // And it arrived at the catalogue's own address rather than at the owning application's
   // workspace, which is the failure this consolidation was about.
   expect(new URL(page.url()).pathname).toMatch(/^\/catalog\//);
+
+  await page.getByRole("button", { name: "Subscribe", exact: true }).click();
+  await expect(screenTitle(page)).toHaveText("Subscribe");
+  await expect(page.getByText(/^Subscribing as /)).toBeVisible();
+  await expect(page.getByRole("group", { name: "Environment" })).toBeVisible();
+  await expect(page.getByLabel("What will you use it for?")).toBeVisible();
+  await expect(page.getByText("Create an application", { exact: true })).toHaveCount(0);
 
   expectNoErrors(errors);
 });

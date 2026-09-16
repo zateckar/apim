@@ -250,7 +250,7 @@ export const ROUTES: RouteDef[] = [
     patterns: ["/catalog", "/discover"],
     title: "Catalog",
     purpose:
-      "Every API and Kafka topic you are allowed to see, what it does, and how to start calling it.",
+      "Every resource you are allowed to see, what it does, and how to start calling it.",
     scope: "global",
     nav: { group: "Global", label: "Catalog", icon: "Apps" },
     plainChrome: true,
@@ -258,8 +258,8 @@ export const ROUTES: RouteDef[] = [
   {
     id: "listing",
     patterns: ["/catalog/:resourceId"],
-    title: "API",
-    purpose: "What this API does, how to subscribe, and how to call it.",
+    title: "Resource",
+    purpose: "What this resource does, how to subscribe, and how to call it.",
     scope: "global",
     plainChrome: true,
   },
@@ -267,7 +267,7 @@ export const ROUTES: RouteDef[] = [
     id: "subscribe",
     patterns: ["/catalog/:resourceId/subscribe"],
     title: "Subscribe",
-    purpose: "Choose the application that will call this API, and in which environment.",
+    purpose: "Choose an environment and request access for the selected application.",
     scope: "global",
     plainChrome: true,
   },

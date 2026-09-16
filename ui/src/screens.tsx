@@ -90,12 +90,15 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   activity: ({ operations }) => <Activity items={operations} />,
 
   // ------------------------------------------------------------------ the same for everybody
-  catalog: ({ session }) => <MarketView user={session.user} meta={session.meta} />,
+  catalog: ({ session }) => (
+    <MarketView user={session.user} meta={session.meta} applications={session.applications} />
+  ),
   listing: ({ match, session }) => (
     <MarketListing
       resourceId={match.params.resourceId!}
       user={session.user}
       meta={session.meta}
+      applications={session.applications}
     />
   ),
   subscribe: ({ match, session }) => (

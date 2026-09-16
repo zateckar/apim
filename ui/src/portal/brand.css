@@ -3923,6 +3923,9 @@ a { color: inherit; text-decoration: none; }
 .native-portal .workspace-tabs { margin-bottom: 16px; }
 .native-portal .workspace-tabs button { min-height: 38px; font-size: 14px; padding: 6px 10px; }
 .native-portal :is(.pill, .pill.muted, .listing-icon, .envpicker) { background: var(--bg-muted); color: var(--fg-muted); }
+.native-portal .badge.ok { background: var(--ok-soft); color: var(--ok); }
+.native-portal .badge.warn { background: var(--warn-soft); color: var(--warn); }
+.native-portal .badge.bad, .native-portal .badge.off { background: var(--err-soft); color: var(--err); }
 .native-portal .envpicker .env.active { background: var(--surface); color: var(--accent); }
 .native-portal .unit.attached { background: var(--bg-subtle); border-color: var(--border-strong); }
 .native-portal .native-notifications { max-height: calc(100dvh - 76px); overflow-y: auto; top: 60px; }
@@ -3990,6 +3993,8 @@ dialog.native-modal { margin: auto; }
 .native-portal .audit-detail pre { min-width: 240px; overflow-wrap: anywhere; }
 .native-portal .tabs { overflow-x: auto; gap: 4px; }
 .native-portal .tabs button { white-space: nowrap; flex-shrink: 0; }
+.native-portal .tabs, .native-portal .workspace-tabs { scrollbar-width: none; }
+.native-portal .tabs::-webkit-scrollbar, .native-portal .workspace-tabs::-webkit-scrollbar { display: none; }
 .native-portal .btn.secondary:hover { color: var(--accent-fg); }
 .login { width: min(440px, calc(100% - 32px)); margin: 10vh auto; }
 .login .card { box-shadow: var(--shadow-sm); overflow: hidden; }
@@ -4188,6 +4193,10 @@ dialog.native-modal { margin: auto; }
 .native-portal .listing-overview > .card { margin-bottom: 0; }
 .native-portal .environment-choice { padding: 14px 24px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); font-weight: 600; }
 .native-portal .environment-choice.active { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 -2px var(--accent); }
+.native-portal .choice-field > details { margin-top: 14px; border-top: 1px solid var(--border); }
+.native-portal .choice-field > details > summary { display: flex; align-items: center; gap: 7px; padding: 10px 0 4px; color: var(--fg-muted); cursor: pointer; font-size: 12px; font-weight: 600; list-style: none; }
+.native-portal .choice-field > details > summary::before { content: "›"; display: inline-block; width: 12px; color: var(--accent); font-size: 16px; line-height: 1; }
+.native-portal .choice-field > details[open] > summary::before { content: "⌄"; }
 .native-portal .telemetry-totals { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 8px; margin-bottom: 20px; }
 .native-portal .telemetry-totals .stat { padding: 12px; background: var(--bg-subtle); border-radius: var(--r-sm); min-width: 0; }
 .native-portal .telemetry-totals .value { font-size: 22px; }
@@ -4293,6 +4302,118 @@ dialog.native-modal { margin: auto; }
   .native-portal .gateway-settings table { min-width: 620px; }
   .native-portal .page-toolbar { align-items: flex-start; }
   .native-portal .native-actions .btn { white-space: normal; text-align: left; }
+}
+
+/* Catalog: one quiet control surface followed by dense, decision-ready rows. The search and type
+   controls stay visible because they answer the two most common questions; publisher and tag are
+   secondary filters and live behind one disclosure so a first-time reader is not confronted with a
+   wall of controls. */
+.native-portal .catalog-page { min-width: 0; }
+.native-portal .catalog-controls { margin-bottom: 16px; }
+.native-portal .catalog-controls > .card-body { padding: 18px 20px 12px; }
+.native-portal .catalog-search-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: end; }
+.native-portal .catalog-search-field { min-width: 0; }
+.native-portal .catalog-search-field > label { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 6px; color: var(--fg); font-size: 13px; font-weight: 600; }
+.native-portal .catalog-search { position: relative; width: 100%; }
+.native-portal .catalog-search > svg { position: absolute; left: 13px; top: 50%; transform: translateY(-50%); color: var(--fg-subtle); pointer-events: none; }
+.native-portal .catalog-search input[type="search"] { width: 100%; min-height: 42px; padding: 9px 42px 9px 39px; font-size: 14px; border-color: var(--border-strong); }
+/* Chromium adds its own clear affordance to search inputs. The Catalog already owns that action,
+   so leaving both rendered two adjacent x icons and made it unclear which one reset the query. */
+.native-portal .catalog-search input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; appearance: none; }
+.native-portal .catalog-search input::placeholder { color: var(--fg-subtle); }
+.native-portal .catalog-clear-search { position: absolute; right: 8px; top: 50%; transform: translateY(-50%); width: 28px; min-height: 28px; padding: 0; border-radius: 50%; color: var(--fg-muted); background: transparent; }
+.native-portal .catalog-clear-search:hover { color: var(--fg); background: var(--bg-muted); }
+.native-portal .catalog-result-total { display: flex; flex-direction: column; align-items: flex-end; min-width: 82px; padding-bottom: 7px; color: var(--fg-muted); font-size: 12px; line-height: 1.1; }
+.native-portal .catalog-result-total strong { color: var(--fg); font-size: 25px; font-weight: 650; line-height: 1; font-variant-numeric: tabular-nums; }
+.native-portal .catalog-filter-row { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--border); }
+.native-portal .catalog-filter-row > .facet-row { flex: 1 1 360px; min-width: 260px; }
+.native-portal .catalog-filter-row .facet-label { min-width: auto; margin-right: 2px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.native-portal .catalog-select { display: flex; flex: 0 1 170px; flex-direction: column; gap: 4px; min-width: 145px; }
+.native-portal .catalog-select > span { color: var(--fg-muted); font-size: 11px; font-weight: 600; }
+.native-portal .catalog-select select { width: 100%; min-height: 32px; padding-block: 5px; font-size: 13px; }
+.native-portal .catalog-sort { flex-basis: 150px; }
+.native-portal .catalog-clear { align-self: center; min-height: 32px; padding-inline: 8px; color: var(--fg-muted); font-size: 12px; white-space: nowrap; }
+.native-portal .catalog-more-filters { margin-top: 12px; border-top: 1px solid var(--border); }
+.native-portal .catalog-more-filters summary { display: inline-flex; align-items: center; gap: 7px; padding: 10px 0 4px; color: var(--fg-muted); cursor: pointer; font-size: 12px; font-weight: 600; list-style: none; }
+.native-portal .catalog-more-filters summary::before { content: "›"; display: inline-block; width: 12px; color: var(--accent); font-size: 16px; line-height: 1; }
+.native-portal .catalog-more-filters[open] summary::before { content: "⌄"; }
+.native-portal .catalog-more-filters summary:hover { color: var(--fg); }
+.native-portal .catalog-filter-badge { display: inline-grid; place-items: center; min-width: 18px; height: 18px; padding-inline: 4px; border-radius: 999px; color: var(--accent-fg); background: var(--accent); font-size: 10px; }
+.native-portal .catalog-more-grid { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 12px 16px; padding: 8px 0 4px; }
+.native-portal .catalog-more-grid > .facet-row { flex: 1 1 480px; }
+.native-portal .catalog-more-grid .facet-label { min-width: auto; margin-right: 2px; font-size: 12px; text-transform: none; letter-spacing: 0; }
+.native-portal .catalog-guidance { margin: 8px 0 0; color: var(--fg-subtle); font-size: 12px; }
+.native-portal .catalog-loading { margin: 18px 0; }
+.native-portal .catalog-no-results > .card-body { padding: 32px 20px; }
+.native-portal .catalog-no-results h3 { margin-top: 0; }
+.native-portal .catalog-admin-note { margin: 10px 0 0; font-size: 12px; }
+
+/* A result carries three facts in a stable reading order: identity, availability, then the one
+   action. Removing card chrome and using rules lets a screenful hold many more resources without
+   making them look like unrelated tiles. */
+.native-portal .catalog-results-list { display: flex; flex-direction: column; min-width: 0; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.native-portal .catalog-result { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 18px; min-width: 0; padding: 13px 16px; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; background: var(--surface); }
+.native-portal .catalog-result:first-child { border-top-left-radius: var(--r-md); border-top-right-radius: var(--r-md); }
+.native-portal .catalog-result:last-child { border-bottom: 0; border-bottom-left-radius: var(--r-md); border-bottom-right-radius: var(--r-md); }
+.native-portal .catalog-result:hover { background: var(--bg-subtle); border-color: var(--border); box-shadow: none; }
+.native-portal .catalog-result-main { display: flex; align-items: flex-start; gap: 11px; min-width: 0; }
+.native-portal .catalog-result .listing-icon { width: 32px; height: 32px; flex: 0 0 32px; font-size: 18px; border-radius: var(--r-sm); background: var(--bg-muted); }
+.native-portal .catalog-result-copy { min-width: 0; }
+.native-portal .catalog-result-title { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 7px; min-width: 0; line-height: 1.2; }
+.native-portal .catalog-result-title a { min-width: 0; color: var(--accent); text-decoration: none; overflow-wrap: anywhere; }
+.native-portal .catalog-result-title a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.native-portal .catalog-result-title strong { font-size: 14px; font-weight: 650; }
+.native-portal .catalog-result-title .badge, .native-portal .catalog-result-title .chip-status { flex: none; font-size: 10px; }
+.native-portal .catalog-result-title .api-kind-badge { flex: none; margin: 0; }
+.native-portal .catalog-available { flex: none; padding: 2px 6px; border: 1px solid var(--accent-ring); border-radius: 999px; color: var(--accent); background: var(--accent-soft); font-size: 10px; font-weight: 600; }
+.native-portal .catalog-result-meta { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 7px; margin-top: 3px; color: var(--fg-muted); font-size: 11px; }
+.native-portal .catalog-result-summary { max-width: 72ch; margin: 5px 0 0; color: var(--fg-muted); font-size: 12px; line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.native-portal .catalog-result .listing-tags { gap: 4px; margin-top: 6px; }
+.native-portal .catalog-result .listing-tags .chip { cursor: pointer; }
+.native-portal .catalog-result-facts { display: flex; flex-direction: column; align-items: flex-end; justify-content: center; gap: 6px; min-width: 122px; color: var(--fg-muted); font-size: 11px; white-space: nowrap; }
+.native-portal .catalog-result-facts .listing-envs { display: flex; justify-content: flex-end; gap: 4px; flex-wrap: wrap; }
+.native-portal .catalog-result-facts .pill { margin: 0; padding: 3px 7px; font-size: 10px; }
+.native-portal .catalog-result-stats { font-variant-numeric: tabular-nums; }
+.native-portal .catalog-result-open { display: inline-flex; align-items: center; gap: 5px; justify-content: center; min-width: 58px; color: var(--accent); font-size: 12px; font-weight: 600; text-decoration: none; white-space: nowrap; }
+.native-portal .catalog-result-open:hover { text-decoration: underline; text-underline-offset: 3px; }
+.native-portal .domain-list { gap: 10px; margin-bottom: 16px; }
+.native-portal .domain-section { border-color: var(--border); border-radius: var(--r-md); }
+.native-portal .domain-head { align-items: center; justify-content: flex-start; gap: 9px; padding: 11px 14px; }
+.native-portal .domain-head:hover:not(:disabled) { background: var(--bg-subtle); }
+.native-portal .domain-head[aria-expanded="true"] { background: var(--accent-soft); }
+.native-portal .domain-chevron { order: -1; width: 14px; margin-left: 0; color: var(--accent); font-size: 17px; line-height: 1; }
+.native-portal .domain-name { font-size: 13px; font-weight: 650; letter-spacing: 0; }
+.native-portal .domain-count { font-size: 11px; }
+.native-portal .domain-action { margin-left: auto; font-size: 11px; }
+.native-portal .domain-body { padding: 0 10px 10px; }
+.native-portal .domain-body .catalog-results-list { border-top: 1px solid var(--border); }
+.native-portal .domain-body .catalog-result { padding-inline: 6px; }
+.native-portal .catalog-domain-note { margin: 8px 6px; }
+.native-portal .catalog-unused-domains { padding: 0 14px 4px; border: 1px dashed var(--border); border-radius: var(--r-md); }
+.native-portal .catalog-unused-domains summary { display: flex; align-items: center; gap: 7px; padding: 10px 0; color: var(--fg-muted); cursor: pointer; font-size: 12px; list-style: none; }
+.native-portal .catalog-unused-domains summary::before { content: "›"; display: inline-block; width: 12px; color: var(--accent); font-size: 16px; line-height: 1; }
+.native-portal .catalog-unused-domains[open] summary::before { content: "⌄"; }
+.native-portal .catalog-unused-domains summary span { margin-left: 4px; }
+.native-portal .catalog-unused-domains .domain-section { margin: 0 0 8px; }
+
+@media (max-width: 760px) {
+  .native-portal .catalog-search-row { grid-template-columns: 1fr; gap: 10px; }
+  .native-portal .catalog-result-total { flex-direction: row; align-items: baseline; justify-content: flex-start; gap: 6px; padding: 0; }
+  .native-portal .catalog-result-total strong { font-size: 19px; }
+  .native-portal .catalog-filter-row > .facet-row { flex-basis: 100%; min-width: 0; }
+  .native-portal .catalog-select, .native-portal .catalog-sort { flex: 1 1 150px; }
+  .native-portal .catalog-result { grid-template-columns: minmax(0, 1fr) auto; gap: 10px; }
+  .native-portal .catalog-result-facts { grid-column: 1; grid-row: 2; flex-direction: row; align-items: center; justify-content: flex-start; min-width: 0; }
+  .native-portal .catalog-result-open { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+@media (max-width: 480px) {
+  .native-portal .catalog-controls > .card-body { padding-inline: 14px; }
+  .native-portal .catalog-result { padding-inline: 12px; }
+  .native-portal .catalog-result-summary { white-space: normal; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .native-portal .catalog-result-facts { flex-wrap: wrap; white-space: normal; }
+  .native-portal .catalog-result-stats { white-space: normal; }
+  .native-portal .catalog-result .listing-tags { display: none; }
 }
 /* frontend-visual-system: size fields by their answers and show dependencies together. */
 .choice-field { border: 0; padding: 0; margin: 0 0 20px; min-width: 0; }

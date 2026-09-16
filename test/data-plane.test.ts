@@ -311,6 +311,7 @@ describe("what reaches the backend", () => {
     const response = await get(dp, "/petstore/store/inventory", {
       "X-Api-Key": published.key!,
       "X-Tenant-Hint": "nordics",
+      "X-Server-Ms": "42",
       "Accept-Language": "cs-CZ",
       "X-Tenant": "caller-said-this",
       "X-Region": "apac",
@@ -324,6 +325,7 @@ describe("what reaches the backend", () => {
     const seen = backend.requests[0]!;
     // No rule mentions either, so both arrive as the caller wrote them.
     expect(seen.headers["x-tenant-hint"]).toBe("nordics");
+    expect(seen.headers["x-server-ms"]).toBe("42");
     expect(seen.headers["accept-language"]).toBe("cs-CZ");
     // `set` is the gateway speaking; `skip` is a default, and a default only fills an absence.
     expect(seen.headers["x-tenant"]).toBe("platform");

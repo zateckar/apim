@@ -366,6 +366,25 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN product names SHALL be checked against the name pattern and complete estate product list before creation
 - AND a single subscribable product SHALL be stated without a redundant picker
 - AND purpose length SHALL gate submission
-- AND inline application creation SHALL be offered only to administrators and SHALL check directory name length and duplicates
 
-- AND the subscription application choices SHALL include only applications the user can act for (all for an administrator)
+### Requirement: Subscribe from Catalog for the selected application
+
+#### Scenario: A Catalog subscription is started
+
+- GIVEN an application selected in the main menu that the user may act for
+- WHEN the user subscribes from Catalog
+- THEN the form SHALL use that application automatically and display its name
+- AND one form SHALL show the environment choices and purpose field with a Subscribe action, without wizard steps
+- AND the environment SHALL default to the current session environment, with unpublished environments disabled and submission blocked until a live environment is selected
+- AND a product picker SHALL appear only when there is more than one product
+- AND product and effective limits SHALL be available in an expandable disclosure
+- AND inputs SHALL be disabled while the request is being submitted
+- AND the form SHALL offer neither an application picker nor application creation, including for administrators
+- AND the submitted subscription SHALL name the selected application as its consumer
+
+#### Scenario: No usable application is selected
+
+- GIVEN no selected application the user may act for
+- WHEN the Catalog subscription form opens
+- THEN it SHALL prevent subscribing and direct the user to select an application in the main menu
+- AND it SHALL offer an account link and explain that membership requires an administrator

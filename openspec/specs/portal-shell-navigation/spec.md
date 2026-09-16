@@ -35,7 +35,7 @@ registry says which component answers each of them. The shell resolves nothing o
 - THEN publishing SHALL describe Identify, Define and Route in order
 - AND promotion SHALL describe saved configuration, the target backend and deployment progress
 - AND new-version guidance SHALL explain the copied settings and product-based access
-- AND subscription guidance SHALL explain pending or activating access and later key reveal
+- AND subscription guidance SHALL explain use of the application selected in the main menu, pending or activating access and later key reveal
 - AND the journey count SHALL be derived from the rendered journeys
 
 ### Requirement: Render a two-column shell around every screen
@@ -310,13 +310,14 @@ The rule SHALL be enforced structurally rather than by review.
 
 ### Requirement: Reach the catalogue from anywhere
 
-#### Scenario: A consumer looks for an API
+#### Scenario: A consumer looks for a resource
 
 - GIVEN any signed-in user
 - WHEN they open Catalog from the Global group
-- THEN they SHALL see every API and Kafka topic they are allowed to see, across applications,
-  browsable by domain and searchable across domains
-- AND opening one SHALL show a read-only listing with what it does and how to subscribe — never the
+- THEN they SHALL see every REST or SOAP API, MCP server and A2A agent they are allowed to see,
+  across applications, browsable by domain and searchable across domains
+- AND Kafka topics SHALL be represented in the domain counts and linked to Kafka
+- AND opening one resource SHALL show a read-only listing with what it does and how to subscribe — never the
   publisher's editor
 - AND the Global group SHALL offer **one** Catalog entry: the shell used to draw a second
   cross-application list of its own, and two entries under one label is a choice the reader cannot

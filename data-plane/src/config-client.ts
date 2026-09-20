@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
 import type { ArtifactRef } from "../../shared/artifact.ts";
 import { CONFIG_VERSION, type GatewayConfig } from "../../shared/config-doc.ts";
-import type { GatewaySettings } from "../../shared/gateway-settings.ts";
+import { defaultGatewaySettings, type GatewaySettings } from "../../shared/gateway-settings.ts";
 import { ipv4ToInt } from "../../shared/net.ts";
 import type { PolicyDocument } from "../../shared/policy.ts";
 import type { PollRequest, PollResponse } from "../../shared/telemetry.ts";
@@ -105,6 +105,12 @@ export class ConfigClient {
     try {
       const config = JSON.parse(readFileSync(this.options.cachePath, "utf8")) as GatewayConfig;
       if (config.configVersion !== this.wireVersion) return false;
+      // A file written by a build with fewer settings than this one has is still this wire version,
+      // because a setting added since is additive and travels inside a block that is otherwise
+      // unchanged. Filling the gap from this build's defaults is what "the block is complete, so
+      // the gateway holds no default of its own" means on the fail-static path too — without it a
+      // missing key reads as `undefined`, which is a third state neither plane has a meaning for.
+      config.settings = { ...defaultGatewaySettings(), ...config.settings };
       this.table = this.tableFor(config);
       /**
        * The fleet's settings come back with the routes, so a restart during a control-plane outage

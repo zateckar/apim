@@ -1,5 +1,6 @@
 import { appendFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { cpus, totalmem, type as osType, release } from "node:os";
+import { BUCKET_COUNT } from "../../shared/telemetry.ts";
 import { runTarget, type RunResult } from "./runner.ts";
 import { buildWorld, VALID_PET, type PerfWorld } from "./world.ts";
 
@@ -766,8 +767,10 @@ function report(
     lines.push("");
     lines.push(
       "The same run, read back through `/api/telemetry/summary` — the gateway's own counters, " +
-        "aggregated per minute. Percentiles here are interpolated from 15 histogram buckets and " +
-        "are labelled approximate; the table above uses exact samples the harness kept.",
+        `aggregated per minute. Percentiles here are interpolated from ${BUCKET_COUNT} histogram ` +
+        "buckets and are labelled approximate; the table above uses exact samples the harness kept. " +
+        "The gateway line is the per-request total minus that request's backend leg, which is the " +
+        "figure this harness cannot measure from outside.",
     );
     lines.push("");
     const totals = telemetry.totals as Record<string, number>;
@@ -779,6 +782,9 @@ function report(
     lines.push(`| upstream errors | ${totals.upstreamErrors} |`);
     lines.push(`| bytes out | ${totals.bytesOut} |`);
     lines.push(`| p50 / p95 (approximate) | ${totals.p50Ms} / ${totals.p95Ms} ms |`);
+    lines.push(
+      `| p50 / p95 in the gateway (approximate) | ${totals.gatewayP50Ms} / ${totals.gatewayP95Ms} ms |`,
+    );
     lines.push("");
   }
 

@@ -644,6 +644,53 @@ Bounds (`TELEMETRY_DEFAULTS`): `maxSeries 2000`, `maxWindowsPerReport 15`,
 `maxReportBytes 1 MiB`, `maxRunsPerInstanceWindow 16`, `flushIntervalSec 10`,
 `retentionHours 48`, `jobRetentionHours 168`, `maxInstancesPerTarget 16`.
 
+### The Latency Histogram
+
+`BUCKET_BOUNDS_MS` in `shared/telemetry.ts` is one array, read by the gateway that fills the
+counters, by the control plane that folds them and by the screen that interpolates a percentile out
+of them. It is upper bounds, and the array is one shorter than the counter array — the last bucket
+is everything above the last bound.
+
+```
+0.25 · 0.5 · 1 · 2 · 5 · 10 · 25 · 50 · 100 · 250 · 500 · 1000 · 2500 · 5000 · 10000 · 30000
+```
+
+The first two bounds exist because the gateway's own cost is *below* the old floor. With `1 ms` as
+the smallest bucket, a pipeline at 0.3 ms and one at 0.95 ms landed in the same cell and both
+reported as "1 ms", so the screen could not tell a regression from noise and could not show that
+the goal had been met. `0.25` and `0.5` were added at the bottom rather than everywhere, because
+the resolution is only scarce at the end where the gateway lives; above a millisecond the number is
+the backend's and the existing spacing is finer than the question.
+
+Each series carries **two** histograms over the same requests:
+
+| Array | Filled with | Answers |
+|---|---|---|
+| `buckets` | `durationMs` | what the caller waited |
+| `gatewayBuckets` | `max(0, durationMs − backendMs)` | what this gateway cost |
+
+The subtraction is per request, before bucketing, which is the whole point: the p95 of a difference
+is not the difference of two percentiles, so subtracting an aggregate backend figure from an
+aggregate total would produce a number that is not any request's experience. A request with no
+backend leg — a `404`, a rejected key, a cache hit — attributes its whole duration to the gateway,
+because that is where the whole duration was spent.
+
+`backendMsSum` and `backendCount` travel beside them so the average backend leg is available
+without a third histogram; `backendCount` is the requests that *had* a backend leg, not the series
+total, so the average is not diluted by rejections.
+
+Percentiles are interpolated within the bucket the rank falls in and are **labelled approximate**
+everywhere they are shown. Durations are carried to three decimal places (`roundMs`) rather than
+rounded to a whole millisecond, for the same reason the bounds were extended: `Math.round` on a
+0.3 ms pipeline prints `0`.
+
+Older rows and older gateways carry 15 counters. `widenBuckets` prepends two zeros to any array of
+the previous length, which is correct rather than merely tolerant: nothing that was counted under a
+`1 ms` ceiling can be known to have been under `0.5 ms`, and claiming otherwise would invent
+precision the data never had. This is why the change needs no `configVersion` bump — a new gateway
+reporting 17 and an old one reporting 15 both fold correctly, and an old gateway that does not know
+`serverTiming` simply does not stamp the header.
+
 ### Resource Kinds
 
 ```
@@ -760,7 +807,7 @@ body fields, which are absent unless there is a body to carry.
 | `resourceId` · `resourceName` · `apiVersion` · `rev` · `operationId` | what matched. `operationId` is legitimately absent | same, `operationId` nullable |
 | `subscriptionId` · `applicationId` | who called | `subscriptionId` · `consumerApplicationId` |
 | `clientIp` | resolved through the trusted-proxy boundary, never as the caller claimed it | same |
-| `durationMs` · `backendMs` | total, and the part spent waiting for the backend | same |
+| `durationMs` · `backendMs` | total, and the part spent waiting for the backend. Both to three decimal places, because the difference between them is the gateway's own cost and is usually under a millisecond | same |
 | `note` | one sentence when the gateway has something to say about this line | — |
 | `requestBody` · `responseBody` (+ `…Truncated`) | present **only** under an open capture window, or on a `5xx` the gateway generated, where the response body carries the transport reason | same |
 
@@ -917,6 +964,7 @@ An out-of-range value is refused on write and clamped on read.
 | `accessLog` | `DP_ACCESS_LOG` | `on` | flag, **sensitive**: off switches the log off entirely. There is no setting that thins it — the lines are a compliance record, so "all of them" and "none" are the only two states, and the change is audited behind a typed confirmation |
 | `accessLogMaxBytes` | `DP_ACCESS_LOG_MAX_BYTES` | `128 MiB` | 1 MiB – 8 GiB |
 | `accessLogKeep` | `DP_ACCESS_LOG_KEEP` | `5` | 0 – 1000; the log's disk is `(keep + 1) × maxBytes` |
+| `serverTiming` | `DP_SERVER_TIMING` | `off` | flag; answers every request with `Server-Timing: gw;dur=…, backend;dur=…`. Off by default because it discloses a backend's timing to a caller, but **not sensitive**: it exists to be switched on for the length of a measurement and off again |
 
 ## Configuration Files
 

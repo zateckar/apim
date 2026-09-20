@@ -245,6 +245,21 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - THEN calls per minute across the estate SHALL be shown, split into served, refused by the gateway
   and failed upstream, with breakdowns by resource, by consumer and by instance
 
+#### Scenario: Latency is shown
+
+- GIVEN a set of rollup rows
+- WHEN their latency is summarised
+- THEN the total the caller waited and the share spent inside the gateway SHALL both be offered,
+  each as its own percentile over its own histogram rather than one subtracted from the other
+- AND the gateway's share SHALL be shown beside the total wherever the total is — the dashboard's
+  latency figure, the Telemetry totals, and every breakdown row — so "is it us or the backend" is
+  answered on the screen rather than by exporting the numbers
+- AND a percentile SHALL be labelled approximate, because it is interpolated inside a bucket
+- AND the screen SHALL say that the smallest bucket is 0.25 ms, so a gateway faster than that reads
+  as a floor rather than as a measurement
+- AND where a figure is computed over only the requests that carried a backend duration, the count
+  it was computed over SHALL be stated rather than the series total
+
 ### Requirement: Offer a self-heal console per environment
 
 #### Scenario: FixMe is opened

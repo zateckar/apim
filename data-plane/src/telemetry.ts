@@ -29,6 +29,9 @@ interface Cell {
   bytesIn: number;
   bytesOut: number;
   buckets: number[];
+  gatewayBuckets: number[];
+  backendMsSum: number;
+  backendCount: number;
 }
 
 export interface RecordInput {
@@ -36,13 +39,34 @@ export interface RecordInput {
   subscriptionId: string | null;
   outcome: Outcome;
   status: number;
+  /** Fractional milliseconds — see `roundMs`. Rounding here would erase the sub-ms buckets. */
   durationMs: number;
+  /**
+   * What the backend call took, when there was one: `null` for every request the gateway answered
+   * itself. Never substituted with zero — "no backend" and "an instant backend" are different
+   * facts, and only the first of them leaves `durationMs` entirely attributable to this gateway.
+   */
+  backendMs?: number | null;
   bytesIn: number;
   bytesOut: number;
   completedAtMs?: number;
 }
 
 const OVERFLOW = "overflow";
+
+/**
+ * The handle `record` hands back for the bytes, which are only known once the response body has
+ * finished streaming. A function rather than an inline object literal because `record` returns it
+ * from two places — the ordinary path and the one outcome that skips latency attribution — and two
+ * copies of it would be two things to keep the same.
+ */
+function handleFor(cell: Cell): { addBytesOut: (bytes: number) => void } {
+  return {
+    addBytesOut: (bytes: number) => {
+      cell.bytesOut += bytes;
+    },
+  };
+}
 
 export class InstanceTelemetry {
   /** windowStart → seriesKey → cell */
@@ -103,7 +127,17 @@ export class InstanceTelemetry {
 
     let cell = window.get(key);
     if (!cell) {
-      cell = { count: 0, durationMsSum: 0, durationMsMax: 0, bytesIn: 0, bytesOut: 0, buckets: emptyBuckets() };
+      cell = {
+        count: 0,
+        durationMsSum: 0,
+        durationMsMax: 0,
+        bytesIn: 0,
+        bytesOut: 0,
+        buckets: emptyBuckets(),
+        gatewayBuckets: emptyBuckets(),
+        backendMsSum: 0,
+        backendCount: 0,
+      };
       window.set(key, cell);
     }
     cell.count++;
@@ -113,12 +147,32 @@ export class InstanceTelemetry {
     cell.bytesOut += input.bytesOut;
     cell.buckets[bucketIndex(input.durationMs)]!++;
 
-    const target = cell;
-    return {
-      addBytesOut: (bytes: number) => {
-        target.bytesOut += bytes;
-      },
-    };
+    /*
+     * Latency attribution, and the one outcome it does not apply to.
+     *
+     * `stream-closed` reports how long a WebSocket or SSE connection stayed open. That is a real
+     * and useful duration, and it is not a proxying latency: a two-hour stream would sit in the
+     * last bucket of the gateway-cost histogram and move a p99 that is supposed to answer "what
+     * does this gateway add to a request". So such a record counts toward requests, bytes, status
+     * and total latency as it always has, and is **absent** from both attributions rather than
+     * given a substituted value — the same rule the backend clock already follows. The percentile
+     * is then taken over the requests that have an attribution, and the count that qualifies it is
+     * reported beside it.
+     */
+    if (input.outcome === "stream-closed") return handleFor(cell);
+
+    const backendMs = input.backendMs ?? null;
+    if (backendMs !== null) {
+      cell.backendMsSum += backendMs;
+      cell.backendCount++;
+    }
+    // Subtracted per request, before bucketing, for the reason `gatewayBuckets` states: the
+    // percentile of a difference is not the difference of two percentiles. Clamped at zero because
+    // the two clocks are read either side of the response and a fast backend can legitimately land
+    // a hair above the total.
+    cell.gatewayBuckets[bucketIndex(Math.max(0, input.durationMs - (backendMs ?? 0)))]!++;
+
+    return handleFor(cell);
   }
 
   private seriesCount(): number {
@@ -161,6 +215,9 @@ export class InstanceTelemetry {
             bytesIn: cell.bytesIn,
             bytesOut: cell.bytesOut,
             buckets: addBuckets(emptyBuckets(), cell.buckets),
+            gatewayBuckets: addBuckets(emptyBuckets(), cell.gatewayBuckets),
+            backendMsSum: cell.backendMsSum,
+            backendCount: cell.backendCount,
           };
           return series;
         }),

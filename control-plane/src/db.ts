@@ -52,6 +52,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 11, name: "a gateway's settings belong to the fleet", file: "schema-011.sql" },
   { version: 12, name: "a gateway has no kind", file: "schema-012.sql" },
   { version: 13, name: "egress is denied by rule, not allowed by list", file: "schema-013.sql" },
+  { version: 14, name: "the gateway's own latency, below a millisecond", file: "schema-014.sql" },
 ];
 
 /**

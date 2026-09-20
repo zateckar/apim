@@ -9,14 +9,17 @@ import {
   type TelemetryTotals,
 } from "../api";
 import { Panel, Notice, Pill, StackedBars, useAsync } from "../components";
+import { formatDuration } from "../lib/datetime";
 
 /**
  * G4: gateway telemetry, in the control plane.
  *
- * Two things this view refuses to do, both deliberate. It never collapses traffic into a single
+ * Three things this view refuses to do, all deliberate. It never collapses traffic into a single
  * "errors" number — a 429 the gateway produced and a 500 the backend produced are different
- * signals. And it labels every percentile approximate, because they are interpolated from 15
- * histogram buckets; claiming an exact p99 from that would be a lie.
+ * signals. It labels every percentile approximate, because they are interpolated from histogram
+ * buckets; claiming an exact p99 from that would be a lie. And it never shows a latency without
+ * saying whose it was: every percentile here is paired with the gateway's own share of it, because
+ * "p95 is 500 ms" is not a finding until you know whether 499 of those milliseconds were a backend.
  */
 const WINDOWS = [
   { label: "15 min", value: 15 },
@@ -32,8 +35,13 @@ const WINDOWS = [
  */
 const SERVED = new Set(["ok", "cache-hit", "stream-closed", "rpc-error"]);
 
+/**
+ * `formatDuration` decides how a duration reads, here as everywhere else — a screen that formatted
+ * its own would be the second place the sub-millisecond rule had to be got right. Only the empty
+ * cell differs: a table says "—" where a KPI tile says "n/a".
+ */
 function ms(value: number | null): string {
-  return value === null ? "—" : `${value} ms`;
+  return value === null ? "—" : formatDuration(value);
 }
 
 function bytes(value: number): string {
@@ -68,6 +76,18 @@ function Totals({ totals }: { totals: TelemetryTotals }) {
       <div className="stat">
         <span className="value">{ms(totals.p95Ms)}</span>
         <span className="label">p95 (approx.)</span>
+      </div>
+      {/* Beside the totals rather than in a panel of its own: the pair is the reading. A p95 of
+          500 ms next to a gateway p95 of 0.4 ms is a backend to go and look at; the same p95 next
+          to a gateway p95 of 480 ms is this platform's problem. Separating them onto two screens
+          would be separating a number from the only thing that makes it actionable. */}
+      <div className="stat">
+        <span className="value">{ms(totals.gatewayP95Ms)}</span>
+        <span className="label">p95 in the gateway</span>
+      </div>
+      <div className="stat">
+        <span className="value">{ms(totals.avgBackendMs)}</span>
+        <span className="label">avg backend</span>
       </div>
       <div className="stat">
         <span className="value">{bytes(totals.bytesOut)}</span>
@@ -184,6 +204,7 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
               <th className="right">Upstream</th>
               <th className="right">p50</th>
               <th className="right">p95</th>
+              <th className="right">p95 in GW</th>
             </tr>
           </thead>
           <tbody>
@@ -197,11 +218,12 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
                 <td className="right upstream">{row.upstreamErrors.toLocaleString()}</td>
                 <td className="right">{ms(row.p50Ms)}</td>
                 <td className="right">{ms(row.p95Ms)}</td>
+                <td className="right">{ms(row.gatewayP95Ms)}</td>
               </tr>
             ))}
             {resources.data?.items.length === 0 && (
               <tr>
-                <td colSpan={8} className="muted">
+                <td colSpan={9} className="muted">
                   No traffic in this window.
                 </td>
               </tr>
@@ -220,6 +242,7 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
               <th className="right">Requests</th>
               <th className="right">Rejected</th>
               <th className="right">p95</th>
+              <th className="right">p95 in GW</th>
             </tr>
           </thead>
           <tbody>
@@ -230,11 +253,12 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
                 <td className="right">{row.requests.toLocaleString()}</td>
                 <td className="right rejected">{row.gatewayRejections.toLocaleString()}</td>
                 <td className="right">{ms(row.p95Ms)}</td>
+                <td className="right">{ms(row.gatewayP95Ms)}</td>
               </tr>
             ))}
             {consumers.data?.items.length === 0 && (
               <tr>
-                <td colSpan={5} className="muted">
+                <td colSpan={6} className="muted">
                   No authenticated traffic in this window.
                 </td>
               </tr>
@@ -255,6 +279,7 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
               <th className="right">Requests</th>
               <th className="right">Share</th>
               <th className="right">p95</th>
+              <th className="right">p95 in GW</th>
               <th className="right">RSS</th>
               <th className="right">Uptime</th>
               <th>Dropped</th>
@@ -269,6 +294,10 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
                 <td className="right">{row.requests.toLocaleString()}</td>
                 <td className="right">{(row.share * 100).toFixed(0)}%</td>
                 <td className="right">{ms(row.p95Ms)}</td>
+                {/* Per replica, because this is where a slow *instance* shows up: one gateway
+                    adding 40 ms while its siblings add 0.4 is a machine to go and look at, and
+                    nothing else on this screen would distinguish it from a slow backend. */}
+                <td className="right">{ms(row.gatewayP95Ms)}</td>
                 <td className="right">
                   {row.process?.rssBytes ? bytes(row.process.rssBytes) : "—"}
                 </td>
@@ -285,9 +314,24 @@ export function TelemetryView({ meta, environment }: { meta: Meta; environment: 
           </tbody>
         </table>
         <p className="hint">
-          Percentiles are interpolated inside histogram buckets and are approximate. Drop counters
-          are shown rather than assumed to be zero: silent truncation would read as "that traffic
-          did not happen".
+          Percentiles are interpolated inside histogram buckets and are approximate; the buckets go
+          down to 0.25 ms, so a gateway answering in a fraction of a millisecond is reported as one
+          rather than rounded up to 1 ms. <strong>p95 in GW</strong> is the gateway's own share —
+          each request's total minus its backend call, bucketed per request, so it is the percentile
+          of the difference rather than the difference of two percentiles. A request the gateway
+          answered without a backend contributes all of its time; a stream contributes none of it,
+          because a connection's lifetime is not a proxying latency.
+          {summary.data && summary.data.totals.gatewayAttributed < summary.data.totals.requests && (
+            <>
+              {" "}
+              {summary.data.totals.gatewayAttributed.toLocaleString()} of{" "}
+              {summary.data.totals.requests.toLocaleString()} requests in this window carry that
+              attribution — the rest are streams, or were recorded before this gateway could report
+              it.
+            </>
+          )}{" "}
+          Drop counters are shown rather than assumed to be zero: silent truncation would read as
+          "that traffic did not happen".
         </p>
       </Panel>
     </>

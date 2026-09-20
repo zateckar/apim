@@ -24,7 +24,8 @@ where that line is drawn and why. Its own bounds arrive in the document like eve
 
 #### Scenario: A bound is needed
 
-- GIVEN any concurrency ceiling, body cap, cache size, telemetry bound or access-log switch
+- GIVEN any concurrency ceiling, body cap, cache size, telemetry bound, access-log switch or
+  timing disclosure
 - WHEN the gateway enforces it
 - THEN the value SHALL be the document's `settings` block, resolved for this gateway by the control
   plane
@@ -68,6 +69,9 @@ Control-plane downtime SHALL never be a traffic outage.
 - THEN the instance SHALL keep serving the configuration it last activated
 - AND the last good configuration SHALL be persisted to `GATEWAY_CONFIG_CACHE` and reloaded across
   restarts
+- AND a cache file written before a setting existed SHALL have that setting filled from the build's
+  default on reload, so an upgraded binary starting into an outage does not read a key that is not
+  there and get `undefined` where the block is supposed to be complete
 
 #### Scenario: A time-bounded permission would outlive the outage
 
@@ -606,6 +610,88 @@ whoever sent the request — and it is the default unless the process says other
 - AND the `telemetry` setting SHALL be able to switch counting off for a gateway, which blanks the
   Telemetry view for it and hands the response body through rather than pulling it through a
   counter
+
+#### Scenario: The gateway's own share is counted separately from the backend's
+
+- GIVEN a finished request with a total duration and, where there was one, a backend duration
+- WHEN it is counted
+- THEN it SHALL fall into a bucket of the total-latency histogram **and** into a bucket of a second
+  histogram over `total − backend`, subtracted per request before bucketing
+- AND the reason SHALL be that the p95 of a difference is not the difference of two percentiles, so
+  a screen that subtracted an aggregate backend figure from an aggregate total would report a
+  number no request experienced
+- AND a request with no backend leg — no route matched, the key was refused, the cache answered —
+  SHALL attribute its whole duration to the gateway, because that is where the whole duration went
+- AND the sum and count of backend durations SHALL be carried beside them, the count being the
+  requests that had a backend leg rather than the series total, so an average is not diluted by
+  rejections
+
+#### Scenario: A duration is recorded
+
+- GIVEN any measured duration on this path
+- WHEN it is written to a counter, a log line or a header
+- THEN it SHALL keep three decimal places rather than be rounded to a whole millisecond
+- AND the reason SHALL be that the figure the estate is trying to hold below one millisecond cannot
+  be reported by a function whose smallest non-zero output is one millisecond
+
+#### Scenario: A report arrives from a gateway built against a shorter histogram
+
+- GIVEN counters from a build whose bucket array was shorter
+- WHEN they are folded into a rollup
+- THEN the shorter array SHALL be widened at the **low** end with zeroes and folded
+- AND nothing SHALL be redistributed into the new buckets, because a request counted under a
+  one-millisecond ceiling cannot be known to have been under half of one, and inventing that
+  precision would make a fleet mid-upgrade look faster than it is
+
+### Requirement: Tell a caller what this gateway cost it, only when the estate asks
+
+A caller measuring a gateway over a real network cannot separate the pipeline from the wire: time
+to first byte contains DNS, TCP, TLS, both crossings and the backend, and on a real deployment the
+pipeline is a fraction of a percent of it. The gateway already computes both halves for its own
+telemetry, so it SHALL be able to state them in the response — behind a setting, because the
+backend's timing is not the caller's business by default.
+
+#### Scenario: The setting is off
+
+- GIVEN the `serverTiming` setting off, which is its default
+- WHEN any request is answered — served, refused by the gateway, or failed upstream
+- THEN no `Server-Timing` header SHALL be present
+
+#### Scenario: A proxied request is answered
+
+- GIVEN the setting on
+- WHEN a request that reached a backend is answered
+- THEN the response SHALL carry `Server-Timing: gw;dur=<total − backend>, backend;dur=<backend>`
+- AND both figures SHALL be the same measurements the access log and telemetry record for that
+  request, so a caller's subtraction and the estate's dashboard cannot disagree
+
+#### Scenario: The gateway wrote the answer itself
+
+- GIVEN the setting on
+- WHEN an answer the gateway produced without a backend is returned
+- THEN the header SHALL carry `gw` alone
+- AND it SHALL NOT carry `backend;dur=0`, because a zero reads as "the backend answered instantly"
+  and the honest statement is that no backend was involved
+
+#### Scenario: A response is streamed
+
+- GIVEN the setting on and a response the gateway does not buffer — an event stream, or a body
+  handed straight through
+- WHEN the headers are sent
+- THEN the header SHALL carry the time to the **first byte**, because a trailer arriving after the
+  body is not something every caller can read
+- AND that SHALL be the right figure rather than an approximation of one, because everything after
+  the first byte is the backend's pace rather than this gateway's
+- AND the gateway SHALL NOT delay the first byte in order to report a better number
+
+#### Scenario: A connection is upgraded
+
+- GIVEN the setting on and a WebSocket upgrade
+- WHEN the `101` is sent
+- THEN it SHALL carry no `Server-Timing`
+- AND the reason SHALL be the same one that keeps a stream's duration out of both latency
+  attributions: how long the client stayed is neither this gateway's cost nor the backend's, and a
+  duration stamped at the `101` would describe a session that has not happened yet
 
 #### Scenario: A JSON-RPC response carries an error
 

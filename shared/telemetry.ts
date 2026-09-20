@@ -115,11 +115,41 @@ export const GATEWAY_REJECTIONS: readonly Outcome[] = OUTCOMES.filter(
  * Fixed boundaries in milliseconds, last bucket unbounded. Percentiles are interpolated inside
  * the containing bucket, which is honest for a dashboard and stated as approximate wherever it
  * is shown.
+ *
+ * **The first two bounds are sub-millisecond, and that is the point.** The gateway's own work on a
+ * rejection or a cached answer is a few hundred microseconds — `reports/perf-report.md` measures
+ * the proxy overhead at 0.95 ms p50 against a 0.12 ms backend, and a deployed instance answers a
+ * no-route 404 in about 0.34 ms. While the lowest bound was 1 ms, every one of those landed in
+ * bucket 0 and the dashboard could only ever say "1 ms": the platform had no instrument capable of
+ * observing its own stated latency target. 0.25 and 0.5 give three buckets below a millisecond,
+ * which is enough to tell 0.3 ms from 0.9 ms — the distinction the target is made of.
+ *
+ * Durations are therefore recorded **fractional** (see `roundMs`). Rounding to an integer before
+ * bucketing would put every sub-millisecond request in bucket 0 again whatever the bounds said.
  */
 export const BUCKET_BOUNDS_MS = [
-  1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000, 30_000,
+  0.25, 0.5, 1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10_000, 30_000,
 ] as const;
 export const BUCKET_COUNT = BUCKET_BOUNDS_MS.length + 1;
+
+/**
+ * The width before the two sub-millisecond bounds were added. A stored `buckets_json` of exactly
+ * this length was written by a build whose index 0 meant "≤ 1 ms" — which is this build's index 2 —
+ * so it is widened by prepending two empty buckets rather than read as if the indices still lined
+ * up. Migration 14 does this once for the rows already in the database; `widenBuckets` is here so
+ * the one rule lives beside the bounds it depends on, and so a test can state it.
+ */
+export const LEGACY_BUCKET_COUNT = 15;
+
+/**
+ * A legacy array carried forward losslessly: everything a 15-bucket row counted as "≤ 1 ms" is
+ * still counted as "≤ 1 ms", and nothing claims to know which of the three sub-millisecond buckets
+ * it belonged to — because nothing does.
+ */
+export function widenBuckets(from: readonly number[]): number[] {
+  if (from.length !== LEGACY_BUCKET_COUNT) return [...from];
+  return [0, 0, ...from];
+}
 
 export function bucketIndex(durationMs: number): number {
   for (let i = 0; i < BUCKET_BOUNDS_MS.length; i++) {
@@ -132,9 +162,22 @@ export function emptyBuckets(): number[] {
   return new Array(BUCKET_COUNT).fill(0);
 }
 
-export function addBuckets(into: number[], from: number[]): number[] {
-  for (let i = 0; i < BUCKET_COUNT; i++) into[i] = (into[i] ?? 0) + (from[i] ?? 0);
+export function addBuckets(into: number[], from: readonly number[]): number[] {
+  const source = widenBuckets(from);
+  for (let i = 0; i < BUCKET_COUNT; i++) into[i] = (into[i] ?? 0) + (source[i] ?? 0);
   return into;
+}
+
+/**
+ * Milliseconds at microsecond resolution.
+ *
+ * Durations used to be `Math.round`ed to whole milliseconds at the point they were measured, which
+ * threw away the only digits that matter to a gateway whose whole job is measured in fractions of
+ * one. Three decimal places is where `performance.now()` stops being meaningful anyway, and it
+ * keeps a JSON line from carrying seventeen digits of float noise.
+ */
+export function roundMs(ms: number): number {
+  return Math.round(ms * 1000) / 1000;
 }
 
 /**
@@ -153,7 +196,10 @@ export function percentile(buckets: number[], q: number): number | null {
       const high = i === BUCKET_BOUNDS_MS.length ? BUCKET_BOUNDS_MS[i - 1]! * 2 : BUCKET_BOUNDS_MS[i]!;
       if (count === 0) return high;
       const within = (target - cumulative) / count;
-      return Math.round(low + (high - low) * within);
+      // `roundMs`, not `Math.round`: a p50 that falls in the 0–0.25 ms bucket is the answer the
+      // sub-millisecond bounds exist to produce, and rounding it to a whole millisecond here would
+      // report it as 0 and undo them.
+      return roundMs(low + (high - low) * within);
     }
     cumulative += count;
   }
@@ -179,7 +225,29 @@ export interface TelemetrySeries {
   /** Bytes actually read from the client, so a rejection before the proxy reports 0. */
   bytesIn: number;
   bytesOut: number;
+  /** The distribution of total latency: what the caller waited for, backend included. */
   buckets: number[];
+  /**
+   * The distribution of `durationMs − backendMs` — the gateway's own contribution, per request.
+   *
+   * A histogram of its own rather than a subtraction of two, because the difference of two
+   * percentiles is not the percentile of the difference: a p95 of total minus a p95 of backend
+   * would pair the slowest requests with an unrelated request's backend time and answer a question
+   * nobody asked. Subtracted per request and bucketed here, a p95 means "95% of requests spent no
+   * more than this in the gateway", which is the claim the sub-millisecond bounds exist to support.
+   *
+   * A request that never reached a backend contributes its whole duration, which is correct: all of
+   * it was the gateway's.
+   */
+  gatewayBuckets: number[];
+  /**
+   * The backend's share, summed, and the number of requests that actually made a backend call.
+   * Two fields because a rejection has no backend time and must not be averaged in as a zero — a
+   * route answering half its traffic from cache would otherwise report a backend twice as fast as
+   * it is.
+   */
+  backendMsSum: number;
+  backendCount: number;
 }
 
 export interface TelemetryWindow {

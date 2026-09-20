@@ -371,6 +371,18 @@ export interface TelemetryTotals {
   p50Ms: number | null;
   p95Ms: number | null;
   p99Ms: number | null;
+  /**
+   * What the gateway itself added, as against `p50Ms`/`p95Ms`/`p99Ms`, which are what the caller
+   * waited for. `duration − backend` subtracted per request on the instance and bucketed there, so
+   * these are percentiles of the difference rather than a difference of percentiles.
+   */
+  gatewayP50Ms: number | null;
+  gatewayP95Ms: number | null;
+  gatewayP99Ms: number | null;
+  /** How many of `requests` carry that attribution — see the note on the screen. */
+  gatewayAttributed: number;
+  avgBackendMs: number | null;
+  backendCount: number;
   approximate: boolean;
 }
 
@@ -911,6 +923,12 @@ export interface DashboardTraffic {
   p50Ms: number | null;
   p95Ms: number | null;
   p99Ms: number | null;
+  gatewayP50Ms: number | null;
+  gatewayP95Ms: number | null;
+  gatewayP99Ms: number | null;
+  gatewayAttributed: number;
+  avgBackendMs: number | null;
+  backendCount: number;
   approximate: boolean;
   truncated: boolean;
   series: Array<{

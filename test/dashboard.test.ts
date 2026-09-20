@@ -6,7 +6,7 @@ import {
   type AttentionCode,
   type AttentionRow,
 } from "../shared/attention.ts";
-import { emptyBuckets, windowStartOf, type TelemetryReport } from "../shared/telemetry.ts";
+import { bucketIndex, emptyBuckets, windowStartOf, type TelemetryReport } from "../shared/telemetry.ts";
 import { makeCp, poll, publishApi, startBackend, type TestCp } from "./helpers.ts";
 import { runDueJobs } from "../control-plane/src/jobs.ts";
 
@@ -160,7 +160,7 @@ describe("the window and the numbers", () => {
 
   function report(resourceId: string, count: number): TelemetryReport {
     const buckets = emptyBuckets();
-    buckets[6] = count;
+    buckets[bucketIndex(60)] = count;
     return {
       droppedSeries: 0,
       droppedWindows: 0,
@@ -179,6 +179,15 @@ describe("the window and the numbers", () => {
               bytesIn: 0,
               bytesOut: count * 100,
               buckets,
+              // The 60 ms above was all the backend's, so this reports a gateway that added
+              // nothing measurable — which is what the dashboard should then show.
+              gatewayBuckets: (() => {
+                const gw = emptyBuckets();
+                gw[bucketIndex(0.4)] = count;
+                return gw;
+              })(),
+              backendMsSum: count * 59.6,
+              backendCount: count,
             },
           ],
         },
@@ -312,6 +321,9 @@ describe("every list is bounded", () => {
         bytesIn: 0,
         bytesOut: 0,
         buckets,
+        gatewayBuckets: buckets,
+        backendMsSum: 0,
+        backendCount: 0,
       });
     }
     await poll(cp, { telemetry: { droppedSeries: 0, droppedWindows: 0, windows: [{ windowStart, series }] } });

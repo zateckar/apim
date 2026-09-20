@@ -51,9 +51,18 @@ export function formatClock(iso: string | null | undefined): string {
   return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-/** `125 ms`, `1.4 s`. Rounded, because a sub-millisecond figure is noise at this scale. */
+/**
+ * `0.34 ms`, `125 ms`, `1.4 s`.
+ *
+ * This used to round everything to whole milliseconds, on the reasoning that a sub-millisecond
+ * figure is noise at this scale. That is true of a job's duration and false of the one number this
+ * platform is judged on: a gateway answering in 0.34 ms rendered as `0 ms`, which reads as "no
+ * data" and is the opposite of the truth. Below a millisecond the fraction *is* the measurement, so
+ * it is shown; at or above one it is the noise it always was, so it is not.
+ */
 export function formatDuration(ms: number | null | undefined): string {
   if (typeof ms !== "number" || !Number.isFinite(ms) || ms < 0) return "n/a";
+  if (ms < 1) return `${ms.toFixed(2)} ms`;
   if (ms < 1000) return `${Math.round(ms)} ms`;
   if (ms < 60_000) return `${(ms / 1000).toFixed(1)} s`;
   return `${Math.round(ms / 60_000)} min`;

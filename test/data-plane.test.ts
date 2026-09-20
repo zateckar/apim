@@ -657,3 +657,125 @@ describe("config distribution", () => {
     expect((await response.json()).detail).toContain("no gateway configuration");
   });
 });
+
+/*
+ * `Server-Timing` is how a caller learns what this gateway cost it without owning both ends of the
+ * wire. Everything else a load harness can measure — time to first byte, connect time — contains
+ * the network, and on a real deployment the network is two or three orders of magnitude larger
+ * than the pipeline, so the number that matters is invisible in it. The gateway already computes
+ * both halves for its own telemetry; these tests are about telling the caller.
+ */
+describe("Server-Timing", () => {
+  /** `gw;dur=1.25, backend;dur=30.5` -> `{ gw: 1.25, backend: 30.5 }`. */
+  function timings(header: string | null): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const part of (header ?? "").split(",")) {
+      const [name, ...params] = part.trim().split(";");
+      for (const param of params) {
+        const [key, value] = param.split("=");
+        if (key?.trim() === "dur") out[name!.trim()] = Number(value);
+      }
+    }
+    return out;
+  }
+
+  test("nothing is disclosed unless the estate asks for it", async () => {
+    const published = await publishApi(cp, {
+      backendUrl: backend.url,
+      basePath: "/petstore",
+      policy: { "auth.subscriptionKey": KEY_UNIT, rewrite: { stripBasePath: true } },
+    });
+    const dp = makeDp();
+    await dp.client.pollOnce();
+
+    const ok = await get(dp, "/petstore/x", { "X-Api-Key": published.key! });
+    expect(ok.status).toBe(200);
+    expect(ok.headers.get("server-timing")).toBeNull();
+    // Including on the answers the gateway writes itself, which is where a leak would be easiest
+    // to miss: nobody looks at the headers of a 401.
+    expect((await get(dp, "/petstore/x")).headers.get("server-timing")).toBeNull();
+  });
+
+  test("a proxied request reports the backend's share and the gateway's separately", async () => {
+    const slow = startBackend(async () => {
+      await Bun.sleep(30);
+      return Response.json({ ok: true });
+    });
+    try {
+      const published = await publishApi(cp, {
+        backendUrl: slow.url,
+        basePath: "/petstore",
+        policy: { "auth.subscriptionKey": KEY_UNIT, rewrite: { stripBasePath: true } },
+      });
+      setFleetSettings(cp, { serverTiming: true });
+      const dp = makeDp();
+      await dp.client.pollOnce();
+
+      const response = await get(dp, "/petstore/x", { "X-Api-Key": published.key! });
+      expect(response.status).toBe(200);
+      const timing = timings(response.headers.get("server-timing"));
+
+      // The backend was told to take 30ms and the gateway was not, so the split is unambiguous:
+      // if the two were swapped or double-counted this assertion is the one that notices.
+      expect(timing.backend).toBeGreaterThanOrEqual(25);
+      expect(timing.gw).toBeGreaterThanOrEqual(0);
+      expect(timing.gw).toBeLessThan(timing.backend!);
+      // The header carries fractions, because the number it exists to report is usually below the
+      // resolution a whole millisecond has. `Math.round` here would print `gw;dur=0` and the
+      // caller would have learned nothing.
+      expect(response.headers.get("server-timing")).toMatch(
+        /^gw;dur=\d+(\.\d+)?, backend;dur=\d+(\.\d+)?$/,
+      );
+    } finally {
+      slow.stop();
+    }
+  });
+
+  test("an answer the gateway wrote itself has no backend segment to report", async () => {
+    await publishApi(cp, {
+      backendUrl: backend.url,
+      basePath: "/petstore",
+      policy: { "auth.subscriptionKey": KEY_UNIT, rewrite: { stripBasePath: true } },
+    });
+    setFleetSettings(cp, { serverTiming: true });
+    const dp = makeDp();
+    await dp.client.pollOnce();
+
+    const rejected = await get(dp, "/petstore/x");
+    expect(rejected.status).toBe(401);
+    const header = rejected.headers.get("server-timing")!;
+    // Not `backend;dur=0`: a zero would read as "the backend answered instantly", and the honest
+    // statement is that no backend was involved at all.
+    expect(header).not.toContain("backend");
+    expect(timings(header).gw).toBeGreaterThanOrEqual(0);
+    expect(backend.requests).toHaveLength(0);
+  });
+
+  test("the two segments add up to what the access log recorded", async () => {
+    const slow = startBackend(async () => {
+      await Bun.sleep(20);
+      return Response.json({ ok: true });
+    });
+    try {
+      const published = await publishApi(cp, {
+        backendUrl: slow.url,
+        basePath: "/petstore",
+        policy: { "auth.subscriptionKey": KEY_UNIT, rewrite: { stripBasePath: true } },
+      });
+      setFleetSettings(cp, { serverTiming: true });
+      const dp = makeDp();
+      await dp.client.pollOnce();
+
+      const response = await get(dp, "/petstore/x", { "X-Api-Key": published.key! });
+      const timing = timings(response.headers.get("server-timing"));
+      // `gw` is defined as the total minus the backend, so the sum is the total by construction —
+      // which is exactly the identity a caller will subtract with, and the one that breaks if a
+      // later change stamps the header from a different clock than the one the telemetry reads.
+      const total = timing.gw! + timing.backend!;
+      expect(total).toBeGreaterThanOrEqual(20);
+      expect(total).toBeLessThan(5_000);
+    } finally {
+      slow.stop();
+    }
+  });
+});

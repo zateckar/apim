@@ -33,6 +33,10 @@ interface BufferedSeries {
   bytesIn: number;
   bytesOut: number;
   buckets: number[];
+  /** `duration − backend` per request, bucketed on the instance. See `TelemetrySeries`. */
+  gatewayBuckets: number[];
+  backendMsSum: number;
+  backendCount: number;
 }
 
 const OVERFLOW_RUN = "overflow";
@@ -87,7 +91,10 @@ export class TelemetryAggregator {
           existing.durationMsMax = Math.max(existing.durationMsMax, series.durationMsMax);
           existing.bytesIn += series.bytesIn;
           existing.bytesOut += series.bytesOut;
+          existing.backendMsSum += series.backendMsSum ?? 0;
+          existing.backendCount += series.backendCount ?? 0;
           addBuckets(existing.buckets, series.buckets ?? []);
+          addBuckets(existing.gatewayBuckets, series.gatewayBuckets ?? []);
           continue;
         }
         this.buffer.set(key, {
@@ -105,6 +112,9 @@ export class TelemetryAggregator {
           bytesIn: series.bytesIn,
           bytesOut: series.bytesOut,
           buckets: addBuckets(emptyBuckets(), series.buckets ?? []),
+          gatewayBuckets: addBuckets(emptyBuckets(), series.gatewayBuckets ?? []),
+          backendMsSum: series.backendMsSum ?? 0,
+          backendCount: series.backendCount ?? 0,
         });
       }
       if (window.windowStart < currentWindow) accepted.push(window.windowStart);
@@ -150,8 +160,9 @@ export class TelemetryAggregator {
     const upsert = this.db.query(
       `INSERT INTO telemetry_rollup
          (environment, instance_id, run_id, window_start, resource_id, subscription_id,
-          outcome, status, count, duration_ms_sum, duration_ms_max, bytes_in, bytes_out, buckets_json)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          outcome, status, count, duration_ms_sum, duration_ms_max, bytes_in, bytes_out, buckets_json,
+          gateway_buckets_json, backend_ms_sum, backend_count)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT (environment, instance_id, run_id, window_start, resource_id, subscription_id,
                     outcome, status)
        DO UPDATE SET count = excluded.count,
@@ -159,7 +170,10 @@ export class TelemetryAggregator {
                      duration_ms_max = excluded.duration_ms_max,
                      bytes_in = excluded.bytes_in,
                      bytes_out = excluded.bytes_out,
-                     buckets_json = excluded.buckets_json`,
+                     buckets_json = excluded.buckets_json,
+                     gateway_buckets_json = excluded.gateway_buckets_json,
+                     backend_ms_sum = excluded.backend_ms_sum,
+                     backend_count = excluded.backend_count`,
     );
 
     const write = this.db.transaction((rows: BufferedSeries[]) => {
@@ -179,6 +193,9 @@ export class TelemetryAggregator {
           row.bytesIn,
           row.bytesOut,
           JSON.stringify(row.buckets),
+          JSON.stringify(row.gatewayBuckets),
+          row.backendMsSum,
+          row.backendCount,
         );
       }
     });

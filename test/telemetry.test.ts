@@ -1,14 +1,20 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { pruneOldRows } from "../control-plane/src/telemetry.ts";
 import {
+  addBuckets,
+  BUCKET_COUNT,
+  bucketIndex,
   emptyBuckets,
   GATEWAY_REJECTIONS,
+  LEGACY_BUCKET_COUNT,
   OUTCOMES,
   percentile,
   SERVED_OUTCOMES,
+  widenBuckets,
   windowStartOf,
   type Outcome,
   type TelemetryReport,
+  type TelemetrySeries,
 } from "../shared/telemetry.ts";
 import {
   makeCp,
@@ -60,9 +66,33 @@ const STATUS_IN_PATH_SPEC = {
   },
 };
 
+/**
+ * One series, with the latency attribution filled in from the totals it already states.
+ *
+ * Here so the fixtures below say what they are testing rather than restating three fields nobody
+ * in them cares about — and so adding a fourth is one edit rather than nine.
+ */
+function seriesOf(partial: Partial<TelemetrySeries> & { count: number }): TelemetrySeries {
+  return {
+    resourceId: "",
+    subscriptionId: "",
+    outcome: "ok",
+    status: 200,
+    durationMsSum: partial.count,
+    durationMsMax: 1,
+    bytesIn: 0,
+    bytesOut: 0,
+    buckets: emptyBuckets(),
+    gatewayBuckets: emptyBuckets(),
+    backendMsSum: 0,
+    backendCount: 0,
+    ...partial,
+  };
+}
+
 function report(count: number, overrides: Record<string, unknown> = {}): TelemetryReport {
   const buckets = emptyBuckets();
-  buckets[6] = count;
+  buckets[bucketIndex(60)] = count;
   return {
     droppedSeries: 0,
     droppedWindows: 0,
@@ -70,19 +100,14 @@ function report(count: number, overrides: Record<string, unknown> = {}): Telemet
       {
         windowStart: CLOSED_WINDOW,
         series: [
-          {
-            resourceId: "",
-            subscriptionId: "",
-            outcome: "ok",
-            status: 200,
+          seriesOf({
             count,
             durationMsSum: count * 60,
             durationMsMax: 90,
-            bytesIn: 0,
             bytesOut: count * 100,
             buckets,
             ...overrides,
-          },
+          }),
         ],
       },
     ],
@@ -124,20 +149,7 @@ describe("the report and the flush", () => {
         windows: [
           {
             windowStart: open,
-            series: [
-              {
-                resourceId: "",
-                subscriptionId: "",
-                outcome: "ok",
-                status: 200,
-                count: 1,
-                durationMsSum: 1,
-                durationMsMax: 1,
-                bytesIn: 0,
-                bytesOut: 0,
-                buckets: emptyBuckets(),
-              },
-            ],
+            series: [seriesOf({ count: 1 })],
           },
         ],
       },
@@ -258,9 +270,9 @@ describe("reading telemetry back", () => {
         {
           windowStart: CLOSED_WINDOW,
           series: [
-            { resourceId: "", subscriptionId: "", outcome: "ok", status: 200, count: 10, durationMsSum: 100, durationMsMax: 20, bytesIn: 0, bytesOut: 0, buckets },
-            { resourceId: "", subscriptionId: "", outcome: "rate-limited", status: 429, count: 3, durationMsSum: 3, durationMsMax: 2, bytesIn: 0, bytesOut: 0, buckets },
-            { resourceId: "", subscriptionId: "", outcome: "upstream-error", status: 500, count: 2, durationMsSum: 40, durationMsMax: 30, bytesIn: 0, bytesOut: 0, buckets },
+            seriesOf({ outcome: "ok", status: 200, count: 10, durationMsSum: 100, durationMsMax: 20, buckets }),
+            seriesOf({ outcome: "rate-limited", status: 429, count: 3, durationMsSum: 3, durationMsMax: 2, buckets }),
+            seriesOf({ outcome: "upstream-error", status: 500, count: 2, durationMsSum: 40, durationMsMax: 30, buckets }),
           ],
         },
       ],
@@ -287,18 +299,8 @@ describe("reading telemetry back", () => {
   test("a cache hit, a closed stream and an rpc-error are served requests, not rejections", async () => {
     const buckets = emptyBuckets();
     buckets[4] = 1;
-    const line = (outcome: Outcome, status: number, count: number) => ({
-      resourceId: "",
-      subscriptionId: "",
-      outcome,
-      status,
-      count,
-      durationMsSum: count,
-      durationMsMax: 2,
-      bytesIn: 0,
-      bytesOut: 0,
-      buckets,
-    });
+    const line = (outcome: Outcome, status: number, count: number) =>
+      seriesOf({ outcome, status, count, durationMsMax: 2, buckets });
 
     await poll(cp, {
       telemetry: {
@@ -410,14 +412,52 @@ describe("reading telemetry back", () => {
   test("percentiles interpolate inside a bucket and are null with no data", () => {
     expect(percentile(emptyBuckets(), 0.5)).toBeNull();
     const buckets = emptyBuckets();
-    buckets[0] = 100; // everything at or under 1 ms
-    expect(percentile(buckets, 0.5)).toBe(1);
+    // Addressed through `bucketIndex` rather than by number: the bounds gained two sub-millisecond
+    // entries and every literal index in this file moved by two, silently and without failing.
+    // The claim is that the answer lands *inside* the bucket everything was counted in — it used
+    // to read `toBe(1)`, which was the old bucket's upper bound reached by rounding 0.5 up, and
+    // stating a bound rather than an interpolation is what made it survive the bounds changing.
+    buckets[bucketIndex(1)] = 100;
+    const median = percentile(buckets, 0.5)!;
+    expect(median).toBeGreaterThan(0.5);
+    expect(median).toBeLessThanOrEqual(1);
     const spread = emptyBuckets();
-    spread[6] = 90; // <= 100 ms
-    spread[9] = 10; // <= 1000 ms
+    spread[bucketIndex(100)] = 90;
+    spread[bucketIndex(1000)] = 10;
     const p95 = percentile(spread, 0.95)!;
     expect(p95).toBeGreaterThan(500);
     expect(p95).toBeLessThanOrEqual(1000);
+  });
+
+  test("the histogram can tell a fast gateway from a one-millisecond one", () => {
+    // The defect this exists to prevent: with a lowest bound of 1 ms every one of these landed in
+    // bucket 0 and the dashboard could only ever answer "1 ms", so the platform had no instrument
+    // capable of observing its own latency target.
+    expect(bucketIndex(0.2)).toBe(0);
+    expect(bucketIndex(0.34)).toBe(1);
+    expect(bucketIndex(0.9)).toBe(2);
+    expect(new Set([bucketIndex(0.2), bucketIndex(0.34), bucketIndex(0.9)]).size).toBe(3);
+
+    const fast = emptyBuckets();
+    fast[bucketIndex(0.34)] = 100;
+    const slow = emptyBuckets();
+    slow[bucketIndex(0.9)] = 100;
+    expect(percentile(fast, 0.5)).toBeLessThan(percentile(slow, 0.5)!);
+    expect(percentile(fast, 0.5)).toBeLessThan(1);
+  });
+
+  test("a 15-bucket array from an older build keeps the meaning it was written with", () => {
+    // Index 0 meant "<= 1 ms" then and means "<= 0.25 ms" now, so the counts move rather than the
+    // bounds being reinterpreted underneath them. Migration 14 applies the same rule to stored rows.
+    const legacy = new Array(LEGACY_BUCKET_COUNT).fill(0);
+    legacy[0] = 40; // <= 1 ms, under the old bounds
+    legacy[6] = 60; // <= 100 ms, under the old bounds
+    const widened = widenBuckets(legacy);
+    expect(widened).toHaveLength(BUCKET_COUNT);
+    expect(widened[bucketIndex(1)]).toBe(40);
+    expect(widened[bucketIndex(100)]).toBe(60);
+    // Folded into a current-width total without shifting anything by two.
+    expect(addBuckets(emptyBuckets(), legacy)[bucketIndex(100)]).toBe(60);
   });
 });
 
@@ -473,6 +513,100 @@ describe("the gateway counts what it serves", () => {
     } finally {
       cpServer.stop();
       backend.stop();
+    }
+  });
+
+  /**
+   * The estate can tell a slow gateway from a slow backend.
+   *
+   * Before this, `telemetry_rollup` held total latency and nothing else, so an API sitting at a p95
+   * of half a second looked identical whether the gateway or the upstream had spent it — and the
+   * number an operator needed was the one the platform threw away, having measured it per request
+   * and written it only into the access log.
+   */
+  test("a slow backend moves total latency and leaves the gateway's own share alone", async () => {
+    const backend = startBackend(async () => {
+      await Bun.sleep(120);
+      return new Response("ok");
+    });
+    const cpServer = serveCp(cp);
+    try {
+      const api = await publishApi(cp, {
+        backendUrl: backend.url,
+        basePath: "/attributed",
+        policy: {
+          "auth.subscriptionKey": { in: "header", name: "X-Api-Key" },
+          rewrite: { stripBasePath: true },
+        },
+      });
+      const dp = makeDp(cpServer.url, cp.token, cp.dir);
+      try {
+        await dp.start();
+        const key = { "x-api-key": api.key! };
+        await dp.fetchHttp(new Request("http://gw/it/solution/attributed/pet", { headers: key }), "127.0.0.1");
+        await dp.fetchHttp(new Request("http://gw/it/solution/attributed/pet", { headers: key }), "127.0.0.1");
+
+        await dp.client.pollOnce();
+        cp.app.telemetry.flushNow();
+        const body = await summary();
+
+        // The caller waited for the backend's 120 ms...
+        expect(body.totals.p95Ms).toBeGreaterThan(100);
+        // ...and essentially none of it was ours. The assertion is deliberately loose at the top —
+        // a loaded CI box is not the place to assert 0.34 ms — but it is far below the total, which
+        // is the whole claim and would have been unstatable before.
+        expect(body.totals.gatewayP95Ms).toBeLessThan(50);
+        expect(body.totals.gatewayP95Ms).toBeLessThan(body.totals.p95Ms! / 2);
+        expect(body.totals.avgBackendMs).toBeGreaterThan(100);
+        expect(body.totals.backendCount).toBe(2);
+        expect(body.totals.gatewayAttributed).toBe(2);
+      } finally {
+        dp.stop();
+      }
+    } finally {
+      cpServer.stop();
+      backend.stop();
+    }
+  });
+
+  /**
+   * A request the gateway refuses never reaches a backend, so all of its time is the gateway's —
+   * and it is the shortest path through the pipeline, which makes it the one place a sub-
+   * millisecond bucket has to work or the bounds bought nothing.
+   */
+  test("a rejected request attributes its whole duration to the gateway, in a sub-ms bucket", async () => {
+    const cpServer = serveCp(cp);
+    try {
+      await publishApi(cp, {
+        backendUrl: "http://127.0.0.1:1/never",
+        basePath: "/refused",
+        policy: { "auth.subscriptionKey": { in: "header", name: "X-Api-Key" } },
+      });
+      const dp = makeDp(cpServer.url, cp.token, cp.dir);
+      try {
+        await dp.start();
+        // No key: refused at step 6, the backend is never reached.
+        const res = await dp.fetchHttp(new Request("http://gw/it/solution/refused/pet"), "127.0.0.1");
+        expect(res.status).toBe(401);
+
+        await dp.client.pollOnce();
+        cp.app.telemetry.flushNow();
+        const body = await summary();
+
+        expect(body.totals.gatewayRejections).toBe(1);
+        // No backend call, so nothing is averaged over zero and the whole duration is attributed.
+        expect(body.totals.backendCount).toBe(0);
+        expect(body.totals.avgBackendMs).toBeNull();
+        expect(body.totals.gatewayAttributed).toBe(1);
+        // The point of the exercise: this is reported as the fraction of a millisecond it is,
+        // rather than rounded up into a 1 ms floor that no measurement could see past.
+        expect(body.totals.gatewayP50Ms).toBeLessThan(10);
+        expect(body.totals.avgMs).toBeLessThan(10);
+      } finally {
+        dp.stop();
+      }
+    } finally {
+      cpServer.stop();
     }
   });
 

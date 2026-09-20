@@ -9,6 +9,7 @@ import {
 } from "../../shared/gateway-settings.ts";
 import { canonicalIp, effectiveClientIp, ipInCidr } from "../../shared/net.ts";
 import { DEFAULT_DRAIN_MS, drain, onShutdown } from "../../shared/shutdown.ts";
+import { roundMs } from "../../shared/telemetry.ts";
 import { AccessLogWriter } from "./accesslog.ts";
 import { ArtifactCache } from "./artifacts.ts";
 import { TokenCache } from "./backend-auth.ts";
@@ -573,7 +574,10 @@ export class DataPlane {
         subscriptionId: null,
         outcome,
         status,
-        durationMs: Math.round(performance.now() - started),
+        durationMs: roundMs(performance.now() - started),
+        // No route, so no backend: the whole duration is this gateway's, which is what makes these
+        // two outcomes appear in the gateway-cost histogram rather than being absent from it.
+        backendMs: null,
         bytesIn: 0,
         bytesOut: 0,
       });
@@ -634,6 +638,9 @@ export class DataPlane {
       runId: this.runId,
       trustedPeer: this.config.trustedProxyCidrs.some((cidr) => ipInCidr(clientIp, cidr)),
       clientCertHeaders: this.config.clientCertHeaders,
+      // Read per request rather than captured at construction: the fleet can turn it on for the
+      // duration of a measurement and off again, and a request in flight either way is unaffected.
+      serverTiming: this.settings.serverTiming,
       log: this.accessLog ? (record) => this.accessLog!.write(record) : undefined,
       // Absent when counting is off, which is also what tells the pipeline not to wrap the
       // response body in a counting stream.
@@ -720,6 +727,10 @@ export function startDataPlane(dp: DataPlane) {
                   outcome: "stream-closed",
                   status: 101,
                   durationMs,
+                  // A stream's duration is how long the client stayed, which is neither this
+                  // gateway's cost nor the backend's. `record` excludes `stream-closed` from both
+                  // attributions for that reason — see the note there.
+                  backendMs: null,
                   bytesIn,
                   bytesOut,
                 });

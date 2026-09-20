@@ -79,6 +79,7 @@ export interface GatewaySettings {
   accessLog: boolean;
   accessLogMaxBytes: number;
   accessLogKeep: number;
+  serverTiming: boolean;
 }
 
 export type SettingKey = keyof GatewaySettings;
@@ -253,7 +254,42 @@ export const GATEWAY_SETTING_DEFS: {
     label: "Access log generations",
     purpose: "Rotated files kept, so the log's disk is (generations + 1) × the rotation size.",
   },
+  serverTiming: {
+    env: "DP_SERVER_TIMING",
+    kind: "flag",
+    /*
+     * Off by default, because it is a disclosure: it tells every caller how long this gateway took
+     * and how much of that was its backend.
+     *
+     * Not `sensitive`, though, and the line matters. That flag means "a promise to somebody outside
+     * engineering" — the access log is evidence the estate has undertaken to keep, and losing it is
+     * not recoverable by switching it back on. This is the opposite kind of switch: it exists to be
+     * turned on for the length of a measurement and off again, it is reversible the instant it is
+     * corrected, and the only thing it reveals is two durations to a caller who already knows how
+     * long their own request took. A typed confirmation on every benchmark would be friction
+     * bought at no safety. The write is audited like every other settings write.
+     */
+    default: false,
+    label: "Server-Timing header",
+    purpose:
+      "Answer every request with `Server-Timing: gw;dur=…, backend;dur=…`, so a caller can measure " +
+      "this gateway's own cost without the network between them.",
+  },
 };
+
+/**
+ * Why `serverTiming` is a gateway setting and not a policy unit.
+ *
+ * It looks like it belongs to an API — it changes a response header — but what it discloses is a
+ * property of *this deployment*: how fast this gateway is, and how much of a response its backend
+ * accounted for. An API owner cannot reasonably decide that, and an estate whose answer differed
+ * per API would be one where a benchmark's coverage depended on who had ticked a box. It also has
+ * to be switchable for the duration of a measurement and off again afterwards, across a whole
+ * fleet, without republishing a single API.
+ *
+ * It meets the table's entry criterion exactly: a running instance applies it by assignment, with
+ * nothing preallocated and nothing in flight disturbed.
+ */
 
 export const GATEWAY_SETTING_KEYS = Object.keys(GATEWAY_SETTING_DEFS) as SettingKey[];
 

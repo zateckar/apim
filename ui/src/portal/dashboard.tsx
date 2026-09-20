@@ -127,7 +127,18 @@ export function Dashboard({
         <Kpi
           label="p95 latency"
           value={traffic ? (traffic.p95Ms === null ? "—" : formatDuration(traffic.p95Ms)) : null}
-          hint={traffic?.approximate ? "approximate — from bucketed histograms" : "over the window"}
+          /* The gateway's own share, in the hint rather than as a tile of its own: what an owner
+             opening this page needs is their API's latency, and the one thing they cannot work out
+             from it is how much of it this platform is responsible for. Saying it here answers
+             "is this us or you" without spending a tile on a number that is usually a rounding
+             error — and makes the case where it is *not* a rounding error impossible to miss. */
+          hint={
+            traffic?.gatewayP95Ms != null
+              ? `${formatDuration(traffic.gatewayP95Ms)} of it in the gateway — approximate`
+              : traffic?.approximate
+                ? "approximate — from bucketed histograms"
+                : "over the window"
+          }
         />
       </div>
 

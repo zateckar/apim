@@ -215,8 +215,8 @@ what is in flight.
 - GIVEN an instance serving traffic
 - WHEN it activates a document whose settings differ
 - THEN the concurrency gate, the stream registry, the response cache, the validation pool and
-  queue, the blocking-validation budget, the artifact cache, the telemetry bounds and the JWKS
-  refetch floor SHALL all take the new values
+  queue, the blocking-validation budget, the artifact cache, the telemetry bounds, the JWKS
+  refetch floor and the `Server-Timing` disclosure SHALL all take the new values
 - AND no request in flight SHALL be disturbed
 
 #### Scenario: A ceiling is lowered below what is currently in use
@@ -352,6 +352,16 @@ The portal SHALL offer an administrator one place to read and change every setti
 - WHEN it is switched off
 - THEN it SHALL require the layer's name typed back, and the confirmation SHALL state what stops
   being recorded and for which gateways
+
+#### Scenario: A diagnostic switch is changed
+
+- GIVEN a flag that discloses something but costs nothing to reverse — `serverTiming`
+- WHEN it is switched
+- THEN it SHALL save like any other flag, with no typed confirmation
+- AND the reason SHALL be that `sensitive` marks a promise made to somebody outside engineering,
+  where the cost of being wrong is evidence that no longer exists; a header that can be turned on
+  for the length of a measurement and off again is a different kind of switch, and a typed
+  confirmation on every benchmark would be friction bought at no safety
 - AND switching it back on SHALL be a plain button, because that is the safe direction
 
 #### Scenario: A change is saved

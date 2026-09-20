@@ -3,6 +3,7 @@ import {
   emptyBuckets,
   GATEWAY_REJECTIONS,
   percentile,
+  roundMs,
   SERVED_OUTCOMES,
 } from "../../../shared/telemetry.ts";
 import { badRequest, json, Router, requireAdmin, requireUser, type Ctx } from "../router.ts";
@@ -33,6 +34,9 @@ export interface Row {
   bytes_in: number;
   bytes_out: number;
   buckets_json: string;
+  gateway_buckets_json: string;
+  backend_ms_sum: number;
+  backend_count: number;
 }
 
 /** Aggregating in the process keeps the bucket maths in one place; the window bounds the scan. */
@@ -68,7 +72,8 @@ export function rowsFor(ctx: Ctx, environment: string, sinceIso: string, untilIs
   const rows = ctx.app.db
     .query<Row, [string, string, string, number]>(
       `SELECT window_start, resource_id, subscription_id, instance_id, outcome, status,
-              count, duration_ms_sum, duration_ms_max, bytes_in, bytes_out, buckets_json
+              count, duration_ms_sum, duration_ms_max, bytes_in, bytes_out, buckets_json,
+              gateway_buckets_json, backend_ms_sum, backend_count
          FROM telemetry_rollup
         WHERE environment = ? AND window_start >= ? AND window_start < ?
         ORDER BY window_start
@@ -99,6 +104,10 @@ export interface Totals {
   durationMsSum: number;
   durationMsMax: number;
   buckets: number[];
+  /** The gateway's own contribution, bucketed per request on the instance. */
+  gatewayBuckets: number[];
+  backendMsSum: number;
+  backendCount: number;
 }
 
 export function emptyTotals(): Totals {
@@ -112,6 +121,9 @@ export function emptyTotals(): Totals {
     durationMsSum: 0,
     durationMsMax: 0,
     buckets: emptyBuckets(),
+    gatewayBuckets: emptyBuckets(),
+    backendMsSum: 0,
+    backendCount: 0,
   };
 }
 
@@ -127,12 +139,24 @@ export function fold(into: Totals, row: Row): Totals {
   into.bytesOut += row.bytes_out;
   into.durationMsSum += row.duration_ms_sum;
   into.durationMsMax = Math.max(into.durationMsMax, row.duration_ms_max);
+  into.backendMsSum += row.backend_ms_sum ?? 0;
+  into.backendCount += row.backend_count ?? 0;
   addBuckets(into.buckets, JSON.parse(row.buckets_json) as number[]);
+  // `'[]'` is what a row written before v14 carries, and `addBuckets` folds it as nothing — which
+  // is the correct reading: those requests were counted, and their attribution was never recorded.
+  addBuckets(into.gatewayBuckets, JSON.parse(row.gateway_buckets_json || "[]") as number[]);
   return into;
 }
 
 /** Percentiles are interpolated inside a bucket, so they are labelled approximate everywhere. */
 export function summarise(totals: Totals) {
+  /**
+   * How many requests carry a latency attribution, which is what qualifies the three `gateway*`
+   * percentiles below. It is not `requests`: rows written before v14 have none, and a stream's
+   * duration is deliberately excluded (see `InstanceTelemetry.record`). Reported rather than
+   * inferred, so a percentile drawn from a tenth of the traffic cannot be read as the whole of it.
+   */
+  const attributed = totals.gatewayBuckets.reduce((sum, n) => sum + n, 0);
   return {
     requests: totals.requests,
     ok: totals.ok,
@@ -141,11 +165,26 @@ export function summarise(totals: Totals) {
     errorRate: totals.requests === 0 ? 0 : 1 - totals.ok / totals.requests,
     bytesIn: totals.bytesIn,
     bytesOut: totals.bytesOut,
-    avgMs: totals.requests === 0 ? null : Math.round(totals.durationMsSum / totals.requests),
+    // `roundMs`, not `Math.round`: an estate whose gateway answers in 0.34 ms reported an average
+    // of 0 before this, which reads as "no data" and is the opposite of the truth.
+    avgMs: totals.requests === 0 ? null : roundMs(totals.durationMsSum / totals.requests),
     maxMs: totals.durationMsMax,
     p50Ms: percentile(totals.buckets, 0.5),
     p95Ms: percentile(totals.buckets, 0.95),
     p99Ms: percentile(totals.buckets, 0.99),
+    /**
+     * What this gateway added, as opposed to what the caller waited for. The pair is the whole
+     * point: `p95Ms` of 500 with `gatewayP95Ms` of 0.4 is a slow backend, and the same `p95Ms` with
+     * a `gatewayP95Ms` of 480 is a slow gateway. Before v14 the estate could not tell those apart
+     * from this screen, and the difference is the only actionable thing in the row.
+     */
+    gatewayP50Ms: percentile(totals.gatewayBuckets, 0.5),
+    gatewayP95Ms: percentile(totals.gatewayBuckets, 0.95),
+    gatewayP99Ms: percentile(totals.gatewayBuckets, 0.99),
+    gatewayAttributed: attributed,
+    /** Averaged over the requests that made a backend call, never over the ones that did not. */
+    avgBackendMs: totals.backendCount === 0 ? null : roundMs(totals.backendMsSum / totals.backendCount),
+    backendCount: totals.backendCount,
     approximate: true,
   };
 }

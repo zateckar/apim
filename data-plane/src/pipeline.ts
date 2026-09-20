@@ -32,7 +32,7 @@ import {
 import { joinBackend, stripBasePath } from "../../shared/routing.ts";
 import { actionAgrees, declaredAction, mediaTypeOf } from "../../shared/soap.ts";
 import { baseContext, render, renderDeep, type TemplateContext } from "../../shared/template.ts";
-import type { Outcome } from "../../shared/telemetry.ts";
+import { roundMs, type Outcome } from "../../shared/telemetry.ts";
 import { ipInCidr } from "../../shared/net.ts";
 import { scanEnvelope, XmlError, parseDocument } from "../../shared/xml.ts";
 import { bodyExcerpt, logTimestamp, redactQuery, MAX_LOGGED_BODY_BYTES } from "./accesslog.ts";
@@ -290,7 +290,10 @@ export interface TelemetryRecord {
   subscriptionId: string | null;
   outcome: Outcome;
   status: number;
+  /** Fractional milliseconds. See `roundMs` for why this is not an integer. */
   durationMs: number;
+  /** The backend call's own time, or `null` when this gateway answered without making one. */
+  backendMs: number | null;
   bytesIn: number;
   bytesOut: number;
 }
@@ -335,6 +338,15 @@ export interface PipelineDeps {
   /** True only when the peer is inside TRUSTED_PROXY_CIDRS (design section 8.1). */
   trustedPeer: boolean;
   clientCertHeaders: { dn: string; issuer: string; verify: string; fingerprint: string; san: string };
+  /**
+   * Whether every response carries `Server-Timing` (the `serverTiming` gateway setting).
+   *
+   * What it is for: a caller measuring this gateway's overhead has no other way to separate it from
+   * the network, and the difference is not small — a rig measuring across a WAN attributes two
+   * round trips to the proxy sitting between them. The gateway is the only party holding a clock
+   * with no wire in it, so it is the only party that can answer.
+   */
+  serverTiming: boolean;
   log?: (record: Record<string, unknown>) => void;
   /** Returns a handle for the response bytes, which are only known once the body has streamed. */
   record?: (record: TelemetryRecord) => { addBytesOut: (bytes: number) => void };
@@ -381,16 +393,45 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     failure: string | null;
   } = { requestBody: null, responseBody: null, backendMs: null, failure: null };
 
+  /** Fractional milliseconds since this request arrived. The one clock everything below reads. */
+  const elapsed = (): number => roundMs(performance.now() - started);
+
   const emit = (status: number, outcome: Outcome, bytesOut: number, durationMs?: number) =>
     deps.record?.({
       resourceId: route?.resourceId ?? null,
       subscriptionId: subscription?.id ?? null,
       outcome,
       status,
-      durationMs: durationMs ?? Math.round(performance.now() - started),
+      durationMs: durationMs ?? elapsed(),
+      // Whatever the backend attempt cost, or `null` where there was no attempt — which is what
+      // makes the rest of the duration this gateway's, provably rather than by assumption.
+      backendMs: logged.backendMs,
       bytesIn,
       bytesOut,
     });
+
+  /**
+   * `Server-Timing`, when the fleet has asked for it.
+   *
+   * `gw` is the duration **minus** the backend call, not the total: a caller subtracting a number
+   * this header already gave them would be doing the gateway's arithmetic, and the whole reason the
+   * header exists is that the gateway is the only party that can do it correctly. `backend` is
+   * omitted rather than sent as zero when no backend was called, because a rejection and an
+   * instantaneous upstream are different facts.
+   *
+   * Both clocks stop at the response headers, so they are subtractable: `backendMs` is measured to
+   * the upstream's status line and `durationMs` to the point this gateway hands the response on,
+   * neither including the time a body spends streaming to a slow client.
+   */
+  const stamp = (headers: Headers, durationMs: number): void => {
+    if (!deps.serverTiming) return;
+    const backendMs = logged.backendMs;
+    const gatewayMs = roundMs(Math.max(0, durationMs - (backendMs ?? 0)));
+    headers.set(
+      "server-timing",
+      backendMs === null ? `gw;dur=${gatewayMs}` : `gw;dur=${gatewayMs}, backend;dur=${backendMs}`,
+    );
+  };
 
   /**
    * The one place a line is assembled, for the two paths that write one: a response this gateway
@@ -453,9 +494,11 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     for (const [name, value] of Object.entries(corsOut)) response.headers.set(name, value);
     response.headers.set("x-request-id", deps.requestId);
     const bytesOut = Number(response.headers.get("content-length") ?? "0");
-    // Once, for both readers: the log line and the telemetry cell describe the same request, and
-    // two `performance.now()` calls either side of a `JSON.stringify` describe it differently.
-    const durationMs = Math.round(performance.now() - started);
+    // Once, for all three readers: the log line, the telemetry cell and the `Server-Timing` header
+    // describe the same request, and two `performance.now()` calls either side of a
+    // `JSON.stringify` describe it differently.
+    const durationMs = elapsed();
+    stamp(response.headers, durationMs);
     writeLog({ status: response.status, outcome, note, durationMs });
     emit(response.status, outcome, bytesOut, durationMs);
     return response;
@@ -1459,8 +1502,9 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       try {
         const response = await doFetch(target, init);
         // Headers and status, not the whole body: the same boundary the bulkhead releases on, and
-        // the one an operator means by "how long did the backend take".
-        logged.backendMs = Math.round(performance.now() - attemptStarted);
+        // the one an operator means by "how long did the backend take". Fractional, because it is
+        // subtracted from a fractional total to produce this gateway's own cost.
+        logged.backendMs = roundMs(performance.now() - attemptStarted);
         if (isRetryable(response.status, retries) && attempt + 1 < maxAttempts) {
           deps.breaker.onFailure(breakerKey, breakerSettings);
           lastError = {
@@ -1498,7 +1542,7 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
         }
         const error = err as Error;
         const timedOut = error.name === "TimeoutError" || error.name === "AbortError";
-        logged.backendMs = Math.round(performance.now() - attemptStarted);
+        logged.backendMs = roundMs(performance.now() - attemptStarted);
         /*
          * The transport's own words, kept whole and kept whatever the body window says.
          *
@@ -1639,6 +1683,9 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
         { ...rateHeaders, "retry-after": "5" },
       );
     }
+    // Stamped with the time to the *first* byte, which for a stream is the only latency this
+    // gateway is responsible for: everything after it is the backend's pace, not ours.
+    stamp(responseHeaders, elapsed());
     const counted = emit(status, "ok", 0);
     if (!upstream.body) return new Response(null, { status, headers: responseHeaders });
     const supervised = superviseSse(
@@ -1672,7 +1719,8 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       outStream = taken.overCap ? null : taken.stream;
     }
     const outcome: Outcome = status >= 400 ? "upstream-error" : "ok";
-    const durationMs = Math.round(performance.now() - started);
+    const durationMs = elapsed();
+    stamp(responseHeaders, durationMs);
     writeLog({ status, outcome, durationMs });
     const counted = emit(status, outcome, 0, durationMs);
     if (!outStream) return new Response(null, { status, headers: responseHeaders });
@@ -1727,7 +1775,8 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       // and with the JSON-RPC outcome unclassified, all of which are counted rather than silent.
       deps.counters.sampleDropped();
       const outcome: Outcome = status >= 400 ? "upstream-error" : "ok";
-      const durationMs = Math.round(performance.now() - started);
+      const durationMs = elapsed();
+      stamp(responseHeaders, durationMs);
       writeLog({ status, outcome, durationMs });
       const counted = emit(status, outcome, 0, durationMs);
       if (!read.rest) return new Response(null, { status, headers: responseHeaders });
@@ -1801,7 +1850,8 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
         ? "rpc-error"
         : "ok";
   if (captureBodies) logged.responseBody = bodyExcerpt(outBody);
-  const finalDurationMs = Math.round(performance.now() - started);
+  const finalDurationMs = elapsed();
+  stamp(responseHeaders, finalDurationMs);
   writeLog({ status, outcome: finalOutcome, durationMs: finalDurationMs });
   emit(status, finalOutcome, outBody.byteLength, finalDurationMs);
   return new Response(outBody, { status, headers: responseHeaders });

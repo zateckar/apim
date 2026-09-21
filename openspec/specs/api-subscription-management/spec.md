@@ -41,6 +41,17 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN it SHALL be against a **product** that contains that API
 - AND an API not in any product SHALL show, on its listing, that it is not yet sold anywhere
 
+#### Scenario: A control that starts a subscription is labelled
+
+- GIVEN any control that opens the subscribe dialog or the subscribe wizard, wherever it appears —
+  a subscription list, an API's workspace, the playground
+- WHEN it renders
+- THEN it SHALL be named for the thing being created, **New subscription**, and SHALL NOT name the
+  API as the thing subscribed to
+- AND the reason SHALL be that "Subscribe to this API" states the one thing the model denies: the
+  subscription is held against a product, which is what the dialog then asks the reader to choose
+- AND a control that merely goes looking SHALL say what it will find — a product, not an API
+
 #### Scenario: A product is defined
 
 - GIVEN an owning application
@@ -158,6 +169,35 @@ who may see a key, and what each side of the relationship is allowed to do to th
   applications' products
 - AND never anybody else's
 - AND in neither case any key material
+
+#### Scenario: A subscription list is drawn
+
+- GIVEN a list of subscriptions, on its own screen or on an API's workspace
+- WHEN it renders
+- THEN each subscription SHALL occupy one row whose product, state, holder and purpose read across
+  it rather than one below another
+- AND the purpose SHALL be the field that is clipped when there is no room, with the whole of it
+  available on hover and on the subscription's own screen
+- AND the reason SHALL be that a subscription is four short facts, and giving each of them its own
+  line meant three of them filled a screen
+
+#### Scenario: A subscription list is empty
+
+- GIVEN a subscription list with nothing in it
+- WHEN it renders
+- THEN the empty state SHALL carry the action, and the panel's head SHALL carry none
+- AND the reason SHALL be that the empty state is required to name a next step, so a head action
+  beside it is a second control doing the one thing the screen has to offer
+
+#### Scenario: A publisher's products are listed with their subscribers
+
+- GIVEN the Products screen, with several products and their subscriber tables
+- WHEN the rule about what publishing entitles the owner to — that they may withdraw anybody's
+  access but can never see or replace a consumer's keys — is stated
+- THEN it SHALL be said **once** for the screen rather than under each product
+- AND the reason SHALL be that it is one rule about the owner's position, not a fact about a
+  particular product, and repeating it turned a screen of six products into six copies of the same
+  paragraph
 
 #### Scenario: One subscription is opened
 

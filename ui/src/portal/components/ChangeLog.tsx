@@ -1,10 +1,42 @@
+import { Fragment } from "react";
 import {
   CHANGE_LOG_TYPES,
   CHANGE_LOG_TYPE_CLASSES,
   CHANGE_LOG_TYPE_LABELS,
+  inlineSpans,
 } from "../../../../shared/changelog";
 import { changeLog } from "../../lib/changelog";
 import { Modal, Notice } from "../../components";
+
+/**
+ * A line of the change log, with its emphasis.
+ *
+ * `CHANGELOG.md` is Markdown and every entry in it names screens in `**bold**` and settings and
+ * keys in `` `code` ``. Rendered as one string, all of that arrived as visible asterisks and
+ * backticks — on every line of the dialog, since the convention is as old as the file.
+ *
+ * Tokenised in JSX rather than through `dangerouslySetInnerHTML`. The source is a build-time
+ * `?raw` import of a file in this repository, so there is no untrusted input here today; an HTML
+ * sink is still a thing a later change could feed, and two markers are not worth owning one.
+ * Anything the tokeniser does not recognise stays exactly as written.
+ */
+function Inline({ text }: { text: string }) {
+  return (
+    <>
+      {inlineSpans(text).map((span, index) =>
+        span.kind === "strong" ? (
+          <strong key={index}>{span.text}</strong>
+        ) : span.kind === "code" ? (
+          <code key={index}>{span.text}</code>
+        ) : (
+          // A fragment, not a `span`: plain text needs no element, and adding one would put a box
+          // between the emphasis and the words either side of it for the stylesheet to catch.
+          <Fragment key={index}>{span.text}</Fragment>
+        ),
+      )}
+    </>
+  );
+}
 
 /**
  * The portal's own release notes, opened from the version in the top bar.
@@ -32,7 +64,14 @@ export function ChangeLog({ close }: { close: () => void }) {
                 <span className="changelog-version">v{entry.version}</span>
                 <span className="changelog-date">{entry.date}</span>
               </header>
-              {entry.summary && <p className="changelog-summary">{entry.summary}</p>}
+              {/* The summary is prose from the same file by the same hand, so it reads the same
+                  way. No summary uses a marker today; the next one that does should not have to
+                  discover that only bullets were wired up. */}
+              {entry.summary && (
+                <p className="changelog-summary">
+                  <Inline text={entry.summary} />
+                </p>
+              )}
               {CHANGE_LOG_TYPES.map((type) => {
                 const items = entry.items.filter((item) => item.type === type);
                 if (items.length === 0) return null;
@@ -43,7 +82,9 @@ export function ChangeLog({ close }: { close: () => void }) {
                         <span className={`changelog-tag ${CHANGE_LOG_TYPE_CLASSES[type]}`}>
                           {CHANGE_LOG_TYPE_LABELS[type]}
                         </span>
-                        <span className="changelog-text">{item.text}</span>
+                        <span className="changelog-text">
+                          <Inline text={item.text} />
+                        </span>
                       </li>
                     ))}
                   </ul>

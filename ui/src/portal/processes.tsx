@@ -202,14 +202,20 @@ export function Subscriptions({
     <Panel
       className="subscription-list"
       title={`${rows.length} in ${s.environment.toUpperCase()}`}
+      // Only when there is a list to head. An empty list is an `EmptyState`, and an empty state
+      // carries the action by the house rule — so offering it here as well put two controls doing
+      // one thing on the same screen, one of them three centimetres above the other.
       actions={
-        resourceId ? (
+        rows.length === 0 ? undefined : resourceId ? (
           // On an API's own workspace the question is never "which API" — it is already open — so
           // the answer to "how do I get a key for this" should not be a trip to the catalogue and
           // a search for the thing you are looking at. Owning an API is not the same as being one
           // of its callers, so a publisher testing their own route needs this too `[P1-10]`.
+          //
+          // Named for what is created, not for what it is against: a subscription is held against
+          // a product, and "Subscribe to this API" said the one thing the whole model denies.
           <button className="btn primary" onClick={() => setSubscribing(true)}>
-            <I.Key /> Subscribe to this API
+            <I.Key /> New subscription
           </button>
         ) : (
           <Link className="btn" to="/catalog"><I.Search /> Find a product</Link>
@@ -218,26 +224,32 @@ export function Subscriptions({
     >
       <Notice kind="error">{data.error ?? products.error ?? w.error}</Notice>
       {rows.length ? (
+        /* One line per subscription, not a card each. A subscription is four short facts — which
+           product, whose, what state, what for — and the list was giving each of them a line of
+           its own at sixteen pixels, so three subscriptions filled a screen and the API workspace's
+           own tab was mostly white space with two buttons in the corner (the estate's own
+           screenshot). The facts are unchanged; they read across rather than down. */
         rows.map((r) => (
-          <div className="native-row" key={r.id}>
+          <div className="native-row subscription-row" key={r.id}>
             <div>
-              {/* The subscription's own screen — its keys, its history, the product behind it —
-                  was reachable from the publisher's Products screen and from nowhere on the
-                  consumer's own list. */}
-              <Link to={`/subscriptions/${r.id}`}>
-                <strong>{productName(products, r)}</strong>
-              </Link>
-              <small>
-                {s.applicationName(r.applicationId)} · {r.purpose}
+              <div className="subscription-head">
+                {/* The subscription's own screen — its keys, its history, the product behind it —
+                    was reachable from the publisher's Products screen and from nowhere on the
+                    consumer's own list. */}
+                <Link to={`/subscriptions/${r.id}`}>
+                  <strong>{productName(products, r)}</strong>
+                </Link>
+                <StatusChip chip={subscriptionChip(r.state)} />
+                <span className="muted small">{s.applicationName(r.applicationId)}</span>
+              </div>
+              {/* The purpose is the one field of arbitrary length, so it is the one that is
+                  clipped — with the whole of it on hover and in the row's own screen. */}
+              <small className="subscription-purpose" title={r.purpose}>
+                {r.purpose}
               </small>
-              <StatusChip chip={subscriptionChip(r.state)} />
-            </div>
-            {/* What you can do to a subscription depends on which of the seven states it is in,
-                and the list used to render exactly one button — Revoke — for three of them and
-                nothing at all for the other four. A row in a terminal state looked like a row the
-                portal had forgotten about. Every state now either offers its own action or says
-                what is being waited on. */}
-            <div className="native-actions">
+              {/* What is being waited on, where the buttons for a row that has none would be.
+                  Three of the seven states offer no action and used to render nothing at all,
+                  which read as a row the portal had forgotten about. */}
               {r.state === "revoking" && (
                 <small>Withdrawn — waiting for the gateways to stop accepting the keys.</small>
               )}
@@ -245,20 +257,22 @@ export function Subscriptions({
                 <small>Approved — waiting for the gateways to start accepting the keys.</small>
               )}
               {r.state === "pending" && <small>Waiting on the publisher's decision.</small>}
+            </div>
+            <div className="native-actions">
               {["revoked", "rejected", "cancelled"].includes(r.state) &&
                 mine(s, r) && (
-                  <button className="btn" onClick={() => go("/catalog")}>
+                  <button className="btn sm" onClick={() => go("/catalog")}>
                     Subscribe again
                   </button>
                 )}
               {r.state === "active" && mine(s, r) && (
-                <button className="btn" onClick={() => setKeyId(r.id)}>
+                <button className="btn sm" onClick={() => setKeyId(r.id)}>
                   <I.Key /> Keys
                 </button>
               )}
               {["pending", "active", "activating"].includes(r.state) && (
                 <button
-                  className="btn"
+                  className="btn sm"
                   disabled={w.busy}
                   onClick={() => setWithdraw(r)}
                 >
@@ -271,15 +285,19 @@ export function Subscriptions({
       ) : (
         <EmptyState
           title={`No subscriptions in ${s.environment.toUpperCase()}`}
-          detail="A subscription is to a product in one environment, and its keys work only there — so an application subscribed in DEV has nothing here until it subscribes in this one too."
+          // The stage was written into the sentence as "DEV", which reads as nonsense on the stage
+          // it names: "subscribed in DEV has nothing here until it subscribes in this one too",
+          // seen while standing in DEV. The rule is the same in every stage, so state it without
+          // naming one — the title above already says which stage is empty.
+          detail="A subscription is to a product in one environment, and its keys work only there — so an application subscribed in another stage has nothing here until it subscribes in this one too."
           action={
             resourceId ? (
-              <button className="btn sm" onClick={() => setSubscribing(true)}>
-                Subscribe an application to this API
+              <button className="btn primary sm" onClick={() => setSubscribing(true)}>
+                New subscription
               </button>
             ) : (
               <button className="btn sm" onClick={() => go("/catalog")}>
-                Find an API to subscribe to
+                Find a product to subscribe to
               </button>
             )
           }

@@ -45,7 +45,12 @@ for (const width of [390, 1440]) test(`every tab of an API workspace renders at 
     await expect(page.getByRole("tab", { name: new RegExp(`^${tab}$`, "i") })).toHaveAttribute("aria-selected", "true");
     await expect(page.locator("main.native-content")).not.toBeEmpty();
     expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width + 1);
-    if (tab === "history") await expect(page.getByRole("heading", { name: "Deployment progress" })).toHaveCount(0);
+    // Deployment progress belongs to exactly one tab. It used to be on every tab *but* that one —
+    // a table about rollouts under the definition editor, the playground and the log search, and
+    // the panel named after it was the only place it did not appear.
+    await expect(page.getByRole("heading", { name: "Deployment progress" })).toHaveCount(
+      tab === "history" ? 1 : 0,
+    );
   }
 
   expectNoErrors(errors);

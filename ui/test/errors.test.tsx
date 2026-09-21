@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ApiError, api, fixOf } from "../src/api.ts";
+import { ApiError, api, fixOf, isSessionLost, onSessionLost } from "../src/api.ts";
 import { describe as describeError } from "../src/components.tsx";
 import { Refusal } from "../src/views/PlaygroundPanel.tsx";
 
@@ -75,6 +75,81 @@ describe("a refused write", () => {
     const err = await api.get("/api/meta").catch((thrown: unknown) => thrown);
     expect(err).toBeInstanceOf(ApiError);
     expect(describeError(err)).toContain("upstream is down");
+  });
+});
+
+describe("a session that has ended", () => {
+  /** Runs `body` with a subscription in place, and answers how many times it was told. */
+  async function timesTold(body: () => Promise<unknown>): Promise<number> {
+    let count = 0;
+    const off = onSessionLost(() => count++);
+    try {
+      await body();
+    } finally {
+      off();
+    }
+    return count;
+  }
+
+  test("both codes the control plane uses for it are recognised", () => {
+    // `no_session` is the router's, for a session past either bound or revoked; `session_expired`
+    // is the OIDC refresh's, for one the identity provider has ended. Two producers, one meaning.
+    for (const code of ["no_session", "session_expired"]) {
+      expect(isSessionLost(new ApiError(401, "Unauthorized", "sign in first", { code })), code).toBe(
+        true,
+      );
+    }
+  });
+
+  test("a rejected password is not an expiry, and neither is the provider being down", () => {
+    // The distinction the whole mechanism rests on. A 401 from the sign-in form would otherwise
+    // re-render the screen the user is already typing into, and a 503 from a provider outage would
+    // sign out an estate whose sessions are all perfectly valid.
+    expect(
+      isSessionLost(
+        new ApiError(401, "Unauthorized", "that username and password were not accepted", {
+          code: "bad_credentials",
+        }),
+      ),
+    ).toBe(false);
+    expect(
+      isSessionLost(
+        new ApiError(503, "Service Unavailable", "the identity provider could not be reached", {
+          code: "auth_backend_unavailable",
+        }),
+      ),
+    ).toBe(false);
+    // A 401 with no code at all — `POST /api/auth/password` answers one for a wrong current
+    // password — is a refusal of that request, not of the session it arrived on.
+    expect(isSessionLost(new ApiError(401, "Unauthorized", "that is not your current password"))).toBe(
+      false,
+    );
+  });
+
+  test("any request that meets it says so, and still throws where it was called", async () => {
+    answers(401, { title: "Unauthorized", status: 401, detail: "sign in first", code: "no_session" });
+    let thrown: unknown = null;
+    const told = await timesTold(async () => {
+      thrown = await api.get("/api/dashboard").catch((err: unknown) => err);
+    });
+    expect(told).toBe(1);
+    // The caller's own error handling is untouched: it announces, it does not swallow.
+    expect(thrown).toBeInstanceOf(ApiError);
+    expect((thrown as ApiError).status).toBe(401);
+  });
+
+  test("an ordinary refusal tells nobody", async () => {
+    answers(409, NOT_SERVED);
+    const told = await timesTold(() => api.post("/api/playground/send", {}).catch(() => null));
+    expect(told).toBe(0);
+  });
+
+  test("nothing is told after unsubscribing", async () => {
+    answers(401, { title: "Unauthorized", status: 401, detail: "sign in first", code: "no_session" });
+    let count = 0;
+    onSessionLost(() => count++)();
+    await api.get("/api/meta").catch(() => null);
+    expect(count).toBe(0);
   });
 });
 

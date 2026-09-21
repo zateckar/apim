@@ -28,11 +28,15 @@ test("published URLs follow gateway selection and are absent from Identify", asy
   expect(count).toBe(2);
   await expect(page.locator(".publish-flow .url-list li").first()).toBeVisible();
   for (let index = 0; index < count; index++) await choices.nth(index).check();
-  const allUrls = await page.locator(".publish-flow .url-list li").count();
+  // Scoped to the *selected* options. Every gateway lists its own addresses now, checked or not —
+  // that is the point of the merged control, since the addresses are what the choice is about — so
+  // the count that follows the selection is the one under `.pick-option.on`.
+  const selected = page.locator(".publish-flow .pick-option.on .url-list li");
+  const allUrls = await selected.count();
   for (let index = 1; index < count; index++) await choices.nth(index).uncheck();
   await expect(choices.first()).toBeDisabled();
-  expect(await page.locator(".publish-flow .url-list li").count()).toBeLessThan(allUrls);
-  await expect(page.locator(".publish-flow .url-list li").first()).toBeVisible();
+  expect(await selected.count()).toBeLessThan(allUrls);
+  await expect(selected.first()).toBeVisible();
   expectNoErrors(errors);
 });
 
@@ -122,13 +126,20 @@ test("a changed search cannot display results from the previous query", async ({
   await page.route("**/api/catalog?*", async route => {
     const query = new URL(route.request().url()).searchParams.get("q") ?? "";
     if (query === "second") await gate;
+    // A whole card, not the fields this test reads: `ListingCard` dereferences `products` and
+    // `tags` directly, so a short fixture throws inside the card and the assertion below fails
+    // saying the result is missing rather than saying the fixture is.
     await route.fulfill({ json: { total: 1, truncated: false, items: [{
       id: "qa", title: query === "second" ? "Second result" : "First result", apiVersion: "v1", kind: "rest", tags: [],
       environments: ["dev"], operationCount: 1, subscriberCount: 0, lifecycle: "active", domain: "IT",
+      applicationId: "application_platform", products: [], subscribed: false, unpublished: false,
+      summary: null, icon: null, subdomain: null, visibility: "listed",
     }] } });
   });
   await openPortal(page, "/catalog");
-  const search = page.getByRole("textbox", { name: /^Search resources/ });
+  // `searchbox`, not `textbox`: the catalog's box is an `input[type=search]`, which is a different
+  // ARIA role. The sibling assertion in catalog.spec.ts uses getByLabel and so never noticed.
+  const search = page.getByRole("searchbox", { name: /^Search resources/ });
   await search.fill("first");
   await expect(page.getByText("First result", { exact: true })).toBeVisible();
   await search.fill("second");

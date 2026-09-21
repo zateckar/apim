@@ -201,7 +201,10 @@ function Overview({ item }: { item: MarketListingDetail }) {
 
       <Panel
         title="Where it is live"
-        hint="An environment appears here once a release has converged onto its gateways. One URL per gateway address: an on-premise deployment usually answers on both an internet and an intranet name, and which one you can reach depends on where you are calling from."
+        // Two clauses, not five. The hint was three lines of how releases converge above a list
+        // that is usually one line long — the explanation outweighed the answer, and the part a
+        // caller acts on (which of two names they can reach) was at the end of it.
+        hint="One line per gateway address; which one you can reach depends on where you call from."
       >
         {item.endpoints.map((endpoint) => (
           <div key={endpoint.environment} className="endpoint-block">
@@ -245,7 +248,7 @@ function Overview({ item }: { item: MarketListingDetail }) {
       {item.a2a && (
         <Panel
           title="Agent card"
-          hint="The gateway serves this agent's card itself, with the URL rewritten to the gateway and the security scheme replaced by the subscription key — so a consumer who follows it reaches us rather than the origin."
+          hint="Served by the gateway, with the URL and the security scheme rewritten — follow it and you reach us, not the origin."
         >
           <dl className="kv">
             <dt>Protocol</dt>
@@ -298,12 +301,13 @@ function Overview({ item }: { item: MarketListingDetail }) {
 function Operations({ item }: { item: MarketListingDetail }) {
   if (item.operations.length === 0) {
     return (
-      <Panel>
-        <p className="muted">
-          No contract has been imported yet, so there is nothing to list. Import a definition from
-          the resource's own page.
-        </p>
-      </Panel>
+      /* An empty state, not a card with a sentence in it: the tab has nothing to show and the
+         reader needs somewhere to go. */
+      <EmptyState
+        title="No contract has been imported yet"
+        detail="There is nothing to list until the owner imports a definition. The catalog listing shows what a contract declares; it cannot invent one."
+        action={<Link to="/catalog">Back to the catalog →</Link>}
+      />
     );
   }
 
@@ -311,7 +315,7 @@ function Operations({ item }: { item: MarketListingDetail }) {
     return (
       <Panel
         title="Tools"
-        hint="Each tool's input schema is enforced by the gateway before the server is reached, so a malformed call is a JSON-RPC error rather than a server problem."
+        hint="Input schemas are enforced at the gateway, so a malformed call comes back as a JSON-RPC error."
       >
         {item.operations.map((operation) => (
           <div className="unit" key={operation.id}>

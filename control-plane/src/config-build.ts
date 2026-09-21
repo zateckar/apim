@@ -37,6 +37,7 @@ import {
   resolveSecret,
   type Integrations,
 } from "./egress.ts";
+import { credentialVault, EMPTY_VAULT, type CredentialVault } from "./credentials.ts";
 import { effectiveDocument } from "./globals.ts";
 import { settingsFor } from "./settings.ts";
 import { liveAnchorsFor } from "./trust-store.ts";
@@ -516,8 +517,18 @@ export function buildCertificates(db: DB, environment: string): ConfigCertificat
  * Only the references this environment's routes actually name. An owner writes `issuerRef`; the
  * document carries what it resolves to, and nothing else — so the blast radius is the estate that
  * is configured rather than the whole integrations file (plan `[R1-09]`).
+ *
+ * Two sources, and which one answers is decided by the reference's own shape rather than by
+ * precedence: `app:<application>:<name>` is the owning application's own credential, anything else
+ * is an administrator's entry in the integrations file. There is no fallback between them, because
+ * a fallback is how an application's deleted credential silently starts resolving to an
+ * administrator's entry that happens to share its name.
  */
-export function buildReferences(routes: ConfigRoute[], integrations: Integrations): ConfigReferences {
+export function buildReferences(
+  routes: ConfigRoute[],
+  integrations: Integrations,
+  vault: CredentialVault = EMPTY_VAULT,
+): ConfigReferences {
   const issuerRefs = new Set<string>();
   const providerRefs = new Set<string>();
   const hmacRefs = new Set<string>();
@@ -588,6 +599,11 @@ export function buildReferences(routes: ConfigRoute[], integrations: Integration
 
   const hmacSchemes: ConfigReferences["hmacSchemes"] = {};
   for (const ref of hmacRefs) {
+    const owned = vault.hmac(ref);
+    if (owned) {
+      hmacSchemes[ref] = owned;
+      continue;
+    }
     const def = integrations.hmacSchemes?.[ref];
     if (!def) continue;
     const appId = resolveSecret(integrations, def.appIdRef);
@@ -596,14 +612,17 @@ export function buildReferences(routes: ConfigRoute[], integrations: Integration
     hmacSchemes[ref] = { appId, appKey };
   }
 
+  /** An application's own credential first, then the administrator's file. Never both. */
+  const secretFor = (ref: string) => vault.secret(ref) ?? resolveSecret(integrations, ref);
+
   const secretHashes: Record<string, string> = {};
   for (const ref of hashRefs) {
-    const value = resolveSecret(integrations, ref);
+    const value = secretFor(ref);
     if (value !== null) secretHashes[ref] = sha256Hex(value);
   }
   const secrets: Record<string, string> = {};
   for (const ref of secretRefs) {
-    const value = resolveSecret(integrations, ref);
+    const value = secretFor(ref);
     if (value !== null) secrets[ref] = value;
   }
 
@@ -660,7 +679,7 @@ export function buildConfig(
     // Unlike `certificates`, not narrowed to what a route names: an anchor is not referenced by a
     // binding, it is what makes any backend in this environment verify (plan §8.2).
     trustAnchors: liveAnchorsFor(db, environment),
-    references: buildReferences(routes, integrations),
+    references: buildReferences(routes, integrations, credentialVault(db, kek, environment)),
     errors,
   };
   return {

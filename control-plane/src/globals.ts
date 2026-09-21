@@ -34,6 +34,20 @@ export function globalUnits(db: DB, environment: string): Map<string, unknown> {
   return new Map(rows.map((row) => [row.unit_key, JSON.parse(row.value_json)]));
 }
 
+/**
+ * The globals that actually reach a resource's document — `globalUnits` narrowed to the
+ * allowlist, which is the same narrowing `effectiveDocument` does.
+ *
+ * Separate from `globalUnits` because the difference matters wherever the question is "did this
+ * unit come from the environment": a row for a unit that is not globally attachable is inert, and
+ * treating it as inherited would refuse an owner's edit to a unit that is entirely their own.
+ */
+export function inheritedUnits(db: DB, environment: string): Map<string, unknown> {
+  return new Map(
+    [...globalUnits(db, environment)].filter(([unit]) => isGloballyAttachable(unit)),
+  );
+}
+
 export function globalDocument(db: DB, environment: string): PolicyDocument {
   const rows = db
     .query<{ unit_key: string; value_json: string }, [string]>(

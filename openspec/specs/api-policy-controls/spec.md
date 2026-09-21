@@ -38,10 +38,14 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 
 #### Scenario: A reference is named
 
-- GIVEN a unit naming an `issuerRef`, `credentialRef` or `tokenProviderRef`
+- GIVEN a unit naming an `issuerRef`, `credentialRef`, `tokenProviderRef` or `schemeRef`
 - WHEN it is validated
-- THEN the reference SHALL resolve through the administrator-registered integrations file
-- AND a dangling reference SHALL be a boot failure, naming both the reference and where it is used
+- THEN a reference that resolves to something carrying a URL — `issuerRef`, `tokenProviderRef` —
+  SHALL resolve through the administrator-registered integrations file, and a dangling one SHALL be
+  a boot failure naming both the reference and where it is used
+- AND a reference that is only a secret — `credentialRef`, `schemeRef` — SHALL resolve through that
+  file **or** through the owning application's own credentials, per `app-credentials`
+- AND no unit SHALL let an owner name a URL the gateway will call
 
 #### Scenario: A unit is edited
 
@@ -78,6 +82,53 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 - GIVEN a key of the form `operations["getPet"].rateLimit`
 - WHEN a global attachment is attempted
 - THEN it SHALL be refused, because an operation id means nothing outside the API that declares it
+
+### Requirement: An API may override a global unit and may not remove one
+
+Attaching a unit to the environment is a decision about the environment, undone in the one place it
+was made. From one API's workspace the only thing that may be done about it is to give that API its
+own value, which is a write, not a deletion.
+
+This has to be enforced rather than assumed because the workspace edits the **effective** document:
+an inherited unit is on the page looking exactly like one the owner wrote.
+
+#### Scenario: A save omits a unit the environment defines
+
+- GIVEN an API workspace whose loaded document carries a globally attached unit
+- WHEN a save omits that unit
+- THEN the save SHALL be refused, naming the unit and saying that its value is the environment's
+- AND the refusal SHALL apply to an administrator as well, because the tier is not a per-API
+  setting that an administrator happens to be allowed to change
+- AND the reason SHALL be that the alternative is silent: nothing is stored, so the environment's
+  value merges straight back in at the next read and the edit appears to have worked
+
+#### Scenario: A save carries a unit at the environment's own value
+
+- GIVEN a save whose document contains a globally attached unit with exactly the environment's
+  value — which is what the editor sends whenever it loaded the effective document
+- WHEN the configuration is applied
+- THEN that unit SHALL NOT be stored as one of the resource's own
+- AND the reason SHALL be that storing it freezes this API's copy at today's value and detaches it
+  from the tier, so a later change on the global screen reaches every API except the ones somebody
+  has saved
+
+#### Scenario: A save carries a different value for that unit
+
+- GIVEN a save whose document gives a globally attached unit a value of its own
+- WHEN the configuration is applied
+- THEN it SHALL be stored as the resource's unit and SHALL win over the environment's, now and
+  after the environment's value changes again
+
+#### Scenario: The editor draws an inherited unit
+
+- GIVEN a policy editor showing a unit the environment defines
+- WHEN the card renders
+- THEN it SHALL be marked as the environment's, and its fields SHALL stay editable so the API can
+  override it
+- AND the controls that would take it off this API — remove, and switching it off — SHALL be
+  disabled, each saying where the decision belongs
+- AND the workspace read SHALL name which units are the environment's, because the document alone
+  cannot say
 
 #### Scenario: A per-operation override is written
 
@@ -170,6 +221,19 @@ has never served.
 - AND unavailable choices SHALL retain a visible explanation
 - AND a unit already present SHALL remain in the attached list rather than be offered twice
 
+#### Scenario: Header rules are edited
+
+- GIVEN `headers.request` or `headers.response`
+- WHEN its form opens
+- THEN it SHALL offer a list of rules, each naming its action in the reader's words — remove,
+  overwrite, append, set if missing — rather than exposing the document's four maps
+- AND every one of the four actions SHALL be reachable from the form, so no part of the unit is
+  editable only through the raw document
+- AND a rule whose action takes no value SHALL NOT present an empty value control
+- AND the order the gateway applies them in SHALL be stated once for the unit rather than implied
+  by the order the rows were added
+- AND the collapsed row's summary SHALL count every action present, not only two of them
+
 #### Scenario: A unit is detached
 
 - GIVEN an attached resource-level unit
@@ -240,6 +304,9 @@ has never served.
 - THEN it SHALL be refused unless the unit is globally attachable
 - AND the screen SHALL list every resource in that environment the change reaches, because a global
   write with an unnamed blast radius is a write nobody can review
+- AND the explanation of *why* some units may not be attached SHALL be a collapsed aside, with the
+  count computed from the vocabulary and the allowlist rather than written into the sentence, so it
+  cannot go stale when either changes
 
 #### Scenario: A resource overrides a global unit
 

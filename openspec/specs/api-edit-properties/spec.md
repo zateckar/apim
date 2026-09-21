@@ -19,6 +19,16 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - AND the panel SHALL be selected by a segmented control, and the definition SHALL be the default
 - AND History SHALL show each operation once, without a second deployment-progress panel repeating its entries
 
+#### Scenario: Another version of the same API is opened
+
+- GIVEN a resource with more than one version
+- WHEN the workspace renders
+- THEN the version selector SHALL sit in the workspace head beside **New version**, sized to its
+  value
+- AND it SHALL NOT be a page-wide field under the summary line, because switching version is
+  navigation between siblings rather than a property of the API on screen
+- AND a resource with one version SHALL show no selector at all
+
 #### Scenario: A link lands on a specific panel
 
 - GIVEN an address carrying `?tab=<name>`, which the portal's own screens write, or
@@ -47,6 +57,22 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - THEN the workspace SHALL reload for the new environment
 - AND everything that is per-environment — the backend, the route, the policy, the release — SHALL
   be re-read rather than carried across
+
+#### Scenario: A stage the API has not reached
+
+- GIVEN a resource that exists in some stages of the chain and not others
+- WHEN the workspace is open
+- THEN the environment switcher SHALL disable the stages it is not in, each saying that a version
+  reaches a stage by being promoted into it from the one before
+- AND the whole chain SHALL still be drawn, because a chain drawn short misstates how many stages
+  the estate has
+- AND the **selected** stage SHALL stay operable whatever the answer, so a reader who arrived at a
+  stage the API is not in is never looking at a disabled control that is also the current one
+- AND the set SHALL be read per resource rather than per environment, so switching stage does not
+  re-shape the control doing the switching, and it SHALL follow a promotion without a reload
+- AND while the set is unknown — not yet read, or the read failed — every stage SHALL be offered,
+  because a switcher that greys out mid-request is worse than one that offers a stage the screen
+  then explains it is not in
 
 ### Requirement: Load the workspace from one endpoint
 
@@ -82,8 +108,15 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - GIVEN a resource with a current revision
 - WHEN the definition panel opens
 - THEN the definition SHALL be shown in the shared code editor, with syntax highlighting
-- AND for a SOAP resource the WSDL's services and ports SHALL be summarised beside it
-- AND for an MCP or A2A resource the discovered tools or skills SHALL be summarised beside it
+- AND the editor SHALL have a bounded height and scroll within itself, rather than growing to the
+  length of whatever document is in it
+- AND what the definition declares SHALL be shown **beside** it on a wide viewport and below it on
+  a narrow one, so the two readings of one document can be compared without scrolling past a
+  thousand lines to reach the second
+- AND for a SOAP resource this SHALL be the WSDL's operations
+- AND for an MCP or A2A resource it SHALL be the discovered tools or skills
+- AND the reason for the cap SHALL be that an uncapped editor put the operation list off the end of
+  a page that took a minute to scroll
 
 #### Scenario: A definition is edited
 
@@ -167,6 +200,40 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - AND the same reader SHALL be used as on publish, so a pool cannot mean one thing in the wizard
   and another here
 
+### Requirement: Lay the properties panel out as sections, not as nested cards
+
+#### Scenario: The properties panel renders
+
+- GIVEN the properties panel
+- WHEN it renders
+- THEN it SHALL be three headed sections — catalog information, backends for this environment, and
+  the published address — rather than three cards inside the workspace's own card
+- AND each coherent set of fields SHALL sit on one tinted group surface, and a group SHALL NOT be
+  nested inside another group
+- AND the reason SHALL be that the tint used to appear on the domain pair alone, which made the one
+  group that carried it look arbitrary rather than meaningful
+
+#### Scenario: The public path is shown
+
+- GIVEN a base path derived from the domain, the sub-domain and the API's name
+- WHEN it renders
+- THEN it SHALL be read-only **and look read-only**, and SHALL sit in the same group as the two
+  controls that decide it
+- AND its hint SHALL say what it is built from, so a reader who wants to change it knows where to go
+
+#### Scenario: The gateways are chosen
+
+- GIVEN an environment served by one or more gateways
+- WHEN the gateway control renders
+- THEN each gateway SHALL list the **final** addresses an API answers on — the gateway's published
+  hostname with the base path appended — and one line per address, since a gateway reachable from
+  inside and outside the network has two names
+- AND there SHALL be exactly one list: the bare origins and the addresses-with-path SHALL NOT be
+  drawn as two controls, which printed every URL twice, differing only in the part worth reading
+- AND an environment with a single gateway SHALL state it and its addresses rather than offer a
+  checkbox that cannot be unticked
+- AND an environment with no gateway SHALL say so and name who adds one
+
 ### Requirement: Change the taxonomy without breaking the address
 
 #### Scenario: The domain is changed
@@ -192,9 +259,21 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - GIVEN edited properties
 - WHEN Save is pressed
 - THEN a `configure` operation SHALL be queued with an `Idempotency-Key`, and `202` returned
-- AND the workspace SHALL show the deployment progress rather than claiming the change is live
+- AND the workspace SHALL say that saving deploys rather than claiming the change is live
 - AND the saved values SHALL be reflected locally straight away, so the form does not appear to
   have lost them
+
+#### Scenario: A deployment is in progress
+
+- GIVEN one or more operations this API has not finished deploying
+- WHEN the workspace renders
+- THEN the progress table SHALL appear on the History panel and on no other panel
+- AND every other panel SHALL carry at most one sentence saying how many changes are still reaching
+  the gateways, linking to History
+- AND completion SHALL be announced through the notification feed (`operation.complete`) rather
+  than by a table the reader has to be looking at
+- AND the reason SHALL be that a rollout table under the definition editor, the playground and the
+  log search is a table about something else on every screen but the one named after it
 
 #### Scenario: Nothing changed
 

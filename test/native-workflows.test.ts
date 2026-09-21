@@ -223,6 +223,40 @@ describe("native application workflows", () => {
       cp.app.db.query("SELECT id FROM resource WHERE name='bad-api'").get(),
     ).toBeNull();
   });
+  test("a resource names only the environments it is actually in, and gains one on promotion", async () => {
+    // What the shell's environment switcher is drawn from: a stage the API is not in is not one
+    // it may be opened in, so the set has to follow a promotion rather than list the chain.
+    setup();
+    const op = await publish();
+    const reach = async (user = "pavel") =>
+      (
+        await (await call("GET", `/api/resources/${op.resourceId}/environments`, user)).json()
+      ).environments;
+    // Queued, not yet converged: the workspace already renders this as published in DEV, so the
+    // switcher has to agree — the two read the same rule.
+    expect(await reach()).toEqual(["dev"]);
+    runDueJobs(cp.app);
+    await ack("dev");
+    expect(await reach()).toEqual(["dev"]);
+    expect(
+      (
+        await call(
+          "POST",
+          `/api/resources/${op.resourceId}/promote`,
+          "pavel",
+          { environment: "test", backendUrl: "http://127.0.0.1:9998" },
+          { "idempotency-key": "reach-to-test" },
+        )
+      ).status,
+    ).toBe(202);
+    runDueJobs(cp.app);
+    await ack("test");
+    expect(await reach()).toEqual(["dev", "test"]);
+    // In chain order, not insertion order — the switcher draws the chain and cannot re-sort it.
+    expect(await reach()).toEqual(cp.app.config.promotionChain.filter((e) => e !== "prod"));
+    // Readable by anybody: you may read everything, and which stages an API is in is not a secret.
+    expect(await reach("clara")).toEqual(["dev", "test"]);
+  });
   test("promotion requires no technical plan and retains target backend on later promotion", async () => {
     setup();
     const op = await publish();

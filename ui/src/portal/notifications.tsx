@@ -261,7 +261,7 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
         <EmptyState
           title="No mail yet"
           detail="Requesting access to a product, or answering somebody else's request, sends the first message."
-          action={<Link to="/catalog">Find an API to subscribe to →</Link>}
+          action={<Link to="/catalog">Find a product to subscribe to →</Link>}
         />
       )}
       <div className="notif-body">

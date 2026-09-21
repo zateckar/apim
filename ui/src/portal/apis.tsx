@@ -1,5 +1,5 @@
 import { nameError, versionError, httpUrlError, NAME_PATTERN, NAME_HINT, VERSION_HINT } from "../lib/form-validation";
-import { PolicyForm } from "./PolicyForm";
+import { EMPTY_CATALOGUE, PolicyForm, type CredentialCatalogue } from "./PolicyForm";
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { LogsPanel } from "../views/LogsPanel";
 import { RevisionsPanel } from "../views/RevisionsPanel";
@@ -135,25 +135,33 @@ export function DomainPicker({
 }
 
 /**
- * Which of an environment's gateways an API answers on.
+ * Which of an environment's gateways an API answers on, and what it answers at on each.
  *
  * An environment can be served from more than one place — a managed gateway in the cloud, an
  * on-premise one — and the choice is per API and per environment. It is a checkbox list rather
  * than a dropdown because the answer is usually "both", and it refuses to reach zero: an API on
  * no gateway has an address nobody can call, which is not a state anyone means to be in.
  *
- * A locality's addresses are shown beside it, badged, because "on-premise" tells you nothing
- * about what a consumer will type and the URL does.
+ * **The addresses are the final ones.** This control and a separate preview below it used to be
+ * two components, so every gateway's origin was listed once bare and once with the base path
+ * appended — the same URL twice, ten lines apart, differing by the only part that was worth
+ * reading. There is one list now, and each line is what a consumer will actually call. A consumer
+ * inside the network and one outside are given different names for the same gateway, so a gateway
+ * with two addresses has two lines rather than an "internal or external" the reader has to
+ * resolve themselves.
  */
 export function GatewayPicker({
   localities,
   selected,
+  path,
   environment,
   onChange,
   disabled,
 }: {
   localities: Locality[];
   selected: string[];
+  /** The base path the API answers at, appended to each address so the line is callable. */
+  path: string;
   environment: string;
   onChange: (next: string[]) => void;
   disabled?: boolean;
@@ -166,19 +174,39 @@ export function GatewayPicker({
       </p>
     );
   }
-  // With one gateway there is no choice to make, so the control would be a checkbox that cannot
-  // be unticked. It says where the API answers instead.
+  const addresses = (locality: Locality) =>
+    locality.addresses.length === 0 ? (
+      <li className="muted small">no published address yet</li>
+    ) : (
+      locality.addresses.map((address) => (
+        <li key={address.url}>
+          <span className="badge">
+            {address.network === "intranet" ? "Intranet" : "Internet"}
+          </span>
+          <span className="mono">
+            {address.url}
+            {path}
+          </span>
+        </li>
+      ))
+    );
+
+  // With one gateway there is no choice to make, so a checkbox would be one that cannot be
+  // unticked. The addresses are the point either way, so they are all that is drawn.
   if (localities.length === 1) {
+    const only = localities[0]!;
     return (
-      <p className="muted">
-        Published on <strong>{localities[0]!.name}</strong>
-        {localities[0]!.label ? ` · ${localities[0]!.label}` : ""} — the only gateway{" "}
-        {environment.toUpperCase()} has.
-      </p>
+      <div className="gateway-list">
+        <p className="muted">
+          Answers on <strong>{only.name}</strong>
+          {only.label ? ` · ${only.label}` : ""} — the only gateway {environment.toUpperCase()} has.
+        </p>
+        <ul className="url-list">{addresses(only)}</ul>
+      </div>
     );
   }
   return (
-    <div className="pick-list">
+    <div className="gateway-list">
       <div className="pick-list-head">
         <strong>Gateways</strong>
         <span className="muted small">
@@ -190,7 +218,7 @@ export function GatewayPicker({
         // The last one standing cannot be unticked; the reason is on the line below the list.
         const locked = on && selected.length === 1;
         return (
-          <label key={locality.name} className="pick-option">
+          <label key={locality.name} className={on ? "pick-option on" : "pick-option"}>
             <input
               type="checkbox"
               checked={on}
@@ -209,70 +237,16 @@ export function GatewayPicker({
                 {locality.label ? <span className="muted"> · {locality.label}</span> : null}
                 {locality.paused && <span className="badge warn">paused</span>}
               </span>
-              {locality.addresses.length === 0 ? (
-                <span className="muted small">no published address yet</span>
-              ) : (
-                locality.addresses.map((address) => (
-                  <span key={address.url} className="muted small mono">
-                    <span className="badge">
-                      {address.network === "intranet" ? "Intranet" : "Internet"}
-                    </span>{" "}
-                    {address.url}
-                  </span>
-                ))
-              )}
+              <ul className="url-list">{addresses(locality)}</ul>
             </span>
           </label>
         );
       })}
-      <p className="hint">An API must be published on at least one gateway.</p>
-    </div>
-  );
-}
-
-/**
- * Every URL this API answers at — one per address of every gateway it is published on.
- *
- * Not one URL with a placeholder host. A consumer inside the network and a consumer outside it
- * are given different names for the same gateway, and an API on two localities has four addresses
- * rather than one; showing a single line meant somebody had to know which of them applied to them,
- * which is exactly the thing a portal exists to answer.
- */
-export function PathPreview({
-  localities,
-  selected,
-  path,
-}: {
-  localities: Locality[];
-  selected: string[];
-  path: string;
-}) {
-  const urls = localities
-    .filter((l) => selected.includes(l.name))
-    .flatMap((l) => l.addresses.map((a) => ({ ...a, gateway: l.name })));
-  if (urls.length === 0) {
-    return (
-      <p className="muted">
-        This API will answer at <span className="mono">{path}</span> on every gateway it is
-        published on. None of them has a published address yet, so there is no URL to show.
+      <p className="hint">
+        An API must be published on at least one gateway. Each address above is a gateway's own
+        published hostname; its replicas sit behind it and are never called directly.
       </p>
-    );
-  }
-  return (
-    <ul className="url-list">
-      {urls.map((entry) => (
-        <li key={`${entry.gateway}:${entry.url}`}>
-          <span className="badge">
-            {entry.network === "intranet" ? "Intranet" : "Internet"}
-          </span>
-          <span className="mono">
-            {entry.url}
-            {path}
-          </span>
-          <span className="muted small">{entry.gateway}</span>
-        </li>
-      ))}
-    </ul>
+    </div>
   );
 }
 
@@ -584,14 +558,10 @@ export function Publish({ session: s }: { session: Session }) {
               localities={localities}
               selected={selected}
               environment={first}
-              onChange={setGateways}
-            />
-            <PathPreview
-              localities={localities}
-              selected={selected}
               path={
                 domain ? publishedPath({ domain, subdomain, name: name || "api", apiVersion }) : "/…"
               }
+              onChange={setGateways}
             />
           </>
         )}
@@ -809,6 +779,27 @@ function EditorForm({
         : Promise.resolve({ items: [] }),
     [s.environment, d.resource.canEdit],
   );
+  /**
+   * What the policy form's reference pickers are drawn from. Fetched here rather than inside the
+   * form because the form is also rendered on the global-policy screen, which has no application
+   * to own a credential — and a component that fetched for itself would have to invent one.
+   */
+  const credentials = useAsync(
+    () =>
+      d.resource.canEdit
+        ? api.get<{ items: any[]; registered: any }>(
+            `/api/credentials?environment=${s.environment}`,
+          )
+        : Promise.resolve({ items: [], registered: EMPTY_CATALOGUE.registered }),
+    [s.environment, d.resource.canEdit],
+  );
+  const catalogue: CredentialCatalogue = {
+    applicationId: d.resource.applicationId,
+    own: (credentials.data?.items ?? []).filter(
+      (row: any) => row.applicationId === d.resource.applicationId,
+    ),
+    registered: credentials.data?.registered ?? EMPTY_CATALOGUE.registered,
+  };
   const next = s.meta.chain[s.meta.chain.indexOf(s.environment) + 1];
   const first = s.meta.chain[0]!;
   const versions: Array<{ id: string; apiVersion: string; lifecycle: string }> =
@@ -838,6 +829,10 @@ function EditorForm({
         apiVersion: d.resource.apiVersion,
       })
     : (d.settings?.basePath ?? "");
+  /** Changes this API has made that the fleet has not finished acknowledging. */
+  const inFlight = operations.filter(
+    (operation) => !["complete", "superseded", "failed"].includes(operation.state),
+  ).length;
   /** Load balancing and the breaker need somewhere to fail over to. */
   const members = pool.filter((entry) => entry.url.trim()).length;
   const canBalance = members >= 2;
@@ -864,6 +859,27 @@ function EditorForm({
               >
                 Open wiki ↗
               </a>
+            )}
+            {/* Beside "New version", because switching version and making one are the same kind
+                of act — moving between siblings of the thing on screen. It was a page-wide `Field`
+                under the summary line, which put a navigation control among the API's properties
+                and gave a two-character value a thousand pixels of box. */}
+            {versions.length > 1 && (
+              <label className="workspace-version">
+                <span className="lbl">Version</span>
+                <select
+                  aria-label="Version"
+                  value={d.resource.id}
+                  onChange={(e) => go(`/${s.application}/apis/${e.target.value}`)}
+                >
+                  {versions.map((v) => (
+                    <option key={v.id} value={v.id}>
+                      {v.apiVersion}
+                      {v.lifecycle === "active" ? "" : ` (${v.lifecycle})`}
+                    </option>
+                  ))}
+                </select>
+              </label>
             )}
             {/* Present and disabled rather than absent, with the reason on the screen: a control
                 that vanishes leaves somebody wondering whether the feature exists at all, and on a
@@ -907,23 +923,6 @@ function EditorForm({
             : "no domain yet"}{" "}
           · Products: {d.products.map((p: any) => p.name).join(", ") || "None"}
         </p>
-        {versions.length > 1 && (
-          <Field label="Version">
-            <select
-              value={d.resource.id}
-              onChange={(e) =>
-                go(`/${s.application}/apis/${e.target.value}`)
-              }
-            >
-              {versions.map((v) => (
-                <option key={v.id} value={v.id}>
-                  {v.apiVersion}
-                  {v.lifecycle === "active" ? "" : ` (${v.lifecycle})`}
-                </option>
-              ))}
-            </select>
-          </Field>
-        )}
         <div className="workspace-tabs" role="tablist" aria-label="API workspace panels">
           {EDITOR_TABS.map((t) => (
             <button
@@ -980,196 +979,219 @@ function EditorForm({
           </Notice>
         )}
         {tab === "definition" && (
-          <>
-            <CodeMirror
-              value={spec}
-              extensions={[yaml(), EditorView.lineWrapping]}
-              minHeight="340px"
-              editable={d.resource.canEdit && !!d.settings}
-              onChange={setSpec}
-            />
-            {/* Above the operations, because a document with an error in it has no trustworthy
-                operation list to read — and below the editor, so the text being judged is the
-                text on screen. */}
-            <DefinitionDiagnostics
-              source={spec}
-              kind={d.resource.kind}
-              onFix={d.resource.canEdit ? setSpec : undefined}
-            />
-            {d.resource.kind === "rest" && (
-              <OperationsCard doc={doc} loading={false} />
-            )}{" "}
-            {d.resource.kind === "soap" && (
-              <WsdlServicesCard wsdl={parseWsdl(spec)} loading={false} />
-            )}
-          </>
+          /* Two columns, because they are two readings of one document and the question this tab
+             answers is whether they agree. Stacked, the operation list began below a definition
+             that is routinely a thousand lines long — so the editor grew to the height of whatever
+             was pasted into it, the page scrolled for a minute, and the list of what the API
+             actually offers was somewhere past the end of it. The editor is capped and scrolls
+             within itself instead; the columns collapse below 1100px, where side by side would
+             mean two unreadable ones. */
+          <div className="definition-split">
+            <div className="definition-source">
+              <CodeMirror
+                value={spec}
+                extensions={[yaml(), EditorView.lineWrapping]}
+                minHeight="340px"
+                maxHeight="560px"
+                editable={d.resource.canEdit && !!d.settings}
+                onChange={setSpec}
+              />
+              {/* Under the editor, so the text being judged is the text on screen, and in the same
+                  column, so a diagnostic and the line it is about are never in different halves. */}
+              <DefinitionDiagnostics
+                source={spec}
+                kind={d.resource.kind}
+                onFix={d.resource.canEdit ? setSpec : undefined}
+              />
+            </div>
+            <div className="definition-shape">
+              {d.resource.kind === "rest" && <OperationsCard doc={doc} loading={false} />}
+              {d.resource.kind === "soap" && (
+                <WsdlServicesCard wsdl={parseWsdl(spec)} loading={false} />
+              )}
+            </div>
+          </div>
         )}
         {tab === "properties" && (
+          /* Three headed sections rather than three cards inside the workspace's own card. A
+             panel is a boundary, and nesting one inside another draws a boundary around
+             something that was never separate — the reader was looking at a box, in a box, in a
+             box, and the only thing the inner two added was a border and a shadow. What actually
+             groups here is a *set of fields*, and that is what carries the tint. */
           <div className="workspace-properties">
-            <Panel title="Catalog information">
-            <DescriptionField
-              value={description}
-              onChange={setDescription}
-              disabled={!d.resource.canEdit}
-            />
-            {/* One link, not a list: the question a consumer has after the description is "where do
-                I read more", and two answers to it means one of them is stale. */}
-            <Field label="Documentation link">
-              <input
-                type="url"
-                placeholder="https://wiki.example/teams/…"
-                disabled={!d.resource.canEdit}
-                value={docsUrl}
-                onChange={(e) => setDocsUrl(e.target.value)}
-              />
-              <span className="hint">
-                Shown on the catalog listing and behind <b>Open wiki</b> above. Clear it to remove
-                the link.
-              </span>
-            </Field>
-            </Panel>
-            <Panel title={`Backends · ${s.environment.toUpperCase()}`}>
-            {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
-                second one appears only when somebody asks for it. */}
-            <div className="native-pool">
-              <span className="lbl">
-                {s.environment.toUpperCase()} backends
-              </span>
-              {/* The weight column names itself once, above the rows. Each input carries an
-                  `aria-label`, so a screen reader always knew what the box was for; a sighted
-                  reader saw an unexplained `1` in a narrow box next to a URL. */}
-              {rule === "round-robin" && (
-                <div className="backend-row backend-row-head" aria-hidden="true">
-                  <span className="hint">Address</span>
-                  <span className="hint">Share</span>
-                  <span />
-                </div>
-              )}
-              {pool.map((entry, index) => (
-                <div className="backend-row" key={index}>
+            <section className="workspace-section">
+              <h4>Catalog information</h4>
+              <div className="field-group">
+                <DescriptionField
+                  value={description}
+                  onChange={setDescription}
+                  disabled={!d.resource.canEdit}
+                />
+                {/* One link, not a list: the question a consumer has after the description is
+                    "where do I read more", and two answers to it means one of them is stale. */}
+                <Field
+                  label="Documentation link"
+                  hint="Shown on the catalog listing and behind Open wiki above. Clear it to remove the link."
+                >
                   <input
                     type="url"
-                    aria-label={`Backend ${index + 1} URL`}
+                    placeholder="https://wiki.example/teams/…"
                     disabled={!d.resource.canEdit}
-                    value={entry.url}
-                    onChange={(e) =>
-                      setPool(
-                        pool.map((row, at) =>
-                          at === index ? { ...row, url: e.target.value } : row,
-                        ),
-                      )
-                    }
+                    value={docsUrl}
+                    onChange={(e) => setDocsUrl(e.target.value)}
                   />
-                  {rule === "round-robin" && (
+                </Field>
+              </div>
+            </section>
+            <section className="workspace-section">
+              <h4>Backends · {s.environment.toUpperCase()}</h4>
+              <div className="field-group">
+              {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
+                  second one appears only when somebody asks for it. */}
+              <div className="native-pool">
+                <span className="lbl">
+                  {s.environment.toUpperCase()} backends
+                </span>
+                {/* The weight column names itself once, above the rows. Each input carries an
+                    `aria-label`, so a screen reader always knew what the box was for; a sighted
+                    reader saw an unexplained `1` in a narrow box next to a URL. */}
+                {rule === "round-robin" && (
+                  <div className="backend-row backend-row-head" aria-hidden="true">
+                    <span className="hint">Address</span>
+                    <span className="hint">Share</span>
+                    <span />
+                  </div>
+                )}
+                {pool.map((entry, index) => (
+                  <div className="backend-row" key={index}>
                     <input
-                      type="number"
-                      min={1}
-                      max={MAX_WEIGHT}
-                      aria-label={`Backend ${index + 1} share of traffic`}
+                      type="url"
+                      aria-label={`Backend ${index + 1} URL`}
                       disabled={!d.resource.canEdit}
-                      value={entry.weight ?? 1}
+                      value={entry.url}
                       onChange={(e) =>
                         setPool(
                           pool.map((row, at) =>
-                            at === index
-                              ? { ...row, weight: Number(e.target.value) }
-                              : row,
+                            at === index ? { ...row, url: e.target.value } : row,
                           ),
                         )
                       }
                     />
-                  )}
-                  <button
-                    type="button"
-                    className="btn sm"
-                    disabled={!d.resource.canEdit || pool.length === 1}
-                    onClick={() =>
-                      setPool(pool.filter((_, at) => at !== index))
-                    }
-                  >
-                    Remove
-                  </button>
-                </div>
-              ))}
-              <button
-                type="button"
-                className="btn sm"
-                disabled={!d.resource.canEdit || pool.length >= MAX_POOL_SIZE}
-                onClick={() => setPool([...pool, { url: "" }])}
-              >
-                Add backend
-              </button>
-            </div>
-            {/* Load balancing is a choice between backends, so it only exists once there are two.
-                Shown disabled with the reason rather than hidden, so "where did the setting go"
-                has an answer on the screen. */}
-            <Field label="How calls are spread across the backends">
-              <select
-                disabled={!d.resource.canEdit || !canBalance}
-                value={canBalance ? rule : "failover"}
-                onChange={(e) => setRule(e.target.value)}
-              >
-                <option value="failover">
-                  Failover — try them in the order written
-                </option>
-                <option value="round-robin">
-                  Round-robin — spread calls across them
-                </option>
-              </select>
-            </Field>
-            {!canBalance ? (
-              <p className="muted">
-                Add a second backend to choose between failover and round-robin.
-                With one backend every call goes to it, and a circuit breaker
-                has nothing to fail over to — so that policy is unavailable too.
-              </p>
-            ) : rule === "round-robin" ? (
-              <p className="muted">
-                Each gateway keeps its own place in the rotation, so calls are
-                spread per instance rather than across the fleet.
-              </p>
-            ) : null}
-            </Panel>
-            <Panel title={`Published address · ${s.environment.toUpperCase()}`}>
-            <div className="native-form-grid">
-            <DomainPicker
-              domain={domain}
-              subdomain={subdomain}
-              disabled={!d.resource.canEdit}
-              onChange={(nextTaxonomy) => {
-                setDomain(nextTaxonomy.domain);
-                setSubdomain(nextTaxonomy.subdomain);
-              }}
-            />
-            </div>
-            <Field label="Public path">
-              {/* Derived, not typed: the domain is the first segment of the address, so a path
-                  somebody could edit freely is a path that could contradict the catalog. */}
-              <input readOnly value={basePath} aria-label="Public path" />
-            </Field>
-            {!d.resource.domain && (
-              <Notice kind="warn">
-                This API was published before the catalog had domains. Choosing
-                one moves it from <span className="mono">{d.settings?.basePath}</span>{" "}
-                to <span className="mono">{basePath}</span> when you save, so
-                anybody calling the old address has to be told.
-              </Notice>
-            )}
-            <GatewayPicker
-              localities={localities}
-              selected={gateways}
-              environment={s.environment}
-              disabled={!d.resource.canEdit}
-              onChange={setGateways}
-            />
-            <PathPreview localities={localities} selected={gateways} path={basePath} />
-            <p className="muted">
-              Preview of the addresses after saving in {s.environment.toUpperCase()}. Each
-              is a gateway's published hostname; its replicas are behind it and are never
-              addressed directly.
-            </p>
-            <Notice kind="error">{certificates.error}</Notice>
-            </Panel>
+                    {rule === "round-robin" && (
+                      <input
+                        type="number"
+                        min={1}
+                        max={MAX_WEIGHT}
+                        aria-label={`Backend ${index + 1} share of traffic`}
+                        disabled={!d.resource.canEdit}
+                        value={entry.weight ?? 1}
+                        onChange={(e) =>
+                          setPool(
+                            pool.map((row, at) =>
+                              at === index
+                                ? { ...row, weight: Number(e.target.value) }
+                                : row,
+                            ),
+                          )
+                        }
+                      />
+                    )}
+                    <button
+                      type="button"
+                      className="btn sm"
+                      disabled={!d.resource.canEdit || pool.length === 1}
+                      onClick={() =>
+                        setPool(pool.filter((_, at) => at !== index))
+                      }
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  className="btn sm"
+                  disabled={!d.resource.canEdit || pool.length >= MAX_POOL_SIZE}
+                  onClick={() => setPool([...pool, { url: "" }])}
+                >
+                  Add backend
+                </button>
+              </div>
+              {/* Load balancing is a choice between backends, so it only exists once there are two.
+                  Shown disabled with the reason rather than hidden, so "where did the setting go"
+                  has an answer on the screen. */}
+              <Field label="How calls are spread across the backends">
+                <select
+                  disabled={!d.resource.canEdit || !canBalance}
+                  value={canBalance ? rule : "failover"}
+                  onChange={(e) => setRule(e.target.value)}
+                >
+                  <option value="failover">
+                    Failover — try them in the order written
+                  </option>
+                  <option value="round-robin">
+                    Round-robin — spread calls across them
+                  </option>
+                </select>
+              </Field>
+              {!canBalance ? (
+                <p className="muted">
+                  Add a second backend to choose between failover and round-robin.
+                  With one backend every call goes to it, and a circuit breaker
+                  has nothing to fail over to — so that policy is unavailable too.
+                </p>
+              ) : rule === "round-robin" ? (
+                <p className="muted">
+                  Each gateway keeps its own place in the rotation, so calls are
+                  spread per instance rather than across the fleet.
+                </p>
+              ) : null}
+              </div>
+            </section>
+            <section className="workspace-section">
+              <h4>Published address · {s.environment.toUpperCase()}</h4>
+              {/* Domain, sub-domain and path are one thought — the first two *are* the third — so
+                  one group holds all three, and the derived path sits with the two boxes that
+                  decide it rather than under a heading of its own. */}
+              <div className="field-group">
+                <DomainPicker
+                  domain={domain}
+                  subdomain={subdomain}
+                  disabled={!d.resource.canEdit}
+                  onChange={(nextTaxonomy) => {
+                    setDomain(nextTaxonomy.domain);
+                    setSubdomain(nextTaxonomy.subdomain);
+                  }}
+                />
+                <Field
+                  label="Public path"
+                  hint="Built from the domain, the sub-domain and the API's name — change those to change this."
+                >
+                  {/* Derived, not typed: the domain is the first segment of the address, so a path
+                      somebody could edit freely is a path that could contradict the catalog. */}
+                  <input readOnly value={basePath} aria-label="Public path" />
+                </Field>
+                {!d.resource.domain && (
+                  <Notice kind="warn">
+                    This API was published before the catalog had domains. Choosing
+                    one moves it from <span className="mono">{d.settings?.basePath}</span>{" "}
+                    to <span className="mono">{basePath}</span> when you save, so
+                    anybody calling the old address has to be told.
+                  </Notice>
+                )}
+              </div>
+              <div className="field-group">
+                <GatewayPicker
+                  localities={localities}
+                  selected={gateways}
+                  path={basePath}
+                  environment={s.environment}
+                  disabled={!d.resource.canEdit}
+                  onChange={setGateways}
+                />
+              </div>
+              <Notice kind="error">{certificates.error}</Notice>
+            </section>
           </div>
         )}
         {tab === "policies" && (
@@ -1188,7 +1210,10 @@ function EditorForm({
               )}
               certificate={certificate}
               onCertificate={setCertificate}
+              catalogue={catalogue}
+              globalUnits={d.globalUnits ?? []}
             />
+            <Notice kind="error">{credentials.error}</Notice>
             <details className="workspace-advanced">
               <summary>Advanced settings</summary>
               <CodeMirror
@@ -1245,7 +1270,17 @@ function EditorForm({
             />
           </div>
         )}
-        {tab === "history" && <OperationList items={operations} />}{" "}
+        {tab === "history" && (
+          /* The one place deployment progress is reported. It used to be here *and* in a panel
+             below the workspace on every other tab — so the Definition tab, the Playground and the
+             log search each carried a table about something else, and the tab named after it was
+             the only one that did not. Finishing is announced by the bell rather than by a table
+             somebody has to be looking at (`operation.complete`). */
+          <section className="workspace-section">
+            <h4>Deployment progress</h4>
+            <OperationList items={operations} />
+          </section>
+        )}{" "}
         {["definition", "properties", "policies"].includes(tab) && (
           <div className="native-actions workspace-save">
             <button
@@ -1322,18 +1357,34 @@ function EditorForm({
                   </>
                 )}
               </span>
-            ) : null}
+            ) : (
+              /* Where the progress went. One sentence beside the button that starts a deployment,
+                 rather than a table on every panel: what is still in flight is on History, and
+                 what has landed arrives in the bell without anybody watching for it. */
+              <span className="muted">
+                Saving deploys automatically.{" "}
+                {inFlight > 0 ? (
+                  <>
+                    <button type="button" className="linklike" onClick={() => setTab("history")}>
+                      {inFlight} change{inFlight === 1 ? "" : "s"} still reaching the gateways
+                    </button>
+                    .
+                  </>
+                ) : (
+                  <>
+                    Progress is on{" "}
+                    <button type="button" className="linklike" onClick={() => setTab("history")}>
+                      History
+                    </button>
+                    ; the bell says when it lands.
+                  </>
+                )}
+              </span>
+            )}
           </div>
         )}
         </div>
       </Panel>
-      {/* Only where there is progress to report. On somebody else's long-published API this used
-          to read "No changes yet. Publish an API to get started." (finding 8). */}
-      {operations.length > 0 && tab !== "history" && (
-        <Panel title="Deployment progress">
-          <OperationList items={operations.slice(0, 5)} />
-        </Panel>
-      )}
       {version && (
         <NewVersion
           data={d}
@@ -1446,12 +1497,8 @@ function PromoteDialog({
               localities={localities}
               selected={selected}
               environment={to}
-              onChange={setGateways}
-            />
-            <PathPreview
-              localities={localities}
-              selected={selected}
               path={there.data?.settings?.basePath ?? basePath}
+              onChange={setGateways}
             />
           </>
         )}
@@ -1502,7 +1549,11 @@ function NewVersion({
         })
       : versionedPath(d.settings?.basePath ?? "", d.resource.apiVersion, version);
   const [identifier, setIdentifier] = useState(() => nextVersion(existing));
-  const [path, setPath] = useState(() => pathFor(nextVersion(existing)));
+  // Derived from the identifier above, not held in state. It was a state the identifier's own
+  // `onChange` wrote and a text box could then overwrite — so a path outside the API's domain
+  // prefix was one keystroke away, which is the address contradicting the catalog that the
+  // workspace's Public path is read-only to prevent.
+  const path = pathFor(identifier);
   const [productId, setProduct] = useState<string>(d.products?.[0]?.id ?? "");
   const owned =
     products.data?.items.filter(
@@ -1565,18 +1616,18 @@ function NewVersion({
             pattern="v[1-9][0-9]{0,30}"
             aria-invalid={refusal ? true : undefined}
             value={identifier}
-            onChange={(e) => {
-              setIdentifier(e.target.value);
-              setPath(pathFor(e.target.value));
-            }}
+            onChange={(e) => setIdentifier(e.target.value)}
           />
         </Field>
         {/* Beside the field it is about rather than in the disabled button's tooltip: the reader
             has to change this box, and a reason they can only find by hovering the control they
             cannot press is a reason nobody reads. */}
         {refusal && <Notice kind="error">{refusal}</Notice>}
-        <Field label="Public path">
-          <input required value={path} onChange={(e) => setPath(e.target.value)} />
+        {/* Kept, but as a fact rather than a field. The sentence above promises that v1 keeps
+            serving on its own path, and this is the claim that makes it checkable — where the new
+            version will answer, changing as the identifier is typed. */}
+        <Field label="Public path" hint="Built from the catalog location and the identifier above.">
+          <input readOnly value={path} aria-label="Public path" />
         </Field>
         <Field label="Product">
           <select

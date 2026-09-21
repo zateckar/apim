@@ -50,6 +50,26 @@ export function Portal({ session: s, path }: { session: Session; path: string })
     [applicationId, tick],
     applicationId,
   );
+  /**
+   * Which environments the resource on screen is actually in.
+   *
+   * The switcher is the shell's, so the shell asks — one read keyed by the resource, not by the
+   * environment, so switching stage does not re-shape the control doing the switching. `tick`
+   * refreshes it, which is how a stage a promotion has just reached becomes selectable without a
+   * reload. Every other screen answers `null`, and `null` means "offer the whole chain".
+   */
+  const resourceId = route.id === "api" ? (match.params.resourceId ?? null) : null;
+  const reach = useAsync(
+    () =>
+      resourceId
+        ? api.get<{ environments: string[] }>(
+            `/api/resources/${encodeURIComponent(resourceId)}/environments`,
+          )
+        : Promise.resolve(null),
+    [resourceId, tick],
+    resourceId ?? "",
+  );
+  const reachable = reach.data?.environments ?? null;
   const [theme, setTheme] = useState(() => localStorage.getItem("portal-theme") ?? "light");
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -221,17 +241,48 @@ export function Portal({ session: s, path }: { session: Session; path: string })
               <p className="native-page-purpose">{route.purpose}</p>
             </div>
             <div className="native-actions">
-              {route.environmentScoped && <div className="seg" role="group" aria-label="Environment">
-                {s.meta.chain.map((environment) => (
-                  <button
-                    className={s.environment === environment ? "active" : ""}
-                    key={environment}
-                    aria-pressed={s.environment === environment}
-                    onClick={() => s.setEnvironment(environment)}
-                  >
-                    {environment.toUpperCase()}
-                  </button>
-                ))}
+              {route.environmentScoped && <div
+                className="seg"
+                role="group"
+                aria-label="Environment"
+                // Where this read's failure belongs. It degrades to the safe answer — every stage
+                // offered, which is what the switcher did before it existed — so a banner across
+                // the page would be louder than the consequence; the control that could not be
+                // narrowed says why it was not.
+                title={
+                  reach.error
+                    ? `Every stage is offered: which ones this API is in could not be read — ${reach.error}`
+                    : undefined
+                }
+              >
+                {s.meta.chain.map((environment) => {
+                  // Disabled with the reason, never hidden: a chain drawn short would misstate
+                  // how many stages the estate has. Unknown — no resource on screen, or the read
+                  // has not landed — offers everything, because a switcher that greys out while a
+                  // request is in flight is worse than one that occasionally offers a stage the
+                  // screen then explains it is not in. The selected stage always stays operable,
+                  // so arriving at one the API is not in is never a dead control.
+                  const absent =
+                    reachable !== null &&
+                    environment !== s.environment &&
+                    !reachable.includes(environment);
+                  return (
+                    <button
+                      className={s.environment === environment ? "active" : ""}
+                      key={environment}
+                      aria-pressed={s.environment === environment}
+                      disabled={absent}
+                      title={
+                        absent
+                          ? `Not in ${environment.toUpperCase()} — a version reaches a stage by being promoted into it from the one before.`
+                          : undefined
+                      }
+                      onClick={() => s.setEnvironment(environment)}
+                    >
+                      {environment.toUpperCase()}
+                    </button>
+                  );
+                })}
               </div>}
               {["apis", "mcp", "a2a", "dashboard"].includes(section) && route.id !== "api" && (
                 <button

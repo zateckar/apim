@@ -39,6 +39,39 @@ export function fixOf(err: unknown): Fix | null {
   return typeof screen === "string" ? ({ ...fix } as Fix) : null;
 }
 
+/**
+ * The two refusals that mean this browser no longer has a session: `no_session`, which the router
+ * answers when a session has passed either bound or been revoked, and `session_expired`, which the
+ * OIDC claims refresh answers when the identity provider has ended its own. `auth-oidc.ts` has said
+ * since v5 that the SPA "knows what to do with that code"; until now it did not, and an expiry
+ * arrived as `401 Unauthorized: sign in first` on whichever screen happened to be polling.
+ *
+ * `bad_credentials` is deliberately not on the list — a 401 from the sign-in form is an answer, not
+ * an expiry, and treating it as one would re-render the screen the user is already on. Neither is
+ * the 503 `auth_backend_unavailable`: a provider outage must not sign the whole estate out.
+ */
+const SESSION_LOST_CODES = new Set(["no_session", "session_expired"]);
+
+export function isSessionLost(err: unknown): boolean {
+  return (
+    err instanceof ApiError && err.status === 401 && SESSION_LOST_CODES.has(String(err.problem.code))
+  );
+}
+
+const sessionLostListeners = new Set<() => void>();
+
+/**
+ * Told when a request comes back saying the session is gone. `App` is the only subscriber: it
+ * renders the sign-in screen in place of the portal, which unmounts every screen — and with them
+ * the tickers that would otherwise keep the storm of 401s going behind it.
+ */
+export function onSessionLost(listener: () => void): () => void {
+  sessionLostListeners.add(listener);
+  return () => {
+    sessionLostListeners.delete(listener);
+  };
+}
+
 async function request<T>(
   method: string,
   path: string,
@@ -66,12 +99,16 @@ async function request<T>(
     data = null;
   }
   if (!response.ok) {
-    throw new ApiError(
+    const error = new ApiError(
       response.status,
       data?.title ?? response.statusText,
       data?.detail ?? text ?? "request failed",
       data && typeof data === "object" ? data : {},
     );
+    // Announced before it is thrown, so the caller's own `catch` still runs and still renders the
+    // refusal it was written to render. Nothing here decides what happens next; `App` does.
+    if (isSessionLost(error)) for (const listener of sessionLostListeners) listener();
+    throw error;
   }
   return data as T;
 }

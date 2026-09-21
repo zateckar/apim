@@ -1270,6 +1270,18 @@ a { color: inherit; text-decoration: none; }
   font-size: 12.5px; line-height: 1.5;
 }
 .changelog-text { color: var(--fg); }
+/* The two inline forms `CHANGELOG.md` uses. `strong` names a screen or a setting, so it carries
+   the body colour even inside the muted summary — that is the word the line is about. `code` is a
+   key, a path or a header, and wears the same tinted chip as a code span in a rendered
+   description, so the two do not look like different kinds of thing. */
+.changelog-text strong, .changelog-summary strong { font-weight: 650; color: var(--fg); }
+.changelog-text code, .changelog-summary code {
+  font-family: var(--font-mono);
+  font-size: 0.92em;
+  padding: 0 3px;
+  border-radius: 3px;
+  background: var(--bg-muted);
+}
 .changelog-tag {
   display: inline-flex; align-items: center; justify-content: center;
   padding: 2px 0;
@@ -3792,25 +3804,97 @@ a { color: inherit; text-decoration: none; }
 .native-portal .api-workspace [role="tabpanel"] { min-width: 0; }
 .native-portal .api-workspace [role="tabpanel"] > .cm-theme { min-width: 0; }
 .native-portal .api-workspace .cm-editor { margin-top: 0; }
-.native-portal .api-workspace .workspace-properties .card { box-shadow: none; margin-bottom: 20px; }
-.native-portal .api-workspace .workspace-properties .card-head { padding: 14px 20px; background: var(--bg-subtle); }
-.native-portal .api-workspace .workspace-properties .card-head h3 { font-size: 14px; }
+/* Section and group — the two-level vocabulary the workspace's tabs use instead of nesting cards.
+   A `Panel` draws a boundary, and a panel inside the workspace's own panel drew a boundary around
+   something that was never separate: a box, in a box, in a box, where the inner borders carried no
+   information. A **section** is a heading and a rule, which is how a document separates topics; a
+   **group** is the tint, and it goes around a set of fields that genuinely belong together — which
+   is what `.taxonomy-fields` already did alone, and looked arbitrary for being the only one. */
+/* The version selector, sized to its value rather than to the page. `.lbl` inline, because a
+   label stacked over a control in a row of buttons makes the row twice as tall. */
+.native-portal .api-workspace .workspace-version { display: flex; align-items: center; gap: 8px; }
+.native-portal .api-workspace .workspace-version .lbl { font-size: 12px; font-weight: 600; color: var(--fg-muted); }
+.native-portal .api-workspace .workspace-version select { min-height: 36px; padding-block: 6px; width: auto; }
+.native-portal .workspace-section { margin: 0 0 28px; }
+.native-portal .workspace-section:last-child { margin-bottom: 0; }
+.native-portal .field-group {
+  padding: 16px; margin-bottom: 16px; max-width: 960px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-subtle);
+}
+.native-portal .field-group:last-child { margin-bottom: 0; }
+.native-portal .field-group > :last-child { margin-bottom: 0; }
+/* A tint inside a tint is two boundaries for one group. The taxonomy pair keeps its side-by-side
+   layout and gives up its own box wherever a group already provides one. */
+.native-portal .field-group .taxonomy-fields {
+  padding: 0; margin: 0 0 20px; border: 0; background: none; max-width: none;
+}
 .native-portal .api-workspace .native-field:last-child { margin-bottom: 0; }
 .backend-row { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 8px 0; }
 .native-portal .backend-row input[type="url"] { flex: 1 1 260px; font-family: var(--font-mono); font-size: 12px; }
 .native-portal .backend-row input[type="number"] { width: 85px; }
 /* The column headings, on the same flex track as the row below so "Share" lands over the weight
    box. The widths mirror the inputs they name, and the last cell stands in for Remove. */
+/* The whole rules editor takes both columns of the unit form's grid; a half-width rule row put
+   two unrelated rules side by side. */
+.header-rules { grid-column: 1 / -1; }
+/* A header rule reads left to right as one sentence — what to do, to which header, with what
+   value — so it is a fixed grid rather than `.backend-row`'s wrapping flex. On that flex the
+   editor's `width: 100%` (`.fieldset-card input, select`) gave every field a 100% flex basis and
+   put each of the four on its own line, which is what made the four actions unreadable as a set. */
+.header-rule {
+  display: grid;
+  grid-template-columns: 150px minmax(0, 1fr) minmax(0, 1.4fr) auto;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 0;
+}
+@media (max-width: 860px) {
+  /* Action and header name on one line, value and Delete under them: still two readable pairs. */
+  .header-rule { grid-template-columns: 150px minmax(0, 1fr); }
+}
 .backend-row-head { margin-bottom: 0; }
 .backend-row-head > :first-child { flex: 1 1 260px; }
 .backend-row-head > :nth-child(2) { width: 85px; }
 .backend-row-head > :last-child { width: 74px; }
 .native-portal .api-workspace .native-pool { margin-bottom: 20px; }
 .native-portal .api-workspace .url-list { padding-left: 0; overflow-wrap: anywhere; }
+/* Choosing a gateway is choosing an address, so each choice is a card with its addresses inside
+   it rather than a checkbox with a bare hostname beside it and the callable URLs repeated in a
+   separate preview underneath. Selected is a state you can see without reading the tick. */
+.native-portal .gateway-list .pick-list-head { margin-bottom: 10px; }
+.native-portal .gateway-list .pick-option {
+  padding: 12px 14px; margin-bottom: 8px;
+  border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface);
+}
+.native-portal .gateway-list .pick-option:hover { border-color: var(--border-strong); }
+.native-portal .gateway-list .pick-option.on { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.native-portal .gateway-list .pick-option:focus-within { box-shadow: 0 0 0 3px var(--accent-ring); }
+.native-portal .gateway-list .url-list { margin: 8px 0 0; }
+.native-portal .gateway-list .url-list li { font-size: 12.5px; }
+/* An unselected gateway still shows its addresses — they are what the choice is about — but dimmed,
+   so what the API will actually answer on is legible without counting ticks. */
+.native-portal .gateway-list .pick-option:not(.on) .url-list { opacity: .55; }
+.native-portal .gateway-list > .hint { display: block; margin-top: 10px; }
 .native-portal .api-workspace .policy-editor { padding: 16px; }
 .native-portal .api-workspace .policy-order { margin-top: 0; }
 .native-portal .api-workspace .policy-card-title { display: flex; flex-wrap: wrap; gap: 4px 8px; }
 .native-portal .api-workspace .policy-card-actions .icon-btn { width: 36px; height: 36px; }
+/* The Definition tab: the document on the left, what it declares on the right.
+   `minmax(0, …)` on both tracks rather than `1fr` alone — a grid item's default `min-width: auto`
+   is its content's intrinsic width, and a minified OpenAPI document has no wrap opportunity, so
+   without it the left column widens to the longest line and pushes the page sideways. */
+.definition-split { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); gap: 20px; align-items: start; }
+.definition-split > * { min-width: 0; }
+/* Capped, and it scrolls within itself. Uncapped, the editor grew to whatever was pasted into it
+   and the operation list started a thousand lines below the top of the tab. */
+.definition-split .cm-editor { border: 1px solid var(--border); border-radius: var(--r-md); }
+.definition-shape { position: sticky; top: 16px; max-height: calc(100vh - 140px); overflow: auto; }
+@media (max-width: 1100px) {
+  /* Two narrow columns are worse than one: below this the definition is unreadable beside the
+     list, so they stack and the sticky column stops being sticky. */
+  .definition-split { grid-template-columns: minmax(0, 1fr); }
+  .definition-shape { position: static; max-height: none; }
+}
 .workspace-advanced { margin: 20px 0; }
 .workspace-advanced summary { padding: 10px 0; cursor: pointer; color: var(--fg-muted); }
 .native-portal .api-workspace .workspace-save { border-top: 1px solid var(--border); padding-top: 20px; margin-top: 24px; }
@@ -3821,7 +3905,7 @@ a { color: inherit; text-decoration: none; }
 @media (max-width: 700px) {
   .native-portal .catalog-search { flex-basis: 100%; }
   .native-portal .api-workspace > .card-head { align-items: flex-start; }
-  .native-portal .api-workspace .workspace-properties .card-body { padding: 14px; }
+  .native-portal .field-group { padding: 14px; }
   .workspace-tabs { gap: 2px; }
   .workspace-tabs button { min-height: 44px; }
   .native-portal .workspace-catalog .version-env-picker { flex-wrap: wrap; max-width: 100%; }
@@ -3884,12 +3968,48 @@ a { color: inherit; text-decoration: none; }
 .native-portal .card-body:has(> table) { overflow-x: auto; }
 .native-portal .card-body > :first-child { margin-top: 0; }
 .native-portal .card-body > :last-child { margin-bottom: 0; }
+/* A card inside a card draws a boundary around something that was never separate: a box, in a box,
+   in a box, where the inner borders carried no information and the two paddings added up. No
+   screen writes that nesting on purpose — it happens through composition, when a screen's own
+   panel holds a component that is a panel on its own page (the workspace's Playground, Logs and
+   Revisions tabs, Trust's certificate list). So the inner one gives up its chrome and becomes a
+   section: the head is a heading and a rule to the margin, the body has no padding of its own, and
+   neither the outer screen nor the inner component has to know about the other.
+
+   `:has(> h3:only-child)` on the rule line, because a head that also carries buttons would put the
+   line after them, which reads as a rule belonging to the last button. */
+.native-portal .card .card { border: 0; border-radius: 0; box-shadow: none; background: none; margin: 0 0 28px; }
+.native-portal .card .card:last-child { margin-bottom: 0; }
+.native-portal .card .card > .card-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0; margin: 0 0 12px; background: none; border: 0;
+}
+.native-portal .card .card > .card-head:has(> h3:only-child)::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+.native-portal .card .card > .card-head h3 { font-size: 13px; font-weight: 600; letter-spacing: .05em; color: var(--fg-muted); }
+.native-portal .card .card > .card-body { padding: 0; }
 .native-portal .native-field { gap: 5px; margin-bottom: 16px; }
 .native-portal :is(input:not([type=checkbox]):not([type=radio]), select, textarea),
 .native-modal :is(input:not([type=checkbox]):not([type=radio]), select, textarea) {
   border-radius: var(--r-sm); padding: 7px 10px; background: var(--surface); color: var(--fg); min-height: 34px;
 }
 .native-portal :is(input, select, textarea):disabled { background: var(--bg-muted); color: var(--fg-muted); }
+/* A derived value looks derived. The shared stylesheet has said this since `.field` existed, but
+   the shell's controls carry `.native-field`, so the rule never reached them: the workspace's
+   computed Public path was a white box with a border, indistinguishable from one you may type in
+   until you tried. Dashed rather than merely muted, because a disabled field is one you are not
+   allowed to change and a derived field is one there is nothing to change *in* — the second is
+   worth telling apart. It stays selectable, which is the whole point of showing it.
+
+   The selector repeats the `:not()` pair above rather than saying `[readonly]` alone: that rule is
+   more specific than a lone attribute, so the short version set the dashed border and then lost the
+   background and the colour to it — which looked like the rule had not been written at all. */
+.native-portal :is(input:not([type=checkbox]):not([type=radio]), textarea)[readonly],
+.native-modal :is(input:not([type=checkbox]):not([type=radio]), textarea)[readonly] {
+  background: var(--bg-muted); color: var(--fg-muted);
+  border-color: var(--border); border-style: dashed; cursor: default;
+}
+.native-portal :is(input:not([type=checkbox]):not([type=radio]), textarea)[readonly]:focus,
+.native-modal :is(input:not([type=checkbox]):not([type=radio]), textarea)[readonly]:focus { border-color: var(--border); box-shadow: none; }
 .native-portal :is(input[type=checkbox], input[type=radio]), .native-modal :is(input[type=checkbox], input[type=radio]) { accent-color: var(--accent); width: auto; min-height: auto; }
 .native-portal .btn, .native-modal .btn { border-radius: var(--r-sm); min-height: 34px; }
 .native-portal .btn.sm, .native-modal .btn.sm { min-height: 30px; padding: 5px 9px; }
@@ -3899,6 +4019,9 @@ a { color: inherit; text-decoration: none; }
 .native-portal .native-page-head .seg { margin: 0; }
 .native-portal .seg button { background: transparent; min-height: 30px; padding: 5px 11px; font-size: 12px; }
 .native-portal .seg button.active { background: var(--surface); color: var(--accent); box-shadow: var(--shadow-xs); }
+/* A stage the thing on screen is not in. Faded rather than removed, so the chain still reads as
+   three stages and the gap is legible as "not there yet" rather than as an estate with two. */
+.native-portal .seg button:disabled { color: var(--fg-faint); cursor: default; }
 .native-portal .native-row { padding: 12px 0; gap: 16px; }
 .native-portal .native-row > div { min-width: 0; overflow-wrap: anywhere; }
 .native-portal .native-row > .native-actions { flex-shrink: 0; }
@@ -4091,7 +4214,6 @@ dialog.native-modal { margin: auto; }
 .native-portal .workspace-catalog .di-type-legend { background: var(--surface); }
 .native-portal .workspace-catalog .di-owner-legend { color: var(--fg-muted); }
 .native-portal .version-picker { background: var(--bg-subtle); color: var(--fg); border-color: var(--border); }
-.native-portal .api-workspace .workspace-properties .card-head { padding: 12px 16px; background: var(--surface); }
 .native-portal .gateway-settings table { table-layout: fixed; }
 .native-portal .gateway-settings thead th:first-child { width: 45%; }
 .native-portal .gateway-settings th, .native-portal .gateway-settings td { overflow-wrap: anywhere; }
@@ -4110,7 +4232,7 @@ dialog.native-modal { margin: auto; }
 .native-portal :is(.tabs button.active, .workspace-tabs button.active) {
   background: var(--accent-soft); color: var(--accent); box-shadow: inset 0 -2px var(--accent);
 }
-.native-portal :is(input, textarea, select):not(:disabled):hover { border-color: var(--border-strong); }
+.native-portal :is(input, textarea, select):not(:disabled):not([readonly]):hover { border-color: var(--border-strong); }
 .native-portal .kpi-heading { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .native-portal .kpi-heading > span { display: flex; color: var(--accent); }
 .native-portal .kpi-card.is-actionable { border-color: var(--border-strong); }
@@ -4120,8 +4242,20 @@ dialog.native-modal { margin: auto; }
 .native-portal :is(.listing-title a, .discover-item-title, td > a, .product-members a) { color: var(--accent); text-underline-offset: 3px; }
 .native-portal :is(.listing-title a, td > a, .product-members a):hover { text-decoration: underline; }
 .native-portal .subform { padding: 20px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--bg-subtle); }
-.native-portal .gateway-env > h3 { display: flex; align-items: center; gap: 12px; margin: 24px 0 12px; font-size: 13px; letter-spacing: .05em; color: var(--fg-muted); }
-.native-portal .gateway-env > h3::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+/* Reference material that belongs on a screen without competing with it — the same idiom as
+   `.workspace-advanced`, for the screens that are not the API workspace. */
+.native-portal .page-aside { margin: 4px 0 16px; }
+.native-portal .page-aside > summary { padding: 10px 0; color: var(--fg-muted); cursor: pointer; }
+.native-portal .page-aside > :not(summary) { margin-left: 18px; }
+/* A section heading: the words, then a rule to the right margin. The Gateways screen invented this
+   and it is the right answer generally, so it is one selector rather than two — a section is how
+   these screens separate topics now that they no longer nest a card per topic. */
+.native-portal :is(.gateway-env > h3, .workspace-section > h4) {
+  display: flex; align-items: center; gap: 12px; margin: 0 0 12px;
+  font-size: 13px; letter-spacing: .05em; color: var(--fg-muted);
+}
+.native-portal :is(.gateway-env > h3, .workspace-section > h4)::after { content: ""; height: 1px; background: var(--border); flex: 1; }
+.native-portal .gateway-env > h3 { margin-top: 24px; }
 .policy-category { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: var(--r-sm); }
 .policy-category-identity { color: var(--violet); background: var(--violet-soft); }
 .policy-category-traffic { color: var(--ok); background: var(--ok-soft); }
@@ -4160,10 +4294,22 @@ dialog.native-modal { margin: auto; }
 .native-portal .journey-number { display: grid; place-items: center; flex: 0 0 28px; height: 28px; border-radius: var(--r-sm); background: var(--accent-soft); color: var(--accent); }
 .native-portal .journey .btn { flex-shrink: 0; }
 .native-portal .journey li { margin-bottom: 6px; }
-.native-portal .subscription-list .native-row { gap: 24px; padding: 20px 4px; align-items: center; }
+/* One line per subscription. Four short facts read across the row; only the purpose, which is the
+   one field of arbitrary length, is clipped — and the whole of it is on hover and on the row's
+   own screen. The previous rules gave each fact a line of its own at sixteen pixels with twenty
+   above and below, so three rows filled a screen. */
+.native-portal .subscription-list .native-row { gap: 16px; padding: 10px 4px; align-items: center; }
 .native-portal .subscription-list .native-row > div:first-child { flex: 1; }
-.native-portal .subscription-list .native-row strong { font-size: 16px; }
-.native-portal .subscription-list .native-row small { margin: 6px 0 10px; line-height: 1.5; }
+.native-portal .subscription-list .native-row strong { font-size: 14px; }
+.native-portal .subscription-list .native-row small { margin: 2px 0 0; line-height: 1.4; }
+.native-portal .subscription-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.native-portal .subscription-purpose {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: min(62ch, 100%);
+}
 .native-portal .approval-list .native-row { padding: 18px; border: 1px solid var(--border); border-radius: var(--r-md); margin-top: 12px; }
 .native-portal .approval-list .native-row:has(.primary) { border-left: 3px solid var(--warn); background: var(--bg-subtle); }
 .native-portal .integration-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr)); gap: 16px; margin-top: 20px; }
@@ -4435,6 +4581,10 @@ dialog.native-modal { margin: auto; }
 .native-portal .field-number, .native-modal .field-number { flex: 0 1 180px; }
 .native-portal .native-field > input[type=number], .native-modal .native-field > input[type=number] { max-width: 180px; }
 .native-portal .field > input[type=password] { max-width: 400px; }
+/* That cap is for a password box on a full-width page. A modal's form is already as narrow as it
+   is going to get, and a 400px box between full-width ones reads as a different kind of field
+   rather than as a tidier one — which is what the credential modals looked like. */
+.native-modal .field > input[type=password] { max-width: 100%; }
 @media (max-width: 820px) {
   .publish-identity, .taxonomy-fields { grid-template-columns: minmax(0, 1fr); gap: 16px; }
   .publish-short-fields { gap: 20px; }

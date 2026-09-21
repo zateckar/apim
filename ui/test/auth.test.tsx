@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
-import { ForcedPasswordChange } from "../src/views/LoginView.tsx";
+import { ForcedPasswordChange, SessionEnded } from "../src/views/LoginView.tsx";
 import { ApplicationsView, ApplicationView } from "../src/views/ApplicationsView.tsx";
 import { AccountView } from "../src/views/AccountView.tsx";
 import { GLOSSARY } from "../src/lib/glossary.ts";
@@ -115,6 +115,24 @@ describe("the forced password change", () => {
     expect(html).toContain("Sign out instead");
     // The consequence, before the click rather than after it.
     expect(html).toContain("signs out every other browser");
+  });
+});
+
+describe("a session that ended while the portal was open", () => {
+  test("says what happened, not that something went wrong", () => {
+    const html = renderToStaticMarkup(<SessionEnded name="Clara Consumer" />);
+    expect(html).toContain("Your session has ended");
+    // Addressed to the person who was signed in a moment ago — this is not a first visit.
+    expect(html).toContain("Clara Consumer, sign in again");
+    // The two things somebody is about to wonder: where they land, and what they have to retype.
+    expect(html).toContain("come back to this page");
+    expect(html).toContain("part-way through is not kept");
+  });
+
+  test("works without a name, because the caller may be all the portal still knows", () => {
+    const html = renderToStaticMarkup(<SessionEnded name={null} />);
+    expect(html).toContain("Sign in again to come back to this page");
+    expect(html).not.toContain("null");
   });
 });
 

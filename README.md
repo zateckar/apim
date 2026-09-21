@@ -384,13 +384,22 @@ differ per deployment. Their shapes are in `openspec/project.md` § *Configurati
 environment's gateways answer on. It is what the playground composes a URL from, and what the
 Gateways screen groups instances under.
 
-**`INTEGRATIONS_FILE`** — everything a policy refers to *by name*, plus the networks nothing may
-reach: the denied CIDR ranges, registered JWT issuers and their key sets, registered token providers
-for backend authentication, registered shared secrets and HMAC schemes, the ceilings on XML and
-validation work, and the maximum length of a TLS exception.
+**`INTEGRATIONS_FILE`** — what a policy may refer to *by name* and an application may not register
+for itself, plus the networks nothing may reach: the denied CIDR ranges, registered JWT issuers and
+their key sets, registered token providers for backend authentication, registered shared secrets and
+HMAC schemes, the ceilings on XML and validation work, and the maximum length of a TLS exception.
 
 This is the file that makes the policy vocabulary safe: an owner can say "require a JWT from the
 corporate issuer", and cannot say "fetch this URL" or "trust this key I am pasting in".
+
+It is not the only source of a `credentialRef`. Applications keep their own passwords,
+API keys and HMAC pairs in the control plane's database, encrypted under the KEK, and manage them
+on the portal's Credentials screen without an operator — a policy names one as
+`app:<applicationId>:<name>`. Only the references that resolve to a URL the gateway itself
+*fetches*, `issuers` and `tokenProviders`, are still exclusively yours; those are the ones where
+registering an entry decides what the estate believes, or where a client secret is sent.
+`sharedSecrets` and `hmacSchemes` are still read, and are still the right place for a credential
+several applications share. Nothing in an existing file needs changing.
 
 `denyCidrs` is applied after DNS resolution to every URL an owner writes. Deny `169.254.0.0/16` —
 the instance metadata service — and loopback; the control plane adds its own `PUBLIC_URL` origin

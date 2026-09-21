@@ -22,6 +22,7 @@ import { TelemetryAggregator } from "./telemetry.ts";
 import { registerAdminRoutes } from "./api/admin.ts";
 import { registerAuthRoutes } from "./api/auth.ts";
 import { registerCatalogRoutes } from "./api/catalog.ts";
+import { registerCredentialRoutes } from "./api/credentials.ts";
 import { registerDashboardRoutes } from "./api/dashboard.ts";
 import { registerFleetRoutes } from "./api/fleet.ts";
 import { registerGatewayRoutes } from "./api/gateway.ts";
@@ -60,6 +61,7 @@ export function createRouter(): Router {
   registerLogRoutes(router);
   registerHealthRoutes(router);
   registerTrustRoutes(router);
+  registerCredentialRoutes(router);
   registerIntegrationRoutes(router);
   registerNotificationRoutes(router);
   registerOperationRoutes(router);

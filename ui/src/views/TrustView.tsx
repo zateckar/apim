@@ -5,7 +5,6 @@ import { useState } from "react";
 import {
   api,
   type BlockedRoute,
-  type CertificateRow,
   type DenyRuleList,
   type DenyRuleRow,
   type GovernanceReport,
@@ -26,6 +25,7 @@ import {
   useAsync,
 } from "../components";
 import { ALLOWED } from "../lib/capabilities";
+import { CertificateList } from "./CredentialsView";
 import { TrustAnchors } from "./TrustAnchors";
 
 /**
@@ -36,6 +36,10 @@ import { TrustAnchors } from "./TrustAnchors";
  * asked from either end, and because the answer to "what are we not verifying" has to live
  * somewhere an auditor can find without knowing which API to look at.
  *
+ * The certificates tab is the estate-wide *reading* only. An application manages its own on
+ * Credentials, beside the passwords and keys it holds for the same backends — a certificate is a
+ * credential with an expiry date, and that was two navigation entries for one question.
+ *
  * Two things this screen insists on, both from section 5.4: an exception has an end date with a
  * ceiling, and it has a reason long enough to be one. The form checks the reason and whole-day lifetime; the control plane
  * also enforces the configured ceiling. Asking for them up front is the difference between a policy
@@ -45,20 +49,18 @@ export function TrustView({
   meta,
   user,
   environment,
-  applicationId,
 }: {
-  applicationId?: string;
   meta: Meta;
   user: User;
   environment: string;
 }) {
   // Authorities first, and deliberately: it is the rung that removes the need for the other two
   // tabs, and putting exceptions first would teach the expensive habit (plan §8).
-  const [tab, setTab] = useState<"anchors" | "certificates" | "exceptions" | "deny" | "report">(applicationId ? "certificates" : "anchors");
+  const [tab, setTab] = useState<"anchors" | "certificates" | "exceptions" | "deny" | "report">("anchors");
 
   return (
     <>
-      {!applicationId && <div className="tabs" role="group" aria-label="Trust sections">
+      <div className="tabs" role="group" aria-label="Trust sections">
         <button className={tab === "anchors" ? "tab active" : "tab"} onClick={() => setTab("anchors")}>
           Certificate authorities
         </button>
@@ -78,382 +80,19 @@ export function TrustView({
             Governance report
           </button>
         )}
-      </div>}
+      </div>
 
       {tab === "anchors" && (
         <TrustAnchors meta={meta} environment={environment} isAdmin={user.isAdmin} />
       )}
-      {tab === "certificates" && <Certificates user={user} environment={environment} applicationId={applicationId} />}
+      {/* The estate-wide reading of the rows an application manages on its own Credentials screen.
+          One component for both, so a certificate does not describe itself one way to its owner
+          and another way to an auditor. */}
+      {tab === "certificates" && <CertificateList environment={environment} user={user} />}
       {tab === "exceptions" && <Exceptions user={user} environment={environment} />}
       {tab === "deny" && user.isAdmin && <DenyRules meta={meta} environment={environment} />}
       {tab === "report" && user.isAdmin && <Report />}
     </>
-  );
-}
-
-// ---------------------------------------------------------------- client certificates
-
-function Certificates({ user, environment, applicationId }: { user: User; environment: string; applicationId?: string }) {
-  const certificates = useAsync(
-    () => api.get<{ environment: string; items: CertificateRow[] }>(`/api/certificates?environment=${environment}`),
-    [environment],
-  );
-  const [uploading, setUploading] = useState(false);
-
-  // Sorted by how soon they break something: an expired client certificate is an outage on every
-  // request through its binding, and nothing else on this platform warns about it.
-  const items = [...(certificates.data?.items ?? [])].filter(row => !applicationId || row.applicationId === applicationId).sort((a, b) => a.expiresInDays - b.expiresInDays);
-  const expiring = items.filter((row) => !row.expired && row.expiresInDays <= 30);
-  const expired = items.filter((row) => row.expired);
-  if (certificates.error) return <Notice kind="error">{certificates.error}</Notice>;
-  if (!certificates.data) return <Skeleton rows={4} />;
-
-  return (
-    <>
-      <Notice kind="error">{certificates.error}</Notice>
-      {expired.length > 0 && (
-        <Notice kind="error">
-          {expired.length} certificate{expired.length === 1 ? " has" : "s have"} expired. Every
-          request through a binding that uses one is failing its TLS handshake right now.
-        </Notice>
-      )}
-      {expiring.length > 0 && (
-        <Notice kind="warn">
-          {expiring.length} certificate{expiring.length === 1 ? "" : "s"} expire within 30 days.
-        </Notice>
-      )}
-
-      <Panel
-        title={`Certificates in ${environment.toUpperCase()}`}
-        hint="Uploaded once, held encrypted under the KEK, and handed only to a live gateway instance over its own channel. The private key is never readable back through this API — not by you, not by an admin."
-      >
-        {/* An empty table used to be seven column headings over one grey sentence in a `<td>`. The
-            headings name columns that are not there, and the sentence is an empty state written
-            out longhand without the one thing an empty state owes the reader: what to do next. */}
-        {items.length === 0 ? (!uploading && (
-          <EmptyState
-            title={`No client certificates in ${environment.toUpperCase()}`}
-            detail="A binding only needs one if its backend asks for mutual TLS. Uploading it here is what makes it available to choose on a backend."
-            action={
-              <button className="btn primary" onClick={() => setUploading(true)}>
-                <I.Upload />
-                Upload a certificate
-              </button>
-            }
-          />
-        )) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Name</th>
-                <th>Subject</th>
-                <th>Issuer</th>
-                <th>Expires</th>
-                <th>Thumbprint</th>
-                <th>Used by</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((row) => (
-                <CertificateRowView
-                  key={row.id}
-                  row={row}
-                  user={user}
-                  reload={certificates.reload}
-                />
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {/* With rows above, the button is how you add another; with none, the empty state already
-            offered it and this would be the same control twice on one card. */}
-        {(items.length > 0 || uploading) && (
-          <div className="inline" style={{ marginTop: 12 }}>
-            <button className={uploading ? "btn ghost" : "btn primary"} onClick={() => setUploading(!uploading)}>
-              {!uploading && <I.Upload />}
-              {uploading ? "Cancel" : "Upload a certificate"}
-            </button>
-          </div>
-        )}
-        {uploading && (
-          <UploadCertificate
-            owner={applicationId}
-            taken={items.map(item => item.name)}
-            user={user}
-            environment={environment}
-            onDone={() => {
-              setUploading(false);
-              certificates.reload();
-            }}
-          />
-        )}
-      </Panel>
-    </>
-  );
-}
-
-function CertificateRowView({
-  row,
-  user,
-  reload,
-}: {
-  row: CertificateRow;
-  user: User;
-  reload: () => void;
-}) {
-  const action = useAction();
-  const mine = user.isAdmin || user.applications.includes(row.applicationId);
-  const [renewing, setRenewing] = useState(false);
-
-  return (
-    <>
-    <tr className={row.expired ? "row-bad" : ""}>
-      <td>
-        <strong>{row.name}</strong>
-        <div className="muted">{row.applicationId}</div>
-      </td>
-      <td className="mono small">{row.subject}</td>
-      <td className="mono small">{row.issuer}</td>
-      <td>
-        {row.expired ? (
-          <span className="badge bad">expired</span>
-        ) : row.expiresInDays <= 30 ? (
-          <span className="badge warn">{row.expiresInDays} days</span>
-        ) : (
-          <span className="badge ok">{row.expiresInDays} days</span>
-        )}
-        <div className="muted">{formatDate(row.notAfter)}</div>
-      </td>
-      <td className="mono small" title={row.thumbprint}>
-        {row.thumbprint.slice(0, 16)}…
-      </td>
-      <td>
-        {row.usedBy.length === 0 ? (
-          <span className="muted">nothing</span>
-        ) : (
-          row.usedBy.map((use) => (
-            <div key={`${use.resourceId}:${use.environment}`}>
-              <Link to={`/apis/${use.resourceId}`}>{use.resourceName}</Link>{" "}
-              <span className="muted">{use.environment}</span>
-            </div>
-          ))
-        )}
-      </td>
-      <td>
-        {/* Renewal comes before deletion, in that order and on the same row, because it is the
-            thing somebody arriving at an expiry warning actually came to do. Deleting and
-            re-uploading was the only path there was, and it is the one that takes the route down
-            in between. */}
-        <button
-          className="ghost small"
-          disabled={!mine}
-          title={
-            mine
-              ? undefined
-              : "Only the owning application, or an administrator, can renew this certificate."
-          }
-          onClick={() => setRenewing(!renewing)}
-        >
-          {renewing ? "Cancel" : "Renew"}
-        </button>
-        <DangerZone
-          what={`Delete ${row.name}`}
-          name={row.name}
-          consequence="The private key is destroyed with it. Any binding that later needs this identity has to have the certificate uploaded again."
-          permission={
-            !mine
-              ? { enabled: false, reason: "Only the owning application, or an administrator, can delete this certificate." }
-              : row.usedBy.length > 0
-                ? {
-                    enabled: false,
-                    reason: `${row.usedBy.length} binding${row.usedBy.length === 1 ? " names" : "s name"} this certificate; change ${row.usedBy.length === 1 ? "it" : "them"} first.`,
-                  }
-                : ALLOWED
-          }
-          busy={action.busy}
-          error={action.error}
-          onConfirm={async () => {
-            const ok = await action.run(() => api.del(`/api/certificates/${row.id}`));
-            if (ok) reload();
-          }}
-        />
-      </td>
-    </tr>
-    {renewing && (
-      <tr>
-        <td colSpan={7}>
-          <RenewCertificate
-            row={row}
-            onDone={() => {
-              setRenewing(false);
-              reload();
-            }}
-          />
-        </td>
-      </tr>
-    )}
-    </>
-  );
-}
-
-/**
- * Replace one certificate's material without touching anything that names it.
- *
- * Deliberately not an "upload" form with the same fields: there is no name, no application and no
- * environment to choose, because a renewal cannot change any of them. What it can change is the
- * material, and the screen says what that means for the routes below it before anything is sent.
- */
-function RenewCertificate({ row, onDone }: { row: CertificateRow; onDone: () => void }) {
-  const [certPem, setCertPem] = useState("");
-  const [chainPem, setChainPem] = useState("");
-  const [keyPem, setKeyPem] = useState("");
-  const action = useAction();
-
-  return (
-    <div className="subform">
-      <Notice kind="error">{action.error}</Notice>
-      <Notice kind="ok">{action.message}</Notice>
-      <p className="muted">
-        Renewing keeps the name <strong>{row.name}</strong> and the identity{" "}
-        <span className="mono">{row.subject}</span>, so the{" "}
-        {row.usedBy.length === 0
-          ? "bindings that later name it"
-          : `${row.usedBy.length} binding${row.usedBy.length === 1 ? "" : "s"} that name it`}{" "}
-        keep working and nothing has to be re-approved. A certificate for a different subject is not
-        a renewal — upload that one separately and move each binding to it deliberately.
-      </p>
-      <div className="field">
-        <label>New certificate (PEM)</label>
-        <textarea
-          value={certPem}
-          placeholder="-----BEGIN CERTIFICATE-----"
-          onChange={(event) => setCertPem(event.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label>
-          Intermediates (PEM, optional) <span className="muted">leaf first, root omitted</span>
-        </label>
-        <textarea value={chainPem} onChange={(event) => setChainPem(event.target.value)} />
-      </div>
-      <div className="field">
-        <label>
-          New private key (PEM) <span className="muted">encrypted on arrival, never returned</span>
-        </label>
-        <textarea
-          value={keyPem}
-          placeholder="-----BEGIN PRIVATE KEY-----"
-          onChange={(event) => setKeyPem(event.target.value)}
-        />
-      </div>
-      <button
-        disabled={action.busy || !certPem.trim() || !keyPem.trim()}
-        onClick={async () => {
-          const ok = await action.run(
-            () =>
-              api.post(`/api/certificates/${row.id}/renew`, {
-                certPem,
-                chainPem: chainPem.trim() ? chainPem : null,
-                keyPem,
-              }),
-            "renewed — the gateways pick the new material up on their next poll",
-          );
-          if (ok) onDone();
-        }}
-      >
-        Renew in place
-      </button>
-    </div>
-  );
-}
-
-function UploadCertificate({
-  taken,
-  owner,
-  user,
-  environment,
-  onDone,
-}: {
-  user: User;
-  taken: string[];
-  environment: string;
-  onDone: () => void;
-  owner?: string;
-}) {
-  const [applicationId, setApplicationId] = useState(owner ?? user.applications[0] ?? "");
-  const [name, setName] = useState("");
-  const [certPem, setCertPem] = useState("");
-  const [chainPem, setChainPem] = useState("");
-  const [keyPem, setKeyPem] = useState("");
-  const action = useAction();
-  const nameProblem = nameError(name) ?? (taken.includes(name) ? "A certificate with this name already exists here. Renew it in place instead." : null);
-  const invalid = Boolean(nameProblem) || !applicationId || !certPem.trim() || !keyPem.trim();
-
-  return (
-    <div className="subform">
-      <Notice kind="error">{action.error}</Notice>
-      <Notice kind="ok">{action.message}</Notice>
-      <div className="row">
-        {owner ? <div className="field"><label>Application</label><input value={owner} readOnly/></div> : <TextField label="Application" value={applicationId} onChange={setApplicationId} />}
-        <TextField label="Name" hint={NAME_HINT} maxLength={61} error={name ? nameProblem : null} value={name} onChange={setName} placeholder="orders-backend" />
-        <div className="field">
-          <label>Environment</label>
-          <input value={environment} readOnly />
-        </div>
-      </div>
-      <div className="field">
-        <label htmlFor="upload-cert">Certificate (PEM)</label>
-        <textarea
-          id="upload-cert" value={certPem}
-          placeholder="-----BEGIN CERTIFICATE-----"
-          onChange={(event) => setCertPem(event.target.value)}
-        />
-      </div>
-      <div className="field">
-        <label htmlFor="upload-chain">
-          Intermediates (PEM, optional) <span className="muted">leaf first, root omitted</span>
-        </label>
-        <textarea id="upload-chain" value={chainPem} onChange={(event) => setChainPem(event.target.value)} />
-      </div>
-      <div className="field">
-        <label htmlFor="upload-key">
-          Private key (PEM) <span className="muted">encrypted on arrival, never returned</span>
-        </label>
-        <textarea
-          id="upload-key" value={keyPem}
-          placeholder="-----BEGIN PRIVATE KEY-----"
-          onChange={(event) => setKeyPem(event.target.value)}
-        />
-      </div>
-      <button
-        className="btn primary"
-        disabled={action.busy || invalid}
-        onClick={async () => {
-          if (invalid) return;
-          const ok = await action.run(
-            () =>
-              api.post("/api/certificates", {
-                environment,
-                applicationId,
-                name,
-                certPem,
-                chainPem: chainPem.trim() ? chainPem : null,
-                keyPem,
-              }),
-            "uploaded",
-          );
-          if (ok) onDone();
-        }}
-      >
-        Upload
-      </button>
-      <p className="muted" style={{ marginBottom: 0 }}>
-        The certificate and key are checked as a pair before they are stored: a mismatched pair fails
-        here rather than at 3 a.m. on the first handshake.
-      </p>
-    </div>
   );
 }
 

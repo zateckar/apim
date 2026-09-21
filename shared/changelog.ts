@@ -142,3 +142,41 @@ export function parseChangeLog(source: string): ChangeLogEntry[] {
 export function currentVersion(entries: ChangeLogEntry[]): string {
   return entries[0]?.version ?? "0.0.0";
 }
+
+/** One run of a bullet: plain text, a `**bold**` span, or a `` `code` `` span. */
+export type InlineSpan = { kind: "text" | "strong" | "code"; text: string };
+
+/**
+ * A bullet's text, split into the two inline forms the file actually uses.
+ *
+ * Here rather than in the component for the same reason `CHANGE_LOG_TYPE_CLASSES` is: `**` and
+ * `` ` `` are part of the format this module defines, and a renderer that guessed at them
+ * separately would be a second opinion about what a bullet says. The component turns a span into
+ * an element and decides nothing else.
+ *
+ * Deliberately **two** markers and no more. Every bullet in `CHANGELOG.md` uses only these; links
+ * appear solely in the preamble, which `parseChangeLog` never reaches. A fuller Markdown reader
+ * here would be an inline parser nobody exercises, and going through `dangerouslySetInnerHTML`
+ * would put an HTML sink in the portal for two characters' worth of emphasis.
+ *
+ * The matching is flat and leftmost-first: a marker with no partner stays literal, and a span is
+ * never re-scanned, so `` `a ** b` `` is one code span rather than a broken bold.
+ */
+export function inlineSpans(source: string): InlineSpan[] {
+  // Code before bold in the alternation, so at a position where both could start the backtick
+  // wins; `+?` on the bold body so `**a** and **b**` is two spans rather than one.
+  const inline = /`([^`]+)`|\*\*([\s\S]+?)\*\*/g;
+  const spans: InlineSpan[] = [];
+  let at = 0;
+  for (let match = inline.exec(source); match; match = inline.exec(source)) {
+    if (match.index > at) spans.push({ kind: "text", text: source.slice(at, match.index) });
+    spans.push(
+      match[1] === undefined
+        ? { kind: "strong", text: match[2]! }
+        : { kind: "code", text: match[1] },
+    );
+    at = match.index + match[0].length;
+  }
+  if (at < source.length) spans.push({ kind: "text", text: source.slice(at) });
+  return spans;
+}

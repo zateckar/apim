@@ -267,10 +267,13 @@ function Console({
             . Owning an API is not the same as being one of its callers, so you need a{" "}
             <Term name="subscription" /> like anybody else.
           </p>
+          {/* "New subscription", the same words the Subscriptions panel uses for the same act.
+              It read "Subscribe an application to this API", which named the wrong object: what is
+              subscribed to is the product carrying this API, which is what the dialog then asks. */}
           {onSubscribe ? (
-            <button onClick={onSubscribe}>Subscribe an application to try this</button>
+            <button onClick={onSubscribe}>New subscription</button>
           ) : (
-            <Link to={`/catalog/${resourceId}/subscribe`}>Subscribe an application to try this →</Link>
+            <Link to={`/catalog/${resourceId}/subscribe`}>New subscription →</Link>
           )}
         </Panel>
       )}

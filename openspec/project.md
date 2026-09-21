@@ -152,7 +152,8 @@ Modules named by more than one capability spec:
 | `ai-gateway-mcp-a2a` | The two RPC variants and the rewritten agent card |
 | `backend-integration-surface` | The backend pool, the breaker, named backend-auth schemes |
 | `egress-governance` | What the platform may reach: the denied ranges, and the admin's deny rules |
-| `app-certificates` | The client identity the estate presents, and renewal in place |
+| `app-certificates` | The client identity the estate presents, and rotation in place |
+| `app-credentials` | Everything an application holds to prove who it is, and which references stay an admin's |
 | `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
 | `dashboard-health` | Health Status, uptime, telemetry, the application dashboard, FixMe |
 | `kafka-workspace` | Topics, access requests, the HTTP proxy |
@@ -214,7 +215,7 @@ already has, kept because losing one costs a working link.
 | `approvals` | `/approvals` | Approvals | application | API |
 | `kafka` | `/kafka` | Kafka Topics | application | Kafka |
 | `kafka-proxy` | `/kafka-proxy` | Kafka REST Proxy | application | Kafka |
-| `certificates` | `/certificates` | Certificates | application | Other |
+| `credentials` | `/credentials` · `/certificates` | Credentials | application | Other |
 | `integrations` | `/integrations` | External systems | application | Other |
 | `mail` | `/mail` | Mail | application | Other |
 | `activity` | `/activity` | Activity | application | Other |
@@ -293,6 +294,7 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET · POST | `/api/resources` | ses |
 | GET · PATCH · DELETE | `/api/resources/:id` | ses |
 | GET | `/api/resources/:id/editor` | ses |
+| GET | `/api/resources/:id/environments` | ses |
 | POST | `/api/resources/:id/configure` | ses |
 | POST | `/api/resources/:id/owner` | ses |
 | POST | `/api/resources/:id/regenerate` | ses |
@@ -370,13 +372,16 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | POST | `/api/integration-events/:id/decision` | ses |
 | POST | `/api/applications/:id/integrations/:integration` | ses |
 
-### Trust and certificates
+### Trust, certificates and credentials
 
 | Method | Path | Auth |
 |---|---|---|
 | GET · POST | `/api/certificates` | ses |
 | POST | `/api/certificates/:id/renew` | ses |
 | DELETE | `/api/certificates/:id` | ses |
+| GET · POST | `/api/credentials` | ses |
+| POST | `/api/credentials/:id/rotate` | ses |
+| DELETE | `/api/credentials/:id` | ses |
 | GET · POST | `/api/trust/anchors` | ses |
 | DELETE | `/api/trust/anchors/:id` | ses |
 | POST | `/api/trust/anchors/preview` | ses |
@@ -442,9 +447,12 @@ Tables, by the capability that owns them:
   `operation`. `gateway_setting` is sparse and keyed `(scope, scope_id, key)`: `scope_id` is `''`
   for the fleet, the environment's name, or a **target id**, so a gateway's overrides follow it
   through a rename and leave with it when it is deleted.
-- **Trust** — `certificate`, `trust_anchor`, `tls_exception`, `egress_deny_rule`. The last is
-  estate-wide when its `environment` is `NULL`, and its removal is dated rather than destructive,
-  like an anchor's.
+- **Trust** — `certificate`, `app_credential`, `trust_anchor`, `tls_exception`, `egress_deny_rule`.
+  `egress_deny_rule` is estate-wide when its `environment` is `NULL`, and its removal is dated
+  rather than destructive, like an anchor's. `app_credential` is the secret half of the reference
+  vocabulary, owned per application and per environment: its `secret_enc` is KEK-encrypted and its
+  `principal` — the username, the client id — is deliberately in the clear, so a listing can say
+  which account a credential is without the key.
 - **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`.
 - **Logs** — `body_capture`. The lines themselves live in the log index, never here.
 - **Everything else** — `audit`, `integration_event`, `playground_call`, `schema_version`.
@@ -553,8 +561,12 @@ paths are), hosts case-insensitively with the port stripped. A backend URL is jo
 ### Policy Vocabulary
 
 A closed, declarative JSON vocabulary. No expressions, no XML, no `send-request`, and no URL an
-owner writes is ever fetched: backends live in `binding`, and every reference (`issuerRef`,
-`credentialRef`, `tokenProviderRef`) resolves through the admin-registered integrations file.
+owner writes is ever fetched: backends live in `binding`, and the two references that resolve to
+something carrying a URL (`issuerRef`, `tokenProviderRef`) resolve through the admin-registered
+integrations file. The references that are **only a secret** (`credentialRef`, `schemeRef`) resolve
+through that file *or* through `app_credential`, the owning application's own store, written
+`app:<applicationId>:<name>` — see `app-credentials`. The line is what resolving the reference makes
+the gateway *do*: a password is compared or presented, an issuer is fetched from.
 
 A **unit** is the smallest thing that can independently exist or be absent; everything beneath a
 unit is its values and moves as one piece. Half a `rateLimit` is never merged.
@@ -992,9 +1004,19 @@ TargetDef = { environment, adapter, name?, enforce, paused, config,
 
 The admin-registered references a policy may name, plus the estate's ceilings:
 `denyCidrs[]`, `xml` limits, `validationCeilings`, `tlsExceptionMaxDays`, and the issuer /
-token-provider / HMAC / secret registries. A dangling reference is a **boot failure** naming both
-the reference and where it is used — a policy pointing at a missing secret would otherwise fail at
-the first request instead.
+token-provider / HMAC / secret registries. A dangling reference *within the file* is a **boot
+failure** naming both the reference and where it is used — a `tokenProviders` entry pointing at a
+missing secret would otherwise fail at the first request instead.
+
+It is no longer the only source. The references that are purely secret resolve through
+`app_credential` as well, written `app:<applicationId>:<name>`, and those are owned and rotated by
+the application in the portal rather than by editing this file and restarting. What stays here is
+what carries a **URL the gateway itself fetches** — `issuers`, `tokenProviders` — plus the ceilings
+and `denyCidrs`. `sharedSecrets` and `hmacSchemes` remain supported and are still the right place
+for a credential shared across applications; they are no longer the only way to have one. An
+application-owned reference is not validated at boot, because the database it resolves against
+changes while the process is running; an unresolvable one is a 503 at the gateway and a refusal to
+delete in the portal. See `app-credentials`.
 
 `egressAllowlist[]` was retired in v1.4.0. The platform no longer requires a host to be registered
 before it may be a backend; it denies networks here and denies hosts by administrator rule in the
@@ -1020,7 +1042,8 @@ there before deploying.
 - Left navigation: neutral theme-aware surface with a subtle divider, dark-green brand row aligned with the topbar, rounded application picker with initials, grouped
   sections (API · Kafka · Other · Global · Administration).
 - Main content: white panels on a near-white canvas in light mode, subtle neutral borders, little card chrome except where a boundary
-  means something.
+  means something. Inside a panel, a topic is a heading with a rule to the margin and a group of
+  fields is a tinted surface — never a second card.
 - Shared controls: mint primary buttons with dark-green text; compact segmented environment
   switchers; rounded rectangular inputs and selects; CodeMirror with a light theme for schema
   editing; a three-step `.stepper` for the publish wizard.
@@ -1051,6 +1074,12 @@ Enforced over the source by `ui/test/hygiene.test.ts`, not by review:
   second vocabulary grows back.
 - **One section shape**: `Panel` renders `.card` › optional `.card-head` › `.card-body`, and the
   outer `.card` carries no padding of its own so the head's rule reaches both edges.
+- **Three levels, and only three**: a `Panel` is a boundary between subjects; a
+  `section.workspace-section` with an `h4` is a topic inside one, drawn as a heading and a rule to
+  the margin; a `div.field-group` is the tinted surface around a set of fields that are one
+  decision. A `.card` that ends up inside another `.card` — which happens through composition, not
+  on purpose — is flattened to the second of those by `brand.css`, so a component that is a card
+  alone is a section when it is embedded. A tint never nests inside a tint.
 - No `confirm()`, and no delete of a named object outside a typed confirmation (`DangerZone`).
 - No request whose error is never rendered: every `useAsync` / `useAction` error reaches the page.
 - Every `tone-*` class a view names must exist in the stylesheet.
@@ -1074,7 +1103,8 @@ To recreate the system, implement in this order. The capability specs follow the
 10. Versions and promotion — `api-versioning-and-stage`
 11. The playground and per-request logs — `api-testing-playground`, `request-logs`
 12. Health, telemetry and the dashboard — `dashboard-health`
-13. Certificates and the trust store — `app-certificates`, `trust-store`
+13. Certificates, credentials and the trust store — `app-certificates`, `app-credentials`,
+    `trust-store`
 14. The RPC variants — `ai-gateway-mcp-a2a`
 15. Kafka — `kafka-workspace`, `kafka-playground`
 16. The surrounding systems — `integrations-and-mocks`, `skonet-integration`,

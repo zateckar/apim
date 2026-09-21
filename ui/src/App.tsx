@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { api, type AuthProviders, type Me, type Meta, type User } from "./api";
+import { useEffect, useState } from "react";
+import { api, onSessionLost, type AuthProviders, type Me, type Meta, type User } from "./api";
 import { Notice, useAsync, usePath } from "./components";
 import { Portal } from "./portal/Portal";
 import { ForcedPasswordChange, LoginView } from "./views/LoginView";
@@ -50,10 +50,30 @@ export interface Session {
  * gets a 401 from `/api/meta`, and — more subtly — a caller who has to change their password gets
  * a 403 from *everything except* three paths. Fetching the chain and the application list up front would
  * turn "choose a password" into "the portal could not reach its own API".
+ *
+ * A session can also end *after* all of that, and that is the second thing decided here. Both
+ * bounds are enforced on the server, an administrator can revoke a session, and an OIDC session
+ * dies with the identity provider's own — so the portal has to expect to be signed out mid-use.
  */
 export function App() {
   const path = usePath();
   const me = useAsync(() => api.get<Me>("/api/me"), []);
+
+  /**
+   * The session went while the portal was open (auth-and-access, "The portal signs the user back
+   * in when their session ends"). Every screen polls, so the first one to notice used to render
+   * `401 Unauthorized: sign in first` and the rest joined it a tick later, and the only way out
+   * was for the reader to guess that a reload would show them a sign-in screen.
+   *
+   * Signing in again is rendered **instead of** the portal, for the reason the forced password
+   * change is: the control plane now refuses everything, so a shell whose every link answers 401
+   * is a worse lie than one screen that says what happened. Unmounting is not only honesty — it
+   * takes the tickers with it, which is what stops the 401s. The address is untouched, so signing
+   * in returns to the screen that was open, and the portal mounts afresh rather than carrying a
+   * dead session's data or its refusals across.
+   */
+  const [expired, setExpired] = useState(false);
+  useEffect(() => onSessionLost(() => setExpired(true)), []);
 
   const signedIn = Boolean(me.data?.user);
   const mustChangePassword = Boolean(me.data?.mustChangePassword);
@@ -68,6 +88,29 @@ export function App() {
   const [application, setApplication] = useState<string | null>(() => localStorage.getItem("portal-application"));
 
   if (me.loading) return <div className="main">Loading…</div>;
+  // Ahead of all three gates below. Ahead of the password gate and the sign-in screen because
+  // whatever `me` last said about this caller, the session behind it is gone — and ahead of
+  // `me.error` because `/api/me` is itself one of the requests that can bring the news: the OIDC
+  // claims refresh runs before every route including the public ones, so an identity provider that
+  // has ended its own session answers this very call with `session_expired`. "The portal could not
+  // reach its own API" would be the wrong sentence for the one failure we know the cause of.
+  if (expired) {
+    return (
+      <LoginView
+        expired={{
+          name: me.data?.user?.name ?? null,
+          // Only a local account's username belongs in the local form. An OIDC principal's is the
+          // name they have *there*, and putting it in this box invites them to try a password the
+          // portal has never held.
+          username: me.data?.user?.provider === "local" ? (me.data.user.username ?? null) : null,
+        }}
+        onSignedIn={() => {
+          setExpired(false);
+          me.reload();
+        }}
+      />
+    );
+  }
   if (me.error) return <Unreachable error={me.error} />;
   if (!signedIn) return <LoginView onSignedIn={me.reload} />;
   if (mustChangePassword) return <PasswordGate onChanged={me.reload} />;

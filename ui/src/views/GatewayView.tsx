@@ -150,11 +150,18 @@ function Fleet({ environment }: { environment: string }) {
   );
 }
 
-/** The rate-limit arithmetic, read from the fleet rather than from the session's cached meta. */
+/**
+ * The rate-limit arithmetic, read from the fleet rather than from the session's cached meta.
+ *
+ * An aside rather than a card. It is reference — the same sentence every time, true whether or not
+ * anything is wrong — and as a panel of its own at the foot of a status page it had the same weight
+ * as "what each replica is running", which is the thing somebody came here to read.
+ */
 function RateLimitArithmetic({ chain }: { chain: string[] }) {
   const environments = useAsync(() => api.get<EnvironmentsView>("/api/environments"), []);
   return (
-    <Panel title="How a rate limit adds up">
+    <details className="page-aside">
+      <summary>How a rate limit adds up</summary>
       <p className="hint">
         Rate limiting is per replica and needs no coordination (design section 5.7), so the fleet
         ceiling is <code>calls x replicas</code>:
@@ -170,7 +177,7 @@ function RateLimitArithmetic({ chain }: { chain: string[] }) {
           </li>
         ))}
       </ul>
-    </Panel>
+    </details>
   );
 }
 

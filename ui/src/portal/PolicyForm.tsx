@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import {
   DEFAULT_TIMEOUT_MS,
   DISABLED_KEY,
   disabledUnits,
   MAX_TIMEOUT_MS,
 } from "../../../shared/policy";
-import { Field, Modal, Notice } from "../components";
+import { Field, Link, Modal, Notice } from "../components";
 import * as I from "./icons";
 
 /**
@@ -35,6 +35,28 @@ import * as I from "./icons";
  * applies to one variant, or that only an administrator may change, says so where the control would
  * have been.
  */
+
+/**
+ * What the credential pickers are drawn from: the application's own credentials in this
+ * environment, and the names an administrator registered in the integrations file.
+ *
+ * Both, from one call, because the editor's job is to stop somebody typing a reference. Every one
+ * of these boxes used to be a free-text input whose placeholder read "a name registered in
+ * INTEGRATIONS_FILE" — a file the person filling the box cannot open, cannot add to, and whose
+ * contents they had to be told. A typo in it is not a validation error: it is a policy that saves
+ * cleanly and answers 503 at the first request.
+ */
+export interface CredentialCatalogue {
+  applicationId: string;
+  own: Array<{ name: string; kind: string; principal: string | null; ref: string }>;
+  registered: { secrets: string[]; hmacSchemes: string[]; issuers: string[]; tokenProviders: string[] };
+}
+
+export const EMPTY_CATALOGUE: CredentialCatalogue = {
+  applicationId: "",
+  own: [],
+  registered: { secrets: [], hmacSchemes: [], issuers: [], tokenProviders: [] },
+};
 
 export interface UnitDef {
   key: string;
@@ -176,8 +198,25 @@ export function summarize(unitKey: string, value: unknown): string | null {
     case "backendAuth":
       return String(v.type ?? "none");
     case "headers.request":
-    case "headers.response":
-      return `${count("set", "set")} · ${count("remove", "removal")}`;
+    case "headers.response": {
+      // The collapsed row says what the rules *do*. It used to read "0 sets · 0 removals", which
+      // named two of the four actions and counted a unit doing three things as doing none.
+      const rules = headerRulesOf(v);
+      if (rules.length === 0) return "no rules";
+      const verbs: Record<string, string> = {
+        remove: "removed",
+        set: "overwritten",
+        append: "appended",
+        skip: "set if missing",
+      };
+      return HEADER_ACTIONS.map((entry) => ({
+        verb: verbs[entry.action]!,
+        n: rules.filter((rule) => rule.action === entry.action).length,
+      }))
+        .filter((entry) => entry.n > 0)
+        .map((entry) => `${entry.n} ${entry.verb}`)
+        .join(" · ");
+    }
     case "cors":
       return count("origins", "origin");
     case "errorFormat":
@@ -194,6 +233,153 @@ export function summarize(unitKey: string, value: unknown): string | null {
   }
 }
 
+/**
+ * A reference, chosen rather than typed.
+ *
+ * Two sources and they are not interchangeable, so they are two groups rather than one list: the
+ * application's own credentials, which whoever is reading this can add to on the Credentials
+ * screen, and the administrator-registered names, which they cannot. A value that matches neither
+ * — a credential since deleted, a document written against another estate — is kept as its own
+ * option and marked, because silently resetting somebody's policy to "none" while they were
+ * looking at a different tab is worse than showing them a reference that no longer resolves.
+ */
+function CredentialPicker({
+  label,
+  hint,
+  value,
+  onChange,
+  catalogue,
+  kinds,
+  registered,
+}: {
+  label: string;
+  hint?: string;
+  value: string;
+  onChange: (next: string) => void;
+  catalogue: CredentialCatalogue;
+  /** Which of the three shapes can answer here. An API key is not a username and password. */
+  kinds: string[];
+  /** Which administrator-registered list applies, if any. */
+  registered: string[];
+}) {
+  const own = catalogue.own.filter((entry) => kinds.includes(entry.kind));
+  const known = [...own.map((entry) => entry.ref), ...registered];
+  const dangling = value !== "" && !known.includes(value);
+  return (
+    <>
+      <Field label={label} hint={hint}>
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">— Select a credential —</option>
+          {own.length > 0 && (
+            <optgroup label="This application's own">
+              {own.map((entry) => (
+                <option key={entry.ref} value={entry.ref}>
+                  {entry.name}
+                  {entry.principal ? ` — ${entry.principal}` : ""}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {registered.length > 0 && (
+            <optgroup label="Registered by an administrator">
+              {registered.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </optgroup>
+          )}
+          {dangling && (
+            <option value={value}>{value} — not found in this environment</option>
+          )}
+        </select>
+      </Field>
+      {dangling && (
+        <Notice kind="warn">
+          Nothing in {catalogue.applicationId || "this application"} or in the integrations file
+          answers to <span className="mono">{value}</span>. A gateway refuses every request through
+          this route with 503 until it does.
+        </Notice>
+      )}
+      {own.length === 0 && (
+        <p className="muted">
+          This application has no credential of this kind in this environment.{" "}
+          <Link to={`/${catalogue.applicationId}/credentials`}>Add one on Credentials</Link> — it
+          takes no administrator, and the secret is never written into a policy.
+        </p>
+      )}
+    </>
+  );
+}
+
+/**
+ * The half an owner may name but not create: a token issuer, or a token endpoint. Both resolve to
+ * a URL the gateway itself fetches, so both stay administrator-registered — and the picker says
+ * that where the box used to say nothing at all.
+ */
+function AdminRefPicker({
+  label,
+  hint,
+  nothing,
+  value,
+  onChange,
+  registered,
+}: {
+  label: string;
+  hint: string;
+  /** What to say when the estate has none registered — the answer is always "ask an admin". */
+  nothing: string;
+  value: string;
+  onChange: (next: string) => void;
+  registered: string[];
+}) {
+  const dangling = value !== "" && !registered.includes(value);
+  return (
+    <>
+      <Field label={label} hint={hint}>
+        <select value={value} onChange={(event) => onChange(event.target.value)}>
+          <option value="">— Select —</option>
+          {registered.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+          {dangling && <option value={value}>{value} — not registered here</option>}
+        </select>
+      </Field>
+      {dangling && (
+        <Notice kind="warn">
+          No entry called <span className="mono">{value}</span> is registered in this estate's
+          integrations file, so this route will refuse every request with 503. An administrator
+          registers one.
+        </Notice>
+      )}
+      {registered.length === 0 && <p className="muted">{nothing}</p>}
+    </>
+  );
+}
+
+function IssuerPicker({
+  value,
+  onChange,
+  registered,
+}: {
+  value: string;
+  onChange: (next: string) => void;
+  registered: string[];
+}) {
+  return (
+    <AdminRefPicker
+      label="Token issuer"
+      hint="The algorithm allowlist and the JWKS come from the issuer's own registration, so an API cannot widen what its issuer will accept."
+      nothing="This estate has no token issuer registered. Deciding whose tokens the gateways believe is an administrator's decision — ask one to add it, then it appears here."
+      value={value}
+      onChange={onChange}
+      registered={registered}
+    />
+  );
+}
+
 /** Units that only make sense against more than one backend, and why. */
 const NEEDS_POOL: Record<string, string> = {
   circuitBreaker:
@@ -208,6 +394,11 @@ export function attachedKeys(document: Record<string, unknown>): string[] {
   return Object.keys(document).filter((key) => key !== "operations");
 }
 
+/** Said on both controls that would take an inherited unit off this one API. */
+const INHERITED_TITLE =
+  "Set for every API in this environment — give this one its own value instead, or change it on " +
+  "Global policy";
+
 export function PolicyForm({
   value,
   onChange,
@@ -220,6 +411,8 @@ export function PolicyForm({
   certificates,
   certificate,
   onCertificate,
+  catalogue,
+  globalUnits = [],
 }: {
   /** The document as JSON text, because that is what the workspace holds and sends. */
   value: string;
@@ -233,6 +426,15 @@ export function PolicyForm({
   certificates: Array<{ id: string; name: string }>;
   certificate: string;
   onCertificate: (id: string) => void;
+  catalogue: CredentialCatalogue;
+  /**
+   * The units this environment sets for every API. The document the workspace loads is the
+   * *effective* one, so without this list an inherited unit is indistinguishable from the API's
+   * own — and the editor offered to remove both, which for an inherited one was an edit the
+   * control plane quietly undid at the next read. Empty on the global screen itself, where every
+   * unit on the page is the environment's by definition.
+   */
+  globalUnits?: string[];
 }) {
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
@@ -335,6 +537,7 @@ export function PolicyForm({
                 onChange={(next) => set(unit.key, next)}
                 onRemove={() => remove(unit.key)}
                 disabled={disabled}
+                inherited={globalUnits.includes(unit.key)}
                 lockedReason={
                   unit.key === "auth.subscriptionKey" && !isAdmin
                     ? "Whether this API requires a subscription key is an administrator's " +
@@ -350,6 +553,7 @@ export function PolicyForm({
                 certificates={certificates}
                 certificate={certificate}
                 onCertificate={onCertificate}
+                catalogue={catalogue}
               />
             ))}
           </div>
@@ -459,11 +663,13 @@ function PolicyCard({
   onRemove,
   disabled,
   lockedReason,
+  inherited,
   warning,
   instances,
   certificates,
   certificate,
   onCertificate,
+  catalogue,
 }: {
   unit: UnitDef;
   value: unknown;
@@ -476,13 +682,21 @@ function PolicyCard({
   onRemove: () => void;
   disabled: boolean;
   lockedReason: string | null;
+  /** The environment sets this unit for every API, so this one may override it and nothing else. */
+  inherited: boolean;
   warning: string | null;
   instances: number;
   certificates: Array<{ id: string; name: string }>;
   certificate: string;
   onCertificate: (id: string) => void;
+  catalogue: CredentialCatalogue;
 }) {
   const locked = disabled || Boolean(lockedReason);
+  // An inherited unit may be *overridden* — that is the one thing the global tier lets an API do
+  // about it — so its fields stay editable while the two controls that would take it off this API
+  // do not. Switching it off is a removal said politely, so it goes with Remove rather than with
+  // the editor.
+  const detachable = !locked && !inherited;
   return (
     <div className="policy-item">
       <div className={`policy-card${enabled ? "" : " off"}`}>
@@ -490,6 +704,7 @@ function PolicyCard({
         <div className="policy-card-body">
           <div className="policy-card-title">
             {unit.title} <span className="mono muted">{unit.key}</span>
+            {inherited && <span className="badge">whole environment</span>}
           </div>
           <div className="policy-card-summary">
             {summary ?? unit.description.split(".")[0]}
@@ -499,12 +714,14 @@ function PolicyCard({
           <button
             type="button"
             className={`icon-btn${enabled ? "" : " inactive"}`}
-            disabled={locked}
+            disabled={!detachable}
             aria-pressed={enabled}
             title={
-              enabled
-                ? "Switch off — the configuration is kept and the gateway stops applying it"
-                : "Switch back on"
+              inherited
+                ? INHERITED_TITLE
+                : enabled
+                  ? "Switch off — the configuration is kept and the gateway stops applying it"
+                  : "Switch back on"
             }
             aria-label={`${enabled ? "Switch off" : "Switch on"} ${unit.title}`}
             onClick={onToggle}
@@ -523,8 +740,8 @@ function PolicyCard({
           <button
             type="button"
             className="icon-btn danger"
-            disabled={locked}
-            title="Remove — deletes the configuration as well"
+            disabled={!detachable}
+            title={inherited ? INHERITED_TITLE : "Remove — deletes the configuration as well"}
             aria-label={`Remove ${unit.title}`}
             onClick={onRemove}
           >
@@ -535,6 +752,13 @@ function PolicyCard({
       {!enabled && (
         <p className="muted small">
           Switched off. Its configuration is kept here and no gateway is told about it.
+        </p>
+      )}
+      {inherited && (
+        <p className="muted small">
+          Set for every API in this environment. You can give this one its own value here; taking
+          it off is a decision for the whole estate, on{" "}
+          <Link to="/policy">Global policy</Link>.
         </p>
       )}
       {lockedReason && <p className="muted small">{lockedReason}</p>}
@@ -551,6 +775,7 @@ function PolicyCard({
               certificates={certificates}
               certificate={certificate}
               onCertificate={onCertificate}
+              catalogue={catalogue}
             />
           </fieldset>
         </div>
@@ -574,6 +799,7 @@ function UnitForm({
   certificates,
   certificate,
   onCertificate,
+  catalogue,
 }: {
   unitKey: string;
   value: any;
@@ -582,6 +808,7 @@ function UnitForm({
   certificates: Array<{ id: string; name: string }>;
   certificate: string;
   onCertificate: (id: string) => void;
+  catalogue: CredentialCatalogue;
 }) {
   const num = (next: string) => Number(next);
 
@@ -613,13 +840,15 @@ function UnitForm({
   if (unitKey === "auth.basic") {
     return (
       <>
-        <Field label="Credential reference">
-          <input
-            value={value?.credentialRef ?? ""}
-            placeholder="a name registered in INTEGRATIONS_FILE"
-            onChange={(e) => onChange({ ...value, credentialRef: e.target.value })}
-          />
-        </Field>
+        <CredentialPicker
+          label="The username and password callers must present"
+          hint="Only a username-and-password credential can answer here: what is compared is the whole pair, exactly as the caller sends it."
+          value={value?.credentialRef ?? ""}
+          onChange={(next) => onChange({ ...value, credentialRef: next })}
+          catalogue={catalogue}
+          kinds={["basic"]}
+          registered={catalogue.registered.secrets}
+        />
         <Field label="Realm">
           <input value={value?.realm ?? "api"} onChange={(e) => onChange({ ...value, realm: e.target.value })} />
         </Field>
@@ -633,13 +862,11 @@ function UnitForm({
   if (unitKey === "auth.jwt") {
     return (
       <>
-        <Field label="Issuer reference">
-          <input
-            value={value?.issuerRef ?? ""}
-            placeholder="an issuer an administrator registered"
-            onChange={(e) => onChange({ ...value, issuerRef: e.target.value })}
-          />
-        </Field>
+        <IssuerPicker
+          value={value?.issuerRef ?? ""}
+          onChange={(next) => onChange({ ...value, issuerRef: next })}
+          registered={catalogue.registered.issuers}
+        />
         <Field label="Header">
           <input
             value={value?.headerName ?? "Authorization"}
@@ -671,12 +898,11 @@ function UnitForm({
   if (unitKey === "auth.introspection") {
     return (
       <>
-        <Field label="Issuer reference">
-          <input
-            value={value?.issuerRef ?? ""}
-            onChange={(e) => onChange({ ...value, issuerRef: e.target.value })}
-          />
-        </Field>
+        <IssuerPicker
+          value={value?.issuerRef ?? ""}
+          onChange={(next) => onChange({ ...value, issuerRef: next })}
+          registered={catalogue.registered.issuers}
+        />
         <Field label="Cache the answer for (seconds)">
           <input
             type="number"
@@ -929,30 +1155,7 @@ function UnitForm({
   }
 
   if (unitKey === "headers.request" || unitKey === "headers.response") {
-    const sets = (value?.set ?? {}) as Record<string, string>;
-    const first = Object.entries(sets)[0] ?? ["X-Subscription-Name", "${subscription.name}"];
-    return (
-      <>
-        <Field label="Set header">
-          <input
-            value={first[0]}
-            onChange={(e) => onChange({ ...value, set: { [e.target.value]: first[1] } })}
-          />
-        </Field>
-        <Field label="Value (templates allowed)">
-          <input
-            value={first[1]}
-            onChange={(e) => onChange({ ...value, set: { [first[0]]: e.target.value } })}
-          />
-        </Field>
-        <p className="muted">
-          remove → set → append → skip, in that order. Values may use{" "}
-          <span className="mono">{"${subscription.name}"}</span>,{" "}
-          <span className="mono">{"${application.name}"}</span> and the rest of the closed variable
-          set; anything else is refused on save. Use the advanced JSON for the other three actions.
-        </p>
-      </>
-    );
+    return <HeaderRulesForm direction={unitKey === "headers.request" ? "request" : "response"} value={value} onChange={onChange} />;
   }
 
   if (unitKey === "transform") {
@@ -1259,8 +1462,8 @@ function UnitForm({
             {!certificate && (
               <Notice kind="warn">
                 Mutual TLS is selected and no certificate is bound in this environment, so the
-                gateway will refuse to activate this route. Pick one, or upload one under
-                Certificates.
+                gateway will refuse to activate this route. Pick one, or add one on{" "}
+                <Link to={`/${catalogue.applicationId}/credentials`}>Credentials</Link>.
               </Notice>
             )}
             <p className="muted">
@@ -1270,21 +1473,25 @@ function UnitForm({
           </>
         )}
         {type === "basic" && (
-          <Field label="Credential reference">
-            <input
-              value={value?.credentialRef ?? ""}
-              onChange={(e) => onChange({ ...value, credentialRef: e.target.value })}
-            />
-          </Field>
+          <CredentialPicker
+            label="The username and password to present"
+            value={value?.credentialRef ?? ""}
+            onChange={(next) => onChange({ ...value, credentialRef: next })}
+            catalogue={catalogue}
+            kinds={["basic"]}
+            registered={catalogue.registered.secrets}
+          />
         )}
         {type === "api-key" && (
           <>
-            <Field label="Credential reference">
-              <input
-                value={value?.credentialRef ?? ""}
-                onChange={(e) => onChange({ ...value, credentialRef: e.target.value })}
-              />
-            </Field>
+            <CredentialPicker
+              label="The key to present"
+              value={value?.credentialRef ?? ""}
+              onChange={(next) => onChange({ ...value, credentialRef: next })}
+              catalogue={catalogue}
+              kinds={["secret"]}
+              registered={catalogue.registered.secrets}
+            />
             <Field label="Sent in">
               <select value={value?.in ?? "header"} onChange={(e) => onChange({ ...value, in: e.target.value })}>
                 <option value="header">a header</option>
@@ -1301,12 +1508,14 @@ function UnitForm({
         )}
         {type === "oauth2-client-credentials" && (
           <>
-            <Field label="Token provider reference">
-              <input
-                value={value?.tokenProviderRef ?? ""}
-                onChange={(e) => onChange({ ...value, tokenProviderRef: e.target.value })}
-              />
-            </Field>
+            <AdminRefPicker
+              label="Token endpoint"
+              hint="Where the gateway asks for a backend token, and the client secret it presents there."
+              nothing="This estate has no token endpoint registered. Where a client secret is sent is an administrator's decision, so this one is not yours to add — ask one, and it appears here."
+              value={value?.tokenProviderRef ?? ""}
+              onChange={(next) => onChange({ ...value, tokenProviderRef: next })}
+              registered={catalogue.registered.tokenProviders}
+            />
             <Field label="Scope">
               <input
                 value={value?.scope ?? ""}
@@ -1317,12 +1526,14 @@ function UnitForm({
         )}
         {type === "hmac-sa-key-lite" && (
           <>
-            <Field label="Scheme reference">
-              <input
-                value={value?.schemeRef ?? ""}
-                onChange={(e) => onChange({ ...value, schemeRef: e.target.value })}
-              />
-            </Field>
+            <CredentialPicker
+              label="The application id and key to sign with"
+              value={value?.schemeRef ?? ""}
+              onChange={(next) => onChange({ ...value, schemeRef: next })}
+              catalogue={catalogue}
+              kinds={["hmac"]}
+              registered={catalogue.registered.hmacSchemes}
+            />
             <Field label="Service shortcut">
               <input
                 value={value?.serviceShortcut ?? ""}
@@ -1332,8 +1543,9 @@ function UnitForm({
           </>
         )}
         <p className="muted">
-          Every reference resolves through the integrations file, so no owner writes a secret or a
-          URL the gateway will call.
+          Whichever is chosen, the secret itself never enters this document: the policy carries a
+          name, and the value is attached when the environment's configuration is built. Anything
+          with a URL behind it stays administrator-registered; a password does not.
         </p>
       </>
     );
@@ -1421,6 +1633,179 @@ function UnitForm({
   }
 
   return <JsonUnit value={value} onChange={onChange} />;
+}
+
+// ------------------------------------------------------------------ header rules
+//
+// The unit is four maps — `remove`, `set`, `append`, `skip` — and the form used to edit exactly one
+// entry of one of them, under the labels "Set header" and "Value", with a sentence beneath reading
+// "remove → set → append → skip, in that order" and "use the advanced JSON for the other three
+// actions". That sentence is the whole of what the screen said about three of the four things this
+// unit does, and it says it in the vocabulary of the stored document rather than of the decision:
+// nobody arrives wanting to `skip` a header. They arrive wanting to *not overwrite one that is
+// already there*.
+//
+// So the form is a list of rules, each naming its action in words, and the four actions are the
+// four things that can be done to a header. The pipeline order is still the pipeline order — it is
+// a property of the gateway, not of the order somebody typed the rows in — so the list is shown
+// sorted by it and says so once, rather than per row.
+
+const HEADER_ACTIONS = [
+  { action: "remove", label: "Remove", takesValue: false, said: "is deleted if present" },
+  { action: "set", label: "Overwrite", takesValue: true, said: "replaces whatever was there" },
+  { action: "append", label: "Append", takesValue: true, said: "is added alongside any existing value" },
+  { action: "skip", label: "Set if missing", takesValue: true, said: "is set only when it is absent" },
+] as const;
+
+type HeaderAction = (typeof HEADER_ACTIONS)[number]["action"];
+
+interface HeaderRule {
+  /** Stable across edits, so renaming a header does not remount its row and steal the caret. */
+  id: number;
+  action: HeaderAction;
+  name: string;
+  value: string;
+}
+
+/** The stored unit, read as a list in the order the gateway applies it. */
+export function headerRulesOf(unit: unknown): Array<Omit<HeaderRule, "id">> {
+  const value = (unit ?? {}) as Record<string, unknown>;
+  const out: Array<Omit<HeaderRule, "id">> = [];
+  for (const name of Array.isArray(value.remove) ? (value.remove as string[]) : []) {
+    if (typeof name === "string") out.push({ action: "remove", name, value: "" });
+  }
+  for (const action of ["set", "append", "skip"] as const) {
+    const entries = value[action];
+    if (typeof entries !== "object" || entries === null) continue;
+    for (const [name, entry] of Object.entries(entries as Record<string, unknown>)) {
+      out.push({ action, name, value: typeof entry === "string" ? entry : "" });
+    }
+  }
+  return out;
+}
+
+/**
+ * The list, back as the stored unit. A rule with no header name is dropped — it is a row somebody
+ * is still filling in, not an instruction — and an empty action map is omitted rather than written
+ * as `{}`, so an untouched unit is byte-identical to the one that was loaded and the workspace's
+ * Save does not cut a revision that says nothing.
+ */
+export function headerUnitOf(rules: Array<Omit<HeaderRule, "id">>): Record<string, unknown> {
+  const unit: Record<string, unknown> = {};
+  const remove = rules.filter((rule) => rule.action === "remove" && rule.name).map((rule) => rule.name);
+  if (remove.length > 0) unit.remove = remove;
+  for (const action of ["set", "append", "skip"] as const) {
+    const entries = Object.fromEntries(
+      rules.filter((rule) => rule.action === action && rule.name).map((rule) => [rule.name, rule.value]),
+    );
+    if (Object.keys(entries).length > 0) unit[action] = entries;
+  }
+  return unit;
+}
+
+function HeaderRulesForm({
+  direction,
+  value,
+  onChange,
+}: {
+  direction: "request" | "response";
+  value: unknown;
+  onChange: (next: unknown) => void;
+}) {
+  // Seeded once and held locally, like the JSON fallback: two rows can legitimately be half-typed
+  // and share an empty name, and a list derived from the map on every keystroke would collapse
+  // them into one and take the caret with it.
+  const [rules, setRules] = useState<HeaderRule[]>(() =>
+    headerRulesOf(value).map((rule, index) => ({ ...rule, id: index })),
+  );
+  const [nextId, setNextId] = useState(() => headerRulesOf(value).length);
+
+  const write = (next: HeaderRule[]) => {
+    setRules(next);
+    onChange(headerUnitOf(next));
+  };
+  const edit = (id: number, patch: Partial<HeaderRule>) =>
+    write(rules.map((rule) => (rule.id === id ? { ...rule, ...patch } : rule)));
+
+  const noun = direction === "request" ? "the request sent to the backend" : "the response returned to the caller";
+  return (
+    // A rule is four controls reading left to right, so it needs the whole row: the enclosing
+    // `.native-form-grid` is two columns, and without this each rule sat in a half-width cell
+    // beside another rule, which read as a two-column table nobody had given headings.
+    <div className="header-rules">
+      {rules.length === 0 && (
+        <p className="muted">
+          No header rules, so {noun} carries the headers it already had.
+        </p>
+      )}
+      {rules.map((rule) => {
+        const shape = HEADER_ACTIONS.find((entry) => entry.action === rule.action)!;
+        return (
+          <div className="header-rule" key={rule.id}>
+            <select
+              aria-label="What to do with this header"
+              value={rule.action}
+              onChange={(event) => edit(rule.id, { action: event.target.value as HeaderAction })}
+            >
+              {HEADER_ACTIONS.map((entry) => (
+                <option key={entry.action} value={entry.action}>
+                  {entry.label}
+                </option>
+              ))}
+            </select>
+            <input
+              aria-label="Header name"
+              placeholder="X-Subscription-Name"
+              value={rule.name}
+              onChange={(event) => edit(rule.id, { name: event.target.value })}
+            />
+            {shape.takesValue ? (
+              <input
+                aria-label="Header value"
+                placeholder="${subscription.name}"
+                value={rule.value}
+                onChange={(event) => edit(rule.id, { value: event.target.value })}
+              />
+            ) : (
+              // Not a disabled input: a greyed box beside "Remove" reads as a value somebody
+              // failed to fill in, and there is no value to fill in.
+              <span className="muted small">no value — the header is taken off</span>
+            )}
+            <button
+              type="button"
+              className="btn sm"
+              aria-label={`Delete this rule for ${rule.name || "an unnamed header"}`}
+              onClick={() => write(rules.filter((entry) => entry.id !== rule.id))}
+            >
+              Delete rule
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="btn sm"
+        onClick={() => {
+          write([...rules, { id: nextId, action: "set", name: "", value: "" }]);
+          setNextId(nextId + 1);
+        }}
+      >
+        <I.Plus /> Add a header rule
+      </button>
+      <p className="muted">
+        Applied in this order, whatever order the rules are listed in:{" "}
+        {HEADER_ACTIONS.map((entry, index) => (
+          <Fragment key={entry.action}>
+            {index > 0 && ", then "}
+            <strong>{entry.label.toLowerCase()}</strong> — the header {entry.said}
+          </Fragment>
+        ))}
+        . Values may use <span className="mono">{"${subscription.name}"}</span>,{" "}
+        <span className="mono">{"${application.name}"}</span> and the rest of the closed variable
+        set; anything else is refused on save.
+      </p>
+    </div>
+  );
 }
 
 /** The fallback for a unit with no purpose-built form: JSON for that unit alone. */

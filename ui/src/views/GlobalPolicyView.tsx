@@ -89,15 +89,24 @@ export function GlobalPolicyView({
             <span className="label">that may not</span>
           </div>
         </div>
-        <p className="muted" style={{ marginBottom: 0 }}>
-          The allowlist is deliberate: a unit is not globally attachable until somebody decides it
-          should be. The six that are missing are per-API by nature —{" "}
-          <span className="mono">errorFormat</span> follows the variant;{" "}
-          <span className="mono">rewrite</span>, <span className="mono">transform</span> and{" "}
-          <span className="mono">backendAuth</span> describe one backend;{" "}
-          <span className="mono">cache</span> depends on what a particular response means; and{" "}
-          <span className="mono">passthrough</span> changes what a route <em>is</em>.
-        </p>
+        {/* Folded away. It answers one number on this card and nothing else on the screen, and as
+            an open paragraph it was the longest text on a page whose subject is a list of units.
+            The count is computed rather than written: it said "the six that are missing" beside a
+            figure that moves whenever the vocabulary or the allowlist does. */}
+        <details className="page-aside">
+          <summary>
+            Why {meta.policyUnits.length - attachable.length} units may not be attached here
+          </summary>
+          <p className="muted" style={{ marginBottom: 0 }}>
+            The allowlist is deliberate: a unit is not globally attachable until somebody decides it
+            should be. The ones that are missing are per-API by nature —{" "}
+            <span className="mono">errorFormat</span> follows the variant;{" "}
+            <span className="mono">rewrite</span>, <span className="mono">transform</span> and{" "}
+            <span className="mono">backendAuth</span> describe one backend;{" "}
+            <span className="mono">cache</span> depends on what a particular response means; and{" "}
+            <span className="mono">passthrough</span> changes what a route <em>is</em>.
+          </p>
+        </details>
       </Panel>
 
       {/* Keyed for the same reason as the units below: the source list and the plan both belong to

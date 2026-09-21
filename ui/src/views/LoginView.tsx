@@ -14,8 +14,20 @@ import { Panel, Notice, useAction, useAsync } from "../components";
  *
  * `/auth/login` is a **link**, not a fetch. It answers a 302 into the identity provider, and a
  * `fetch` that followed that redirect would leave the browser sitting on a page it cannot see.
+ *
+ * The same screen answers two different situations, which is why `expired` exists. A first visit is
+ * a first visit; a session that ended under somebody who was half way through a promotion is an
+ * event, and a screen that greets them as a stranger reads as "the portal lost my work" rather than
+ * "sign in again". The difference is a banner, the title, and the username already filled in.
  */
-export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
+export function LoginView({
+  onSignedIn,
+  expired,
+}: {
+  onSignedIn: () => void;
+  /** Who was signed in until a moment ago, or absent at a cold start. Either field may be unknown. */
+  expired?: { name: string | null; username: string | null };
+}) {
   const providers = useAsync(() => api.get<AuthProviders>("/api/auth/providers"), []);
 
   if (providers.loading) return <div className="login">Loading…</div>;
@@ -50,19 +62,46 @@ export function LoginView({ onSignedIn }: { onSignedIn: () => void }) {
   return (
     <div className="login">
       <div className="signin-brand"><Api size={24} /><strong>Integration Portal</strong></div>
-      <Panel title="Sign in" hint="The Integration Portal publishes, governs and serves APIs.">
+      <Panel
+        title={expired ? "Sign in again" : "Sign in"}
+        hint={expired ? undefined : "The Integration Portal publishes, governs and serves APIs."}
+      >
+        {expired && <SessionEnded name={expired.name} />}
         {config.providers.map((provider, index) => (
           <div key={provider} className="signin-method">
             {index > 0 && <div className="signin-or">or</div>}
             {provider === "oidc" && <OidcButton label={config.oidc?.label ?? "Single sign-on"} />}
             {provider === "local" && (
-              <LocalForm minLength={config.passwordMinLength} onSignedIn={onSignedIn} />
+              <LocalForm
+                minLength={config.passwordMinLength}
+                initialUsername={expired?.username ?? ""}
+                onSignedIn={onSignedIn}
+              />
             )}
             {provider === "dev" && <DevUsers users={config.devUsers} onSignedIn={onSignedIn} />}
           </div>
         ))}
       </Panel>
     </div>
+  );
+}
+
+/**
+ * What a re-authentication opens with. Its own component because it is the whole difference between
+ * the two situations this screen answers, and because `LoginView` around it cannot be rendered
+ * without a control plane to ask which sign-in methods a deployment has.
+ *
+ * Three things, in the order somebody needs them: that the session ended rather than the portal
+ * breaking, that signing in returns them to the page they were on, and — before the sign-in rather
+ * than after it — that a half-filled form did not survive. Somebody told that retypes it once;
+ * somebody who is not goes looking for where it went.
+ */
+export function SessionEnded({ name }: { name: string | null }) {
+  return (
+    <Notice kind="warn">
+      <strong>Your session has ended.</strong> {name ? `${name}, sign` : "Sign"} in again to come
+      back to this page. A form you were part-way through is not kept.
+    </Notice>
   );
 }
 
@@ -78,8 +117,17 @@ function OidcButton({ label }: { label: string }) {
   );
 }
 
-function LocalForm({ minLength, onSignedIn }: { minLength: number; onSignedIn: () => void }) {
-  const [username, setUsername] = useState("");
+function LocalForm({
+  minLength,
+  initialUsername,
+  onSignedIn,
+}: {
+  minLength: number;
+  /** Filled in when this is a re-authentication: the same person, proving it a second time. */
+  initialUsername: string;
+  onSignedIn: () => void;
+}) {
+  const [username, setUsername] = useState(initialUsername);
   const [password, setPassword] = useState("");
   const action = useAction();
   const ready = username.trim().length > 0 && password.length > 0;
@@ -105,7 +153,7 @@ function LocalForm({ minLength, onSignedIn }: { minLength: number; onSignedIn: (
           id="login-username"
           name="username"
           autoComplete="username"
-          autoFocus
+          autoFocus={initialUsername === ""}
           value={username}
           onChange={(event) => setUsername(event.target.value)}
         />
@@ -117,6 +165,9 @@ function LocalForm({ minLength, onSignedIn }: { minLength: number; onSignedIn: (
           name="password"
           type="password"
           autoComplete="current-password"
+          // The caret goes where the typing has to happen: the username box on a first visit, this
+          // one when the name is already there because the session just ended.
+          autoFocus={initialUsername !== ""}
           value={password}
           onChange={(event) => setPassword(event.target.value)}
         />

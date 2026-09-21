@@ -206,6 +206,31 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
   landed on **every** `Panel` as well — insetting each head's bottom rule twenty pixels from the
   card it was drawn to divide, invisibly, under `overflow: hidden`
 
+#### Scenario: A section ends up inside another section
+
+- GIVEN a `Panel` that renders inside another `Panel` — because a screen's own panel holds a
+  component that is a panel on its own page, which is how the API workspace's tabs and the health
+  screen's component groups are composed
+- WHEN the inner one renders
+- THEN it SHALL give up its border, its shadow, its background and its body padding, and render as
+  a **section**: its head as a heading followed by a rule to the margin, its body flush with the
+  outer card's own padding
+- AND neither the outer screen nor the inner component SHALL have to know about the other, so a
+  component that is a card standing alone is a section when it is embedded
+- AND the reason SHALL be that a card inside a card draws a boundary around something that was
+  never separate: the reader sees a box, in a box, in a box, the inner borders carry no
+  information, and the two paddings add up
+
+#### Scenario: A set of fields belongs together
+
+- GIVEN several fields on one screen that are one decision — a catalog location and the path it
+  derives, a backend pool and how calls are spread across it
+- WHEN they render
+- THEN the section SHALL carry the heading and the group SHALL carry a tinted, bordered surface,
+  and the tint SHALL NOT be nested inside another tint
+- AND a screen SHALL NOT reach for a `Panel` to express that grouping, because a panel is a
+  boundary between subjects and this is a boundary inside one
+
 #### Scenario: A screen writes a shared class directly
 
 - GIVEN a `className` naming `empty`, `notice`, `banner`, `card`, `card-head` or `card-body` in any
@@ -320,6 +345,17 @@ Vocabulary* and *Interface House Rules* in `openspec/project.md`.
 - THEN it SHALL carry a label above the control, an optional helper line beneath it, and the
   compact rounded rectangular geometry of the shared stylesheet
 - AND a read-only field SHALL be visibly disabled with the reason nearby rather than removed
+
+#### Scenario: A field shows a derived value
+
+- GIVEN an input whose value the reader cannot type — a path built from the catalog location, an
+  identifier the server mints
+- WHEN it renders in the branded shell or in a modal
+- THEN it SHALL be muted and dashed rather than drawn like a field you may edit, and SHALL take no
+  focus ring or hover border
+- AND it SHALL remain selectable, because being able to copy it is the reason it is shown at all
+- AND the treatment SHALL be distinguishable from a *disabled* field, because "you may not change
+  this" and "there is nothing here to change" are different sentences
 - AND the label SHALL **name** its control — wrapping it, or carrying `htmlFor` against the
   control's id — rather than merely sitting above it, which announces an unlabelled box
 

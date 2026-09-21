@@ -22,6 +22,9 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - WHEN its fleet arithmetic renders
 - THEN the multiplier SHALL be zero, without substituting one
 - AND an unread replica inventory SHALL NOT be presented as zero replicas
+- AND the arithmetic SHALL render as a collapsed aside rather than a panel of its own, because it
+  is reference that reads the same whether or not anything is wrong, and as a card at the foot of a
+  status page it carried the weight of the thing somebody came to read
 
 ### Requirement: Probe each component on its own timer
 
@@ -94,6 +97,8 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - AND an "Other" group SHALL exist so a probe added later shows up somewhere rather than vanishing
 - AND each row SHALL show its status, its label, its latency or its failure message, and how long
   ago it was checked
+- AND the groups SHALL be **sections of one panel**, not a panel each: they are one subject —
+  every probe the control plane ran — and four cards in a page of cards read as four subjects
 
 #### Scenario: A component was not really contacted
 

@@ -242,6 +242,22 @@ They are two lists because they answer two questions, and each is exactly one sc
 - AND it SHALL NOT expose the publisher's editing controls
 - AND an empty or whitespace-only description SHALL show "No description provided." rather than an empty panel
 
+#### Scenario: A listing has no contract to show
+
+- GIVEN a resource whose owner has not imported a definition
+- WHEN the operations tab opens
+- THEN it SHALL be an empty state naming the next step, not a card containing one sentence
+
+#### Scenario: A listing panel explains itself
+
+- GIVEN a panel on the listing whose hint explains how the platform works
+- WHEN the hint is written
+- THEN it SHALL be short enough not to outweigh the answer beneath it, and SHALL lead with the part
+  the reader acts on
+- AND the reason SHALL be that "where it is live" carried three lines about release convergence
+  above a list that is usually one line long, with the part a caller needs — which of two names
+  they can reach — at the end of it
+
 ### Requirement: Reassign an API's owning application
 
 #### Scenario: An owner is changed

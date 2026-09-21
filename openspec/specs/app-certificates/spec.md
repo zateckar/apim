@@ -6,7 +6,55 @@ Define the certificates an application registers: the client identity this estat
 backend. They carry private keys, so they are application-scoped, encrypted at rest, and never
 returned in full over the portal's API.
 
+A certificate is one of the things an application holds to prove who it is, so its owner manages it
+alongside the others — see `app-credentials`, which owns the screen. This capability owns what a
+certificate *is*: the material, the derived identity, the expiry, and the rules for renewing and
+deleting one.
+
 ## Requirements
+
+### Requirement: A certificate is managed beside the application's other credentials
+
+An application SHALL NOT have a separate Certificates screen. A certificate differs from a password
+by having an expiry date, which is a column; every other question about it — which environment,
+which application, who may change it, what still names it — is the question the credential list
+already answers, and asking it on two screens made "where do I put the thing my backend
+authenticates me with" depend on what kind of thing it was.
+
+#### Scenario: Certificates are listed
+
+- GIVEN an application's Credentials screen in an environment
+- WHEN it renders
+- THEN that application's client certificates SHALL appear in the same list as its passwords, keys
+  and HMAC pairs, each row saying which kind it is
+- AND a certificate row SHALL additionally carry its remaining validity and the date it expires
+- AND certificates SHALL be ordered before the rest, soonest expiry first, because an expired one
+  is an outage and nothing else on the screen can become one by the passage of time
+
+#### Scenario: A certificate is added
+
+- GIVEN the add dialog on Credentials
+- WHEN the kind chosen is a client certificate
+- THEN the dialog SHALL ask for the PEM material instead of a secret, under the same name field
+- AND the name SHALL be checked against everything the application already holds in that
+  environment, not only against its certificates
+
+#### Scenario: The old certificates address is opened
+
+- GIVEN a link to an application's `/certificates`
+- WHEN it is followed
+- THEN it SHALL open Credentials rather than report an unknown address
+
+#### Scenario: An administrator reads the estate's certificates
+
+- GIVEN the Trust screen's client-certificate section
+- WHEN it renders
+- THEN it SHALL list every application's certificates in the environment, each naming its owner
+- AND it SHALL render them with the same component the owner sees, so a certificate does not
+  describe itself one way to its owner and another way to an auditor
+- AND it SHALL NOT offer to add one, because choosing an owner from an estate-wide list is how a
+  certificate ends up under the wrong application
+- AND environment-wide authorities, TLS exceptions and governance SHALL remain on Trust
 
 ### Requirement: Distinguish an unread certificate list from an empty one
 
@@ -14,16 +62,7 @@ returned in full over the portal's API.
 
 - GIVEN a certificate list that has not loaded or has failed
 - WHEN the page renders
-- THEN it SHALL show loading or the read failure instead of offering to upload the first certificate
-
-### Requirement: Keep certificate upload focused
-
-#### Scenario: Uploading the first certificate
-
-- GIVEN an application with no certificates in the selected environment
-- WHEN the upload form is opened
-- THEN the empty-state prompt SHALL be replaced by the upload form and its Cancel action
-- AND cancelling SHALL restore the empty-state prompt
+- THEN it SHALL show loading or the read failure instead of offering to add the first certificate
 
 ### Requirement: A certificate belongs to one application and one environment
 
@@ -36,11 +75,11 @@ returned in full over the portal's API.
 - AND the subject, issuer, thumbprint, `notBefore` and `notAfter` SHALL be derived from the PEM and
   recorded
 
-#### Scenario: A certificate is listed
+#### Scenario: A certificate row is drawn
 
-- GIVEN the Certificates screen
+- GIVEN a certificate in a credential list
 - WHEN it renders
-- THEN each row SHALL show the name, environment, subject, issuer, thumbprint, validity window, how
+- THEN the row SHALL show the name, subject, issuer, thumbprint, when it expires, how
   many days are left, and which bindings name it as their client identity
 - AND `selfSigned` and the key algorithm SHALL be **re-derived from the PEM** rather than stored
 - AND the reason SHALL be that they are properties of the certificate, and a column that can
@@ -55,7 +94,9 @@ returned in full over the portal's API.
 
 ### Requirement: Renew a certificate in place
 
-A renewal SHALL replace the material under the same id.
+A renewal SHALL replace the material under the same id. The portal SHALL call it **rotating**, the
+one word the credential list uses for replacing material in place, so that an owner holding a
+password and a certificate for the same backend does not have to learn two words for the same act.
 
 #### Scenario: A certificate is renewed
 
@@ -146,17 +187,11 @@ A renewal SHALL replace the material under the same id.
 - AND the reason SHALL be that the alternative is a route that stops authenticating to its backend
   with no visible cause
 
-#### Scenario: The application certificate page is opened
+#### Scenario: An added certificate is incomplete or duplicates a name
 
-- GIVEN Certificates under a selected application
-- WHEN it renders
-- THEN it SHALL show only that application's client certificates for the selected environment
-- AND environment-wide authorities, TLS exceptions and governance SHALL remain on the Trust page rather than appear as tabs under the application title
-
-#### Scenario: An upload draft is incomplete or duplicates a certificate
-
-- GIVEN the upload form
-- WHEN a name violates the 2–61 lowercase-letter, digit or hyphen pattern, duplicates a loaded certificate, or certificate/key material is missing
-- THEN Upload SHALL remain disabled and the name field SHALL explain format or duplicate errors
-- AND a duplicate SHALL direct the owner toward renewal in place
+- GIVEN the add dialog with the certificate kind chosen
+- WHEN a name violates the 2–61 lowercase-letter, digit or hyphen pattern, duplicates something the
+  application already holds in that environment, or certificate/key material is missing
+- THEN the submit action SHALL remain disabled and the name field SHALL explain format or duplicate errors
+- AND a duplicate SHALL direct the owner toward rotating in place
 - AND certificate, chain and private-key editors SHALL have associated labels

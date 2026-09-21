@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { GLOBAL_UNITS } from "../shared/policy.ts";
+import { runOperations } from "../control-plane/src/operations.ts";
 import { makeCp, makeDp, poll, publishApi, serveCp, startBackend, type TestCp } from "./helpers.ts";
 
 /**
@@ -443,5 +444,150 @@ describe("what the global screen reports", () => {
       cpServer.stop();
       backend.stop();
     }
+  });
+});
+
+/**
+ * The workspace loads the **effective** document, so a global unit is on the API's own policy tab
+ * looking exactly like one its owner wrote. That made two things go wrong at once, and both are
+ * about the tier's whole point — that a global stays a global:
+ *
+ *  - saving anything at all wrote every unit of that document back as a `policy_entry` row, so the
+ *    API silently detached from the tier and a later change on the Global policy screen reached
+ *    every API except the ones somebody had touched;
+ *  - removing a global unit's card appeared to work and then did nothing, because the value is
+ *    merged back in at the next read.
+ */
+describe("a global unit survives an API's own save", () => {
+  let backend: ReturnType<typeof startBackend>;
+  beforeEach(() => {
+    backend = startBackend();
+  });
+  afterEach(() => {
+    backend.stop();
+  });
+
+  async function publish(name: string) {
+    // `publishApi` rather than the publish command, because the two differ in exactly the way
+    // these tests are about: a resource with a queued operation answers the workspace with that
+    // operation's snapshot, and a snapshot is a record of what somebody asked for. Only an API
+    // whose latest state is its stored rows is shown the *effective* document — which is where a
+    // global unit turns up on a page that otherwise looks like the API's own.
+    return (await publishApi(cp, { backendUrl: backend.url, name })).resourceId;
+  }
+
+  async function editor(id: string) {
+    return (await cp.call("GET", `/api/resources/${id}/editor?environment=dev`, { cookie: await cp.login("pavel") })).json();
+  }
+
+  async function configure(id: string, body: Record<string, unknown>) {
+    const d = await editor(id);
+    return cp.call("POST", `/api/resources/${id}/configure`, {
+      cookie: await cp.login("pavel"),
+      body: { environment: "dev", domain: "IT", subdomain: "Solution", ...body },
+      headers: { "idempotency-key": `cfg-${Math.random()}`, "if-match": d.resource.etag },
+    }).then((response) => {
+      runOperations(cp.app);
+      return response;
+    });
+  }
+
+  function localRows(unitKey: string): number {
+    return cp.app.db
+      .query<{ n: number }, [string]>("SELECT COUNT(*) AS n FROM policy_entry WHERE unit_key = ?")
+      .get(unitKey)!.n;
+  }
+
+  test("saving an unrelated field does not freeze the global as a local copy", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("inheriting");
+    await setGlobal(alice, "timeoutMs", 4000);
+    expect(localRows("timeoutMs")).toBe(0);
+
+    const saved = await configure(id, { description: "Something else entirely." });
+    expect(saved.status).toBe(202);
+
+    // Still inherited, not copied — so the next global change still reaches this API. Asserted
+    // against the document the gateway is served rather than the workspace's, because the
+    // workspace answers with the last queued snapshot once there is an operation and that is a
+    // record of what was asked for rather than of what is in force.
+    expect(localRows("timeoutMs")).toBe(0);
+    await setGlobal(alice, "timeoutMs", 6000);
+    const { config } = await poll(cp);
+    expect(config!.routes.find((route) => route.resourceId === id)!.policy.timeoutMs).toBe(6000);
+  });
+
+  test("a save that carries the global's own value back is still an inheritance, not an override", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("echoing");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    // Exactly what the policy tab sends after somebody edits a different unit: the whole effective
+    // document, the global included, because that is what it loaded.
+    const d = await editor(id);
+    const saved = await configure(id, { policy: { ...d.settings.policy, "headers.response": { set: { "X-A": "1" } } } });
+    expect(saved.status).toBe(202);
+
+    expect(localRows("timeoutMs")).toBe(0);
+    expect(localRows("headers.response")).toBe(1);
+  });
+
+  test("a different value is stored, because overriding is the one thing an API may do", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("overriding");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    const d = await editor(id);
+    expect((await configure(id, { policy: { ...d.settings.policy, timeoutMs: 15_000 } })).status).toBe(202);
+    expect(localRows("timeoutMs")).toBe(1);
+
+    // And the override wins over a later global change, which is what an override means.
+    await setGlobal(alice, "timeoutMs", 1000);
+    expect((await editor(id)).settings.policy.timeoutMs).toBe(15_000);
+  });
+
+  test("dropping a global unit is refused, naming it and where it belongs", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("detaching");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    const d = await editor(id);
+    const { timeoutMs, ...without } = d.settings.policy as Record<string, unknown>;
+    expect(timeoutMs).toBe(4000);
+
+    const refused = await configure(id, { policy: without });
+    expect(refused.status).toBe(400);
+    const detail = (await refused.json()).detail as string;
+    expect(detail).toContain("timeoutMs");
+    expect(detail).toContain("Global policy");
+    // Refused rather than accepted-and-undone: the unit is still there afterwards.
+    expect((await editor(id)).settings.policy.timeoutMs).toBe(4000);
+  });
+
+  test("an administrator cannot do it either, because it is the environment's decision", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("admin-detaching");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    const d = await editor(id);
+    const { timeoutMs, ...without } = d.settings.policy as Record<string, unknown>;
+    const refused = await cp.call("POST", `/api/resources/${id}/configure`, {
+      cookie: alice,
+      body: { environment: "dev", domain: "IT", subdomain: "Solution", policy: without },
+      headers: { "idempotency-key": `admin-${Math.random()}`, "if-match": d.resource.etag },
+    });
+    expect(refused.status).toBe(400);
+    expect(timeoutMs).toBe(4000);
+  });
+
+  test("the workspace says which units are the environment's, so the editor can lock them", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("naming");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    const d = await editor(id);
+    expect(d.globalUnits).toEqual(["timeoutMs"]);
+    // The value is already in the document; what the screen was missing is the provenance.
+    expect(d.settings.policy.timeoutMs).toBe(4000);
   });
 });

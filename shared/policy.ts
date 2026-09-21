@@ -1,8 +1,11 @@
 /**
  * The policy vocabulary (design section 5): a closed, declarative JSON vocabulary, not a
  * programming language. No expressions, no XML, no `send-request`, and no URL an owner writes is
- * fetched — backends live in `binding` and every reference (`issuerRef`, `credentialRef`,
- * `tokenProviderRef`) resolves through the admin-registered `INTEGRATIONS_FILE`.
+ * fetched — backends live in `binding`, and the two references that resolve to something with a URL
+ * in it (`issuerRef`, `tokenProviderRef`) resolve through the admin-registered `INTEGRATIONS_FILE`.
+ * The references that are purely secret (`credentialRef`, `schemeRef`) resolve through that file
+ * *or* through the owning application's own credentials, which it manages itself in the portal —
+ * see `parseAppCredentialRef` below. A password is not a trust decision; an issuer is.
  *
  * A **unit** is the smallest thing that can independently exist or be absent; everything beneath a
  * unit is its values and moves as one piece. That is what makes the per-unit promotion merge
@@ -146,7 +149,7 @@ export interface SubscriptionKeyUnit {
 }
 
 export interface BasicAuthUnit {
-  /** Resolves through INTEGRATIONS_FILE.sharedSecrets; an owner never writes a secret. */
+  /** An application's own credential or `INTEGRATIONS_FILE.sharedSecrets`; never the secret. */
   credentialRef: string;
   realm?: string;
   forwardCredentials?: boolean;
@@ -468,6 +471,35 @@ export const VALIDATE_DEFAULTS = {
 
 const HEADER_NAME = /^[A-Za-z0-9!#$%&'*+.^_`|~-]+$/;
 const REF_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
+
+/**
+ * `app:<applicationId>:<name>` — a credential the owning application keeps itself, per environment,
+ * rather than one an administrator registered in `INTEGRATIONS_FILE`.
+ *
+ * The application id is *in* the reference rather than implied by the resource that names it,
+ * because `references.secrets` in the configuration document is one flat map keyed by this string
+ * and two applications are each entitled to a credential called `backend`. Implying the owner would
+ * have collided them into one entry, silently, and one of the two APIs would have presented the
+ * other's password.
+ *
+ * Only the references that are purely secret take this form. `issuerRef` and `tokenProviderRef`
+ * carry a URL the gateway fetches, so they stay administrator-registered — an owner writing one
+ * would be an owner choosing what this estate believes, or where it sends a client secret.
+ */
+const APP_CREDENTIAL_REF = /^app:([a-z0-9][a-z0-9_-]{0,63}):([a-z0-9][a-z0-9-]{1,60})$/;
+
+/** `{ applicationId, name }` for an application-owned reference, or `null` for any other. */
+export function parseAppCredentialRef(
+  ref: string,
+): { applicationId: string; name: string } | null {
+  const match = APP_CREDENTIAL_REF.exec(ref);
+  return match ? { applicationId: match[1]!, name: match[2]! } : null;
+}
+
+/** The reference a policy carries for one of an application's own credentials. */
+export function appCredentialRef(applicationId: string, name: string): string {
+  return `app:${applicationId}:${name}`;
+}
 const HTTP_METHODS = ["GET", "HEAD", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "TRACE"];
 const IDEMPOTENT_METHODS = new Set(["GET", "HEAD", "PUT", "DELETE", "OPTIONS", "TRACE"]);
 
@@ -508,10 +540,31 @@ function boolField(value: unknown, where: string, errors: string[]): void {
   if (value !== undefined && typeof value !== "boolean") errors.push(`${where}: expected a boolean`);
 }
 
+/**
+ * A reference only an administrator may register: `issuerRef`, `tokenProviderRef`. Both resolve to
+ * something with a URL in it, which is the line this platform draws — an owner never writes an
+ * address the gateway will call.
+ */
 function refField(value: unknown, where: string, errors: string[]): void {
   if (typeof value !== "string" || !REF_NAME.test(value)) {
     errors.push(
       `${where}: expected the name of an entry in INTEGRATIONS_FILE (1-64 characters, letters, digits, . _ -)`,
+    );
+  }
+}
+
+/**
+ * A reference to something that is only a secret, which either side may own: an administrator's
+ * entry in `INTEGRATIONS_FILE`, or `app:<applicationId>:<name>` for one the owning application
+ * keeps itself. Whether the named credential *exists* is decided where the reference is resolved —
+ * here the question is only whether it is a reference at all.
+ */
+function credentialRefField(value: unknown, where: string, errors: string[]): void {
+  if (typeof value !== "string" || (!REF_NAME.test(value) && !APP_CREDENTIAL_REF.test(value))) {
+    errors.push(
+      `${where}: expected one of this application's own credentials ` +
+        `("app:<application>:<name>") or the name of an entry in INTEGRATIONS_FILE ` +
+        "(1-64 characters, letters, digits, . _ -)",
     );
   }
 }
@@ -680,7 +733,7 @@ function validateBasic(value: unknown): string[] {
   const errors: string[] = [];
   if (!isPlainObject(value)) return ["auth.basic: expected an object"];
   errors.push(...unknownKeys(value, ["credentialRef", "realm", "forwardCredentials"], "auth.basic"));
-  refField(value.credentialRef, "auth.basic.credentialRef", errors);
+  credentialRefField(value.credentialRef, "auth.basic.credentialRef", errors);
   if (value.realm !== undefined && typeof value.realm !== "string") {
     errors.push("auth.basic.realm: expected a string");
   }
@@ -877,7 +930,7 @@ function validateCheck(rule: Record<string, unknown>, where: string, errors: str
     if (check.equals !== undefined && typeof check.equals !== "string") {
       errors.push(`${label}.equals: expected a string`);
     }
-    if (check.credentialRef !== undefined) refField(check.credentialRef, `${label}.credentialRef`, errors);
+    if (check.credentialRef !== undefined) credentialRefField(check.credentialRef, `${label}.credentialRef`, errors);
     if (check.pattern !== undefined) {
       if (typeof check.pattern !== "string") errors.push(`${label}.pattern: expected a string`);
       else errors.push(...lintPattern(check.pattern, `${label}.pattern`));
@@ -1321,11 +1374,11 @@ function validateBackendAuth(value: unknown): string[] {
       break;
     case "basic":
       errors.push(...unknownKeys(value, ["type", "credentialRef"], "backendAuth"));
-      refField(value.credentialRef, "backendAuth.credentialRef", errors);
+      credentialRefField(value.credentialRef, "backendAuth.credentialRef", errors);
       break;
     case "api-key":
       errors.push(...unknownKeys(value, ["type", "credentialRef", "in", "name"], "backendAuth"));
-      refField(value.credentialRef, "backendAuth.credentialRef", errors);
+      credentialRefField(value.credentialRef, "backendAuth.credentialRef", errors);
       if (value.in !== "header" && value.in !== "query") {
         errors.push('backendAuth.in: expected "header" or "query"');
       }
@@ -1359,7 +1412,7 @@ function validateBackendAuth(value: unknown): string[] {
       errors.push(
         ...unknownKeys(value, ["type", "schemeRef", "dateHeader", "serviceShortcut"], "backendAuth"),
       );
-      refField(value.schemeRef, "backendAuth.schemeRef", errors);
+      credentialRefField(value.schemeRef, "backendAuth.schemeRef", errors);
       if (value.dateHeader !== undefined && (typeof value.dateHeader !== "string" || !HEADER_NAME.test(value.dateHeader))) {
         errors.push("backendAuth.dateHeader: expected a valid header name");
       }
@@ -1751,8 +1804,8 @@ export const UNIT_CATALOGUE: Array<{
     title: "Basic authentication",
     group: "identity",
     description:
-      "HTTP Basic against a shared secret registered in INTEGRATIONS_FILE. The comparison is " +
-      "constant-time; an owner never writes the secret.",
+      "HTTP Basic against one of this application's own credentials, or one an administrator " +
+      "registered. The comparison is constant-time; the secret is never written into the policy.",
     defaultValue: { credentialRef: "", realm: "api" },
     global: true,
   },
@@ -1849,7 +1902,12 @@ export const UNIT_CATALOGUE: Array<{
     key: "headers.request",
     title: "Request headers",
     group: "shape",
-    description: "remove, then set, then append, then skip. Values may use ${...} template variables.",
+    // The four actions are named for what they do to the header, not for the JSON key that stores
+    // them: "remove, then set, then append, then skip" read as a sequence of steps rather than as
+    // a choice, and nobody could tell `set` from `append` from `skip` without the pipeline source.
+    description:
+      "Remove a header, overwrite it, append alongside it, or set it only when it is missing. " +
+      "Values may use ${...} template variables.",
     defaultValue: { set: { "X-Subscription-Name": "${subscription.name}" } },
     global: true,
   },
@@ -1857,7 +1915,9 @@ export const UNIT_CATALOGUE: Array<{
     key: "headers.response",
     title: "Response headers",
     group: "shape",
-    description: "The same four actions, applied to the response on its way out.",
+    description:
+      "The same four actions — remove, overwrite, append, set if missing — applied to the " +
+      "response on its way out.",
     defaultValue: { set: { "X-Served-By": "integration-portal" } },
     global: true,
   },
@@ -1962,8 +2022,9 @@ export const UNIT_CATALOGUE: Array<{
     title: "Backend credential",
     group: "backend",
     description:
-      "A named scheme, selected by name; the gateway implements it. Every reference resolves " +
-      "through INTEGRATIONS_FILE, so no owner writes a URL the gateway will call.",
+      "A named scheme, selected by name; the gateway implements it. Credentials come from this " +
+      "application's own; anything with a URL behind it stays administrator-registered, so no " +
+      "owner writes an address the gateway will call.",
     defaultValue: { type: "none" },
     global: false,
   },

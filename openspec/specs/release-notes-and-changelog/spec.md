@@ -66,11 +66,27 @@ root, parsed once, rendered in the portal, and the **only** place the version nu
 - THEN it SHALL fail the build
 - AND the entry SHALL NOT quietly vanish from the modal
 
+#### Scenario: A bullet carries inline emphasis
+
+- GIVEN a bullet or summary written with `**bold**` or `` `code` ``, which is how every entry in
+  the file names a screen, a setting or a key
+- WHEN it is parsed
+- THEN the markers SHALL be carried through in the text and split into spans by the same module
+  that defines the format, so the renderer has no second opinion about what a bullet says
+- AND exactly **two** inline forms SHALL be recognised, because those are the two the file uses:
+  links appear only in the preamble, which the parser never reaches
+- AND matching SHALL be leftmost-first and flat — a marker with no partner SHALL stay literal, a
+  marker inside a code span SHALL be part of the code, and no span SHALL be re-scanned
+- AND the spans SHALL reassemble into the bullet exactly as written, so nothing is dropped or
+  invented between the file and the screen
+
 #### Scenario: The format is documented
 
 - GIVEN `CHANGELOG.md`
 - WHEN it is opened
 - THEN its own preamble SHALL document the conventions the parser enforces
+- AND that SHALL include the inline emphasis the dialog renders, so an author knows which markers
+  reach the screen and which arrive as punctuation
 
 ### Requirement: One module reads the file
 
@@ -104,6 +120,14 @@ root, parsed once, rendered in the portal, and the **only** place the version nu
 - AND the five badges SHALL read **New**, **Changed**, **Fixed**, **Deprecated** and **Removed**
 - AND the badge classes SHALL be the ones the stylesheet already declares, chosen in the shared
   module rather than in the component, so the vocabulary and its rendering stay in one file
+- AND each bullet's `**bold**` SHALL render as a `strong` element and its `` `code` `` as a `code`
+  element, drawn as elements rather than through an HTML sink
+- AND the reason SHALL be that the dialog rendered each bullet as one string, so every asterisk
+  and backtick in the file was on screen as punctuation — on every line, since the convention is
+  as old as the file — and the source being a build-time import of a repository file is not a
+  reason to own an HTML sink for two markers
+- AND the summary SHALL be rendered the same way as a bullet, because it is prose from the same
+  file written by the same hand
 
 #### Scenario: The modal is dismissed
 

@@ -129,6 +129,18 @@ export function ProductsView({ session }: { session: Session }) {
           Subscriber counts are unavailable ({subscriptions.error}); the products below are correct.
         </Notice>
       )}
+      {/* Once, above the products, rather than under every subscriber table: it is one rule about
+          what publishing a product entitles you to, and repeating it per product made a screen of
+          six products a screen of six copies of the same paragraph. */}
+      {(subscriptions.data?.items ?? []).some((row) =>
+        shown.some((product) => product.id === row.productId),
+      ) && (
+        <p className="muted small">
+          You publish these products, so you can withdraw anybody's access to them — an abusive or
+          compromised caller is yours to stop, without finding an administrator first. You cannot see
+          or replace their keys: those belong to the application that holds the subscription.
+        </p>
+      )}
       {shown.length === 0 ? (
         <EmptyState
           title="No products yet"
@@ -268,11 +280,6 @@ function ProductCard({
               ))}
             </tbody>
           </table>
-          <p className="muted small">
-            You publish this product, so you can withdraw anybody's access to it — an abusive or
-            compromised caller is yours to stop, without finding an administrator first. You cannot
-            see or replace their keys: those belong to the application that holds the subscription.
-          </p>
         </>
       )}
     </Panel>

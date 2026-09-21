@@ -48,6 +48,17 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN the next version SHALL be suggested, and the form pre-filled from the current API
 - AND the suggestion SHALL be editable, and validated against `API_VERSION_PATTERN`
 
+#### Scenario: The new version's address is shown
+
+- GIVEN the new-version dialog
+- WHEN the identifier changes
+- THEN the published path SHALL be re-derived from the API's catalog location and that identifier,
+  and shown **read-only**
+- AND it SHALL NOT be an editable field, because a path somebody may type freely is a path that
+  can contradict the catalog it is derived from — the same rule the workspace's Public path obeys
+- AND it SHALL still be shown rather than dropped, because the dialog promises that the current
+  version keeps serving on its own path and this is the claim that makes that checkable
+
 #### Scenario: The identifier is one the API already has
 
 - GIVEN the new-version dialog

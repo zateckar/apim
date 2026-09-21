@@ -196,14 +196,17 @@ export const ROUTES: RouteDef[] = [
     nav: { group: "Kafka", label: "Kafka REST Proxy", icon: "Globe" },
   },
   {
-    id: "certificates",
+    id: "credentials",
     environmentScoped: true,
-    patterns: ["/certificates"],
-    title: "Certificates",
-    purpose: "The client certificates this application presents, and when each of them expires.",
+    // `/certificates` was its own screen until certificates joined the rest of what an application
+    // holds. Kept as an address rather than redirected: a link in a ticket or a wiki page should
+    // land on the screen that now answers the question, not on "page not found".
+    patterns: ["/credentials", "/certificates"],
+    title: "Credentials",
+    purpose:
+      "The usernames, keys, secrets and client certificates this application's APIs use, held encrypted and never shown again.",
     scope: "application",
-    nav: { group: "Other", label: "Certificates", icon: "Cert" },
-    plainChrome: true,
+    nav: { group: "Other", label: "Credentials", icon: "Shield" },
   },
   {
     id: "integrations",

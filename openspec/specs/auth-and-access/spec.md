@@ -240,6 +240,49 @@ The two bounds SHALL be distinct and both SHALL be enforced.
 - WHEN it succeeds
 - THEN **every** session of that principal SHALL be revoked, sparing none
 
+### Requirement: The portal signs the user back in when their session ends
+
+A session that ends while the portal is open SHALL be answered with the sign-in screen, not with a
+refusal on whichever screen happened to be polling.
+
+#### Scenario: A request comes back saying there is no session
+
+- GIVEN the portal is open on any screen
+- WHEN any request answers `401` carrying `code: "no_session"` or `code: "session_expired"`
+- THEN the sign-in screen SHALL be rendered **instead of** the portal, for the reason the forced
+  password change is: the control plane now refuses everything, and a shell whose every link
+  answers `401` is a worse lie than one screen that says what happened
+- AND unmounting the portal SHALL be what stops the refusals, because it takes the shell's ticker
+  and every screen's polling with it
+- AND the address in the browser SHALL NOT change, so signing in again returns the user to the
+  screen they were on
+
+#### Scenario: The sign-in screen is reached this way rather than at a first visit
+
+- GIVEN the sign-in screen is shown because a session ended
+- WHEN it is drawn
+- THEN it SHALL say that the session ended, name the person it ended for when that is known, and
+  say that a part-finished form was not kept
+- AND a local account's username SHALL be filled in already, with the caret in the password box
+- AND an OIDC principal's username SHALL NOT be filled into the local form, because it is the name
+  they have at the identity provider and not one this portal has ever held a password for
+
+#### Scenario: A refusal that is not the session ending
+
+- GIVEN a `401` carrying `code: "bad_credentials"`, a `401` carrying no code, or a `503` carrying
+  `code: "auth_backend_unavailable"`
+- WHEN the portal receives it
+- THEN the session SHALL be left alone and the refusal SHALL be rendered where it happened
+- AND the reason SHALL be that a rejected password is an answer to that request, and an identity
+  provider outage is not the user being signed out
+
+#### Scenario: The user signs in again
+
+- GIVEN the sign-in screen shown because a session ended
+- WHEN the sign-in succeeds
+- THEN `GET /api/me` SHALL be re-read and the portal mounted afresh, so that no screen carries data
+  or a refusal from the session that ended
+
 ### Requirement: The session cookie is HttpOnly, SameSite=Lax, and Secure on HTTPS
 
 #### Scenario: A session is issued

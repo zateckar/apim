@@ -14,6 +14,7 @@ import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl } from "./ap
 import { revisionSource, writeRevision } from "./api/resources.ts";
 import { newId, nowIso, type DB } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
+import { inheritedUnits } from "./globals.ts";
 import { domainError, domainPrefix, publishedPath } from "../../shared/domains.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
 import { checkEgress } from "./egress.ts";
@@ -327,6 +328,32 @@ async function settings(
     }
     policy["auth.subscriptionKey"] = before;
   }
+  /**
+   * A unit the environment defines globally cannot be taken off one API from that API's own
+   * workspace — by anybody, an administrator included. It is the environment's decision, made once
+   * on the Global policy screen; the only thing an API may do about it is **override** it, which is
+   * sending a different value rather than sending none.
+   *
+   * This has to be checked rather than tolerated because the document the editor loads is the
+   * *effective* one, so a global unit is on screen looking exactly like the API's own. Removing its
+   * card and saving used to appear to work and then do nothing at all: the unit is not stored, so
+   * the global merges straight back in at the next read. Silently undoing somebody's edit is worse
+   * than refusing it.
+   */
+  if (body.policy !== undefined) {
+    const environmentWide = inheritedUnits(ctx.app.db, environment);
+    const dropped = [...environmentWide.keys()].filter(
+      (unit) => policy[unit] === undefined && defaults?.policy?.[unit] !== undefined,
+    );
+    if (dropped.length > 0) {
+      throw badRequest(
+        `${dropped.join(", ")}: ${dropped.length === 1 ? "this unit is" : "these units are"} set ` +
+          `for the whole of ${environment.toUpperCase()} and cannot be removed from one API. ` +
+          "Give this API its own value to override it, or change it for every API on the Global " +
+          "policy screen.",
+      );
+    }
+  }
   const errors = validateDocument(policy, { kind });
   if (errors.length) throw badRequest(errors.join("; "));
   return {
@@ -379,6 +406,20 @@ function readGateways(
   // Sorted so the same selection always produces the same snapshot, and an idempotency digest
   // over it cannot depend on the order the checkboxes were ticked in.
   return names.sort();
+}
+/**
+ * The stages of the chain this resource exists in at all.
+ *
+ * Defined as "`currentSnapshot` returns something", and computed by calling it, because the
+ * workspace's own `published` flag is that same expression for one environment — a second rule
+ * here would let the environment switcher offer a stage the panel then says the API is not in, or
+ * refuse one it is. Cheap enough to ask per stage: a chain is three entries and each answer is a
+ * handful of indexed lookups on one screen's load.
+ */
+function environmentsOf(ctx: Ctx, id: string): string[] {
+  return ctx.app.config.promotionChain.filter(
+    (environment) => currentSnapshot(ctx, id, environment) !== null,
+  );
 }
 function currentSnapshot(
   ctx: Ctx,
@@ -638,6 +679,17 @@ export function registerOperationRoutes(router: Router) {
       });
     })();
   });
+  /**
+   * Where this resource exists, independent of which environment is selected.
+   *
+   * Its own read rather than a field on the editor payload: the shell draws the environment
+   * switcher, and the switcher must not change shape when the environment changes — so the one
+   * question it asks is keyed by the resource alone and is not re-asked on every switch.
+   */
+  router.add("GET", "/api/resources/:id/environments", "session", (ctx) => {
+    const row = getResource(ctx, ctx.params.id!);
+    return json({ environments: environmentsOf(ctx, row.id) });
+  });
   router.add("GET", "/api/resources/:id/editor", "session", (ctx) => {
     const row = getResource(ctx, ctx.params.id!),
       environment = env(
@@ -704,6 +756,15 @@ export function registerOperationRoutes(router: Router) {
       /** Where it actually answers here: one entry per address of every gateway it is on. */
       urls: publishedUrlsFor(ctx.app.db, row.id, environment),
       published: Boolean(snapshot),
+      /**
+       * Which of the units in `settings.policy` are the environment's rather than this API's.
+       *
+       * The workspace loads the effective document, so without this the editor cannot tell a unit
+       * the owner wrote from one every API in the environment has — and it offered to remove
+       * both. Names only: the value is already in the document, and what the screen needs is the
+       * provenance.
+       */
+      globalUnits: [...inheritedUnits(ctx.app.db, environment).keys()],
       definition,
       products: ctx.app.db
         .query(
@@ -1026,7 +1087,24 @@ export function runOperations(app: App): void {
           "DELETE FROM policy_entry WHERE resource_id=? AND environment=?",
           [operation.resource_id, operation.environment],
         );
-        for (const [unit, value] of Object.entries(snapshot.policy))
+        /**
+         * Only the units this API actually owns are written back.
+         *
+         * The snapshot's policy is the *effective* document — the environment's globals merged
+         * under the API's own — because that is what the editor loaded and what was validated.
+         * Storing all of it as `policy_entry` rows made every configure silently detach the API
+         * from the global tier: the value was frozen at whatever it was that afternoon, and a
+         * later change on the Global policy screen reached every API except the ones somebody had
+         * saved. A unit whose value is exactly the environment's is inherited, so it is not
+         * stored; a unit whose value differs is an override, so it is.
+         */
+        const environmentWide = inheritedUnits(db, operation.environment);
+        for (const [unit, value] of Object.entries(snapshot.policy)) {
+          if (
+            environmentWide.has(unit) &&
+            JSON.stringify(environmentWide.get(unit)) === JSON.stringify(value)
+          )
+            continue;
           db.run(
             "INSERT INTO policy_entry(resource_id,environment,unit_key,value_json,origin,updated_by,updated_at) VALUES (?,?,?,?,'local',?,?)",
             [
@@ -1038,6 +1116,7 @@ export function runOperations(app: App): void {
               nowIso(),
             ],
           );
+        }
         const revision = db
           .query<{ version_digest: string }, [string]>(
             "SELECT version_digest FROM revision WHERE id=?",

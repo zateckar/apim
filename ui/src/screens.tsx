@@ -10,6 +10,7 @@ import { Mailbox } from "./portal/notifications";
 import { AccountView } from "./views/AccountView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
 import { AuditView } from "./views/AuditView";
+import { CredentialsView } from "./views/CredentialsView";
 import { GatewayAdminView } from "./views/GatewayAdminView";
 import { GatewaySettingsView } from "./views/GatewaySettingsView";
 import { GatewayView } from "./views/GatewayView";
@@ -76,14 +77,8 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   approvals: ({ session, tick }) => <Approvals session={session} tick={tick} />,
   kafka: ({ session, tick }) => <Kafka session={session} tick={tick} proxyOnly={false} />,
   "kafka-proxy": ({ session, tick }) => <Kafka session={session} tick={tick} proxyOnly={true} />,
-  certificates: ({ session }) => (
-    <TrustView
-      key={session.application}
-      applicationId={session.application}
-      meta={session.meta}
-      user={session.user}
-      environment={session.environment}
-    />
+  credentials: ({ session }) => (
+    <CredentialsView key={`${session.application}:${session.environment}`} session={session} />
   ),
   integrations: ({ session, tick }) => <Integrations session={session} tick={tick} fixme={false} />,
   mail: ({ session, tick }) => <Mailbox session={session} tick={tick} />,

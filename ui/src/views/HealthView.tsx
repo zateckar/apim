@@ -133,7 +133,11 @@ export function HealthView({ user }: { user: User }) {
       <Synthetics admin={user.isAdmin} />
 
       {snapshot && (
-        <div className="health-detail">
+        /* One panel, four sections. The groups were four cards in a row of cards, which made the
+           page read as four separate subjects when it is one — every probe the control plane ran,
+           sorted. A nested card renders as a heading and a rule (see `brand.css`), so the grouping
+           survives and the boxes do not. */
+        <Panel title="Components" className="health-detail">
           {GROUPS.map((group) => (
             <ComponentGroup
               key={group.title}
@@ -149,7 +153,7 @@ export function HealthView({ user }: { user: User }) {
             Probed on the control plane's own timers; this page reads the latest result rather than
             starting a check. Last assembled {formatDateTime(snapshot.generatedAt)}.
           </p>
-        </div>
+        </Panel>
       )}
     </div>
   );

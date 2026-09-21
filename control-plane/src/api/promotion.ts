@@ -24,6 +24,7 @@ import {
   type Ctx,
 } from "../router.ts";
 import { assertCan, getResource } from "./common.ts";
+import { globalOverrideRefusal, globalUnitChanges, inheritedUnits } from "../globals.ts";
 
 /**
  * Promotion endpoints (design section 6.2, 6.3, 6.4).
@@ -319,6 +320,14 @@ export function registerPromotionRoutes(router: Router): void {
       if (source[unit] === undefined) delete after[unit];
       else after[unit] = source[unit];
     }
+    // Copying is the fourth way a unit the target environment defines globally could be given a
+    // different value here — the source environment's globals differ, so a unit that is inherited
+    // in `from` arrives as an override in `to`. Same rule, same sentence.
+    if (!user.isAdmin) {
+      const moved = globalUnitChanges(inheritedUnits(ctx.app.db, to), before, after);
+      if (moved.length > 0) throw forbidden(globalOverrideRefusal(to, moved));
+    }
+
     const errors = validateDocument(after, { kind: row.kind });
     if (errors.length > 0) throw conflict(`the result would be invalid: ${errors.join("; ")}`);
 

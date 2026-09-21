@@ -158,6 +158,42 @@ describe("WSDL import", () => {
     expect(() => normalizeWsdl(withXsdImport)).toThrow(/self-contained/);
   });
 
+  /**
+   * A WSDL's references have to resolve for the same reason an OpenAPI `$ref` does: a contract
+   * that names a message or a body element it does not declare compiles into no validator, so the
+   * operation used to publish reading `blocking` on the policy screen and check nothing at all.
+   * Each of these three was silence before — the first read as "no element part", the second was
+   * dropped, and the third became `no-schema` two layers down in the artifact compiler.
+   */
+  test("a message the WSDL does not declare is refused, naming it", () => {
+    const dangling = WSDL.replace('message="tns:GetPetIn"', 'message="tns:NotDeclared"');
+    expect(() => normalizeWsdl(dangling)).toThrow(/NotDeclared.*does not declare/s);
+  });
+
+  test("an output message with no element part is refused rather than dropped", () => {
+    const noPart = WSDL.replace(
+      '<message name="GetPetOut"><part name="parameters" element="tns:GetPetResponse"/></message>',
+      '<message name="GetPetOut"><part name="parameters" type="xsd:string"/></message>',
+    );
+    expect(() => normalizeWsdl(noPart)).toThrow(/output message with no element part/);
+  });
+
+  test("a body element the inline schema does not declare is refused, not silently unvalidated", () => {
+    const undeclared = WSDL.replace(
+      'element="tns:GetPetRequest"',
+      'element="tns:GetPetRequestV2"',
+    );
+    expect(() => normalizeWsdl(undeclared)).toThrow(
+      /GetPetRequestV2 is not declared by the WSDL's inline schema/,
+    );
+
+    const undeclaredOutput = WSDL.replace(
+      'element="tns:GetPetResponse"',
+      'element="tns:GetPetResponseV2"',
+    );
+    expect(() => normalizeWsdl(undeclaredOutput)).toThrow(/output body element/);
+  });
+
   test("rpc style is refused with a message that says why", () => {
     const rpc = WSDL.replace('<soap:binding style="document"', '<soap:binding style="rpc"');
     expect(() => normalizeWsdl(rpc)).toThrow(/only document\/literal is/);

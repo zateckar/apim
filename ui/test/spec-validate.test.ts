@@ -90,6 +90,34 @@ describe("the definition checks an author sees while editing", () => {
     expect(lintDefinition(json(internal)).diagnostics).toEqual([]);
   });
 
+  test("an internal $ref that resolves to nothing is an error too", () => {
+    // The quieter half of the same mistake, and usually its residue: the bundling took the
+    // `#/components/schemas/Pet` and left `Pet` behind. `normalize.ts` refuses it, because an
+    // operation whose schema cannot be compiled publishes unvalidated while its policy card
+    // still reads `blocking`.
+    const broken = {
+      ...MINIMAL,
+      components: { schemas: {} },
+      paths: {
+        "/pets": {
+          get: {
+            responses: {
+              "200": {
+                description: "ok",
+                content: { "application/json": { schema: { $ref: "#/components/schemas/Pet" } } },
+              },
+            },
+          },
+        },
+      },
+    };
+    const found = lintDefinition(json(broken)).diagnostics.filter((d) => d.severity === "error");
+    expect(found).toHaveLength(1);
+    expect(found[0]!.message).toContain("#/components/schemas/Pet");
+    expect(found[0]!.message).toContain("does not resolve");
+    expect(found[0]!.path?.join(".")).toContain("$ref");
+  });
+
   test("YAML is refused, and offered a conversion rather than converted behind the author's back", () => {
     // The portal loads CodeMirror's YAML mode and leaves YAML untouched on open, so it reads as a
     // supported input all the way to the 400 at publish. `parseSpecDocument` refuses anything not

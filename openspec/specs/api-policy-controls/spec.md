@@ -83,14 +83,24 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 - WHEN a global attachment is attempted
 - THEN it SHALL be refused, because an operation id means nothing outside the API that declares it
 
-### Requirement: An API may override a global unit and may not remove one
+### Requirement: Only an administrator may override a global unit, and nobody may remove one
 
 Attaching a unit to the environment is a decision about the environment, undone in the one place it
-was made. From one API's workspace the only thing that may be done about it is to give that API its
-own value, which is a write, not a deletion.
+was made. Two different rules meet on one API's workspace, and they are not the same rule.
 
-This has to be enforced rather than assumed because the workspace edits the **effective** document:
-an inherited unit is on the page looking exactly like one the owner wrote.
+**Removing** a globally attached unit from one API is refused for everybody, an administrator
+included: the unit is not stored on that API, so removing it stores nothing and the environment's
+value merges back in at the next read.
+
+**Overriding** one — giving it a different value here, or switching it off here — is refused for
+everybody except an administrator. Whoever may do it may exempt their own API from an
+environment-wide `auth.jwt`, `ipAllow` or `rateLimit`, which is the whole reason one was attached;
+the tier and every per-API departure from it therefore belong to the same person. The owning
+application keeps every unit the environment does not define, which is almost all of them.
+
+Both have to be enforced on the server rather than assumed, because the workspace edits the
+**effective** document: an inherited unit is on the page looking exactly like one the owner wrote,
+and the raw-document editor beside the cards has no locks at all.
 
 #### Scenario: A save omits a unit the environment defines
 
@@ -112,23 +122,70 @@ an inherited unit is on the page looking exactly like one the owner wrote.
   from the tier, so a later change on the global screen reaches every API except the ones somebody
   has saved
 
-#### Scenario: A save carries a different value for that unit
+#### Scenario: A member of the owning application gives a global unit its own value
 
-- GIVEN a save whose document gives a globally attached unit a value of its own
-- WHEN the configuration is applied
+- GIVEN a caller who is not an administrator
+- WHEN their write would give a globally attached unit a value other than the environment's — a
+  unit write, a `configure`, a `publish`, a `promote` or a `copy-from` that lands one here
+- THEN it SHALL be refused with `403`, naming the unit, naming the environment, and saying that an
+  administrator can grant the exception and that the Global policy screen changes it for every API
+- AND the environment's value SHALL still be what reaches the gateway afterwards, because the
+  refusal is a refusal rather than an edit that is quietly dropped
+
+#### Scenario: An administrator gives a global unit its own value
+
+- GIVEN an administrator
+- WHEN their save gives a globally attached unit a value of its own
 - THEN it SHALL be stored as the resource's unit and SHALL win over the environment's, now and
   after the environment's value changes again
+
+#### Scenario: A member switches a globally attached unit off
+
+- GIVEN a caller who is not an administrator
+- WHEN their write would add a globally attached unit to the document's reserved `disabled` list
+- THEN it SHALL be refused with `403` and the unit SHALL keep reaching the gateway
+- AND the reason SHALL be that `disabled` is subtracted from the **merged** document, so naming an
+  inherited unit there takes the environment's decision off one API without touching the tier —
+  the same act as overriding it, said in a way that used to pass unread
+
+#### Scenario: A member undoes an exception an administrator granted
+
+- GIVEN a resource carrying an administrator's override of a globally attached unit
+- WHEN a caller who is not an administrator detaches it, changes its value, or switches it back on
+- THEN it SHALL be refused with `403`
+- AND the reason SHALL be that an exception is the administrator's to revise, and a caller who
+  could revise one could first widen it
+
+#### Scenario: A save leaves every globally attached unit where it is
+
+- GIVEN a resource carrying an administrator's override, and a caller who is not an administrator
+- WHEN they save a change to any other part of the document
+- THEN it SHALL be applied
+- AND the reason SHALL be that the rule is about what a save **moves**, not about what the document
+  contains: the editor sends the whole effective document back on every save, so an owner locked
+  out whenever any exception existed would be locked out of their own API
 
 #### Scenario: The editor draws an inherited unit
 
 - GIVEN a policy editor showing a unit the environment defines
 - WHEN the card renders
-- THEN it SHALL be marked as the environment's, and its fields SHALL stay editable so the API can
-  override it
-- AND the controls that would take it off this API — remove, and switching it off — SHALL be
-  disabled, each saying where the decision belongs
+- THEN it SHALL be marked as the environment's
+- AND for an administrator its fields SHALL stay editable and switching it off SHALL be available,
+  because that is the exception only they may grant
+- AND for everybody else its fields SHALL be read-only and switching it off SHALL be disabled, each
+  saying that only a platform administrator can override it and that the value is readable here
+- AND remove SHALL be disabled for both, because nobody may take a global unit off one API
 - AND the workspace read SHALL name which units are the environment's, because the document alone
   cannot say
+
+#### Scenario: The raw document editor is open beside the cards
+
+- GIVEN the advanced JSON editor, which is the same document with the card-level locks off
+- WHEN a caller who is not an administrator opens it on an API with inherited units
+- THEN it SHALL say before they type that changing those units, or naming them in `disabled`, is
+  refused on save and who can do it
+- AND the editor SHALL NOT be treated as the enforcement point, because the control plane refuses
+  the write whatever produced it
 
 #### Scenario: A per-operation override is written
 
@@ -148,6 +205,8 @@ an inherited unit is on the page looking exactly like one the owner wrote.
 - AND re-enabling it SHALL restore the same values
 - AND the reason SHALL be that an operator suppressing a rate limit during an incident wants the
   numbers back afterwards, and deleting the unit is how they get lost
+- AND a `disabled` list naming a unit the environment defines SHALL be an override of the global
+  tier and SHALL be admin-only, because the list is subtracted from the merged document
 
 #### Scenario: A disabled unit reaches the gateway
 
@@ -240,6 +299,8 @@ has never served.
 - WHEN it is detached
 - THEN the effective value SHALL fall back to the environment's global tier where one exists
 - AND detaching SHALL not go through a typed confirmation, because the same click re-attaches it
+- AND where the unit it falls back to is one the environment defines, detaching SHALL be
+  administrator-only, because that unit is an exception rather than a value of the API's own
 
 #### Scenario: Policy is copied from another environment
 
@@ -248,6 +309,9 @@ has never served.
 - THEN the difference SHALL be shown before it is applied, unit by unit
 - AND the global tier SHALL never be promoted automatically, so copying it between environments is
   an explicit, diffed act
+- AND a copied unit that would depart from what the **target** environment defines globally SHALL
+  be subject to the same administrator-only rule, because the two environments' tiers differ and a
+  unit inherited in the source arrives here as an override
 
 ### Requirement: Validate a policy document against the resource's kind
 

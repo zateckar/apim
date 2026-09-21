@@ -324,6 +324,10 @@ Auth column: `pub` = public, `ses` = session cookie, `inst` = gateway instance t
 | GET | `/api/governance/exceptions` | ses |
 | GET | `/api/validation/downgrades` | ses |
 
+The global tier is administrator-only to write, and so is every per-API departure from it: the
+resource-level writes above refuse a non-administrator who would move a unit the environment
+defines — see *Policy Vocabulary* and `api-policy-controls`.
+
 ### Catalogue, products and subscriptions
 
 | Method | Path | Auth |
@@ -485,6 +489,11 @@ The portal turns that array into "enabled, or disabled with one sentence naming 
 `ui/src/lib/capabilities.ts`. **An action the caller cannot perform is disabled with a reason,
 never hidden.**
 
+Two writes inside an object the caller owns are still an administrator's, because they decide what
+the platform *enforces* rather than what one application owns: whether an API requires a
+subscription key, and moving a policy unit the environment defines globally. Both are listed in
+`auth-and-access`; the set is kept small enough to enumerate.
+
 ### Error Shape
 
 Every refusal is RFC 7807:
@@ -589,7 +598,16 @@ POLICY_UNITS = auth.subscriptionKey · auth.basic · auth.jwt · auth.introspect
 - `disabled` is a reserved key holding the unit keys a document carries but the gateway must not
   apply — turning a policy off and losing its configuration are different things. It is subtracted
   in the control plane, in `activeDocument`, so a disabled unit never reaches the wire and no
-  gateway has to know the concept exists.
+  gateway has to know the concept exists. Because it is subtracted from the **merged** document, a
+  resource-level `disabled` naming an inherited unit is an override of the global tier and carries
+  that tier's permission.
+- **Overriding a globally attached unit is administrator-only.** Giving one a different value on
+  one API, naming it in that API's `disabled`, and detaching the exception again are one permission
+  question, enforced in `globalUnitChanges` against what the save *moves* rather than what the
+  document contains — so an exception already granted does not lock the owner out of the rest of
+  their own document. **Removing** one is refused for everybody, administrators included, and that
+  is a different rule: nothing would be stored, so the environment's value merges straight back in.
+  See `api-policy-controls`.
 - Bounds: `DEFAULT_TIMEOUT_MS = 120_000`, `MAX_TIMEOUT_MS = 240_000`,
   `MAX_PATTERN_LENGTH = 200`, `PATTERN_VALUE_MAX_BYTES = 1024`,
   `MAX_ROUTE_IN_FLIGHT = 100_000`.

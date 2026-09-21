@@ -244,6 +244,19 @@ The document SHALL be derived from the database, never assembled incrementally o
   the route rather than embedded in the document
 - AND the reason SHALL be that schemas reach megabytes and the document is polled every two seconds
 
+#### Scenario: One operation's schema cannot be compiled
+
+- GIVEN a document whose operations share one compiler, and an operation whose schema the compiler
+  refuses
+- WHEN the remaining operations are compiled
+- THEN that operation SHALL be marked `unsupported-schema` with the reason, and the import SHALL
+  still succeed, because one unsupported keyword must not block the whole API
+- AND every **other** operation reaching the same refused schema SHALL be refused in the same way
+- AND the compiler SHALL leave nothing behind under that schema's name, because the placeholder it
+  uses to terminate a self-referencing schema accepts anything: memoising it before the schema was
+  known to compile reported the second operation as validated while it checked nothing, which is
+  worse than the honest downgrade the first one got
+
 #### Scenario: An instance has not fetched an artifact
 
 - GIVEN a configuration whose routes reference artifacts an instance does not hold

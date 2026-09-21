@@ -394,10 +394,19 @@ export function attachedKeys(document: Record<string, unknown>): string[] {
   return Object.keys(document).filter((key) => key !== "operations");
 }
 
-/** Said on both controls that would take an inherited unit off this one API. */
+/** Said on Remove, which takes an inherited unit off this one API and is refused for everybody. */
 const INHERITED_TITLE =
-  "Set for every API in this environment — give this one its own value instead, or change it on " +
-  "Global policy";
+  "Set for every API in this environment — it cannot be taken off one API, on Global policy " +
+  "instead";
+
+/**
+ * Said wherever an inherited unit's own controls are closed to the reader. Overriding the
+ * environment's tier — a different value here, or switching it off for this API — is an
+ * administrator's decision, so for everybody else the card is a reading of the current state.
+ */
+const INHERITED_ADMIN_ONLY =
+  "Set for every API in this environment. Only a platform administrator can override it for this " +
+  "API; you can see the current value here.";
 
 export function PolicyForm({
   value,
@@ -538,11 +547,14 @@ export function PolicyForm({
                 onRemove={() => remove(unit.key)}
                 disabled={disabled}
                 inherited={globalUnits.includes(unit.key)}
+                canOverrideGlobal={isAdmin}
                 lockedReason={
-                  unit.key === "auth.subscriptionKey" && !isAdmin
-                    ? "Whether this API requires a subscription key is an administrator's " +
-                      "decision. You can see it here; ask an administrator to change it."
-                    : null
+                  globalUnits.includes(unit.key) && !isAdmin
+                    ? INHERITED_ADMIN_ONLY
+                    : unit.key === "auth.subscriptionKey" && !isAdmin
+                      ? "Whether this API requires a subscription key is an administrator's " +
+                        "decision. You can see it here; ask an administrator to change it."
+                      : null
                 }
                 warning={
                   NEEDS_POOL[unit.key] && poolSize < 2
@@ -664,6 +676,7 @@ function PolicyCard({
   disabled,
   lockedReason,
   inherited,
+  canOverrideGlobal,
   warning,
   instances,
   certificates,
@@ -682,8 +695,10 @@ function PolicyCard({
   onRemove: () => void;
   disabled: boolean;
   lockedReason: string | null;
-  /** The environment sets this unit for every API, so this one may override it and nothing else. */
+  /** The environment sets this unit for every API, so what this one API may do about it is bounded. */
   inherited: boolean;
+  /** Whether the reader is an administrator, and so may override the environment for this API. */
+  canOverrideGlobal: boolean;
   warning: string | null;
   instances: number;
   certificates: Array<{ id: string; name: string }>;
@@ -692,11 +707,17 @@ function PolicyCard({
   catalogue: CredentialCatalogue;
 }) {
   const locked = disabled || Boolean(lockedReason);
-  // An inherited unit may be *overridden* — that is the one thing the global tier lets an API do
-  // about it — so its fields stay editable while the two controls that would take it off this API
-  // do not. Switching it off is a removal said politely, so it goes with Remove rather than with
-  // the editor.
+  // Two different rules meet on an inherited unit's controls, and they are not the same rule.
+  //
+  // **Remove** is refused for everybody, administrators included: the unit is not stored on this
+  // API, so removing it stores nothing and the environment's value merges straight back in at the
+  // next read. Undoing it on Global policy is the only thing that works.
+  //
+  // **Switching it off**, and editing its fields, are overrides — the API keeps running, on
+  // something other than what the environment says — so they are an administrator's decision.
+  // A non-admin gets `lockedReason` instead, which closes the fields for the same reason.
   const detachable = !locked && !inherited;
+  const switchable = !locked && (!inherited || canOverrideGlobal);
   return (
     <div className="policy-item">
       <div className={`policy-card${enabled ? "" : " off"}`}>
@@ -714,11 +735,11 @@ function PolicyCard({
           <button
             type="button"
             className={`icon-btn${enabled ? "" : " inactive"}`}
-            disabled={!detachable}
+            disabled={!switchable}
             aria-pressed={enabled}
             title={
-              inherited
-                ? INHERITED_TITLE
+              inherited && !canOverrideGlobal
+                ? INHERITED_ADMIN_ONLY
                 : enabled
                   ? "Switch off — the configuration is kept and the gateway stops applying it"
                   : "Switch back on"
@@ -754,14 +775,24 @@ function PolicyCard({
           Switched off. Its configuration is kept here and no gateway is told about it.
         </p>
       )}
-      {inherited && (
+      {inherited && canOverrideGlobal && (
         <p className="muted small">
-          Set for every API in this environment. You can give this one its own value here; taking
-          it off is a decision for the whole estate, on{" "}
-          <Link to="/policy">Global policy</Link>.
+          Set for every API in this environment. As an administrator you can give this one its own
+          value, or switch it off here; taking it off the API altogether is a decision for the
+          whole estate, on <Link to="/policy">Global policy</Link>.
         </p>
       )}
-      {lockedReason && <p className="muted small">{lockedReason}</p>}
+      {lockedReason && (
+        <p className="muted small">
+          {lockedReason}
+          {inherited && !canOverrideGlobal && (
+            <>
+              {" "}
+              The current value is on <Link to="/policy">Global policy</Link>.
+            </>
+          )}
+        </p>
+      )}
       {warning && <Notice kind="warn">{warning}</Notice>}
       {open && (
         <div className="policy-item-open">

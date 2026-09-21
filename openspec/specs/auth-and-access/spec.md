@@ -336,6 +336,17 @@ refusal on whichever screen happened to be polling.
 - WHEN they act on any object
 - THEN it SHALL be permitted, and audited with their identity
 
+#### Scenario: An action inside an owned object is an administrator's
+
+- GIVEN `can(user, applicationId)` is true but the caller is not an administrator
+- WHEN their write would change whether the API requires a subscription key, or would move a policy
+  unit the environment defines globally — see `api-policy-controls`
+- THEN it SHALL be refused, naming what only an administrator can do
+- AND the reason SHALL be that these decide what the platform *enforces* rather than what one
+  application owns, so the `policy` capability is not the whole answer for them
+- AND the set of such carve-outs SHALL be small enough to enumerate, because a permission model
+  nobody can state is one nobody can rely on
+
 ### Requirement: Refuse an action visibly, never by hiding it
 
 The portal SHALL disable an action the caller cannot perform and state why.

@@ -35,6 +35,7 @@ import {
   badGateway,
   badRequest,
   conflict,
+  forbidden,
   HttpError,
   json,
   notFound,
@@ -43,6 +44,7 @@ import {
   Router,
   type Ctx,
 } from "../router.ts";
+import { globalOverrideRefusal, globalUnitChanges, inheritedUnits } from "../globals.ts";
 import {
   assertCan,
   assertIfMatch,
@@ -1760,6 +1762,18 @@ export function registerResourceRoutes(router: Router): void {
       }
     }
 
+    // Overriding the environment's tier is an administrator's act (see `globalOverrides`). Only
+    // what *this* write moves is judged, not the document as a whole: an exception an administrator
+    // already granted this API must not start refusing the owner's edits to unrelated units.
+    if (!user.isAdmin) {
+      const before = policyFor(ctx.app.db, row.id, environment) as Record<string, unknown>;
+      const moved = globalUnitChanges(inheritedUnits(ctx.app.db, environment), before, {
+        ...before,
+        [unitKey]: value,
+      });
+      if (moved.length > 0) throw forbidden(globalOverrideRefusal(environment, moved));
+    }
+
     // The assembled document is validated however it was produced (design section 5): per-unit
     // validity is not enough, cross-unit constraints hold too.
     const assembled = { ...policyFor(ctx.app.db, row.id, environment), [unitKey]: value } as Record<
@@ -1803,8 +1817,21 @@ export function registerResourceRoutes(router: Router): void {
     const environment = environmentOf(ctx);
     const unitKey = ctx.params.unitKey!;
 
-    const remaining = policyFor(ctx.app.db, row.id, environment) as Record<string, unknown>;
+    const before = policyFor(ctx.app.db, row.id, environment) as Record<string, unknown>;
+    const remaining = { ...before };
     delete remaining[unitKey];
+    // Detaching is the third way to move a globally attached unit: the row being deleted is the
+    // exception itself, so taking it away is an administrator's decision to reverse, not the
+    // owner's — even though the API lands back on the environment's value. Only a unit the
+    // environment actually defines is protected; the rest of the document is the owner's.
+    if (!user.isAdmin) {
+      const moved = globalUnitChanges(
+        inheritedUnits(ctx.app.db, environment),
+        before,
+        remaining,
+      );
+      if (moved.length > 0) throw forbidden(globalOverrideRefusal(environment, moved));
+    }
     const errors = validateDocument(remaining, { kind: row.kind });
     if (errors.length > 0) {
       throw conflict(`detaching ${unitKey} would leave an invalid document: ${errors.join("; ")}`);

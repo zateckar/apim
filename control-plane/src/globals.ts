@@ -1,4 +1,10 @@
-import { assembleDocument, isGloballyAttachable, type PolicyDocument } from "../../shared/policy.ts";
+import {
+  assembleDocument,
+  disabledUnits,
+  DISABLED_KEY,
+  isGloballyAttachable,
+  type PolicyDocument,
+} from "../../shared/policy.ts";
 import type { DB } from "./db.ts";
 
 /**
@@ -99,6 +105,109 @@ export function effectiveWithOrigin(
   }
   for (const [unitKey, value] of own) out.set(unitKey, { unitKey, value, origin: "resource" });
   return [...out.values()].sort((a, b) => a.unitKey.localeCompare(b.unitKey));
+}
+
+// ------------------------------------------------------------------ overriding the global tier
+
+/** One way a resource's document departs from what the environment says that unit is. */
+export interface GlobalOverride {
+  unitKey: string;
+  /** `changed` — the resource gives the unit its own value. `disabled` — the resource switches it off. */
+  how: "changed" | "disabled";
+}
+
+/**
+ * Overriding a global unit is an **administrator's** act, not the owning application's.
+ *
+ * A unit attached to the environment is a decision about the whole estate, and the three things an
+ * API's own workspace can do about it — give it a different value, name it in `disabled`, or delete
+ * the deviation somebody was granted — all end with that API running something other than what the
+ * environment says. Whoever may do that may exempt their own API from an environment-wide
+ * `auth.jwt`, `ipAllow` or `rateLimit`, which is the whole point of having attached one.
+ *
+ * So the tier and every per-API departure from it belong to the same person. The owner keeps every
+ * unit the environment does not define, which is almost all of them.
+ *
+ * Removing a global unit by *omission* is refused for everybody, administrators included, and that
+ * is a different rule for a different reason — see `readPublishInput` in `operations.ts`.
+ */
+export function globalOverrides(
+  environmentWide: Map<string, unknown>,
+  document: Record<string, unknown>,
+): GlobalOverride[] {
+  const out: GlobalOverride[] = [];
+  for (const unitKey of environmentWide.keys()) {
+    const state = globalUnitState(environmentWide, document, unitKey);
+    if (state.how !== null) out.push({ unitKey, how: state.how });
+  }
+  return out.sort((a, b) => a.unitKey.localeCompare(b.unitKey));
+}
+
+/**
+ * What one globally attached unit actually is in a document: the value that would reach the
+ * gateway, and whether that departs from the environment. `signature` is the whole of it, so
+ * "did this write touch this unit" is a string comparison rather than a second set of rules.
+ */
+function globalUnitState(
+  environmentWide: Map<string, unknown>,
+  document: Record<string, unknown>,
+  unitKey: string,
+): { how: "changed" | "disabled" | null; signature: string } {
+  // `disabled` is itself globally attachable, so it is compared as a value like any other unit
+  // rather than read as a list here; the units it *names* are the caller's other iterations.
+  const off =
+    unitKey !== DISABLED_KEY && disabledUnits(document as PolicyDocument).includes(unitKey);
+  const own = document[unitKey];
+  const value = own === undefined ? environmentWide.get(unitKey) : own;
+  const how = off
+    ? ("disabled" as const)
+    : own !== undefined && JSON.stringify(own) !== JSON.stringify(environmentWide.get(unitKey))
+      ? ("changed" as const)
+      : null;
+  return { how, signature: `${off ? "off" : "on"}:${JSON.stringify(value) ?? "undefined"}` };
+}
+
+/**
+ * The globally attached units this write would move, whichever direction it moves them: attaching
+ * an override, editing one somebody was already granted, switching a unit off, or putting any of
+ * that back. All four are the same permission question, so they are one comparison rather than
+ * four rules that can disagree — the third and fourth matter because an exception an administrator
+ * granted is the administrator's to revise, and an owner who could revise it could first widen it.
+ *
+ * A unit nobody touched compares equal, which is what makes this usable at all: the policy editor
+ * sends the whole effective document back on every save, including the inherited parts.
+ */
+export function globalUnitChanges(
+  environmentWide: Map<string, unknown>,
+  before: Record<string, unknown>,
+  after: Record<string, unknown>,
+): GlobalOverride[] {
+  const out: GlobalOverride[] = [];
+  for (const unitKey of environmentWide.keys()) {
+    const was = globalUnitState(environmentWide, before, unitKey);
+    const now = globalUnitState(environmentWide, after, unitKey);
+    if (was.signature === now.signature) continue;
+    out.push({ unitKey, how: now.how ?? was.how ?? "changed" });
+  }
+  return out.sort((a, b) => a.unitKey.localeCompare(b.unitKey));
+}
+
+/**
+ * The sentence a refused owner reads. It names the units, says where the decision lives and names
+ * the two ways forward, because "403" on a policy screen teaches nobody who to ask. One sentence
+ * for all four directions: attaching an override, editing one, switching a unit off, putting any
+ * of that back.
+ */
+export function globalOverrideRefusal(environment: string, overrides: GlobalOverride[]): string {
+  const units = overrides.map((o) => o.unitKey).join(", ");
+  const plural = overrides.length > 1;
+  const it = plural ? "them" : "it";
+  return (
+    `${units}: ${plural ? "these units are" : "this unit is"} set for the whole of ` +
+    `${environment.toUpperCase()}, and how ${it} applies to one API is a platform ` +
+    `administrator's decision. Ask an administrator for an exception, or change ${it} for every ` +
+    "API on the Global policy screen."
+  );
 }
 
 /** Every resource that has any per-environment state in this environment — what a global write affects. */

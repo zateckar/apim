@@ -1216,6 +1216,23 @@ function EditorForm({
             <Notice kind="error">{credentials.error}</Notice>
             <details className="workspace-advanced">
               <summary>Advanced settings</summary>
+              {/*
+                The cards above lock an inherited unit for a non-admin, and this editor is the same
+                document with the locks off. It is not the enforcement point — the control plane
+                refuses the save — but a reader who edits here and is refused on Save has been let
+                walk into it, so the rule is stated before they type rather than after.
+              */}
+              {!s.user.isAdmin && (d.globalUnits ?? []).length > 0 && (
+                <Notice kind="info">
+                  <span className="mono">{(d.globalUnits ?? []).join(", ")}</span>{" "}
+                  {(d.globalUnits ?? []).length === 1 ? "is" : "are"} set for every API in{" "}
+                  {s.environment.toUpperCase()}. Changing{" "}
+                  {(d.globalUnits ?? []).length === 1 ? "it" : "them"} here, or naming{" "}
+                  {(d.globalUnits ?? []).length === 1 ? "it" : "them"} in{" "}
+                  <span className="mono">disabled</span>, is refused on Save: only a platform
+                  administrator can override the environment for one API.
+                </Notice>
+              )}
               <CodeMirror
                 value={policy}
                 editable={d.resource.canEdit && !!d.published}

@@ -107,6 +107,54 @@ Step one SHALL ask only for what forms the published address.
 - WHEN it is submitted
 - THEN it SHALL be refused
 
+### Requirement: Refuse a definition whose own references do not resolve
+
+A definition is uploaded so the platform can route by it and validate against it. A reference that
+points at nothing defeats the second half and says nothing about it: the schema cannot be compiled,
+the operation is marked as having an unsupported schema, the gateway skips it, and the API
+publishes with a `validate` unit reading `blocking` while every body goes through unchecked. The
+contract is not less strict than intended — it cannot do the job it was uploaded for, and the
+moment to say so is while somebody is still holding the file.
+
+Self-contained therefore means **resolved**, not merely local, and it is one rule for both
+dialects: an OpenAPI `$ref` and a WSDL's `message` and body `element` are the same promise.
+
+#### Scenario: A `$ref` points outside the document
+
+- GIVEN an uploaded OpenAPI or Swagger document carrying a `$ref` that is not a local pointer
+- WHEN it is normalized
+- THEN it SHALL be refused, naming the reference and where it sits
+- AND the reason SHALL be that a remote `$ref` is an SSRF vector and an availability dependency on
+  somebody else's web server at validation time
+
+#### Scenario: A `$ref` points inside the document at nothing
+
+- GIVEN a local `$ref` that resolves nowhere in the uploaded document
+- WHEN it is normalized
+- THEN it SHALL be refused, naming the pointer and saying that the operations using it would
+  otherwise publish unvalidated
+- AND resolution SHALL be RFC 6901 over the **whole** document, including array indices, because a
+  reference into `paths` or into an `allOf` member is legal
+- AND this SHALL apply to a definition corrected in place on an existing revision as well as to a
+  first import
+
+#### Scenario: A WSDL names something it does not declare
+
+- GIVEN an uploaded WSDL whose portType operation names an undeclared `message`, whose declared
+  output message carries no element part, or whose input or output body element is not a global
+  element of the inline schema set
+- WHEN it is normalized
+- THEN it SHALL be refused, naming the operation and the reference
+- AND a WSDL carrying no inline schema at all SHALL still be accepted and validated as `no-schema`,
+  because a contract that says nothing is not a contract that points at nothing
+
+#### Scenario: The author is editing in the browser
+
+- GIVEN the definition editor's local validation
+- WHEN a `$ref` is external or resolves nowhere
+- THEN it SHALL be reported against the document as an error, with the path to it, rather than only
+  as a `400` after a failed save
+
 ### Requirement: Ask where it forwards, last
 
 #### Scenario: Step three is answered

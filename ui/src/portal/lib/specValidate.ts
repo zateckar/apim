@@ -190,11 +190,12 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
     validateSwaggerHost(root, diagnostics);
   }
 
-  validateSelfContained(root, diagnostics);
+  validateSelfContained(root, diagnostics, [], root);
 
-  // Components / definitions: not required, but referencing a schema that does
-  // not exist is a common mistake. Catching every `$ref` target is overkill
-  // here, but a malformed container at the top level is worth saying.
+  // Components / definitions: not required, but a malformed container at the top
+  // level is worth saying on its own — `validateSelfContained` reports the broken
+  // references, and "every `$ref` is broken" is a worse way to learn that
+  // `components` is an array.
   if (root.components !== undefined && !isPlainObject(root.components)) {
     diagnostics.push({
       severity: 'error',
@@ -214,36 +215,73 @@ export function validateOpenApi(doc: unknown): SpecDiagnostic[] {
 }
 
 /**
- * Every `$ref` must point inside the document.
+ * Every `$ref` must point inside the document, and must point at something.
  *
- * `control-plane/src/normalize.ts` refuses anything else outright — an external
- * `$ref` is an SSRF vector and an availability dependency on somebody else's web
- * server at validation time (design section 5.3). It is the single most common
- * reason a real-world document is rejected, because exported specs routinely
- * split their schemas across files, and until now the editor said nothing about
- * it: the author found out from a 400 at publish.
+ * `control-plane/src/normalize.ts` refuses both outright. An external `$ref` is an
+ * SSRF vector and an availability dependency on somebody else's web server at
+ * validation time (design section 5.3); it is the single most common reason a
+ * real-world document is rejected, because exported specs routinely split their
+ * schemas across files, and until the editor said so the author found out from a
+ * 400 at publish.
+ *
+ * A `$ref` that stays inside the document and resolves to nothing is the quieter
+ * half of the same mistake — usually the residue of exactly that split, where the
+ * `#/components/schemas/X` survived the bundling and `X` did not. It cannot be
+ * compiled into a validator, so the operations that use it would publish
+ * unvalidated, and the same 400 now names it.
  */
 function validateSelfContained(
   node: unknown,
   diagnostics: SpecDiagnostic[],
-  path: (string | number)[] = []
+  path: (string | number)[] = [],
+  root?: unknown
 ): void {
+  const document = root ?? node;
   if (Array.isArray(node)) {
-    node.forEach((item, index) => validateSelfContained(item, diagnostics, [...path, index]));
+    node.forEach((item, index) =>
+      validateSelfContained(item, diagnostics, [...path, index], document)
+    );
     return;
   }
   if (!isPlainObject(node)) return;
   for (const [key, value] of Object.entries(node as Record<string, unknown>)) {
-    if (key === '$ref' && typeof value === 'string' && !value.startsWith('#/')) {
-      diagnostics.push({
-        severity: 'error',
-        message: `\`$ref\` points outside this document ("${value}"). Uploaded definitions must be self-contained — inline the target, or bundle the document before importing it.`,
-        path: [...path, key]
-      });
+    if (key === '$ref' && typeof value === 'string') {
+      if (!value.startsWith('#/')) {
+        diagnostics.push({
+          severity: 'error',
+          message: `\`$ref\` points outside this document ("${value}"). Uploaded definitions must be self-contained — inline the target, or bundle the document before importing it.`,
+          path: [...path, key]
+        });
+        continue;
+      }
+      if (resolveJsonPointer(document, value) === undefined) {
+        diagnostics.push({
+          severity: 'error',
+          message: `\`$ref\` is broken: "${value}" does not resolve anywhere in this document. An operation that references it cannot be validated, so the import is refused — add the missing definition, or remove the reference.`,
+          path: [...path, key]
+        });
+      }
       continue;
     }
-    validateSelfContained(value, diagnostics, [...path, key]);
+    validateSelfContained(value, diagnostics, [...path, key], document);
   }
+}
+
+/** RFC 6901, including array indices. The mirror of `resolveJsonPointer` in `normalize.ts`. */
+function resolveJsonPointer(root: unknown, pointer: string): unknown {
+  let current: unknown = root;
+  for (const raw of pointer.slice(2).split('/')) {
+    const part = raw.replace(/~1/g, '/').replace(/~0/g, '~');
+    if (Array.isArray(current)) {
+      const index = Number(part);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      current = current[index];
+      continue;
+    }
+    if (!isPlainObject(current)) return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }
 
 function validateInfo(info: unknown, diagnostics: SpecDiagnostic[]) {

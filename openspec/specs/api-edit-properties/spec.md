@@ -124,6 +124,9 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - WHEN it is checked before saving
 - THEN it SHALL be validated locally in the browser, and the errors SHALL be shown against the
   document rather than only after a failed save
+- AND a reference that points outside the document, or inside it at nothing, SHALL be one of those
+  errors, because the save is refused for both — see *Refuse a definition whose own references do
+  not resolve* in `api-publish-flow`
 
 #### Scenario: A definition is saved
 

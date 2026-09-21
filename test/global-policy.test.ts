@@ -131,7 +131,7 @@ describe("attaching a global unit", () => {
     }
   });
 
-  test("an owner can always take a global unit back by attaching it locally", async () => {
+  test("an administrator can give one API its own value, and it reaches the gateway", async () => {
     const backend = startBackend();
     try {
       const alice = await cp.login("alice");
@@ -144,12 +144,122 @@ describe("attaching a global unit", () => {
       const override = await cp.call(
         "PUT",
         `/api/resources/${api.resourceId}/policy/units/timeoutMs`,
-        { cookie: api.pavel, body: { value: 25_000 } },
+        { cookie: alice, body: { value: 25_000 } },
       );
       expect(override.status).toBe(200);
 
       const { config } = await poll(cp);
       expect(config!.routes[0]!.policy.timeoutMs).toBe(25_000);
+    } finally {
+      backend.stop();
+    }
+  });
+
+  test("the owner cannot, and is told who can", async () => {
+    const backend = startBackend();
+    try {
+      const alice = await cp.login("alice");
+      const api = await publishApi(cp, {
+        backendUrl: backend.url,
+        policy: { "auth.subscriptionKey": KEY_UNIT },
+      });
+      await setGlobal(alice, "timeoutMs", 1000);
+
+      const refused = await cp.call(
+        "PUT",
+        `/api/resources/${api.resourceId}/policy/units/timeoutMs`,
+        { cookie: api.pavel, body: { value: 25_000 } },
+      );
+      expect(refused.status).toBe(403);
+      const detail = (await refused.json()).detail as string;
+      expect(detail).toContain("timeoutMs");
+      expect(detail).toContain("administrator");
+      expect(detail).toContain("Global policy");
+
+      // Refused rather than accepted-and-ignored: the environment's value is what runs.
+      const { config } = await poll(cp);
+      expect(config!.routes[0]!.policy.timeoutMs).toBe(1000);
+    } finally {
+      backend.stop();
+    }
+  });
+
+  /**
+   * The hole this rule was written for. `disabled` is a real key of the document, it was settable
+   * by the owner like any other, and `activeDocument` subtracts it from the **merged** document —
+   * so naming an inherited unit there took an administrator's environment-wide `auth.jwt`,
+   * `ipAllow` or `rateLimit` off one API without touching the global tier at all.
+   */
+  test("the owner cannot switch an inherited unit off either", async () => {
+    const backend = startBackend();
+    try {
+      const alice = await cp.login("alice");
+      const api = await publishApi(cp, {
+        backendUrl: backend.url,
+        policy: { "auth.subscriptionKey": KEY_UNIT },
+      });
+      await setGlobal(alice, "timeoutMs", 1000);
+
+      const refused = await cp.call(
+        "PUT",
+        `/api/resources/${api.resourceId}/policy/units/disabled`,
+        { cookie: api.pavel, body: { value: ["timeoutMs"] } },
+      );
+      expect(refused.status).toBe(403);
+      expect((await refused.json()).detail as string).toContain("timeoutMs");
+
+      const { config } = await poll(cp);
+      expect(config!.routes[0]!.policy.timeoutMs).toBe(1000);
+    } finally {
+      backend.stop();
+    }
+  });
+
+  test("an owner may still switch off a unit that is their own", async () => {
+    const backend = startBackend();
+    try {
+      const alice = await cp.login("alice");
+      const api = await publishApi(cp, {
+        backendUrl: backend.url,
+        policy: { "auth.subscriptionKey": KEY_UNIT, timeoutMs: 9000 },
+      });
+      // A different unit is the environment's, so the rule is engaged and still lets this through.
+      await setGlobal(alice, "headers.response", { set: { "X-A": "1" } });
+
+      const off = await cp.call(
+        "PUT",
+        `/api/resources/${api.resourceId}/policy/units/disabled`,
+        { cookie: api.pavel, body: { value: ["timeoutMs"] } },
+      );
+      expect(off.status).toBe(200);
+
+      const { config } = await poll(cp);
+      expect(config!.routes[0]!.policy.timeoutMs).toBeUndefined();
+    } finally {
+      backend.stop();
+    }
+  });
+
+  test("an exception an administrator granted is the administrator's to take away", async () => {
+    const backend = startBackend();
+    try {
+      const alice = await cp.login("alice");
+      const api = await publishApi(cp, {
+        backendUrl: backend.url,
+        policy: { "auth.subscriptionKey": KEY_UNIT },
+      });
+      await setGlobal(alice, "timeoutMs", 1000);
+      const path = `/api/resources/${api.resourceId}/policy/units/timeoutMs`;
+      expect((await cp.call("PUT", path, { cookie: alice, body: { value: 25_000 } })).status).toBe(200);
+
+      // Not the owner's to detach, and not the owner's to re-price either — an owner who could
+      // revise an exception could first widen it.
+      expect((await cp.call("DELETE", path, { cookie: api.pavel })).status).toBe(403);
+      expect((await cp.call("PUT", path, { cookie: api.pavel, body: { value: 30_000 } })).status).toBe(403);
+      expect((await cp.call("DELETE", path, { cookie: alice })).status).toBe(204);
+
+      const { config } = await poll(cp);
+      expect(config!.routes[0]!.policy.timeoutMs).toBe(1000);
     } finally {
       backend.stop();
     }
@@ -532,17 +642,66 @@ describe("a global unit survives an API's own save", () => {
     expect(localRows("headers.response")).toBe(1);
   });
 
-  test("a different value is stored, because overriding is the one thing an API may do", async () => {
+  test("a different value from the owner is refused, because overriding is an administrator's act", async () => {
     const alice = await cp.login("alice");
     const id = await publish("overriding");
     await setGlobal(alice, "timeoutMs", 4000);
 
     const d = await editor(id);
-    expect((await configure(id, { policy: { ...d.settings.policy, timeoutMs: 15_000 } })).status).toBe(202);
+    const refused = await configure(id, { policy: { ...d.settings.policy, timeoutMs: 15_000 } });
+    expect(refused.status).toBe(403);
+    expect((await refused.json()).detail as string).toContain("timeoutMs");
+    expect(localRows("timeoutMs")).toBe(0);
+  });
+
+  test("a different value from an administrator is stored, and wins over a later global change", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("overriding-admin");
+    await setGlobal(alice, "timeoutMs", 4000);
+
+    const d = await editor(id);
+    const saved = await cp.call("POST", `/api/resources/${id}/configure`, {
+      cookie: alice,
+      body: {
+        environment: "dev",
+        domain: "IT",
+        subdomain: "Solution",
+        policy: { ...d.settings.policy, timeoutMs: 15_000 },
+      },
+      headers: { "idempotency-key": `admin-${Math.random()}`, "if-match": d.resource.etag },
+    });
+    runOperations(cp.app);
+    expect(saved.status).toBe(202);
     expect(localRows("timeoutMs")).toBe(1);
 
     // And the override wins over a later global change, which is what an override means.
     await setGlobal(alice, "timeoutMs", 1000);
+    expect((await editor(id)).settings.policy.timeoutMs).toBe(15_000);
+  });
+
+  /**
+   * The rule is about what a save *moves*, not about what the document contains. An exception an
+   * administrator granted stays in the document the owner loads and sends back on every save, and
+   * an owner who could not save at all while one existed would be locked out of their own API.
+   */
+  test("an administrator's exception does not lock the owner out of the rest of the document", async () => {
+    const alice = await cp.login("alice");
+    const id = await publish("coexisting");
+    await setGlobal(alice, "timeoutMs", 4000);
+    expect(
+      (await cp.call("PUT", `/api/resources/${id}/policy/units/timeoutMs`, {
+        cookie: alice,
+        body: { value: 15_000 },
+      })).status,
+    ).toBe(200);
+
+    const d = await editor(id);
+    expect(d.settings.policy.timeoutMs).toBe(15_000);
+    const saved = await configure(id, {
+      policy: { ...d.settings.policy, "headers.response": { set: { "X-A": "1" } } },
+    });
+    expect(saved.status).toBe(202);
+    expect(localRows("headers.response")).toBe(1);
     expect((await editor(id)).settings.policy.timeoutMs).toBe(15_000);
   });
 

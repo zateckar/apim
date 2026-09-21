@@ -161,15 +161,30 @@ export class SchemaCompiler {
     if (existing) return existing;
 
     const name = pointer.replace(/[^A-Za-z0-9]+/g, "_");
-    // Registered before compiling, so a schema that references itself terminates.
-    this.byComponent.set(pointer, name);
-    this.defs[name] = {};
 
+    // Resolved before anything is registered. The placeholder below makes a self-referencing
+    // schema terminate, but it is also an *accept-anything* schema, and registering it for a
+    // pointer that turns out to resolve to nothing left it behind after the throw: one compiler
+    // serves every operation of a document, so the second operation to use the same broken pointer
+    // found the memo, compiled clean, and was reported `ok` while validating nothing at all. That
+    // is worse than the honest `unsupported-schema` the first operation got.
     const target = resolvePointer(this.options.components, pointer);
     if (target === undefined) {
       throw new SchemaUnsupported("$ref", where, `"${pointer}" does not resolve inside the document`);
     }
-    this.defs[name] = this.compile(target, pointer, 0);
+
+    // Registered before compiling, so a schema that references itself terminates.
+    this.byComponent.set(pointer, name);
+    this.defs[name] = {};
+    try {
+      this.defs[name] = this.compile(target, pointer, 0);
+    } catch (err) {
+      // Same reasoning one level down: a component whose *body* is unsupported must not leave an
+      // accept-anything stub for the next operation that references it.
+      this.byComponent.delete(pointer);
+      delete this.defs[name];
+      throw err;
+    }
     return name;
   }
 

@@ -315,7 +315,59 @@ describe("spec normalization", () => {
     expect(() =>
       assertSelfContained({ paths: { "/a": { $ref: "https://evil.example/schema.json" } } }),
     ).toThrow(/self-contained/);
-    expect(() => assertSelfContained({ paths: { "/a": { $ref: "#/definitions/A" } } })).not.toThrow();
+    expect(() =>
+      assertSelfContained({
+        definitions: { A: { type: "string" } },
+        paths: { "/a": { $ref: "#/definitions/A" } },
+      }),
+    ).not.toThrow();
+  });
+
+  test("a $ref that resolves to nothing is rejected too, naming the pointer", () => {
+    // Self-contained means resolved, not merely local. A pointer at nothing compiles into no
+    // validator, so the operations that use it would publish reading `blocking` and checking
+    // nothing — the failure this refusal exists to make loud.
+    expect(() =>
+      assertSelfContained({
+        definitions: { A: { type: "string" } },
+        paths: { "/a": { $ref: "#/definitions/Missing" } },
+      }),
+    ).toThrow(/#\/definitions\/Missing.*does not resolve/s);
+
+    // The whole document is the resolution root, not just `components` — a `$ref` into `paths`,
+    // or into an array member, is legal OpenAPI.
+    expect(() =>
+      assertSelfContained({
+        components: { schemas: { Pet: { allOf: [{ type: "object" }] } } },
+        paths: { "/a": { $ref: "#/components/schemas/Pet/allOf/0" } },
+      }),
+    ).not.toThrow();
+    expect(() =>
+      assertSelfContained({
+        components: { schemas: { Pet: { allOf: [{ type: "object" }] } } },
+        paths: { "/a": { $ref: "#/components/schemas/Pet/allOf/7" } },
+      }),
+    ).toThrow(/does not resolve/);
+  });
+
+  test("a spec whose $ref points at nothing is refused at import, not published unvalidated", () => {
+    const broken = {
+      openapi: "3.0.0",
+      info: { title: "Broken", version: "1.0.0" },
+      paths: {
+        "/pets": {
+          post: {
+            operationId: "addPet",
+            requestBody: {
+              content: { "application/json": { schema: { $ref: "#/components/schemas/Pet" } } },
+            },
+            responses: { "200": { description: "ok" } },
+          },
+        },
+      },
+      components: { schemas: {} },
+    };
+    expect(() => normalizeSpec(JSON.stringify(broken))).toThrow(/does not resolve/);
   });
 
   test("a document with no operations is rejected", () => {

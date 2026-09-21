@@ -7,6 +7,7 @@ import {
   json,
   badRequest,
   conflict,
+  forbidden,
   notFound,
 } from "./router.ts";
 import { can } from "./auth.ts";
@@ -14,7 +15,7 @@ import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl } from "./ap
 import { revisionSource, writeRevision } from "./api/resources.ts";
 import { newId, nowIso, type DB } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
-import { inheritedUnits } from "./globals.ts";
+import { globalOverrideRefusal, globalUnitChanges, inheritedUnits } from "./globals.ts";
 import { domainError, domainPrefix, publishedPath } from "../../shared/domains.ts";
 import { normalizeBasePath, normalizeHost } from "../../shared/routing.ts";
 import { checkEgress } from "./egress.ts";
@@ -349,9 +350,24 @@ async function settings(
       throw badRequest(
         `${dropped.join(", ")}: ${dropped.length === 1 ? "this unit is" : "these units are"} set ` +
           `for the whole of ${environment.toUpperCase()} and cannot be removed from one API. ` +
-          "Give this API its own value to override it, or change it for every API on the Global " +
-          "policy screen.",
+          "Only a platform administrator can override it here, and it can be changed for every " +
+          "API on the Global policy screen.",
       );
+    }
+    /**
+     * And overriding one — a different value, or naming it in `disabled` — is an administrator's
+     * act (see `globalOverrides`). Judged as a difference from what this API was already running,
+     * so an exception an administrator granted earlier does not start refusing the owner's saves:
+     * the editor sends the whole effective document back on every save, including the parts
+     * nobody touched.
+     */
+    if (!ctx.user?.isAdmin) {
+      const moved = globalUnitChanges(
+        environmentWide,
+        (defaults?.policy ?? {}) as Record<string, unknown>,
+        policy as Record<string, unknown>,
+      );
+      if (moved.length > 0) throw forbidden(globalOverrideRefusal(environment, moved));
     }
   }
   const errors = validateDocument(policy, { kind });

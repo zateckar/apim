@@ -171,6 +171,39 @@ describe("the JSON Schema subset", () => {
     expect(() => compile({ $ref: "#/components/schemas/Missing" })).toThrow(/does not resolve/);
   });
 
+  /**
+   * One compiler serves every operation of a document, and the caller keeps it alive across the
+   * refusal so that one bad operation does not fail the import. The placeholder that makes a
+   * self-referencing schema terminate is an accept-anything schema, and registering it before the
+   * pointer was known to resolve left it behind after the throw: the *second* operation to use the
+   * same broken pointer found the memo, compiled clean, and was reported validated while checking
+   * nothing. Refusing every time is the only honest answer.
+   */
+  test("a broken $ref is refused every time it is used, not just the first", () => {
+    const compiler = new SchemaCompiler({ dialect: "oas-3.0", components: { components: { schemas: {} } } });
+    expect(() => compiler.hoist({ $ref: "#/components/schemas/Missing" }, "first")).toThrow(
+      /does not resolve/,
+    );
+    expect(() => compiler.hoist({ $ref: "#/components/schemas/Missing" }, "second")).toThrow(
+      /does not resolve/,
+    );
+    // And no accept-anything stub is left in the bundle under the broken pointer's name.
+    expect(Object.keys(compiler.defs)).not.toContain("_components_schemas_Missing");
+  });
+
+  test("a component whose body is unsupported leaves no stub behind either", () => {
+    const components = {
+      components: { schemas: { Bad: { type: "object", unevaluatedProperties: false } } },
+    };
+    const compiler = new SchemaCompiler({ dialect: "oas-3.0", components });
+    expect(() => compiler.hoist({ $ref: "#/components/schemas/Bad" }, "first")).toThrow(
+      SchemaUnsupported,
+    );
+    expect(() => compiler.hoist({ $ref: "#/components/schemas/Bad" }, "second")).toThrow(
+      SchemaUnsupported,
+    );
+  });
+
   test("unsupported keywords are refused, not ignored", () => {
     for (const keyword of ["unevaluatedProperties", "dependentRequired", "$dynamicRef", "contentSchema"]) {
       expect(() => compile({ [keyword]: {} })).toThrow(SchemaUnsupported);

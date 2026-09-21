@@ -63,6 +63,26 @@ interface MessageParts {
   element: string | null;
 }
 
+/**
+ * The message a portType operation names, refusing one that is not declared. Absent is legal —
+ * a one-way operation has no output — but a name that resolves to nothing is a broken contract.
+ */
+function messageNamed(
+  messages: Map<string, MessageParts>,
+  qname: string | null,
+  operation: string,
+  role: "input" | "output",
+): MessageParts | null {
+  if (!qname) return null;
+  const message = messages.get(qname);
+  if (!message) {
+    throw badRequest(
+      `operation ${operation}: its ${role} names message ${qname}, which this WSDL does not declare`,
+    );
+  }
+  return message;
+}
+
 export function normalizeWsdl(raw: string, limits?: Partial<XmlLimits>): { model: ApiModel } {
   let root: XmlNode;
   try {
@@ -174,12 +194,45 @@ export function normalizeWsdl(raw: string, limits?: Partial<XmlLimits>): { model
     if (!declared) {
       throw badRequest(`binding operation ${name} is not declared in portType ${portTypeQName}`);
     }
-    const inputElement = declared.input ? (messages.get(declared.input)?.element ?? null) : null;
-    const outputElement = declared.output ? (messages.get(declared.output)?.element ?? null) : null;
+    /**
+     * A WSDL's references have to *resolve*, not merely be present, for the same reason an
+     * OpenAPI `$ref` does (see `assertSelfContained` in `normalize.ts`): a contract whose message
+     * or body element points at nothing compiles into no validator, so the operation publishes,
+     * reads `blocking` on the policy screen and checks nothing. These three refusals used to be
+     * silence — an undeclared message read as "no element part", and an undeclared element became
+     * `no-schema` two layers down in `artifacts.ts`.
+     */
+    const inputMessage = messageNamed(messages, declared.input, name, "input");
+    const outputMessage = messageNamed(messages, declared.output, name, "output");
+    const inputElement = inputMessage?.element ?? null;
+    const outputElement = outputMessage?.element ?? null;
     if (!inputElement) {
       throw badRequest(
         `operation ${name}: its input message has no element part, which document/literal requires`,
       );
+    }
+    if (declared.output && !outputElement) {
+      throw badRequest(
+        `operation ${name}: it declares an output message with no element part, which ` +
+          "document/literal requires. Give the part an element, or drop the output.",
+      );
+    }
+    // Only when the contract carries a schema at all: a WSDL without <types> declares no schema
+    // and is validated as `no-schema`, which is a contract saying nothing rather than one
+    // pointing at nothing.
+    if (schema) {
+      for (const [role, element] of [
+        ["input", inputElement],
+        ["output", outputElement],
+      ] as const) {
+        if (element && !schema.elements[element]) {
+          throw badRequest(
+            `operation ${name}: its ${role} body element ${element} is not declared by the ` +
+              "WSDL's inline schema, so there would be nothing to validate that body against. " +
+              "Declare the element, or remove the inline schema.",
+          );
+        }
+      }
     }
 
     operations.push({

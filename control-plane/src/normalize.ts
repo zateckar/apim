@@ -48,22 +48,67 @@ export function parseSpecDocument(raw: string): Record<string, unknown> {
 /**
  * Design section 5.3: uploaded specs must be self-contained. A remote or file `$ref` is both an
  * SSRF vector and an availability dependency on someone else's web server at validation time.
+ *
+ * And self-contained means *resolved*, not merely local. A `$ref` that stays inside the document
+ * and points at nothing was accepted here for as long as this function only looked at the `#/`
+ * prefix, and the cost landed two layers down: `SchemaCompiler` refuses the pointer, `artifacts.ts`
+ * catches that and marks the operation `unsupported-schema`, and the gateway skips it. The API
+ * publishes, its `validate` unit reads `blocking` on the policy screen, and every body goes
+ * through unchecked. A contract with a broken reference is not a contract that validates less —
+ * it is one that cannot be used for the thing it was uploaded for, and the moment to say so is
+ * while somebody is still holding the file.
+ *
+ * `root` is the whole document, so a pointer into any of it resolves the way a reader would expect:
+ * `#/components/schemas/Pet`, `#/definitions/Pet`, `#/paths/~1pets/get/responses/200`.
  */
-export function assertSelfContained(doc: unknown, path = "$"): void {
+export function assertSelfContained(doc: unknown, path = "$", root?: unknown): void {
+  const document = root ?? doc;
   if (Array.isArray(doc)) {
-    doc.forEach((item, i) => assertSelfContained(item, `${path}[${i}]`));
+    doc.forEach((item, i) => assertSelfContained(item, `${path}[${i}]`, document));
     return;
   }
   if (!doc || typeof doc !== "object") return;
   for (const [key, value] of Object.entries(doc as Record<string, unknown>)) {
-    if (key === "$ref" && typeof value === "string" && !value.startsWith("#/")) {
-      throw badRequest(
-        `${path}.$ref points outside the document ("${value}"); uploaded specs must be self-contained ` +
-          "(design section 5.3)",
-      );
+    if (key === "$ref" && typeof value === "string") {
+      if (!value.startsWith("#/")) {
+        throw badRequest(
+          `${path}.$ref points outside the document ("${value}"); uploaded specs must be self-contained ` +
+            "(design section 5.3)",
+        );
+      }
+      if (resolveJsonPointer(document, value) === undefined) {
+        throw badRequest(
+          `${path}.$ref is broken: "${value}" does not resolve anywhere in this document. A ` +
+            "reference that points at nothing cannot be compiled into a validator, so the " +
+            "operations that use it would publish unvalidated. Add the missing definition, or " +
+            "remove the reference.",
+        );
+      }
     }
-    assertSelfContained(value, `${path}.${key}`);
+    assertSelfContained(value, `${path}.${key}`, document);
   }
+}
+
+/**
+ * RFC 6901 over the whole document, including array indices — a `$ref` into `paths` or into an
+ * `allOf` member is legal OpenAPI and this is the reader's own rule for what "resolves" means.
+ * `shared/jsonschema.ts` has a narrower one for the compiled bundle; that one is about the
+ * pointers the bundle itself uses, and is deliberately not this.
+ */
+function resolveJsonPointer(root: unknown, pointer: string): unknown {
+  let current: unknown = root;
+  for (const raw of pointer.slice(2).split("/")) {
+    const part = raw.replace(/~1/g, "/").replace(/~0/g, "~");
+    if (Array.isArray(current)) {
+      const index = Number(part);
+      if (!Number.isInteger(index) || index < 0 || index >= current.length) return undefined;
+      current = current[index];
+      continue;
+    }
+    if (!current || typeof current !== "object") return undefined;
+    current = (current as Record<string, unknown>)[part];
+  }
+  return current;
 }
 
 function asRecord(value: unknown): Record<string, unknown> {

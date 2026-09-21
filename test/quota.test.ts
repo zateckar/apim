@@ -99,10 +99,10 @@ describe("the per-instance counter", () => {
     for (let i = 0; i < 5; i++) counters.check(key, 100);
     counters.takeDeltas();
 
-    // The poll failed. The five calls are gone from the fleet's total, on purpose: replaying them
-    // after a partially-successful poll would count them twice and 403 a consumer who was inside
-    // their quota.
-    counters.dropInFlight();
+    // The poll failed, so there is nothing to undo: `takeDeltas` zeroed the counters as it read
+    // them. The five calls are gone from the fleet's total, on purpose — replaying them after a
+    // partially-successful poll would count them twice and 403 a consumer who was inside their
+    // quota.
     counters.applyAggregates([{ ...key, count: 0 }]);
     expect(counters.peek(key, 100).used).toBe(0);
   });

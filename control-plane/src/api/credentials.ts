@@ -3,6 +3,7 @@ import {
   assertCredentialName,
   CredentialError,
   credentialsUsing,
+  credentialUsageIndex,
   describeCredential,
   parseCredentialDraft,
   type CredentialRow,
@@ -69,14 +70,21 @@ export function registerCredentialRoutes(router: Router): void {
            FROM app_credential WHERE environment = ? ORDER BY application_id, name`,
       )
       .all(environment);
+    // One pass over the environment's policy rows for the whole listing, rather than one per
+    // credential: the rows are the same rows every time, and re-reading them per credential made
+    // the screen's cost the product of the two counts.
+    const usage = credentialUsageIndex(ctx.app.db, environment);
     return json({
       environment,
-      items: rows.map((row) => ({
-        ...describeCredential(row),
-        // The answer to "can I delete this", computed once here rather than guessed in the browser
-        // from a policy document it would have to fetch per API.
-        usedBy: credentialsUsing(ctx.app.db, environment, describeCredential(row).ref),
-      })),
+      items: rows.map((row) => {
+        const described = describeCredential(row);
+        return {
+          ...described,
+          // The answer to "can I delete this", computed once here rather than guessed in the
+          // browser from a policy document it would have to fetch per API.
+          usedBy: usage.get(described.ref) ?? [],
+        };
+      }),
       /**
        * The *names* an administrator registered in `INTEGRATIONS_FILE`, so the policy editor can
        * offer them from a picker instead of asking somebody to type one from memory. Names only —

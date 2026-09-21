@@ -3,7 +3,7 @@ import type { DB } from "./db.ts";
 import type { CpConfig } from "./config.ts";
 import { parseCookies, policyOf, sessionUser, SESSION_COOKIE, type User } from "./auth.ts";
 import { refreshClaimsIfDue } from "./auth-oidc.ts";
-import { constantTimeEquals, hashToken } from "./crypto.ts";
+import { hashToken } from "./crypto.ts";
 // Imported as values as well as re-exported below: a bare `export … from` creates no local
 // binding, and `readJson` raises a `badRequest` in this file.
 import { badRequest, forbidden, HttpError, notFound } from "./errors.ts";
@@ -142,22 +142,24 @@ function instanceFrom(app: App, req: Request): InstanceIdentity {
   const token = header.toLowerCase().startsWith("bearer ") ? header.slice(7).trim() : "";
   if (!token) throw new HttpError(401, "Unauthorized", "a gateway instance bearer token is required");
 
-  const rows = app.db
-    .query<
-      { id: string; target_id: string; name: string; token_hash: string; environment: string },
-      []
-    >(
-      `SELECT gi.id, gi.target_id, gi.name, gi.token_hash, t.environment
-         FROM gateway_instance gi JOIN target t ON t.id = gi.target_id
-        WHERE gi.revoked_at IS NULL`,
-    )
-    .all();
-
+  // Looked up by hash rather than walked. What the walk bought was a constant-time comparison, and
+  // the value being compared is already a SHA-256 of the presented token: an attacker who could
+  // time this lookup would learn the shape of a digest they cannot invert, which is what makes the
+  // index safe here. What the walk cost was every row of the table on every poll — a fleet of 200
+  // replicas polling every 5 seconds ran 8,000 comparisons a second to answer one question.
   const presented = hashToken(token);
-  for (const row of rows) {
-    if (constantTimeEquals(row.token_hash, presented)) {
-      return { id: row.id, targetId: row.target_id, environment: row.environment, name: row.name };
-    }
+  const row = app.db
+    .query<
+      { id: string; target_id: string; name: string; environment: string },
+      [string]
+    >(
+      `SELECT gi.id, gi.target_id, gi.name, t.environment
+         FROM gateway_instance gi JOIN target t ON t.id = gi.target_id
+        WHERE gi.revoked_at IS NULL AND gi.token_hash = ?`,
+    )
+    .get(presented);
+  if (row) {
+    return { id: row.id, targetId: row.target_id, environment: row.environment, name: row.name };
   }
   throw new HttpError(401, "Unauthorized", "unknown or revoked gateway instance token");
 }
@@ -216,9 +218,46 @@ export async function dispatch(app: App, router: Router, req: Request): Promise<
   }
 }
 
+/**
+ * The request body as JSON, refused **before** it is read if it is too large.
+ *
+ * The check used to run on the string `req.text()` had already produced, which meant the cap never
+ * prevented the allocation it exists to prevent: a 500 MB body was materialised in the heap of the
+ * one process every gateway polls, and only then answered `400`. `Content-Length` is checked first
+ * so an oversized body is refused without being read, and the body is then read through a counter
+ * so a chunked request — which declares no length — is cut off at the same bound rather than
+ * trusted.
+ *
+ * Bytes throughout. `String.length` counts UTF-16 units, so the old test passed a body of roughly
+ * three times `maxBytes` whenever its content was outside the BMP's one-byte range.
+ */
 export async function readJson<T>(ctx: Ctx, maxBytes = 1024 * 1024): Promise<T> {
-  const text = await ctx.req.text();
-  if (text.length > maxBytes) throw badRequest(`request body larger than ${maxBytes} bytes`);
+  const tooLarge = () => badRequest(`request body larger than ${maxBytes} bytes`);
+  const declared = Number(ctx.req.headers.get("content-length") ?? "");
+  if (Number.isFinite(declared) && declared > maxBytes) throw tooLarge();
+
+  const body = ctx.req.body;
+  let text: string;
+  if (!body) {
+    text = await ctx.req.text();
+    if (Buffer.byteLength(text, "utf8") > maxBytes) throw tooLarge();
+  } else {
+    const reader = body.getReader();
+    const chunks: Uint8Array[] = [];
+    let size = 0;
+    for (;;) {
+      const result = await reader.read();
+      if (result.done) break;
+      size += result.value.byteLength;
+      if (size > maxBytes) {
+        await reader.cancel().catch(() => {});
+        throw tooLarge();
+      }
+      chunks.push(result.value);
+    }
+    text = Buffer.concat(chunks).toString("utf8");
+  }
+
   if (text.trim() === "") return {} as T;
   try {
     return JSON.parse(text) as T;

@@ -17,6 +17,7 @@ import {
 } from "../../shared/config-doc.ts";
 import {
   activeDocument,
+  parseAppCredentialRef,
   parseOperationUnitKey,
   validateDocument,
   VALIDATE_DEFAULTS,
@@ -513,6 +514,12 @@ export function buildCertificates(db: DB, environment: string): ConfigCertificat
     }));
 }
 
+/** A reference a route names that nothing answers to, and the routes that named it. */
+export interface UnresolvedReference {
+  ref: string;
+  routes: ConfigRoute[];
+}
+
 /**
  * Only the references this environment's routes actually name. An owner writes `issuerRef`; the
  * document carries what it resolves to, and nothing else — so the blast radius is the estate that
@@ -523,19 +530,38 @@ export function buildCertificates(db: DB, environment: string): ConfigCertificat
  * is an administrator's entry in the integrations file. There is no fallback between them, because
  * a fallback is how an application's deleted credential silently starts resolving to an
  * administrator's entry that happens to share its name.
+ *
+ * `missing` collects the references that resolved to nothing. They are still left out of the
+ * document — the data plane refuses a reference it cannot resolve, which is the correct behaviour —
+ * but leaving them out *silently* is what made the failure invisible: the route serves, every
+ * request gets a 503, and nothing says which credential is absent. See `buildRoutes`, which turns
+ * them into `errors` entries.
  */
 export function buildReferences(
   routes: ConfigRoute[],
   integrations: Integrations,
   vault: CredentialVault = EMPTY_VAULT,
+  missing: UnresolvedReference[] = [],
 ): ConfigReferences {
   const issuerRefs = new Set<string>();
   const providerRefs = new Set<string>();
   const hmacRefs = new Set<string>();
   const hashRefs = new Set<string>();
   const secretRefs = new Set<string>();
+  /** Who named each reference, so a refusal can say which API stops working and why. */
+  const namedBy = new Map<string, ConfigRoute[]>();
+  const absent = (ref: string) => missing.push({ ref, routes: namedBy.get(ref) ?? [] });
 
   for (const route of routes) {
+    const named = (into: Set<string>, ref: string) => {
+      into.add(ref);
+      const owners = namedBy.get(ref);
+      if (owners) {
+        if (!owners.includes(route)) owners.push(route);
+      } else {
+        namedBy.set(ref, [route]);
+      }
+    };
     for (const [unitKey, raw] of Object.entries(route.policy)) {
       const unit = parseOperationUnitKey(unitKey)?.unit ?? unitKey;
       const value = raw as Record<string, unknown> | undefined;
@@ -543,22 +569,22 @@ export function buildReferences(
       switch (unit) {
         case "auth.jwt":
         case "auth.introspection":
-          if (typeof value.issuerRef === "string") issuerRefs.add(value.issuerRef);
+          if (typeof value.issuerRef === "string") named(issuerRefs, value.issuerRef);
           break;
         case "auth.basic":
-          if (typeof value.credentialRef === "string") hashRefs.add(value.credentialRef);
+          if (typeof value.credentialRef === "string") named(hashRefs, value.credentialRef);
           break;
         case "preconditions":
           for (const rule of (raw as PreconditionsUnit) ?? []) {
             const ref = rule.requireHeader?.credentialRef;
-            if (ref) hashRefs.add(ref);
+            if (ref) named(hashRefs, ref);
           }
           break;
         case "backendAuth": {
           const auth = raw as BackendAuthUnit;
-          if (auth.type === "basic" || auth.type === "api-key") secretRefs.add(auth.credentialRef);
-          if (auth.type === "oauth2-client-credentials") providerRefs.add(auth.tokenProviderRef);
-          if (auth.type === "hmac-sa-key-lite") hmacRefs.add(auth.schemeRef);
+          if (auth.type === "basic" || auth.type === "api-key") named(secretRefs, auth.credentialRef);
+          if (auth.type === "oauth2-client-credentials") named(providerRefs, auth.tokenProviderRef);
+          if (auth.type === "hmac-sa-key-lite") named(hmacRefs, auth.schemeRef);
           break;
         }
         default:
@@ -570,7 +596,10 @@ export function buildReferences(
   const issuers: ConfigReferences["issuers"] = {};
   for (const ref of issuerRefs) {
     const def = integrations.issuers?.[ref];
-    if (!def) continue;
+    if (!def) {
+      absent(ref);
+      continue;
+    }
     const credential = def.credentialRef ? resolveSecret(integrations, def.credentialRef) : null;
     issuers[ref] = {
       issuer: def.issuer,
@@ -585,9 +614,15 @@ export function buildReferences(
   const tokenProviders: ConfigReferences["tokenProviders"] = {};
   for (const ref of providerRefs) {
     const def = integrations.tokenProviders?.[ref];
-    if (!def) continue;
+    if (!def) {
+      absent(ref);
+      continue;
+    }
     const credential = resolveSecret(integrations, def.credentialRef);
-    if (credential === null) continue;
+    if (credential === null) {
+      absent(ref);
+      continue;
+    }
     tokenProviders[ref] = {
       tokenUrl: def.tokenUrl,
       grant: def.grant,
@@ -599,31 +634,45 @@ export function buildReferences(
 
   const hmacSchemes: ConfigReferences["hmacSchemes"] = {};
   for (const ref of hmacRefs) {
-    const owned = vault.hmac(ref);
-    if (owned) {
-      hmacSchemes[ref] = owned;
+    // The reference's own shape decides which source answers, with no fallback between them. An
+    // `app:` reference that resolves to nothing stays unresolved rather than falling through to the
+    // file, because falling through is how a deleted credential silently starts presenting an
+    // administrator's entry that happens to share its name.
+    if (parseAppCredentialRef(ref)) {
+      const owned = vault.hmac(ref);
+      if (owned) hmacSchemes[ref] = owned;
+      else absent(ref);
       continue;
     }
     const def = integrations.hmacSchemes?.[ref];
-    if (!def) continue;
+    if (!def) {
+      absent(ref);
+      continue;
+    }
     const appId = resolveSecret(integrations, def.appIdRef);
     const appKey = resolveSecret(integrations, def.appKeyRef);
-    if (appId === null || appKey === null) continue;
+    if (appId === null || appKey === null) {
+      absent(ref);
+      continue;
+    }
     hmacSchemes[ref] = { appId, appKey };
   }
 
-  /** An application's own credential first, then the administrator's file. Never both. */
-  const secretFor = (ref: string) => vault.secret(ref) ?? resolveSecret(integrations, ref);
+  /** The application's own credential, or the administrator's file. Never one standing in for the other. */
+  const secretFor = (ref: string) =>
+    parseAppCredentialRef(ref) ? vault.secret(ref) : resolveSecret(integrations, ref);
 
   const secretHashes: Record<string, string> = {};
   for (const ref of hashRefs) {
     const value = secretFor(ref);
-    if (value !== null) secretHashes[ref] = sha256Hex(value);
+    if (value === null) absent(ref);
+    else secretHashes[ref] = sha256Hex(value);
   }
   const secrets: Record<string, string> = {};
   for (const ref of secretRefs) {
     const value = secretFor(ref);
-    if (value !== null) secrets[ref] = value;
+    if (value === null) absent(ref);
+    else secrets[ref] = value;
   }
 
   return { issuers, tokenProviders, hmacSchemes, secretHashes, secrets };
@@ -664,6 +713,39 @@ export function buildConfig(
   );
   const subscriptions = buildSubscriptions(db, kek, environment);
   const certificates = buildCertificates(db, environment);
+
+  /*
+   * A reference nothing answers to, reported the way an invalid document and a blocked backend
+   * already are — and for the same reason `buildRoutes` gives for those: an API that does not
+   * answer is visible, and one that answers 503 to every request because a credential is absent is
+   * not. The route is left in the document rather than omitted, because the data plane's own
+   * refusal is the correct behaviour and carries the reference name to the caller; what was missing
+   * was anything on the control plane saying so.
+   *
+   * The case this exists for is a promotion: credentials are per environment (schema-015) and a
+   * promotion carries policy but not secrets, so a `backendAuth` that works in DEV arrives in PROD
+   * naming a credential nobody has created there yet.
+   */
+  const unresolved: UnresolvedReference[] = [];
+  const references = buildReferences(
+    routes,
+    integrations,
+    credentialVault(db, kek, environment),
+    unresolved,
+  );
+  for (const { ref, routes: named } of unresolved) {
+    for (const route of named) {
+      errors.push({
+        resourceId: route.resourceId,
+        resourceName: `${route.resourceName} ${route.apiVersion}`,
+        detail:
+          `the reference "${ref}" resolves to nothing in ${environment.toUpperCase()}, so every ` +
+          "request to this route will be refused with 503 until it is created here or the policy " +
+          "stops naming it",
+      });
+    }
+  }
+
   const body = {
     configVersion: CONFIG_VERSION,
     environment,
@@ -679,7 +761,7 @@ export function buildConfig(
     // Unlike `certificates`, not narrowed to what a route names: an anchor is not referenced by a
     // binding, it is what makes any backend in this environment verify (plan §8.2).
     trustAnchors: liveAnchorsFor(db, environment),
-    references: buildReferences(routes, integrations, credentialVault(db, kek, environment)),
+    references,
     errors,
   };
   return {

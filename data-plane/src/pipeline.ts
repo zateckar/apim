@@ -1715,8 +1715,23 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     let outStream: ReadableStream<Uint8Array<ArrayBufferLike>> | null = upstream.body;
     if (captureBodies && outStream) {
       const taken = await takePrefix(outStream, MAX_LOGGED_BODY_BYTES + 1);
+      // `overCap` on a response means the read itself threw — the upstream body broke mid-flight.
+      // Answered as the failure it is rather than by dropping the stream, which handed the caller a
+      // clean `200` with an empty body: a backend that died halfway through would have looked like
+      // one that succeeded and had nothing to say, and only on the routes an administrator had
+      // opened a capture window on.
+      if (taken.overCap) {
+        logged.responseBody = bodyExcerpt(taken.prefix);
+        return deny(
+          502,
+          "the backend's response body ended before it was complete",
+          "upstream-error",
+          {},
+          rateHeaders,
+        );
+      }
       logged.responseBody = bodyExcerpt(taken.prefix);
-      outStream = taken.overCap ? null : taken.stream;
+      outStream = taken.stream;
     }
     const outcome: Outcome = status >= 400 ? "upstream-error" : "ok";
     const durationMs = elapsed();

@@ -99,8 +99,28 @@ have no portal surface that edits it.
   denied ranges
 - AND the reason SHALL be that `denyCidrs` is IPv4-only by construction, so admitting one would be
   admitting an address no range can match — `[::1]` would walk straight past a denied `127.0.0.0/8`
-- AND a **name** that resolves to both families SHALL remain legitimate, because its IPv4 addresses
-  are checked and `localhost` is therefore still caught by loopback
+- AND a **name** that resolves to both families SHALL remain legitimate, because each family is
+  judged by the rule that can see it — see the scenario below
+
+#### Scenario: A name resolves to an IPv6 address
+
+- GIVEN a hostname whose `AAAA` record is an internal address, with an `A` record that is public or
+  with no `A` record at all
+- WHEN it is checked
+- THEN its IPv6 answers SHALL be checked as well as its IPv4 ones, and SHALL NOT be discarded
+- AND an answer inside `::1/128`, `::/128`, `fc00::/7`, `fe80::/10` or `fec0::/10` SHALL refuse the
+  write, naming the address and the range
+- AND an IPv4-mapped answer (`::ffff:a.b.c.d`, in either spelling) SHALL be treated as the IPv4
+  address it is and checked against `denyCidrs`
+- AND an answer in none of those ranges SHALL be allowed, so an ordinary dual-stack backend is
+  unaffected
+- AND an answer neither family parses SHALL refuse the write, because admitting an address nothing
+  checked is the failure this control exists to prevent
+- AND the reason SHALL be that `denyCidrs` being IPv4-only makes an `AAAA` answer *uncheckable
+  against that list*, which is a reason to judge it another way rather than to admit it: discarding
+  those answers left the same hole the IPv6-literal refusal above closes, one hop behind a name
+- AND the IPv6 ranges SHALL be named in the platform rather than configured, because they are
+  internal by definition rather than by one estate's topology
 
 #### Scenario: The repository's own copy differs from the deployable one
 

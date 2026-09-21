@@ -173,16 +173,12 @@ export class ConfigClient {
   }
 
   async pollOnce(): Promise<"updated" | "unchanged" | "revoked" | "blocked" | "error"> {
-    /**
-     * Every path that does not reach `applyAggregates` goes through here. A delta handed to a poll
-     * that did not complete is lost on purpose: replaying it would double-count a consumer into a
-     * 403, and this design chooses under-counting over that.
+    /*
+     * A delta handed to a poll that does not complete is lost on purpose: replaying it would
+     * double-count a consumer into a 403, and this design chooses under-counting over that. No
+     * failure path has anything to undo — `takeDeltas` zeroed the counters as it read them, which
+     * is the whole of the mechanism — so every one of them simply returns.
      */
-    const failed = (result: "error" | "revoked" | "blocked" = "error") => {
-      this.options.quota?.dropInFlight();
-      return result;
-    };
-
     let response: Response;
     try {
       response = await fetch(`${this.options.cpUrl}/api/gateway/poll`, {
@@ -196,7 +192,7 @@ export class ConfigClient {
       });
     } catch (err) {
       this.lastError = `poll failed: ${(err as Error).message}`;
-      return failed();
+      return "error";
     }
 
     this.lastPollAt = new Date().toISOString();
@@ -214,14 +210,14 @@ export class ConfigClient {
       this.lastError = `instance token rejected (${response.status})`;
       // Nothing may outlive a revoked instance, including streams opened before it was revoked.
       this.options.streams?.closeAll("revoked");
-      return failed("revoked");
+      return "revoked";
     }
 
     if (response.status === 413) {
       const batch = this.options.telemetry.halveBatch();
       this.lastError = `report too large; sending at most ${batch} window(s) per poll`;
       console.warn(`[dp] ${this.lastError}`);
-      return failed();
+      return "error";
     }
 
     if (!response.ok) {
@@ -234,10 +230,10 @@ export class ConfigClient {
         this.activationBlocked = mismatch;
         this.lastError = mismatch;
         console.error(`[dp] ${mismatch}; keeping the previous config`);
-        return failed("blocked");
+        return "blocked";
       }
       this.lastError = `poll returned HTTP ${response.status}`;
-      return failed();
+      return "error";
     }
 
     let payload: PollResponse;
@@ -245,13 +241,13 @@ export class ConfigClient {
       payload = (await response.json()) as PollResponse;
     } catch (err) {
       this.lastError = `poll returned invalid JSON: ${(err as Error).message}`;
-      return failed();
+      return "error";
     }
     if (payload.wireVersion !== this.wireVersion) {
       this.lastError = `wire version ${payload.wireVersion} is not supported (this build speaks ${this.wireVersion})`;
       this.activationBlocked = this.lastError;
       console.error(`[dp] ${this.lastError}; keeping the previous config`);
-      return failed("blocked");
+      return "blocked";
     }
 
     // Only what the control plane acknowledged, and only closed windows, are cleared.

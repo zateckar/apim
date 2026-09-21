@@ -1,6 +1,13 @@
 import { lookup } from "node:dns/promises";
 import { readFileSync } from "node:fs";
-import { ipInCidr, ipv4ToInt } from "../../shared/net.ts";
+import {
+  canonicalIp,
+  internalIpv6Range,
+  ipInCidr,
+  ipv4ToInt,
+  ipv6ToBytes,
+  mappedIpv4,
+} from "../../shared/net.ts";
 
 /**
  * Design section 5.3, as revised in v1.4.0: moving a URL out of policy does not close SSRF, because
@@ -319,6 +326,21 @@ export async function checkEgress(
   return [];
 }
 
+/**
+ * Every address this name resolves to, checked — **including** the `AAAA` answers.
+ *
+ * Those used to be filtered out, on the assumption that `denyCidrs` being IPv4-only made them
+ * unanswerable. It does not: it makes them *uncheckable against that list*, which is a reason to
+ * judge them another way rather than to admit them. A host whose `A` record was public and whose
+ * `AAAA` record was `::1` passed this check and was then reached over IPv6, and a host with no `A`
+ * record at all passed with no address examined at all. That is the same hole `checkEgress` refuses
+ * an IPv6 literal to avoid, one hop behind a name.
+ *
+ * So each family is judged by the rule that can see it: IPv4 against the operator's `denyCidrs`,
+ * IPv6 against the ranges that are internal by definition (`internalIpv6Range`). An IPv4-mapped
+ * answer is an IPv4 host and goes through `denyCidrs` like any other. A genuine IPv6 address in no
+ * named range is public and allowed, so an ordinary dual-stack backend is unaffected.
+ */
 async function resolvesIntoDeniedRange(
   hostname: string,
   denyCidrs: string[],
@@ -329,16 +351,29 @@ async function resolvesIntoDeniedRange(
   } else {
     try {
       const results = await lookup(hostname, { all: true });
-      for (const r of results) if (r.family === 4) addresses.push(r.address);
+      for (const r of results) addresses.push(r.address);
     } catch {
       // A name that does not resolve is not a policy failure here; the fetch will fail loudly.
       return null;
     }
   }
-  for (const ip of addresses) {
-    for (const cidr of denyCidrs) {
-      if (ipInCidr(ip, cidr)) return { ip, cidr };
+  for (const address of addresses) {
+    const bytes = ipv4ToInt(canonicalIp(address)) === null ? ipv6ToBytes(address) : null;
+    // An IPv4 answer, or an IPv6 one that is only an IPv4 address in IPv6 clothing.
+    const ip = bytes ? mappedIpv4(bytes) : canonicalIp(address);
+    if (ip !== null) {
+      for (const cidr of denyCidrs) {
+        if (ipInCidr(ip, cidr)) return { ip, cidr };
+      }
+      continue;
     }
+    if (!bytes) {
+      // Neither family parsed. The resolver produced something this cannot judge, and admitting an
+      // address nothing checked is the failure this function exists to prevent.
+      return { ip: address, cidr: "an address this platform cannot parse" };
+    }
+    const range = internalIpv6Range(bytes);
+    if (range) return { ip: address, cidr: range };
   }
   return null;
 }

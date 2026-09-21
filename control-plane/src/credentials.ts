@@ -193,12 +193,28 @@ function refsIn(value: unknown, into: Set<string>): void {
  * `auth.basic` globally, and a global unit naming a credential is exactly the case where "nothing
  * uses this" would be most confidently wrong.
  */
-export function credentialsUsing(
-  db: DB,
-  environment: string,
-  ref: string,
-): Array<{ resourceId: string | null; resourceName: string; unitKey: string }> {
-  const out: Array<{ resourceId: string | null; resourceName: string; unitKey: string }> = [];
+export interface CredentialUse {
+  resourceId: string | null;
+  resourceName: string;
+  unitKey: string;
+}
+
+/**
+ * Every reference named anywhere in this environment, to the places naming it — one pass over the
+ * policy rows.
+ *
+ * The index rather than a per-reference scan because the listing screen asks the question once per
+ * credential: at 60 credentials and 800 policy entries that was 48,000 `JSON.parse` calls per GET,
+ * on a screen the shell re-fetches on its tick. Each row is parsed once here regardless of how many
+ * credentials the answer covers.
+ */
+export function credentialUsageIndex(db: DB, environment: string): Map<string, CredentialUse[]> {
+  const index = new Map<string, CredentialUse[]>();
+  const record = (ref: string, use: CredentialUse) => {
+    const existing = index.get(ref);
+    if (existing) existing.push(use);
+    else index.set(ref, [use]);
+  };
 
   for (const row of db
     .query<
@@ -214,12 +230,12 @@ export function credentialsUsing(
     try {
       refsIn(JSON.parse(row.value_json), found);
     } catch {
-      // A stored value that does not parse is somebody else's defect; it is not a use of this
+      // A stored value that does not parse is somebody else's defect; it is not a use of any
       // credential, and it must not stop a delete that is otherwise safe.
       continue;
     }
-    if (found.has(ref)) {
-      out.push({
+    for (const ref of found) {
+      record(ref, {
         resourceId: row.resource_id,
         resourceName: `${row.name} ${row.api_version}`,
         unitKey: row.unit_key,
@@ -238,8 +254,8 @@ export function credentialsUsing(
     } catch {
       continue;
     }
-    if (found.has(ref)) {
-      out.push({
+    for (const ref of found) {
+      record(ref, {
         resourceId: null,
         resourceName: `${environment.toUpperCase()} global policy`,
         unitKey: row.unit_key,
@@ -247,7 +263,12 @@ export function credentialsUsing(
     }
   }
 
-  return out;
+  return index;
+}
+
+/** The same question for one reference — what `DELETE` asks before it agrees, and what a rotation reports. */
+export function credentialsUsing(db: DB, environment: string, ref: string): CredentialUse[] {
+  return credentialUsageIndex(db, environment).get(ref) ?? [];
 }
 
 /**

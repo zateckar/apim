@@ -19,6 +19,8 @@ export interface RateVerdict {
 interface Window {
   start: number;
   count: number;
+  /** The window's own length, so the sweep can tell a closed window from a long open one. */
+  periodMs: number;
 }
 
 export class RateLimiter {
@@ -29,7 +31,7 @@ export class RateLimiter {
     const periodMs = periodSec * 1000;
     const start = Math.floor(nowMs / periodMs) * periodMs;
     const existing = this.windows.get(key);
-    const window = existing && existing.start === start ? existing : { start, count: 0 };
+    const window = existing && existing.start === start ? existing : { start, count: 0, periodMs };
     window.count += 1;
     this.windows.set(key, window);
 
@@ -43,10 +45,18 @@ export class RateLimiter {
     };
   }
 
-  /** Windows are per (subscription, route), so the map is bounded but not self-clearing. */
+  /**
+   * Windows are per (subscription, route), so the map is bounded but not self-clearing.
+   *
+   * A window is dropped once it has **closed**, never while it is still open. The horizon used to
+   * be a flat hour, which is shorter than `rateLimit.periodSec` is allowed to be — up to a day —
+   * so a daily limit had its counter deleted mid-window and the subscription was handed a fresh
+   * allowance every hour. `maxAgeMs` is now the grace kept *past* the window's end rather than the
+   * whole lifetime, so a closed window still lingers long enough to absorb a late clock.
+   */
   sweep(nowMs = Date.now(), maxAgeMs = 3_600_000): void {
     for (const [key, window] of this.windows) {
-      if (nowMs - window.start > maxAgeMs) this.windows.delete(key);
+      if (nowMs - (window.start + window.periodMs) > maxAgeMs) this.windows.delete(key);
     }
   }
 

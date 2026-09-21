@@ -366,8 +366,12 @@ the backend reads is the gateway's.
 #### Scenario: Windows accumulate
 
 - GIVEN windows keyed per `(subscription, route)`
-- WHEN they age past an hour
-- THEN they SHALL be swept, so the map is bounded
+- WHEN a window has **closed** — `periodSec` has elapsed since its aligned start — and has then
+  aged past an hour
+- THEN it SHALL be swept, so the map is bounded
+- AND a window still open SHALL never be swept, however long its `periodSec` is: sweeping on a flat
+  hour deleted the counter of any limit longer than an hour mid-window, so a daily limit handed the
+  subscription a fresh allowance every hour and was enforced at roughly 24× what it said
 
 ### Requirement: Meter quota across the fleet, drifting permissive
 

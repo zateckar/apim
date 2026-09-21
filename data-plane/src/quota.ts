@@ -43,8 +43,6 @@ export interface QuotaVerdict {
 
 export class QuotaCounters {
   private readonly counters = new Map<string, Counter>();
-  /** Deltas handed to a poll and not yet acknowledged. Dropped on failure, never retried. */
-  private inFlight = new Map<string, number>();
 
   constructor(
     private readonly maxKeys = MAX_QUOTA_ENTRIES,
@@ -125,23 +123,33 @@ export class QuotaCounters {
     };
   }
 
-  /** The deltas to send on this poll. Moves them aside so double reporting is impossible. */
+  /**
+   * The deltas to send on this poll, zeroed as they are taken so double reporting is impossible.
+   *
+   * Zeroing *is* the whole mechanism, and it is also why the report is not retried on a failed
+   * poll: the delta is gone the moment it is handed over, which under-counts by one poll rather
+   * than risking a consumer double-counted into a 403.
+   *
+   * The cap is applied before the counters are zeroed, not after. Taken the other way round, a
+   * delta past the cap would be zeroed here and dropped from the returned slice — counted by
+   * nobody. `counter()` already bounds the map at `maxKeys`, so with the default this cannot bite;
+   * it is written this way so that a smaller `maxKeys` defers counts instead of destroying them.
+   */
   takeDeltas(): QuotaDelta[] {
     const deltas: QuotaDelta[] = [];
-    this.inFlight = new Map();
-    for (const [id, counter] of this.counters) {
+    for (const counter of this.counters.values()) {
       if (counter.delta === 0) continue;
+      if (deltas.length >= MAX_QUOTA_ENTRIES) break;
       deltas.push({ ...counter.key, count: counter.delta });
-      this.inFlight.set(id, counter.delta);
       counter.delta = 0;
     }
-    return deltas.slice(0, MAX_QUOTA_ENTRIES);
+    return deltas;
   }
 
   /**
    * The control plane accepted the report and answered with the fleet's counts. The aggregate
-   * replaces what we knew; our own in-flight delta is now inside it, so it is discarded rather
-   * than added back.
+   * replaces what we knew; the delta we reported is already inside it, and was zeroed when it was
+   * taken, so nothing is added back.
    */
   applyAggregates(aggregates: QuotaAggregate[]): void {
     for (const aggregate of aggregates) {
@@ -149,15 +157,6 @@ export class QuotaCounters {
       const counter = this.counters.get(id) ?? this.counter(aggregate);
       counter.aggregate = aggregate.count;
     }
-    this.inFlight = new Map();
-  }
-
-  /**
-   * The poll failed. The delta we handed over is lost — deliberately: retrying it would
-   * double-count a consumer into a 403, and under-counting is the failure this design chooses.
-   */
-  dropInFlight(): void {
-    this.inFlight = new Map();
   }
 
   /** Windows that closed long ago cannot receive traffic, so they are not worth remembering. */

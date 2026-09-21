@@ -226,6 +226,12 @@ export class IntrospectionCache {
     const key = `${issuer.introspectionUrl}|${createHash("sha256").update(token).digest("hex")}`;
     const cached = this.entries.get(key);
     let entry = cached && cached.expiresAtMs > this.now ? cached : undefined;
+    // Re-insertion makes the Map's own insertion order an LRU order, so the eviction below drops
+    // the entry nobody has asked for rather than one that is in use.
+    if (entry) {
+      this.entries.delete(key);
+      this.entries.set(key, entry);
+    }
 
     if (!entry) {
       // Single-flight, for the same reason the token cache in design section 5.5 is: a popular API
@@ -242,11 +248,25 @@ export class IntrospectionCache {
       } finally {
         this.inFlight.delete(key);
       }
-      if (this.entries.size >= (this.options.maxEntries ?? 10_000)) this.entries.clear();
+      // The oldest entry, not the whole cache. Clearing it emptied ten thousand live tokens at
+      // once, so every one of them re-introspected on its next request — a periodic burst at the
+      // identity provider, which is the failure the single-flight above exists to prevent.
+      while (this.entries.size >= (this.options.maxEntries ?? 10_000)) {
+        const oldest = this.entries.keys().next();
+        if (oldest.done) break;
+        this.entries.delete(oldest.value);
+      }
       this.entries.set(key, entry);
     }
 
     if (!entry.active) return { ok: false, status: 401, detail: "the token is not active" };
+    // The token's own `exp` and `nbf`, which `active: true` does not imply: an introspection answer
+    // is a statement about the instant it was made, and this entry outlives that instant by up to
+    // `cacheTtlSec`. Without this the cache's lifetime silently replaces the token's — the check
+    // `auth.jwt` makes through the same function (`verifyJwt`).
+    if (!timeWindowOk(entry.claims, this.now, 0)) {
+      return { ok: false, status: 401, detail: "the token is not active" };
+    }
     const scopes = scopesOf(entry.claims);
     for (const required of unit.requiredScopes ?? []) {
       if (!scopes.includes(required)) {
@@ -283,7 +303,15 @@ export class IntrospectionCache {
     if (!response.ok) throw new Error(`introspection returned HTTP ${response.status}`);
     const claims = (await response.json()) as Record<string, unknown>;
     const ttl = (unit.cacheTtlSec ?? 60) * 1000;
-    return { active: claims.active === true, claims, expiresAtMs: this.now + ttl };
+    // Never past the token's own expiry: caching a token for longer than it lives would hold a
+    // dead answer, and `cacheTtlSec` is a bound on revocation lag rather than a grant of lifetime.
+    const exp = typeof claims.exp === "number" ? claims.exp * 1000 : null;
+    const until = this.now + ttl;
+    return {
+      active: claims.active === true,
+      claims,
+      expiresAtMs: exp === null ? until : Math.min(until, exp),
+    };
   }
 }
 

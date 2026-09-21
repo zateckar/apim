@@ -199,6 +199,24 @@ The document SHALL be derived from the database, never assembled incrementally o
 - AND the reason SHALL be that an API that does not answer is visible, and an API answering under a
   document nobody validated is not
 
+#### Scenario: A route names a reference nothing answers to
+
+- GIVEN a route whose policy names a `credentialRef`, `schemeRef`, `issuerRef` or `tokenProviderRef`
+  that resolves to neither an application's own credential nor an entry in `INTEGRATIONS_FILE`
+- WHEN the document is built
+- THEN the reference SHALL be left out of `references`, because the gateway refusing a reference it
+  cannot resolve is the correct behaviour
+- AND an entry SHALL be added to `errors[]` naming the resource, the reference and the environment
+- AND the route SHALL still be served, unlike the invalid-document case above, because the data
+  plane's own 503 already names the reference to the caller
+- AND the reason SHALL be the same one: a route answering 503 to every request because a credential
+  is absent is not visible, and the case this exists for is a promotion — credentials are per
+  environment and a promotion carries policy but not secrets, so a `backendAuth` that works in one
+  stage arrives in the next naming a credential nobody has created there
+- AND a reference SHALL resolve by its own shape with no fallback between the two sources, so an
+  `app:<application>:<name>` that resolves to nothing SHALL be reported rather than falling through
+  to an administrator's entry of the same name
+
 #### Scenario: A disabled policy unit is carried
 
 - GIVEN a document whose reserved `disabled` key names units it also carries

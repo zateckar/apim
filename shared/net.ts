@@ -55,6 +55,89 @@ export function ipInCidr(ip: string, cidr: string): boolean {
 }
 
 /**
+ * An IPv6 address as its 16 bytes, or `null` for anything that is not one.
+ *
+ * Written because `denyCidrs` is IPv4-only and the egress check needs *some* verdict on an `AAAA`
+ * answer: discarding those answers let `internal.example` resolve to `::1` and be reached, which is
+ * the same hole `checkEgress` refuses an IPv6 literal to avoid. The parser is deliberately small —
+ * it exists to answer "is this address inside one of the four ranges nothing may reach", not to be
+ * a general IPv6 library.
+ *
+ * Accepts the `::` compressed form and the embedded-IPv4 tail (`::ffff:10.0.0.1`). A zone index
+ * (`fe80::1%eth0`) is not accepted: a resolver does not emit one, and guessing at a form nothing
+ * produces would be an untested branch on a security boundary.
+ */
+export function ipv6ToBytes(ip: string): Uint8Array | null {
+  const text = ip.trim().toLowerCase();
+  if (text.length === 0 || text.includes("%") || !text.includes(":")) return null;
+
+  // An embedded IPv4 tail contributes the last four bytes; the rest is parsed as groups.
+  let head = text;
+  const tail: number[] = [];
+  const lastColon = text.lastIndexOf(":");
+  const maybeV4 = text.slice(lastColon + 1);
+  if (maybeV4.includes(".")) {
+    const v4 = ipv4ToInt(maybeV4);
+    if (v4 === null) return null;
+    tail.push((v4 >>> 24) & 0xff, (v4 >>> 16) & 0xff, (v4 >>> 8) & 0xff, v4 & 0xff);
+    head = text.slice(0, lastColon + 1) + "0:0";
+  }
+
+  const halves = head.split("::");
+  if (halves.length > 2) return null;
+  const groupsOf = (part: string): number[] | null => {
+    if (part === "") return [];
+    const out: number[] = [];
+    for (const group of part.split(":")) {
+      if (!/^[0-9a-f]{1,4}$/.test(group)) return null;
+      out.push(Number.parseInt(group, 16));
+    }
+    return out;
+  };
+  const left = groupsOf(halves[0] ?? "");
+  const right = halves.length === 2 ? groupsOf(halves[1] ?? "") : [];
+  if (left === null || right === null) return null;
+
+  const total = left.length + right.length;
+  // Without `::` every group has to be written out; with it, at least one has to be elided.
+  if (halves.length === 1 ? total !== 8 : total > 7) return null;
+  const groups = [...left, ...new Array(8 - total).fill(0), ...right];
+
+  const bytes = new Uint8Array(16);
+  for (let i = 0; i < 8; i++) {
+    bytes[i * 2] = (groups[i]! >>> 8) & 0xff;
+    bytes[i * 2 + 1] = groups[i]! & 0xff;
+  }
+  if (tail.length === 4) bytes.set(tail, 12);
+  return bytes;
+}
+
+/** `::ffff:a.b.c.d` in either spelling, as its dotted IPv4 — an ordinary IPv4 host, not an IPv6 one. */
+export function mappedIpv4(bytes: Uint8Array): string | null {
+  for (let i = 0; i < 10; i++) if (bytes[i] !== 0) return null;
+  if (bytes[10] !== 0xff || bytes[11] !== 0xff) return null;
+  return `${bytes[12]}.${bytes[13]}.${bytes[14]}.${bytes[15]}`;
+}
+
+/**
+ * The IPv6 ranges nothing may reach, named rather than configured.
+ *
+ * `denyCidrs` is the operator's IPv4 list and has no IPv6 equivalent, so these are stated here: they
+ * are the ranges that are internal *by definition* rather than by one estate's topology, which is
+ * what makes them safe to hard-code. Returns the range that matched, for the sentence the refusal
+ * carries.
+ */
+export function internalIpv6Range(bytes: Uint8Array): string | null {
+  const zeroes = bytes.every((byte) => byte === 0);
+  if (zeroes) return "::/128 (unspecified)";
+  if (bytes.slice(0, 15).every((byte) => byte === 0) && bytes[15] === 1) return "::1/128 (loopback)";
+  if ((bytes[0]! & 0xfe) === 0xfc) return "fc00::/7 (unique local)";
+  if (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0x80) return "fe80::/10 (link local)";
+  if (bytes[0] === 0xfe && (bytes[1]! & 0xc0) === 0xc0) return "fec0::/10 (site local)";
+  return null;
+}
+
+/**
  * Which address a policy should treat as the caller (design section 8.1, plan `[R2-23]`).
  *
  * Behind a reverse proxy every request arrives from the proxy, so an `ipAllow` list matched against

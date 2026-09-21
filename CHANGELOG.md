@@ -20,6 +20,38 @@ Conventions, enforced by [`test/changelog.test.ts`](test/changelog.test.ts):
   bullet arrives as its brackets. This preamble is not an entry, so it may use whatever it likes.
 - Newest version first.
 
+## 1.4.1 - 21.09.2026
+
+The refusals that were not happening: a rate limit past its first hour, a backend that resolves
+inward over IPv6, a token that has expired, and a credential that is not there.
+
+### Fixed
+
+- A **rate limit** longer than an hour is enforced for the whole of its period. A limit written as
+  so many calls per day had its counter cleared every hour, so a subscription was handed a fresh
+  allowance twenty-four times over and the figure on the screen meant nothing.
+- A backend whose hostname resolves to an internal IPv6 address is refused when it is saved. Only
+  the IPv4 answers were being checked, so a name pointing at `::1` or at an internal range — or one
+  with no IPv4 answer at all — passed a check that had examined nothing. A name that resolves to an
+  ordinary public IPv6 address is still accepted.
+- An **expired token** is refused on a route that authenticates by token introspection. A token
+  that expired within the cache's window kept working until the entry aged out, so the cache's
+  lifetime stood in for the token's own.
+- A credential reference that resolves to nothing in this environment is reported against the API,
+  instead of the route serving and answering `503` to every call with nothing anywhere to say why.
+  That is what a promotion produces when the policy names a credential nobody has created in the
+  destination environment yet.
+- A credential an application has deleted no longer resolves to an administrator's entry that
+  happens to share its name. A reference is answered by its own shape or by nothing at all.
+- A response whose backend stops mid-body says so, on an API with an open body-capture window. It
+  was answered as an empty `200`, so a backend that died halfway through looked exactly like one
+  that had succeeded and had nothing to return.
+
+### Changed
+
+- The **Credentials** screen reads the environment's policy once rather than once per credential,
+  so it stays quick on an estate with hundreds of APIs.
+
 ## 1.4.0 - 21.09.2026
 
 An application keeps its own credentials, a backend is allowed unless a rule forbids it, and the

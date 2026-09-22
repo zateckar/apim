@@ -15,9 +15,9 @@ test("the portal loads with a title, a purpose and the estate's own chrome", asy
   await openPortal(page);
 
   await expect(screenTitle(page)).toHaveText("Dashboard");
-  // The one honesty statement the chrome carries: the six business integrations are simulated in
-  // this phase, and the shell says so on every screen rather than each screen saying it separately.
-  await expect(page.getByText("Integrations simulated")).toBeVisible();
+  // The one honesty statement the chrome carries: the six external systems are simulated in this
+  // phase, and the shell says so on every screen rather than each screen saying it separately.
+  await expect(page.getByText("External systems simulated")).toBeVisible();
 
   expectNoErrors(errors);
 });

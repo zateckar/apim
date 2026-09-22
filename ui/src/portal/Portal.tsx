@@ -1,8 +1,20 @@
 import { Fragment, useEffect, useRef, useState } from "react";
 import type { Session } from "../App";
 import { api } from "../api";
-import { Notice, useAction, useAsync, useTicker, go } from "../components";
-import { addressOf, matchRoute, navigation, switchApplication, type RouteDef } from "../lib/routes";
+import {
+  LeaveDialog,
+  Link,
+  Notice,
+  PageTitleProvider,
+  Segmented,
+  envLabel,
+  go,
+  useAction,
+  useAsync,
+  useTicker,
+  whenLeaving,
+} from "../components";
+import { addressOf, matchRoute, navigation, parentOf, switchApplication, type RouteDef } from "../lib/routes";
 import { screenFor } from "../screens";
 import * as I from "./icons";
 import { NotificationsBell } from "./notifications";
@@ -79,10 +91,14 @@ export function Portal({ session: s, path }: { session: Session; path: string })
   const [changes, setChanges] = useState(false);
   const menuButton = useRef<HTMLButtonElement>(null);
   const sidebar = useRef<HTMLElement>(null);
+  // The object a detail screen is about, once it has loaded it (see `usePageTitle`).
+  const [objectTitle, setObjectTitle] = useState<string | null>(null);
+  const title = objectTitle ?? route.title;
+  const parent = parentOf(match, applicationId);
   useEffect(() => {
-    document.title = `${route.title} · Integration Portal`;
-    setNavOpen(false);
-  }, [path, route.title]);
+    document.title = `${title} · Integration Portal`;
+  }, [title]);
+  useEffect(() => setNavOpen(false), [path]);
   useEffect(() => {
     if (!navOpen) return;
     const previousOverflow = document.body.style.overflow;
@@ -145,11 +161,13 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             (a) => s.user.isAdmin || s.user.applications.includes(a.id),
           )}
           value={applicationId}
-          onChange={(next) => {
-            s.setApplication(next);
-            localStorage.setItem("portal-application", next);
-            go(switchApplication(route, path, next));
-          }}
+          onChange={(next) =>
+            whenLeaving(() => {
+              s.setApplication(next);
+              localStorage.setItem("portal-application", next);
+              go(switchApplication(route, path, next));
+            })
+          }
         />
         <nav aria-label="Application navigation">
           {navigation(s.user.isAdmin).map((group, index) => (
@@ -160,10 +178,13 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           ))}
         </nav>
         <div className="user">
-          <div className="info">
+          {/* The name is the way to your account, as it is in every other product; the sidebar
+              entry that used to sit above it was the same link twice. "Member", not "Developer":
+              membership of an application is what the authorization rule actually turns on. */}
+          <Link to="/account" className="info" ariaLabel={`Your account — ${s.user.name}`}>
             <strong>{s.user.name}</strong>
-            <small>{s.user.isAdmin ? "Administrator" : "Developer"}</small>
-          </div>
+            <small>{s.user.isAdmin ? "Administrator" : "Member"}</small>
+          </Link>
           <button
             className="btn sm"
             disabled={signout.busy}
@@ -190,15 +211,20 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             aria-controls="portal-navigation"
             onClick={() => setNavOpen(!navOpen)}
           >
-            ☰
+            <I.Menu />
           </button>
-          <div className="breadcrumbs">
-            <span>{route.scope === "application" ? s.applicationName(applicationId) : "Platform"}</span>
-            <span>/</span>
-            <strong>{route.title}</strong>
-          </div>
+          {/* No breadcrumb here. It said "<application> / <title>", which the picker and the page
+              head were already saying a few centimetres away — three copies of the application
+              name on every screen, and a title drawn twice. The page head's trail is the one place
+              that says where this screen hangs. */}
+          <span className="topbar-spacer" />
           <div className="native-actions">
-            <span className="chip neutral">Integrations simulated</span>
+            <span
+              className="chip neutral"
+              title="Kafka, SkoNET, email, the directory, FixMe and LeanIX are simulated in this phase. What they return is recorded, and nothing outside the portal is changed."
+            >
+              External systems simulated
+            </span>
             {/* The version is a button because it answers a question: what changed since the last
                 time I was here. A chip that only states a number leaves that question unanswered
                 and the answer in a file nobody using the portal can open. */}
@@ -210,93 +236,82 @@ export function Portal({ session: s, path }: { session: Session; path: string })
               v{portalVersion()}
             </button>
             <button
-              className="btn ghost sm"
-              aria-label="Toggle theme"
+              className="btn ghost sm icon-only"
+              aria-label={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
               title={`Switch to ${theme === "light" ? "dark" : "light"} theme`}
               onClick={() => setTheme(theme === "light" ? "dark" : "light")}
             >
-              {theme === "light" ? "Dark" : "Light"}
+              {theme === "light" ? <I.Moon /> : <I.Sun />}
             </button>
             {/* Deployments in flight, which is a different question from "what happened that I
-                have not seen" — that one is the bell's, and it counts unread rather than active. */}
-            <button
-              className={`btn ghost sm ${active.length ? "has-activity" : ""}`}
-              aria-label={`${active.length} changes in progress`}
-              title={`${active.length} changes in progress`}
-              onClick={() => go(`/${applicationId}/activity`)}
-            >
-              <I.Activity /> {active.length}
-            </button>
+                have not seen" — that one is the bell's, and it counts unread rather than active.
+                A link, because it goes somewhere; and absent at zero, because a permanent "0"
+                beside the bell read as a second, broken notification count. */}
+            {active.length > 0 && (
+              <Link to={`/${applicationId}/activity`} className="btn ghost sm has-activity">
+                <I.Activity /> {active.length === 1 ? "1 change rolling out" : `${active.length} changes rolling out`}
+              </Link>
+            )}
             <NotificationsBell key={applicationId} applicationId={applicationId} tick={tick} />
           </div>
         </header>
         {changes && <ChangeLog close={() => setChanges(false)} />}
+        <LeaveDialog />
         <main className="native-content" id="main-content" tabIndex={-1}>
           <div className="native-page-head">
             <div>
-              <div className="eyebrow">{route.scope === "application" ? s.applicationName(applicationId) : "Platform"}</div>
-              <h1>{route.title}</h1>
+              {/* The trail: one link back to the list a detail screen was opened from. A list
+                  screen has none — the sidebar already says where it is. */}
+              {parent && (
+                <nav className="page-trail" aria-label="Breadcrumb">
+                  <Link to={parent.address}>
+                    <I.ChevLeft size={14} /> {parent.route.title}
+                  </Link>
+                </nav>
+              )}
+              <h1>{title}</h1>
               {/* Every screen has a one-line purpose, and it comes from the same table as the
                   title — so a screen cannot be added without one. */}
               <p className="native-page-purpose">{route.purpose}</p>
             </div>
             <div className="native-actions">
-              {route.environmentScoped && <div
-                className="seg"
-                role="group"
-                aria-label="Environment"
-                // Where this read's failure belongs. It degrades to the safe answer — every stage
-                // offered, which is what the switcher did before it existed — so a banner across
-                // the page would be louder than the consequence; the control that could not be
-                // narrowed says why it was not.
-                title={
-                  reach.error
-                    ? `Every stage is offered: which ones this API is in could not be read — ${reach.error}`
-                    : undefined
-                }
-              >
-                {s.meta.chain.map((environment) => {
-                  // Disabled with the reason, never hidden: a chain drawn short would misstate
-                  // how many stages the estate has. Unknown — no resource on screen, or the read
-                  // has not landed — offers everything, because a switcher that greys out while a
-                  // request is in flight is worse than one that occasionally offers a stage the
-                  // screen then explains it is not in. The selected stage always stays operable,
-                  // so arriving at one the API is not in is never a dead control.
-                  const absent =
-                    reachable !== null &&
-                    environment !== s.environment &&
-                    !reachable.includes(environment);
-                  return (
-                    <button
-                      className={s.environment === environment ? "active" : ""}
-                      key={environment}
-                      aria-pressed={s.environment === environment}
-                      disabled={absent}
-                      title={
-                        absent
-                          ? `Not in ${environment.toUpperCase()} — a version reaches a stage by being promoted into it from the one before.`
-                          : undefined
-                      }
-                      onClick={() => s.setEnvironment(environment)}
-                    >
-                      {environment.toUpperCase()}
-                    </button>
-                  );
-                })}
-              </div>}
-              {["apis", "mcp", "a2a", "dashboard"].includes(section) && route.id !== "api" && (
-                <button
+              {route.environmentScoped && (
+                <Segmented
+                  label="Environment"
+                  value={s.environment}
+                  onChange={(next) => whenLeaving(() => s.setEnvironment(next))}
+                  options={s.meta.chain.map((environment) => {
+                    // Disabled with the reason, never hidden: a chain drawn short would misstate
+                    // how many stages the estate has. Unknown — no resource on screen, or the read
+                    // has not landed — offers everything, because a switcher that greys out while
+                    // a request is in flight is worse than one that occasionally offers a stage
+                    // the screen then explains it is not in. The selected stage always stays
+                    // operable, so arriving at one the API is not in is never a dead control.
+                    const absent =
+                      reachable !== null &&
+                      environment !== s.environment &&
+                      !reachable.includes(environment);
+                    return {
+                      value: environment,
+                      label: envLabel(environment),
+                      disabled: absent,
+                      reason: absent
+                        ? `Not in ${envLabel(environment)} yet — promote it there from the stage before.`
+                        : undefined,
+                    };
+                  })}
+                />
+              )}
+              {["apis", "mcp", "a2a", "dashboard"].includes(section) && route.id !== "api" && applicationId && (
+                <Link
                   className="btn primary"
-                  disabled={!applicationId}
-                  onClick={() =>
-                    go(
-                      `/${applicationId}/publish` +
-                        (section === "mcp" || section === "a2a" ? `?kind=${section}` : ""),
-                    )
+                  to={
+                    `/${applicationId}/publish` +
+                    (section === "mcp" || section === "a2a" ? `?kind=${section}` : "")
                   }
                 >
                   <I.Plus />
-                  {/* The button already carries the section into the wizard as `?kind=`; saying
+                  {/* The link already carries the section into the wizard as `?kind=`; saying
                       "Publish API" while doing so put the wrong noun on two of the three screens
                       it appears on. The dashboard is the general case and keeps the general word. */}
                   {section === "mcp"
@@ -304,22 +319,29 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                     : section === "a2a"
                       ? "Publish A2A agent"
                       : "Publish API"}
-                </button>
+                </Link>
               )}
             </div>
           </div>
+          {/* Where the read of which stages this API is in failed. It degrades to the safe answer —
+              every stage offered — so this is a line, not a banner. */}
+          {reach.error && (
+            <p className="hint">Every stage is offered: which ones this API is in could not be read — {reach.error}</p>
+          )}
           <Notice kind="error">{operations.error}</Notice>
           {/* Screens written before this shell bring no table styling of their own; `.native-legacy`
               lends them the estate's. Which ones need it is declared in the route table. */}
-          <Fragment key={`${path}:${applicationId}:${route.environmentScoped ? s.environment : ""}`}>
-          {route.plainChrome ? (
-            <div className="native-legacy">
-              {screenFor({ match, session: effective, operations: items, tick })}
-            </div>
-          ) : (
-            screenFor({ match, session: effective, operations: items, tick })
-          )}
-          </Fragment>
+          <PageTitleProvider value={setObjectTitle}>
+            <Fragment key={`${path}:${applicationId}:${route.environmentScoped ? s.environment : ""}`}>
+            {route.plainChrome ? (
+              <div className="native-legacy">
+                {screenFor({ match, session: effective, operations: items, tick })}
+              </div>
+            ) : (
+              screenFor({ match, session: effective, operations: items, tick })
+            )}
+            </Fragment>
+          </PageTitleProvider>
         </main>
       </div>
     </div>

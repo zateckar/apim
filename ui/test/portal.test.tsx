@@ -9,7 +9,7 @@ import {
   versionedPath,
   versionRefusal,
 } from "../src/portal/apis.tsx";
-import { addressOf, navigable, ROUTES } from "../src/lib/routes.ts";
+import { addressOf, matchRoute, navigable, ROUTES } from "../src/lib/routes.ts";
 import { portalVersion } from "../src/lib/changelog.ts";
 import { currentVersion, parseChangeLog } from "../../shared/changelog.ts";
 import type { Meta, User } from "../src/api.ts";
@@ -112,9 +112,39 @@ describe("the portal shell", () => {
 
   test("every group the sidebar draws carries its label", () => {
     for (const route of navigable(true)) expect(asAdmin.html, route.id).toContain(route.nav!.label);
-    for (const title of ["API", "Kafka", "Other", "Global", "Administration"]) {
+    for (const title of ["API", "Kafka", "Global", "Administration"]) {
       expect(asAdmin.html, title).toContain(`nav-group-title">${title}`);
     }
+    // "Other" was where a screen went when nobody had decided where it belonged.
+    expect(asAdmin.html).not.toContain(`nav-group-title">Other`);
+  });
+
+  test("no two sidebar entries share an icon", () => {
+    // Six used to share three glyphs, so the icon told a reader scanning the sidebar nothing.
+    const icons = navigable(true).map((route) => route.nav!.icon);
+    expect(icons.filter((icon, index) => icons.indexOf(icon) !== index)).toEqual([]);
+  });
+
+  test("your own name at the foot of the sidebar is the way to your account", () => {
+    expect(asAdmin.hrefs).toContain("/account");
+    expect(shellFor(member).html).toContain("Member");
+    expect(shellFor(member).html).not.toContain("Developer");
+  });
+
+  test("Health Status is offered to everybody; External systems only to an administrator", () => {
+    const asMember = shellFor(member);
+    expect(asMember.hrefs).toContain("/fleet");
+    expect(asMember.hrefs).not.toContain("/integrations");
+    expect(asAdmin.hrefs).toContain("/integrations");
+    // FixMe's old address lands on the screen it became a section of.
+    expect(matchRoute("/fixme").route.id).toBe("fleet");
+  });
+
+  test("a detail screen links back to the list it was opened from", () => {
+    expect(shellFor(admin, "/application_platform/apis/res_1").html).toContain('class="page-trail"');
+    expect(shellFor(admin, "/subscriptions/sub_1").html).toContain('href="/application_platform/subscriptions"');
+    // A list has no trail: the sidebar already says where it is.
+    expect(shellFor(admin, "/application_platform/apis").html).not.toContain('class="page-trail"');
   });
 
   test("an application screen hangs off the selected application; a global one does not", () => {
@@ -224,7 +254,7 @@ describe("the portal shell", () => {
   test("the simulated integrations are declared in the chrome, not only inside their screens", () => {
     // Every one of the six is a mock this phase; a shell that looked production-real would be the
     // one dishonest surface in the portal.
-    expect(asAdmin.html).toContain("Integrations simulated");
+    expect(asAdmin.html).toContain("External systems simulated");
   });
 });
 

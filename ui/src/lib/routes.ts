@@ -16,14 +16,20 @@
  * property over every route rather than over every component.
  */
 
-/** The sidebar's groups, in the order they are drawn. A group with no title is drawn bare. */
-export type NavGroup = "Overview" | "API" | "Kafka" | "Other" | "Global" | "Administration";
+/**
+ * The sidebar's groups, in the order they are drawn. A group with no title is drawn bare.
+ *
+ * There was an "Other" group, which is where a screen went when nobody had decided where it
+ * belonged: credentials, the external-systems console, mail and activity. Each has a home now —
+ * credentials are what an application's APIs present, mail and activity are the application's own
+ * record, and the external-systems console is an administrator's, not a member's.
+ */
+export type NavGroup = "Overview" | "API" | "Kafka" | "Global" | "Administration";
 
 export const NAV_GROUPS: ReadonlyArray<{ group: NavGroup; title: string | null }> = [
   { group: "Overview", title: null },
   { group: "API", title: "API" },
   { group: "Kafka", title: "Kafka" },
-  { group: "Other", title: "Other" },
   { group: "Global", title: "Global" },
   { group: "Administration", title: "Administration" },
 ];
@@ -53,6 +59,12 @@ export interface RouteDef {
   environmentScoped?: boolean;
   /** The sidebar entry. Absent for a screen you arrive at rather than navigate to. */
   nav?: { group: NavGroup; label: string; icon: keyof typeof import("../portal/icons") };
+  /**
+   * The list a detail screen was opened from, by route id. The page head writes it as the trail
+   * above the title — one link back, in place of an eyebrow that repeated the application name the
+   * picker and the breadcrumb were already showing.
+   */
+  parent?: string;
   /**
    * The sidebar offers this only to an administrator. It gates the *link*, not the screen: the
    * shell hides authority it cannot exercise, and the control plane refuses what it must on every
@@ -106,7 +118,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The A2A agents this application publishes or subscribes to, and the skills each one advertises.",
     scope: "application",
-    nav: { group: "API", label: "A2A Agents", icon: "Activity" },
+    nav: { group: "API", label: "A2A Agents", icon: "Bot" },
   },
   {
     id: "api",
@@ -129,7 +141,8 @@ export const ROUTES: RouteDef[] = [
       "/mcp/:resourceId",
       "/a2a/:resourceId",
     ],
-    title: "API workspace",
+    title: "API",
+    parent: "apis",
     purpose: "One API: its definition, where it is live, and everything set per environment.",
     scope: "application",
   },
@@ -138,6 +151,7 @@ export const ROUTES: RouteDef[] = [
     // `/apis/new` is what "Publish an API" on How this works has always linked to.
     patterns: ["/publish", "/apis/new"],
     title: "Publish an API",
+    parent: "apis",
     purpose: "Import a definition, say where it is routed and what it forwards to, then release it.",
     scope: "application",
   },
@@ -163,6 +177,7 @@ export const ROUTES: RouteDef[] = [
     id: "subscription",
     patterns: ["/subscriptions/:subscriptionId"],
     title: "Subscription",
+    parent: "subscriptions",
     purpose:
       "This application's access to one product: its keys, what it may call, and what it has spent.",
     scope: "application",
@@ -206,19 +221,7 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "The usernames, keys, secrets and client certificates this application's APIs use, held encrypted and never shown again.",
     scope: "application",
-    nav: { group: "Other", label: "Credentials", icon: "Shield" },
-  },
-  {
-    id: "integrations",
-    environmentScoped: true,
-    // Not "Integrations", which reads as a development slug for the thing this portal *is*. This
-    // screen is the console for the surrounding systems — LeanIX, the directory, FixMe — every one
-    // of which is simulated in this phase, which the chrome already says.
-    patterns: ["/integrations"],
-    title: "External systems",
-    purpose: "The six systems around this portal, what each was asked, and what it answered.",
-    scope: "application",
-    nav: { group: "Other", label: "External systems", icon: "Link" },
+    nav: { group: "API", label: "Credentials", icon: "Lock" },
   },
   {
     id: "mail",
@@ -229,7 +232,7 @@ export const ROUTES: RouteDef[] = [
     title: "Mail",
     purpose: "Every message this portal sent about this application, and what was in it.",
     scope: "application",
-    nav: { group: "Other", label: "Mail", icon: "Mail" },
+    nav: { group: "Overview", label: "Mail", icon: "Mail" },
   },
   {
     id: "activity",
@@ -237,7 +240,7 @@ export const ROUTES: RouteDef[] = [
     title: "Activity",
     purpose: "Changes this application has made, and how far each one has reached the gateways.",
     scope: "application",
-    nav: { group: "Other", label: "Activity", icon: "Clock" },
+    nav: { group: "Overview", label: "Activity", icon: "Clock" },
   },
 
   // ------------------------------------------------------------------ the same for everybody
@@ -255,13 +258,14 @@ export const ROUTES: RouteDef[] = [
     purpose:
       "Every resource you are allowed to see, what it does, and how to start calling it.",
     scope: "global",
-    nav: { group: "Global", label: "Catalog", icon: "Apps" },
+    nav: { group: "Global", label: "Catalog", icon: "Search" },
     plainChrome: true,
   },
   {
     id: "listing",
     patterns: ["/catalog/:resourceId"],
     title: "Resource",
+    parent: "catalog",
     purpose: "What this resource does, how to subscribe, and how to call it.",
     scope: "global",
     plainChrome: true,
@@ -270,18 +274,28 @@ export const ROUTES: RouteDef[] = [
     id: "subscribe",
     patterns: ["/catalog/:resourceId/subscribe"],
     title: "Subscribe",
+    parent: "catalog",
     purpose: "Choose an environment and request access for the selected application.",
     scope: "global",
     plainChrome: true,
   },
   {
-    id: "fixme",
-    environmentScoped: true,
-    patterns: ["/fixme"],
-    title: "FixMe diagnostics",
-    purpose: "What the FixMe service reports about the estate, and what it was asked.",
+    id: "fleet",
+    // `/health` is what the shell linked before the route table named this screen `/fleet`, and
+    // `/fleet?environment=…` is what every attention row about an instance still writes.
+    // `/fixme` was FixMe's own screen. FixMe diagnoses a deployment and repairs it, which is an
+    // answer to "is this environment healthy" — so it is a section of this screen now, and its old
+    // address lands here.
+    patterns: ["/fleet", "/health", "/fixme"],
+    title: "Health Status",
+    purpose:
+      "Whether each environment's gateways are serving what was published, and a diagnose-and-repair run when one is not.",
     scope: "global",
-    nav: { group: "Global", label: "FixMe diagnostics", icon: "Wrench" },
+    // Open to everybody, link and screen. Which environment is healthy decides whether a publisher
+    // promotes this afternoon, and a link only administrators were offered made everybody else ask
+    // in chat. The replica-level convergence detail inside it is still an administrator's.
+    nav: { group: "Global", label: "Health Status", icon: "Activity" },
+    plainChrome: true,
   },
   {
     id: "how",
@@ -298,24 +312,23 @@ export const ROUTES: RouteDef[] = [
     title: "Your account",
     purpose: "How you sign in, which applications you are in, and where else you are signed in.",
     scope: "global",
-    nav: { group: "Global", label: "Your account", icon: "Users" },
+    // Not in the sidebar: the signed-in name at the foot of it is the link, which is where every
+    // other product puts it, and a sidebar entry above that name was the same link twice.
     plainChrome: true,
   },
 
   // ------------------------------------------------------------------ running the estate
   {
-    id: "fleet",
-    // `/health` is what the shell linked before the route table named this screen `/fleet`, and
-    // `/fleet?environment=…` is what every attention row about an instance still writes.
-    patterns: ["/fleet", "/health"],
-    title: "Health Status",
-    purpose:
-      "Each environment's gateway: what configuration its replicas are running, and anything one has refused.",
+    id: "integrations",
+    // Not "Integrations", which reads as a development slug for the thing this portal *is*. This is
+    // the console for the systems around it — Kafka, SkoNET, email, the directory, FixMe, LeanIX and
+    // log search — and it is an administrator's: a member meets each of them where it matters
+    // (approvals, mail, Health Status), not as a list of transports.
+    patterns: ["/integrations"],
+    title: "External systems",
+    purpose: "The systems around this portal, whether each is real or simulated, and what each was last asked.",
     scope: "global",
-    nav: { group: "Administration", label: "Health Status", icon: "Activity" },
-    // The link is gated; the screen is not. Which environment is healthy decides whether a publisher
-    // promotes this afternoon, and a screen only admins could read made them ask in chat — so the
-    // convergence detail inside it is admin-only and the summary above it is open.
+    nav: { group: "Administration", label: "External systems", icon: "Plug" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -355,6 +368,7 @@ export const ROUTES: RouteDef[] = [
     id: "application",
     patterns: ["/applications/:applicationId"],
     title: "Application",
+    parent: "applications",
     purpose: "One application: who is in it, how they got there, and what it owns.",
     scope: "global",
     plainChrome: true,
@@ -373,6 +387,7 @@ export const ROUTES: RouteDef[] = [
     id: "user",
     patterns: ["/users/:userId"],
     title: "Account",
+    parent: "users",
     purpose: "One account: how they sign in, which applications they are in, and where they are signed in.",
     scope: "global",
     plainChrome: true,
@@ -384,7 +399,7 @@ export const ROUTES: RouteDef[] = [
     title: "Telemetry",
     purpose: "Calls per minute across the estate: served, refused by the gateway, and failed upstream.",
     scope: "global",
-    nav: { group: "Administration", label: "Telemetry", icon: "Sliders" },
+    nav: { group: "Administration", label: "Telemetry", icon: "Chart" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -417,7 +432,7 @@ export const ROUTES: RouteDef[] = [
     title: "Audit",
     purpose: "Who changed what, when, and what happened as a result.",
     scope: "global",
-    nav: { group: "Administration", label: "Audit", icon: "Book" },
+    nav: { group: "Administration", label: "Audit", icon: "Eye" },
     adminOnly: true,
     plainChrome: true,
   },
@@ -514,6 +529,26 @@ export function addressOf(route: RouteDef, applicationId?: string | null): strin
 export function switchApplication(route: RouteDef, path: string, next: string): string {
   if (route.scope !== "application") return path;
   return route.patterns[0]!.includes("/:") ? `/${next}/dashboard` : addressOf(route, next);
+}
+
+/**
+ * The list a detail screen was opened from, and its address — the page head's one-link trail.
+ *
+ * The workspace declares `apis` but is reached from three lists, and the trail goes back to the one
+ * the reader came from, the same rule the sidebar's highlight follows.
+ */
+export function parentOf(
+  match: Match,
+  applicationId: string | null,
+): { route: RouteDef; address: string } | null {
+  if (!match.route.parent) return null;
+  const listed = ROUTES.find(
+    (route) => route.nav && route.patterns[0] === `/${match.section}` && route.scope === match.route.scope,
+  );
+  const parent =
+    match.route.id === "api" && listed ? listed : ROUTES.find((route) => route.id === match.route.parent);
+  if (!parent) return null;
+  return { route: parent, address: addressOf(parent, applicationId) };
 }
 
 /** The screens a caller of this authority may be offered a link to. */

@@ -45,8 +45,13 @@ registry says which component answers each of them. The shell resolves nothing o
 - GIVEN a signed-in user
 - WHEN any screen renders
 - THEN it SHALL sit beside a neutral branded sidebar, separated from the main column by a subtle border, with both content surfaces following the selected theme and a continuous dark-green brand row and topbar
-- AND the main column SHALL carry a topbar, then a page head with an eyebrow, an `h1` and the
-  screen's one-line purpose, then the screen's content
+- AND the main column SHALL carry a topbar, then a page head with an `h1` and the screen's one-line
+  purpose, then the screen's content
+- AND a detail screen's page head SHALL carry, above the `h1`, one link back to the list it was
+  opened from (its *trail*), and a list screen SHALL carry none, because the sidebar already says
+  where a list is
+- AND the page head SHALL NOT repeat the selected application's name, which the picker already
+  shows; it used to appear three times on every screen — picker, breadcrumb and eyebrow
 - AND a screen SHALL render no heading of its own repeating that title, because a second heading
   with the same words reads as the page having started over
 
@@ -54,8 +59,7 @@ registry says which component answers each of them. The shell resolves nothing o
 
 - GIVEN a viewport at or under `1000px`
 - WHEN the shell renders
-- THEN the sidebar SHALL narrow, the page head SHALL stack, and the breadcrumb SHALL be hidden,
-  because the page head already carries the same two facts
+- THEN the sidebar SHALL narrow and the page head SHALL stack
 
 #### Scenario: The viewport is a phone
 
@@ -149,8 +153,8 @@ registry says which component answers each of them. The shell resolves nothing o
 - THEN it SHALL be the **selected application's** dashboard, for the selected environment
 - AND there SHALL be no separate estate-wide home screen
 - AND the reason SHALL be that the estate's own health is Health Status, which is a screen in the
-  Administration group and open to everybody, and two screens answering "how is it going" from
-  different scopes is how two numbers come to disagree
+  Global group and open to everybody, and two screens answering "how is it going" from different
+  scopes is how two numbers come to disagree
 
 ### Requirement: Every screen has a title and a one-line purpose
 
@@ -163,6 +167,9 @@ The rule SHALL be enforced structurally rather than by review.
 - THEN the title and the one-line purpose SHALL be taken from `ui/src/lib/routes.ts` and rendered
   by the shell
 - AND the document title SHALL name that screen followed by Integration Portal
+- AND a screen about one object MAY hand the shell that object's name once it has loaded, and the
+  shell SHALL then use it as the `h1` and the document title in place of the route's title; until
+  it has, the route's title SHALL stand in
 - AND the shell SHALL provide a keyboard-visible skip link to the main content
 - AND a screen SHALL therefore be unable to exist without them
 - AND a test SHALL be able to assert the property over every route rather than over every component
@@ -171,7 +178,11 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN an address that names one API, under any of the four listings it can be opened from
 - WHEN the head renders
-- THEN the title SHALL be *API workspace*, and the eyebrow SHALL be the application's display name
+- THEN the title SHALL be the API's name and version once loaded, and *API* until then
+- AND the trail SHALL link back to the listing the workspace was opened from — APIs, MCP Servers or
+  A2A Agents — the same rule the sidebar's highlight follows
+- AND four different APIs SHALL NOT arrive under one generic title, which left a reader with several
+  tabs open unable to tell them apart
 
 #### Scenario: A detail address and its list share a section
 
@@ -219,15 +230,23 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN a signed-in user
 - WHEN the sidebar renders
-- THEN it SHALL show the brand, the application picker, then Dashboard, then these groups in order:
-  **API** (APIs · MCP Servers · A2A Agents · Products · Subscriptions · Approvals),
+- THEN it SHALL show the brand, the application picker, then an untitled group of the application's
+  own record (Dashboard · Mail · Activity), then these groups in order:
+  **API** (APIs · MCP Servers · A2A Agents · Products · Subscriptions · Approvals · Credentials),
   **Kafka** (Kafka Topics · Kafka REST Proxy),
-  **Other** (Certificates · External systems · Mail · Activity),
-  **Global** (Catalog · FixMe diagnostics · How this works · Your account)
-- AND **Administration** (Health Status · Gateways · Applications · People · Telemetry ·
-  Global policy · Trust · Audit) SHALL be shown only to an administrator
-- AND the group of surrounding systems SHALL be labelled *External systems* rather than
-  *Integrations*, which reads as a development slug for the thing this portal is
+  **Global** (Catalog · Health Status · How this works)
+- AND **Administration** (External systems · Gateways · Gateway settings · Applications · People ·
+  Telemetry · Global policy · Trust · Audit) SHALL be shown only to an administrator
+- AND there SHALL be no catch-all group: an "Other" group was where a screen went when nobody had
+  decided where it belonged, and every screen in it has a home
+- AND FixMe SHALL NOT have an entry of its own: it diagnoses and repairs a deployment, which is the
+  second half of Health Status's question, and it is a section of that screen (see
+  `integrations-and-mocks`); its old address `/fixme` SHALL resolve to Health Status
+- AND the console of surrounding systems SHALL be labelled *External systems* rather than
+  *Integrations*, which reads as a development slug for the thing this portal is, and SHALL be an
+  administrator's — a member meets each system where it matters to them, not as a list of transports
+- AND no two entries SHALL share an icon, because an icon that stands for two screens tells a reader
+  scanning the sidebar nothing
 - AND every entry SHALL be derived from the route table's own `nav` grouping, with no second list
   of labels beside it; each entry SHALL declare its meaningful outline icon in that same metadata — a screen leaves the navigation by losing its `nav` and in no other way
 - AND every screen the table marks admin-only SHALL be in the Administration group and every screen
@@ -240,8 +259,12 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN a signed-in user
 - WHEN the sidebar footer renders
-- THEN it SHALL show their display name, the word *Administrator* or *Developer*, and a sign-out
+- THEN it SHALL show their display name, the word *Administrator* or *Member*, and a sign-out
   button
+- AND the name SHALL be the link to *Your account*, which SHALL have no sidebar entry of its own —
+  an entry beside the name was the same link twice
+- AND the word SHALL be *Member* rather than *Developer*, because membership of an application is
+  what the authorization rule turns on, and not everybody in an application writes code
 - AND signing out SHALL follow the identity provider's end-session URL when the control plane
   returns one, and otherwise reload the portal
 
@@ -259,10 +282,11 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN any screen
 - WHEN the topbar renders
-- THEN it SHALL show a breadcrumb of `<application> / <screen title>` for application routes and
-  `Platform / <screen title>` for global routes, a chip saying the
-  surrounding systems are simulated, the portal version as a **button**, a light/dark toggle, a
-  count of deployments in progress, and the notifications bell
+- THEN it SHALL show a chip saying *External systems simulated*, whose tooltip names them, the
+  portal version as a **button**, a light/dark toggle drawn as an icon with an accessible name, a
+  link to Activity while deployments are in progress, and the notifications bell
+- AND it SHALL NOT show a breadcrumb: `<application> / <screen title>` repeated what the picker and
+  the page head were already saying a few centimetres away
 
 #### Scenario: The version is pressed
 
@@ -277,8 +301,10 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN work in flight and unread notifications
 - WHEN the topbar renders
-- THEN the activity count SHALL count operations that are neither `complete` nor `superseded` and
-  SHALL link to Activity
+- THEN the activity count SHALL count operations that are neither `complete` nor `superseded`,
+  SHALL say what it counts ("2 changes rolling out") and SHALL be a link to Activity
+- AND it SHALL be absent when that count is zero, because a permanent "0" beside the bell read as a
+  second, broken notification count
 - AND the bell SHALL count **unread** notifications, which is a different question, and SHALL open
   a popover rather than a parallel toast stack
 
@@ -298,6 +324,11 @@ The rule SHALL be enforced structurally rather than by review.
   one marked active
 - AND changing it SHALL change what the screen below shows, without navigating
 - AND the active environment SHALL be exposed as pressed to assistive technology
+- AND an environment the object on screen is not in SHALL be disabled rather than hidden, with the
+  reason written as a line under the control and not only as a tooltip, which a keyboard and a
+  touch screen never see
+- AND every environment switcher in the portal — the shell's and any a screen draws for itself —
+  SHALL be the same control and SHALL write environments the same way (`DEV`, `TEST`, `PROD`)
 - AND pages that show all environments, an object's fixed environment, or no environmental data
   SHALL omit the shell switcher, rather than offer a control that does not change the page
 
@@ -305,8 +336,9 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN the APIs, MCP Servers, A2A Agents or Dashboard section, with no resource open
 - WHEN the page head renders
-- THEN a primary **Publish API** action SHALL be offered
-- AND from MCP Servers or A2A Agents it SHALL carry the kind, so the wizard opens on the right one
+- THEN a primary **Publish API** action SHALL be offered, as a link, because it goes somewhere
+- AND from MCP Servers or A2A Agents it SHALL carry the kind, so the wizard opens on the right one,
+  and SHALL say *Publish MCP server* or *Publish A2A agent*
 
 ### Requirement: Reach the catalogue from anywhere
 
@@ -328,9 +360,11 @@ The rule SHALL be enforced structurally rather than by review.
 
 #### Scenario: A user navigates away from a dirty editor
 
-- GIVEN unsaved changes in a definition or a policy editor
-- WHEN the user navigates away
-- THEN they SHALL be warned before the change is lost
+- GIVEN unsaved changes in a definition, a policy, properties or any other workspace form
+- WHEN the user follows a link, uses the back button, switches environment or switches application
+- THEN the shell SHALL ask, in its own dialog, whether to stay or discard the changes, naming what
+  would be lost, before anything is lost
+- AND a reload or a closed tab SHALL raise the browser's own leave-page prompt
 - AND the warning SHALL NOT use `confirm()`
 
 ### Requirement: Keep one live ticker for the whole shell

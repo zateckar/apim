@@ -4022,6 +4022,47 @@ a { color: inherit; text-decoration: none; }
 /* A stage the thing on screen is not in. Faded rather than removed, so the chain still reads as
    three stages and the gap is legible as "not there yet" rather than as an estate with two. */
 .native-portal .seg button:disabled { color: var(--fg-faint); cursor: default; }
+/* The reason a stage is disabled, as a line under the control — a tooltip is not something a
+   keyboard or a touch screen ever sees. */
+.native-portal .seg-wrap { display: inline-flex; flex-direction: column; align-items: flex-end; gap: 4px; }
+.native-portal .seg-reason { font-size: 11.5px; color: var(--fg-subtle); max-width: 36ch; text-align: right; }
+.native-portal .card .seg-wrap, .native-modal .seg-wrap { align-items: flex-start; }
+.native-portal .card .seg-reason, .native-modal .seg-reason { text-align: left; }
+
+/* Every select gets the chevron. The rule above sets `background` as a shorthand, which reset the
+   `.field select` chevron's image on every select that was not inside a `.field` — most of the
+   plain-chrome screens — so their dropdowns were indistinguishable from text boxes. The `:is()`
+   matches the specificity of that rule, and being later, wins. */
+.native-portal :is(select:not([multiple]):not([size])),
+.native-modal :is(select:not([multiple]):not([size])) {
+  appearance: none; -webkit-appearance: none;
+  padding-right: 30px; cursor: pointer;
+  background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%236b7280' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 9l6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center; background-size: 12px 12px;
+}
+
+/* The shell's page head: one link back to the list a detail screen came from, where the eyebrow
+   used to repeat the application name. */
+.native-portal .page-trail { margin-bottom: 2px; }
+.native-portal .page-trail a { display: inline-flex; align-items: center; gap: 4px; font-size: 12.5px; color: var(--fg-muted); text-decoration: none; }
+.native-portal .page-trail a:hover { color: var(--accent); }
+.native-portal .topbar-spacer { flex: 1; }
+.native-portal .btn.icon-only { padding-inline: 7px; }
+/* The signed-in name is the link to your account. */
+.native-portal .sidebar .user a.info { color: inherit; text-decoration: none; border-radius: var(--r-sm); min-width: 0; }
+.native-portal .sidebar .user a.info:hover strong { text-decoration: underline; }
+/* The bell's badge sat on the button's corner with `overflow: hidden` somewhere above it and lost
+   its top edge; inset it so it is always whole. */
+.native-portal .notif-btn .notif-badge { top: -4px; right: -6px; }
+.native-portal .topbar, .native-portal .topbar .native-actions { overflow: visible; }
+/* FixMe on Health Status. */
+.native-portal .fixme-run { margin-bottom: 16px; align-items: flex-start; }
+.native-portal .fixme-steps { margin: 0; padding-left: 18px; }
+.native-portal .fixme-steps + p { margin: 4px 0 0; }
+/* A value beside the button that copies it. */
+.native-portal .copy-row, .native-modal .copy-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.native-portal .copy-row > code, .native-modal .copy-row > code { flex: 1 1 auto; min-width: 0; overflow-wrap: anywhere; }
+.native-portal .copy-btn, .native-modal .copy-btn { flex: 0 0 auto; }
 .native-portal .native-row { padding: 12px 0; gap: 16px; }
 .native-portal .native-row > div { min-width: 0; overflow-wrap: anywhere; }
 .native-portal .native-row > .native-actions { flex-shrink: 0; }

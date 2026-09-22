@@ -60,7 +60,18 @@ export const Save = (p: P) => <S {...p}><path d="M5 3h12l4 4v14H3V5a2 2 0 0 1 2-
 export const MoreVertical = (p: P) => <S {...p}><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></S>;
 export const Undo = (p: P) => <S {...p}><path d="M9 14l-4-4 4-4"/><path d="M5 10h11a4 4 0 0 1 0 8h-2"/></S>;
 export const Power = (p: P) => <S {...p}><path d="M12 2v10"/><path d="M5.6 7.4a8 8 0 1 0 12.8 0"/></S>;
-// Wrench/tool glyph — used for FixMe (self-heal) nav entries.
+// Wrench/tool glyph — FixMe's "Diagnose and repair" on Health Status.
 export const Wrench = (p: P) => <S {...p}><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"/></S>;
 
 export const Mail = (p: P) => <S {...p}><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 6 9 7 9-7"/></S>;
+
+// Six sidebar entries used to share three glyphs (MCP and External systems both a link, A2A and
+// Health Status both a pulse, Credentials and Global policy both a shield), so the icon told a
+// reader scanning the sidebar nothing. Every entry has its own now; `routes.test.ts` keeps it so.
+export const Bot = (p: P) => <S {...p}><rect x="4" y="8" width="16" height="12" rx="2"/><path d="M12 4v4"/><circle cx="12" cy="3.5" r="0.6"/><circle cx="9" cy="14" r="0.8"/><circle cx="15" cy="14" r="0.8"/></S>;
+export const Plug = (p: P) => <S {...p}><path d="M9 3v5M15 3v5"/><path d="M6 8h12v3a6 6 0 0 1-12 0z"/><path d="M12 17v4"/></S>;
+export const Chart = (p: P) => <S {...p}><path d="M4 20V4"/><path d="M4 20h16"/><rect x="7" y="12" width="3" height="5"/><rect x="12" y="8" width="3" height="9"/><rect x="17" y="10" width="3" height="7"/></S>;
+export const Lock = (p: P) => <S {...p}><rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></S>;
+export const Sun = (p: P) => <S {...p}><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></S>;
+export const Moon = (p: P) => <S {...p}><path d="M20 14.5A8 8 0 0 1 9.5 4a8 8 0 1 0 10.5 10.5z"/></S>;
+export const Menu = (p: P) => <S {...p}><path d="M4 6h16M4 12h16M4 18h16"/></S>;

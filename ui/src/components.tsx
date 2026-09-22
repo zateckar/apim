@@ -1,4 +1,4 @@
-import { Children, cloneElement, isValidElement, type ReactElement, useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { Children, cloneElement, createContext, isValidElement, type ReactElement, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { ApiError } from "./api";
 import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow } from "./lib/attention";
 import { define } from "./lib/glossary";
@@ -11,17 +11,121 @@ let navigator: (to: string) => void = () => {};
 export function setNavigator(fn: (to: string) => void) {
   navigator = fn;
 }
+
+/**
+ * Unsaved edits, and the one question asked before they are thrown away.
+ *
+ * The API workspace is remounted per environment and per version — correctly, because a form that
+ * kept one environment's values under another's heading would be worse — and so a click on the
+ * environment switcher, a sidebar entry or the back button silently discarded a half-written
+ * policy. Every in-app navigation goes through `go()`, so that is where the question is asked; a
+ * reload or a closed tab is the browser's own `beforeunload`, which is the only thing it allows.
+ *
+ * Not `confirm()`: the house rule bans it (hygiene.test.ts), and the shell's own dialog can say
+ * *what* would be lost.
+ */
+const guards = new Map<symbol, string>();
+let pending: { resolve: (leave: boolean) => void; message: string } | null = null;
+const pendingListeners = new Set<() => void>();
+function announce() {
+  for (const listener of pendingListeners) listener();
+}
+
+/** Ask before `proceed` runs, when anything on screen holds unsaved edits. */
+export function whenLeaving(proceed: () => void) {
+  const message = [...guards.values()][0];
+  if (message === undefined) return proceed();
+  pending?.resolve(false);
+  pending = {
+    message,
+    resolve: (leave) => {
+      pending = null;
+      announce();
+      if (leave) {
+        guards.clear();
+        proceed();
+      }
+    },
+  };
+  announce();
+}
+
 export function go(to: string) {
-  navigator(to);
+  whenLeaving(() => navigator(to));
+}
+
+/**
+ * Mark this screen as holding unsaved edits while `dirty` is true. `what` is the object, as the
+ * question will name it: "the policy for checkout v2 in DEV".
+ */
+export function useLeaveGuard(dirty: boolean, what: string) {
+  useEffect(() => {
+    if (!dirty) return;
+    const key = Symbol(what);
+    guards.set(key, what);
+    const onUnload = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
+    window.addEventListener("beforeunload", onUnload);
+    return () => {
+      guards.delete(key);
+      window.removeEventListener("beforeunload", onUnload);
+    };
+  }, [dirty, what]);
+}
+
+/** The shell's half of the guard: the dialog, drawn once, when a navigation is waiting on it. */
+export function LeaveDialog() {
+  const [, rerender] = useState(0);
+  useEffect(() => {
+    const listener = () => rerender((n) => n + 1);
+    pendingListeners.add(listener);
+    return () => {
+      pendingListeners.delete(listener);
+    };
+  }, []);
+  if (!pending) return null;
+  const current = pending;
+  return (
+    <Modal title="Leave without saving?" close={() => current.resolve(false)}>
+      <p>You have unsaved changes to {current.message}. Leaving this page discards them.</p>
+      <div className="native-actions">
+        <button type="button" className="btn primary" onClick={() => current.resolve(false)}>
+          Stay and keep editing
+        </button>
+        <button type="button" className="btn danger" onClick={() => current.resolve(true)}>
+          Discard changes
+        </button>
+      </div>
+    </Modal>
+  );
 }
 
 export function usePath(): string {
   const [path, setPath] = useState(window.location.pathname);
+  // Where the reader was before the browser moved, so a back button can be put back.
+  const shown = useRef(window.location.pathname + window.location.search);
   useEffect(() => {
-    const onPop = () => setPath(window.location.pathname);
+    const onPop = () => {
+      const to = window.location.pathname + window.location.search;
+      if (guards.size === 0) {
+        shown.current = to;
+        return setPath(window.location.pathname);
+      }
+      // The browser has already moved. Put the address back while the question is open, and move
+      // again only if the answer is to leave.
+      window.history.pushState({}, "", shown.current);
+      whenLeaving(() => {
+        window.history.pushState({}, "", to);
+        shown.current = to;
+        setPath(window.location.pathname);
+      });
+    };
     window.addEventListener("popstate", onPop);
     setNavigator((to) => {
       window.history.pushState({}, "", to);
+      shown.current = to;
       setPath(to);
     });
     return () => window.removeEventListener("popstate", onPop);
@@ -287,9 +391,64 @@ export function Digest({ value }: { value?: string | null }) {
 }
 
 /**
- * The environment switcher. Everything in design section 6.1's edited-in-place tier — policy,
- * routes, bindings, subscriptions — is per environment, so almost every screen needs to say
- * which one it is showing.
+ * How an environment is written wherever a reader sees one: `DEV`, `TEST`, `PROD`.
+ *
+ * It was written three ways — upper case in the shell's switcher, lower case in the listing's, and
+ * whatever the row carried in a table — so the same stage looked like three different things on
+ * one screen. The id stays lower case in addresses and requests; this is only the label.
+ */
+export function envLabel(environment: string | null | undefined): string {
+  return environment ? environment.toUpperCase() : "—";
+}
+
+/**
+ * A small exclusive choice drawn as one control: a window, a filter, an environment.
+ *
+ * There were two shapes of this — `.seg` in the shell and `.uptime-range` on Health Status — and
+ * a third hand-written for each filter. One now. A disabled option carries its reason as a line
+ * under the control rather than only as a tooltip, which a keyboard and a touch screen never see.
+ */
+export function Segmented<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  /** What is being chosen, for assistive technology: "Environment", "Window". */
+  label: string;
+  value: T;
+  onChange: (next: T) => void;
+  options: ReadonlyArray<{ value: T; label: ReactNode; disabled?: boolean; reason?: string }>;
+}) {
+  const reasons = options.filter((option) => option.disabled && option.reason);
+  return (
+    <div className="seg-wrap">
+      <div className="seg" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            type="button"
+            key={option.value}
+            className={option.value === value ? "active" : ""}
+            aria-pressed={option.value === value}
+            disabled={option.disabled}
+            title={option.reason}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+      {reasons.length > 0 && (
+        <span className="seg-reason">{reasons.map((option) => option.reason).join(" ")}</span>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The environment switcher for a screen that owns its own choice (the shell's is for the rest).
+ * Everything in design section 6.1's edited-in-place tier — policy, routes, bindings,
+ * subscriptions — is per environment, so almost every screen needs to say which one it is showing.
  */
 export function EnvironmentPicker({
   chain,
@@ -301,19 +460,67 @@ export function EnvironmentPicker({
   onChange: (next: string) => void;
 }) {
   return (
-    <div className="envpicker" role="group" aria-label="Environment">
-      {chain.map((environment) => (
-        <button
-          key={environment}
-          className={environment === value ? "env active" : "env"}
-          aria-pressed={environment === value}
-          onClick={() => onChange(environment)}
-        >
-          {environment}
-        </button>
-      ))}
-    </div>
+    <Segmented
+      label="Environment"
+      value={value}
+      onChange={onChange}
+      options={chain.map((environment) => ({ value: environment, label: envLabel(environment) }))}
+    />
   );
+}
+
+/**
+ * Copy a value the reader is about to paste somewhere else: a key, a URL, a token, a curl line.
+ *
+ * There was not one anywhere in the portal, so every subscription key and every minted replica
+ * token was a triple-click and a hope. The clipboard can refuse (an insecure origin, a browser
+ * policy); when it does, the button says so and the value stays on screen to select by hand.
+ */
+export function CopyButton({ value, label = "Copy", what }: { value: string; label?: string; what?: string }) {
+  const [state, setState] = useState<"idle" | "copied" | "failed">("idle");
+  useEffect(() => {
+    if (state === "idle") return;
+    const id = setTimeout(() => setState("idle"), 2000);
+    return () => clearTimeout(id);
+  }, [state]);
+  return (
+    <button
+      type="button"
+      className="btn sm copy-btn"
+      aria-label={what ? `Copy ${what}` : label}
+      onClick={() =>
+        void writeClipboard(value).then(
+          () => setState("copied"),
+          () => setState("failed"),
+        )
+      }
+    >
+      {state === "copied" ? "Copied" : state === "failed" ? "Copy failed — select it by hand" : label}
+    </button>
+  );
+}
+
+function writeClipboard(value: string): Promise<void> {
+  if (!window.navigator.clipboard) return Promise.reject(new Error("clipboard unavailable"));
+  return window.navigator.clipboard.writeText(value);
+}
+
+/**
+ * The object a detail screen is about, as its page title.
+ *
+ * The shell draws every title from the route table, which is right for a list and wrong for one
+ * object: four different APIs all arrived under "API workspace", and a tab strip of them could not
+ * be told apart. The screen knows the name once it has loaded it; this hands it up. `null` while
+ * loading, and the route's own title stands in.
+ */
+const TitleContext = createContext<(title: string | null) => void>(() => {});
+export const PageTitleProvider = TitleContext.Provider;
+export function usePageTitle(title: string | null | undefined) {
+  const set = useContext(TitleContext);
+  useEffect(() => {
+    set(title ?? null);
+    return () => set(null);
+  }, [title, set]);
 }
 
 export function Pill({ kind, children }: { kind: string; children: ReactNode }) {
@@ -540,6 +747,7 @@ export function DangerZone({
   busy,
   error,
   onConfirm,
+  open,
 }: {
   /** The verb and object, as a button label: "Delete this API". */
   what: string;
@@ -550,10 +758,17 @@ export function DangerZone({
   busy?: boolean;
   error?: string | null;
   onConfirm: () => void;
+  /**
+   * Drawn open, for a dialog whose only purpose is this confirmation. Collapsed inside a page it is
+   * right — the destructive thing is one step further away than the ordinary ones — but collapsed
+   * inside a dialog opened by "Revoke…" it was a second click on a summary line to reach the box
+   * the first click had asked for.
+   */
+  open?: boolean;
 }) {
   const [typed, setTyped] = useState("");
   return (
-    <details className="danger-zone">
+    <details className="danger-zone" open={open}>
       <summary className="muted small">{what}</summary>
       <p className="muted small">
         {consequence} Type <strong>{name}</strong> to confirm.

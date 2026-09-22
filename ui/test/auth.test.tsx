@@ -62,7 +62,11 @@ describe("the route table knows about people", () => {
 
   test("your own account is reachable by everybody; the directory is not", () => {
     const asMember = navigable(false).map((route) => route.id);
-    expect(asMember).toContain("account");
+    // Your account is reached from your own name at the foot of the sidebar (portal.test.tsx
+    // asserts the link), not from a sidebar entry beside it — so it is open, and not in the nav.
+    const account = ROUTES.find((route) => route.id === "account")!;
+    expect(account.adminOnly).toBeFalsy();
+    expect(asMember).not.toContain("account");
     // The sidebar follows capability: a member has no directory to manage, and a link that always
     // answers 403 teaches nothing.
     expect(asMember).not.toContain("users");

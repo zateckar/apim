@@ -5,12 +5,14 @@ import type { Match } from "./lib/routes";
 import { Publish, Editor } from "./portal/apis";
 import { Catalog } from "./portal/catalog";
 import { Dashboard } from "./portal/dashboard";
-import { Subscriptions, Approvals, Integrations, Kafka, Activity } from "./portal/processes";
+import { Subscriptions, Approvals, Kafka, Activity } from "./portal/processes";
 import { Mailbox } from "./portal/notifications";
 import { AccountView } from "./views/AccountView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
 import { AuditView } from "./views/AuditView";
 import { CredentialsView } from "./views/CredentialsView";
+import { ExternalSystemsView } from "./views/ExternalSystemsView";
+import { FixMePanel } from "./views/FixMePanel";
 import { GatewayAdminView } from "./views/GatewayAdminView";
 import { GatewaySettingsView } from "./views/GatewaySettingsView";
 import { GatewayView } from "./views/GatewayView";
@@ -80,7 +82,6 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   credentials: ({ session }) => (
     <CredentialsView key={`${session.application}:${session.environment}`} session={session} />
   ),
-  integrations: ({ session, tick }) => <Integrations session={session} tick={tick} fixme={false} />,
   mail: ({ session, tick }) => <Mailbox session={session} tick={tick} />,
   activity: ({ operations }) => <Activity items={operations} />,
 
@@ -99,7 +100,6 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   subscribe: ({ match, session }) => (
     <SubscribeWizard resourceId={match.params.resourceId!} session={session} />
   ),
-  fixme: ({ session, tick }) => <Integrations session={session} tick={tick} fixme={true} />,
   how: () => <HowView />,
   account: ({ session }) => <AccountView me={session.me} reload={session.reload} />,
 
@@ -107,35 +107,23 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   fleet: ({ session }) => (
     <>
       {/* Open to everybody: which environment is healthy decides whether a publisher promotes this
-          afternoon, and a screen only admins could read made them ask in chat. The convergence
-          detail below it is the part that stays gated. */}
+          afternoon, and a screen only admins could read made them ask in chat. FixMe is the
+          "and if it is not, make it so" half of the same question. The convergence detail below
+          them is the part that stays gated. */}
       <HealthView user={session.user} />
+      <FixMePanel session={session} />
       {session.user.isAdmin && <GatewayView user={session.user} meta={session.meta} />}
     </>
   ),
+  // An administrator's screens, reached by a member only through a typed address or an old link.
+  // They say whose they are and point at the open screen that answers a member's question, rather
+  // than a paragraph of prose with nowhere to go.
   gateways: ({ session }) =>
-    session.user.isAdmin ? (
-      <GatewayAdminView />
-    ) : (
-      <Panel title="Gateways">
-        <p>
-          Adding a gateway, publishing its hostname and minting a replica's token are administrator
-          actions. What each gateway is currently serving is on Health Status, which is open to
-          everybody.
-        </p>
-      </Panel>
-    ),
+    session.user.isAdmin ? <GatewayAdminView /> : <AdministratorsOnly />,
   "gateway-settings": ({ session }) =>
-    session.user.isAdmin ? (
-      <GatewaySettingsView />
-    ) : (
-      <Panel title="Gateway settings">
-        <p>
-          What every gateway enforces — its concurrency ceilings, body cap, cache sizes and access
-          log — is set by an administrator, for the whole fleet, one environment or one gateway.
-        </p>
-      </Panel>
-    ),
+    session.user.isAdmin ? <GatewaySettingsView /> : <AdministratorsOnly />,
+  integrations: ({ session }) =>
+    session.user.isAdmin ? <ExternalSystemsView session={session} /> : <AdministratorsOnly />,
   applications: ({ session }) => (
     <ApplicationsView user={session.user} unmappedGroups={session.me.unmappedGroups ?? []} />
   ),
@@ -167,6 +155,18 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
     </Panel>
   ),
 };
+
+function AdministratorsOnly() {
+  return (
+    <Panel>
+      <EmptyState
+        title="This screen is for administrators"
+        detail="Whether each environment's gateways are serving what was published is on Health Status, which is open to everybody."
+        action={<Link className="btn primary" to="/fleet">Open Health Status</Link>}
+      />
+    </Panel>
+  );
+}
 
 /** The screen for a match, or the not-found card. Never null: an address always renders something. */
 export function screenFor(context: ScreenContext): ReactNode {

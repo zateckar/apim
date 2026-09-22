@@ -155,7 +155,7 @@ Modules named by more than one capability spec:
 | `app-certificates` | The client identity the estate presents, and rotation in place |
 | `app-credentials` | Everything an application holds to prove who it is, and which references stay an admin's |
 | `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
-| `dashboard-health` | Health Status, uptime, telemetry, the application dashboard, FixMe |
+| `dashboard-health` | Health Status (with FixMe's diagnose-and-repair section), uptime, telemetry, the application dashboard |
 | `kafka-workspace` | Topics, access requests, the HTTP proxy |
 | `kafka-playground` | Producing one message and reading recent ones |
 | `integrations-and-mocks` | The six surrounding systems and the durable outbox |
@@ -207,7 +207,7 @@ already has, kept because losing one costs a working link.
 | `apis` | `/apis` | APIs | application | API |
 | `mcp` | `/mcp` | MCP Servers | application | API |
 | `a2a` | `/a2a` | A2A Agents | application | API |
-| `api` | `/apis/:resourceId` · `/apis/:resourceId/:tab` · `/mcp/:resourceId` · `/a2a/:resourceId` | API workspace | application | — |
+| `api` | `/apis/:resourceId` · `/apis/:resourceId/:tab` · `/mcp/:resourceId` · `/a2a/:resourceId` | API *(the API's name once loaded)* | application | — |
 | `publish` | `/publish` · `/apis/new` | Publish an API | application | — |
 | `products` | `/products` | Products | application | API |
 | `subscriptions` | `/subscriptions` | Subscriptions | application | API |
@@ -215,18 +215,16 @@ already has, kept because losing one costs a working link.
 | `approvals` | `/approvals` | Approvals | application | API |
 | `kafka` | `/kafka` | Kafka Topics | application | Kafka |
 | `kafka-proxy` | `/kafka-proxy` | Kafka REST Proxy | application | Kafka |
-| `credentials` | `/credentials` · `/certificates` | Credentials | application | Other |
-| `integrations` | `/integrations` | External systems | application | Other |
-| `mail` | `/mail` | Mail | application | Other |
-| `activity` | `/activity` | Activity | application | Other |
+| `credentials` | `/credentials` · `/certificates` | Credentials | application | API |
+| `mail` | `/mail` | Mail | application | Overview |
+| `activity` | `/activity` | Activity | application | Overview |
 | `catalog` | `/catalog` · `/discover` | Catalog | global | Global |
 | `listing` | `/catalog/:resourceId` | Resource | global | — |
 | `subscribe` | `/catalog/:resourceId/subscribe` | Subscribe | global | — |
-| `fixme` | `/fixme` | FixMe diagnostics | global | Global |
 | `how` | `/how` | How this works | global | Global |
-| `account` | `/account` | Your account | global | Global |
-| `fleet` | `/fleet` · `/health` | Health Status | global | Administration |
-| `gateways` | `/gateways` | Gateways | global | Administration |
+| `account` | `/account` | Your account | global | — *(the signed-in name in the sidebar footer)* |
+| `fleet` | `/fleet` · `/health` · `/fixme` | Health Status | global | Global |
+| `integrations` | `/integrations` | External systems | global | Administration |
 | `gateway-settings` | `/gateway-settings` | Gateway settings | global | Administration |
 | `applications` | `/applications` | Applications | global | Administration |
 | `application` | `/applications/:applicationId` | Application | global | — |
@@ -238,7 +236,7 @@ already has, kept because losing one costs a working link.
 | `audit` | `/audit` | Audit | global | Administration |
 | `not-found` | *(no match)* | Not found | global | — |
 
-Sidebar groups are drawn in the order **Overview · API · Kafka · Other · Global · Administration**,
+Sidebar groups are drawn in the order **Overview · API · Kafka · Global · Administration**,
 entirely from this table's `nav` field — there is no second list of labels. A screen leaves the
 navigation by losing its `nav` and in no other way.
 
@@ -1058,7 +1056,7 @@ there before deploying.
 - The visual system lives in `ui/src/portal/brand.css`, loaded after the structural portal stylesheet.
   Legacy token names resolve to the same theme tokens. Prefer an existing class over a new one.
 - Left navigation: neutral theme-aware surface with a subtle divider, dark-green brand row aligned with the topbar, rounded application picker with initials, grouped
-  sections (API · Kafka · Other · Global · Administration).
+  sections (Overview · API · Kafka · Global · Administration).
 - Main content: white panels on a near-white canvas in light mode, subtle neutral borders, little card chrome except where a boundary
   means something. Inside a panel, a topic is a heading with a rule to the margin and a group of
   fields is a tinted surface — never a second card.
@@ -1067,8 +1065,8 @@ there before deploying.
   editing; a three-step `.stepper` for the publish wizard.
 - Chip variants: bare `.chip` (neutral), `.ok`, `.warn`, `.err`, `.info`, `.violet`, `.accent` —
   driven by the tone vocabulary above, never by a colour written into a view.
-- Two responsive breakpoints: at `1000px` the sidebar narrows, the page head stacks and the
-  breadcrumb is dropped; at `700px` the sidebar becomes an off-canvas drawer behind the topbar's
+- Two responsive breakpoints: at `1000px` the sidebar narrows and the page head stacks; at
+  `700px` the sidebar becomes an off-canvas drawer behind the topbar's
   menu button and every two-column grid collapses to one.
 - Colour is defined once, as `oklch` custom properties with a light and a dark set:
   `--bg` · `--surface` · `--border` · `--fg` (with `-muted`, `-subtle`, `-faint`) · `--accent` ·

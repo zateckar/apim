@@ -10,13 +10,28 @@ durable outbox. Plus the rule that a simulated result is always labelled as one.
 
 ### Requirement: There are exactly six outbound systems, plus log search
 
-#### Scenario: The External systems screen is opened
+#### Scenario: The list of systems is read
 
 - GIVEN any signed-in user
-- WHEN the screen renders
+- WHEN `GET /api/integrations` is served
 - THEN it SHALL list `kafka`, `skonet`, `email`, `ldapws`, `fixme` and `leanix` as outbound
   integrations, and log search as a **read** integration
 - AND each SHALL carry its own mode and whether it is simulated
+
+#### Scenario: The External systems screen is opened
+
+- GIVEN an administrator
+- WHEN the External systems screen renders
+- THEN it SHALL list every system from that list with what the portal uses it for, whether it is
+  simulated or connected, and its most recent exchange and how many are retrying now
+- AND it SHALL list recent exchanges across every application, newest first, filterable by system
+  and paged, each naming the system, what was asked in words, the application and the state, and
+  opening to show what was sent and what came back
+- AND it SHALL offer to ask LeanIX for an application's metadata, and the directory for its
+  contacts, again
+- AND the screen SHALL be offered only to an administrator: a member meets each system where it
+  matters to them — an approval, a mail, a FixMe run on Health Status — and a list of transports
+  scoped to one application answered no question a member arrives with
 
 #### Scenario: Log search is real while the six are not
 
@@ -81,12 +96,25 @@ durable outbox. Plus the rule that a simulated result is always labelled as one.
 - WHEN it is processed
 - THEN the contacts SHALL be resolved from the application's own memberships
 
-#### Scenario: A self-heal run is made
+#### Scenario: A diagnose-and-repair run is made
 
 - GIVEN a `fixme` event
 - WHEN it is processed
 - THEN it SHALL settle as `completed` with its steps and a summary
 - AND the summary SHALL state plainly that no infrastructure was changed
+
+#### Scenario: FixMe is run from Health Status
+
+- GIVEN a member of the selected application, or an administrator, on Health Status
+- WHEN the *Diagnose and repair* section renders
+- THEN it SHALL name the application the run is for, offer the environments of the chain to choose
+  from, and start a run for that application and environment
+- AND it SHALL list that application's earlier runs, newest first, with when each started, its
+  environment, its state and the steps it took
+- AND it SHALL say in its own words that the run is simulated and changes nothing outside the portal
+- AND while a run is still queued or retrying the section SHALL re-read on its own until it settles
+- AND FixMe SHALL have no screen or sidebar entry of its own, because diagnosing and repairing a
+  deployment is the second half of the question Health Status answers
 
 #### Scenario: Kafka provisioning completes
 

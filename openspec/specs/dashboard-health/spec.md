@@ -3,8 +3,9 @@
 ## Purpose
 
 Define the two screens that answer "how is it going": **Health Status**, which says whether the
-estate is up and which part of it is not, and the application **dashboard**, which says what needs
-attention and how much traffic there has been. Plus the telemetry both read from.
+estate is up, which part of it is not, and offers FixMe's diagnose-and-repair run for the selected
+application, and the application **dashboard**, which says what needs attention and how much traffic
+there has been. Plus the telemetry both read from.
 
 ## Requirements
 
@@ -265,22 +266,27 @@ attention and how much traffic there has been. Plus the telemetry both read from
 - AND where a figure is computed over only the requests that carried a backend duration, the count
   it was computed over SHALL be stated rather than the series total
 
-### Requirement: Offer a self-heal console per environment
+### Requirement: Diagnose and repair a deployment from Health Status
 
-#### Scenario: FixMe is opened
+#### Scenario: Health Status renders its FixMe section
 
-- GIVEN the FixMe screen
-- WHEN it renders
-- THEN it SHALL offer the diagnostic and repair actions the estate exposes, per environment, with
-  the history of previous runs
+- GIVEN any signed-in user on Health Status
+- WHEN the page renders
+- THEN below the verdicts, the uptime strips and the component matrix it SHALL carry a *Diagnose and
+  repair* section for the selected application, as `integrations-and-mocks` defines it
+- AND the section SHALL sit above the administrators' convergence detail, because it is the part of
+  the page a member acts on
 - AND every result SHALL be marked simulated while the surrounding systems are mocked
 
-#### Scenario: A non-administrator opens FixMe
+#### Scenario: A member runs FixMe
 
-- GIVEN a member
-- WHEN FixMe renders
-- THEN the detail that quotes internal hosts SHALL be redacted
-- AND the actions SHALL be disabled with the reason, not hidden
+- GIVEN a member of the selected application
+- WHEN they start a run
+- THEN it SHALL be accepted, under the one authorization rule — a member may change what their
+  application owns, and its deployment is that
+- AND a caller who is not a member of the application SHALL be refused by the control plane
+- AND a reader in no application SHALL be told so, with a link to their account, rather than offered
+  a control that would be refused
 
 ### Requirement: Keep dashboard and telemetry context consistent with the shell
 

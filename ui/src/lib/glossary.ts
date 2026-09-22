@@ -57,7 +57,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   promote: {
     term: "promote",
     definition:
-      "Release the revision that is already live in one environment into the next one along the chain — DEV to TEST to PROD. Only the definition travels; policies, routes, backends and subscriptions belong to each environment.",
+      "Release the revision that is already live in one environment into the next one along the chain — DEV to TEST to PROD. The definition travels, and any policy unit the next stage does not have yet is added from this one; a unit it already has keeps its own value. Routes, backends, credentials and subscriptions belong to each environment and are never copied.",
     see: ["release", "environment", "plan"],
     group: "publishing",
   },
@@ -113,7 +113,8 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   application: {
     term: "application",
     group: "identity",
-    definition: "The owner of APIs, products and subscriptions. Developers with membership act on its behalf to publish and consume services.",
+    definition: "The owner of APIs, products and subscriptions. Its members act on its behalf to publish and consume services.",
+    see: ["member"],
   },
   subscription: {
     term: "subscription",

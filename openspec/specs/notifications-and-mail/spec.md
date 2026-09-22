@@ -108,7 +108,7 @@ acts on each; the mailbox shows the message.
 
 #### Scenario: The Mail section is opened
 
-- GIVEN the sidebar's Other group
+- GIVEN the sidebar's untitled first group, beside Dashboard and Activity
 - WHEN Mail is opened
 - THEN every message for the selected application SHALL be listed with its recipients, its subject,
   its body, when it was sent and whether it has been sent yet

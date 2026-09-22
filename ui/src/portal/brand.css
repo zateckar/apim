@@ -4638,3 +4638,46 @@ dialog.native-modal { margin: auto; }
   .native-portal .publish-flow .stepper .step { padding: 6px 8px; gap: 5px; font-size: 12px; }
 }
 .native-portal .row:has(> .field):not(:has(> button)), .native-modal .row:has(> .field):not(:has(> button)) { align-items: flex-start; }
+
+
+/* ==================================================================== phase-2: workspace
+   Screen-specific rules for the workspace screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: workspace */
+
+
+
+/* ==================================================================== phase-2: catalog
+   Screen-specific rules for the catalog screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: catalog */
+
+
+
+/* ==================================================================== phase-2: processes
+   Screen-specific rules for the processes screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: processes */
+
+
+
+/* ==================================================================== phase-2: gateways
+   Screen-specific rules for the gateways screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: gateways */
+
+
+
+/* ==================================================================== phase-2: governance
+   Screen-specific rules for the governance screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: governance */
+
+
+
+/* ==================================================================== phase-2: identity
+   Screen-specific rules for the identity screens. Add below this line only.
+   (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* end phase-2: identity */
+
+

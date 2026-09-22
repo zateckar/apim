@@ -262,3 +262,40 @@ export const STATUS_DOMAINS = {
   kafkaGrant: KAFKA_GRANT_STATES,
   integrationEvent: INTEGRATION_EVENT_STATES,
 };
+
+
+// ==================================================================== phase-2: workspace
+// Chips for the workspace screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: workspace
+
+
+
+// ==================================================================== phase-2: catalog
+// Chips for the catalog screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: catalog
+
+
+
+// ==================================================================== phase-2: processes
+// Chips for the processes screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: processes
+
+
+
+// ==================================================================== phase-2: gateways
+// Chips for the gateways screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: gateways
+
+
+
+// ==================================================================== phase-2: governance
+// Chips for the governance screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: governance
+
+
+
+// ==================================================================== phase-2: identity
+// Chips for the identity screens. Add below this line only; the anchor keeps parallel additions apart.
+// end phase-2: identity
+
+

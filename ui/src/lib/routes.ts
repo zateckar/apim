@@ -185,7 +185,9 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "approvals",
-    environmentScoped: true,
+    // Not environment-scoped: a request waiting in PROD was invisible to a publisher whose switcher
+    // happened to be on DEV, and a queue that hides part of itself is not a queue. Every request is
+    // listed with its environment instead.
     patterns: ["/approvals"],
     title: "Approvals",
     purpose: "Requests to call what this application publishes, waiting on somebody here.",

@@ -12,6 +12,7 @@ import {
 import { writeAudit } from "../audit.ts";
 import { policyFor } from "../config-build.ts";
 import { nowIso } from "../db.ts";
+import { displayNames } from "../principals.ts";
 import {
   effectiveWithOrigin,
   globalDocument,
@@ -110,6 +111,9 @@ export function registerPolicyRoutes(router: Router): void {
       .all(environment);
 
     const affected = resourcesInEnvironment(ctx.app.db, environment);
+    // Resolved here because a member may read this screen and may not read the directory, so the
+    // browser has no way to turn `updated_by` into a person (`[P2-03]`, as the audit log does).
+    const names = displayNames(ctx.app.db, rows.map((row) => row.updated_by));
     return json({
       environment,
       document: globalDocument(ctx.app.db, environment),
@@ -117,6 +121,7 @@ export function registerPolicyRoutes(router: Router): void {
         unitKey: row.unit_key,
         value: JSON.parse(row.value_json),
         updatedBy: row.updated_by,
+        updatedByName: names.get(row.updated_by) ?? row.updated_by,
         updatedAt: row.updated_at,
         // How many APIs currently override this unit, which is the number that says whether the
         // global value is doing anything.
@@ -345,6 +350,7 @@ export function registerPolicyRoutes(router: Router): void {
       .all();
 
     const items = [];
+    const names = displayNames(ctx.app.db, rows.map((row) => row.updated_by));
     for (const row of rows) {
       if (environment !== null && row.environment !== environment) continue;
       let unit: { request?: string; response?: string; downgradeReason?: string };
@@ -363,6 +369,7 @@ export function registerPolicyRoutes(router: Router): void {
         response: unit.response ?? "disabled",
         downgradeReason: unit.downgradeReason ?? null,
         updatedBy: row.updated_by,
+        updatedByName: names.get(row.updated_by) ?? row.updated_by,
         updatedAt: row.updated_at,
       });
     }

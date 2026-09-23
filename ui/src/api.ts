@@ -751,6 +751,8 @@ export interface GlobalPolicyView {
     unitKey: string;
     value: unknown;
     updatedBy: string;
+    /** The display name, resolved by the control plane — a member cannot read the directory. */
+    updatedByName?: string;
     updatedAt: string;
     overriddenBy: number;
   }>;
@@ -798,6 +800,8 @@ export interface TlsExceptionRow {
   pinThumbprint: string | null;
   reason: string;
   createdBy: string;
+  /** The display name, resolved by the control plane — a member cannot read the directory. */
+  createdByName?: string;
   createdAt: string;
   expiresAt: string;
   revokedAt: string | null;
@@ -825,6 +829,8 @@ export interface DenyRuleRow {
   portRange?: [number, number];
   reason: string;
   createdBy: string;
+  /** The display name, resolved by the control plane — a member cannot read the directory. */
+  createdByName?: string;
   createdAt: string;
   blocking: BlockedRoute[];
 }
@@ -858,6 +864,8 @@ export interface GovernanceReport {
     mode: string;
     reason: string;
     createdBy: string;
+    /** The display name, resolved by the control plane — a member cannot read the directory. */
+    createdByName?: string;
     expiresAt: string;
     expiresInDays: number;
   }>;
@@ -931,6 +939,8 @@ export interface DowngradeReport {
     response: string;
     downgradeReason: string | null;
     updatedBy: string;
+    /** The display name, resolved by the control plane — a member cannot read the directory. */
+    updatedByName?: string;
     updatedAt: string;
   }>;
   /** Operations no state can validate — an unsupported keyword or an unimplemented WSDL construct. */

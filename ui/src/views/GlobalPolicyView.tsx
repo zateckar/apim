@@ -205,7 +205,7 @@ export function GlobalPolicyView({
                     {/* Who and when, both: the spec's reading of a downgrade is a decision somebody
                         made at a time, and a name without a date cannot be followed up. */}
                     <td className="muted small">
-                      {row.updatedBy}
+                      {row.updatedByName ?? row.updatedBy}
                       <div>{formatDateTime(row.updatedAt)}</div>
                     </td>
                   </tr>
@@ -466,7 +466,7 @@ function GlobalUnit({
 
       {attached && (
         <p className="muted small">
-          Last changed by {attached.updatedBy} on {formatDateTime(attached.updatedAt)}
+          Last changed by {attached.updatedByName ?? attached.updatedBy} on {formatDateTime(attached.updatedAt)}
         </p>
       )}
     </div>

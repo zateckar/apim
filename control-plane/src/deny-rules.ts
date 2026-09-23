@@ -1,6 +1,7 @@
 import { matchingDenyRule, type DenyRule, type EgressScope, type Integrations } from "./egress.ts";
 import { readBackendPool } from "../../shared/backend.ts";
 import type { DB } from "./db.ts";
+import { displayNames } from "./principals.ts";
 
 /**
  * The administrator-stated half of the egress boundary (`egress-governance`).
@@ -145,6 +146,8 @@ export function egressScope(
 
 export interface DenyRuleView extends DenyRule {
   createdBy: string;
+  /** The author's display name, resolved here because a member reading Trust cannot read the directory. */
+  createdByName: string;
   createdAt: string;
 }
 
@@ -156,7 +159,7 @@ export interface DenyRuleView extends DenyRule {
  * every binding write.
  */
 export function listDenyRules(db: DB): DenyRuleView[] {
-  return db
+  const rows = db
     .query<RuleRow & { created_by: string; created_at: string }, []>(
       `SELECT id, environment, scheme, host_pattern, ports_json, port_range_json, reason,
               created_by, created_at
@@ -164,8 +167,14 @@ export function listDenyRules(db: DB): DenyRuleView[] {
         WHERE removed_at IS NULL
         ORDER BY created_at, id`,
     )
-    .all()
-    .map((row) => ({ ...toRule(row), createdBy: row.created_by, createdAt: row.created_at }));
+    .all();
+  const names = displayNames(db, rows.map((row) => row.created_by));
+  return rows.map((row) => ({
+    ...toRule(row),
+    createdBy: row.created_by,
+    createdByName: names.get(row.created_by) ?? row.created_by,
+    createdAt: row.created_at,
+  }));
 }
 
 export interface BlockedRoute {

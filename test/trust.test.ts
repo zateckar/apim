@@ -544,4 +544,41 @@ describe("the governance report", () => {
       backend.stop();
     }
   });
+
+  test("who wrote a row is a name a member can read, not an id they cannot look up", async () => {
+    const backend = startBackend();
+    try {
+      const api = await publishApi(cp, { backendUrl: backend.url });
+      const alice = await cp.login("alice");
+      await cp.call("POST", "/api/trust/exceptions", {
+        cookie: alice,
+        body: {
+          resourceId: api.resourceId,
+          environment: "dev",
+          mode: "insecure",
+          reason: "backend is behind a load balancer with a self-signed certificate, INFRA-991",
+          days: 5,
+        },
+      });
+      await cp.call("PUT", "/api/policy/global/units/timeoutMs?environment=dev", {
+        cookie: alice,
+        body: { value: 20000 },
+      });
+
+      // A member may read both screens and may not read the directory, so the control plane has to
+      // send the name — the browser has nowhere to resolve `alice` from.
+      const exceptions = await (
+        await cp.call("GET", "/api/trust/exceptions?environment=dev", { cookie: api.pavel })
+      ).json();
+      expect(exceptions.items[0]!.createdBy).toBe("alice");
+      expect(exceptions.items[0]!.createdByName).not.toBe("alice");
+      const policy = await (
+        await cp.call("GET", "/api/policy/global?environment=dev", { cookie: api.pavel })
+      ).json();
+      const unit = policy.units.find((row: { unitKey: string }) => row.unitKey === "timeoutMs");
+      expect(unit.updatedByName).toBe(exceptions.items[0]!.createdByName);
+    } finally {
+      backend.stop();
+    }
+  });
 });

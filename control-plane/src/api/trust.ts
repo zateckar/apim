@@ -3,6 +3,7 @@ import { writeAudit } from "../audit.ts";
 import { CertificateError, daysUntil, parseCertificate } from "../certificates.ts";
 import { encrypt } from "../crypto.ts";
 import { newId, nowIso } from "../db.ts";
+import { displayNames } from "../principals.ts";
 import { checkEgress, DEFAULT_TLS_EXCEPTION_MAX_DAYS } from "../egress.ts";
 import {
   denyRulesFor,
@@ -705,6 +706,8 @@ export function registerTrustRoutes(router: Router): void {
       .all();
 
     const now = Date.now();
+    // Names resolved here: a member may read Trust and may not read the directory `[P2-03]`.
+    const names = displayNames(ctx.app.db, rows.map((row) => row.created_by));
     const items = rows
       .filter((row) => environment === null || row.environment === environment)
       .map((row) => ({
@@ -717,6 +720,7 @@ export function registerTrustRoutes(router: Router): void {
         pinThumbprint: row.pin_thumbprint,
         reason: row.reason,
         createdBy: row.created_by,
+        createdByName: names.get(row.created_by) ?? row.created_by,
         createdAt: row.created_at,
         expiresAt: row.expires_at,
         revokedAt: row.revoked_at,
@@ -1131,6 +1135,7 @@ export function registerTrustRoutes(router: Router): void {
       blocking: routesMatchingRule(ctx.app.db, rule),
     }));
 
+    const authors = displayNames(ctx.app.db, tls.map((row) => row.created_by));
     return json({
       denyRules,
       blockedRoutes: denyRules.flatMap((rule) =>
@@ -1145,6 +1150,7 @@ export function registerTrustRoutes(router: Router): void {
         mode: row.mode,
         reason: row.reason,
         createdBy: row.created_by,
+        createdByName: authors.get(row.created_by) ?? row.created_by,
         expiresAt: row.expires_at,
         expiresInDays: daysUntil(row.expires_at, now),
       })),

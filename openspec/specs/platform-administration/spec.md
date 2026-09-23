@@ -56,6 +56,9 @@ screen explains something about their own APIs.
   change it and that the current state is readable here
 - AND the reason SHALL be that these explain why a member's own API behaves as it does — which
   authorities its backend is checked against, which units every API inherits, who owns what
+- AND whoever wrote a row — an exception, a deny rule, a global unit, a downgrade — SHALL be shown
+  by display name, resolved by the control plane, with the principal id only as a tooltip: a
+  member cannot read the directory, so an id on these screens is one they cannot look up
 
 #### Scenario: A member deep-links into any other administration screen
 

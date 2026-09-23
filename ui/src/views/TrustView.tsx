@@ -243,7 +243,7 @@ function ExceptionRowView({ row, isAdmin, reload }: { row: TlsExceptionRow; isAd
           <div className="muted small">{formatDate(row.revokedAt ?? row.expiresAt)}</div>
         </td>
         <td className="small">{row.reason}</td>
-        <td className="muted small">{row.createdBy}</td>
+        <td className="muted small" title={row.createdBy}>{row.createdByName ?? row.createdBy}</td>
         <td>
           {row.live && (
             <div className="inline">
@@ -574,8 +574,8 @@ function DenyRuleRowView({ rule, reload }: { rule: DenyRuleRow; reload: () => vo
             </button>
           )}
         </td>
-        <td className="muted small">
-          {rule.createdBy}
+        <td className="muted small" title={rule.createdBy}>
+          {rule.createdByName ?? rule.createdBy}
           <div>{formatDate(rule.createdAt)}</div>
         </td>
         <td>
@@ -830,7 +830,7 @@ function Report() {
                   <StatusChip chip={tlsExceptionChip({ live: true, revokedAt: null, expiresInDays: row.expiresInDays })} />
                 </td>
                 <td className="small">{row.reason}</td>
-                <td className="muted small">{row.createdBy}</td>
+                <td className="muted small" title={row.createdBy}>{row.createdByName ?? row.createdBy}</td>
               </tr>
             ))}
             {report.data.tlsExceptions.length === 0 && (

@@ -128,6 +128,104 @@ function phaseOf(unitKey: string): string {
 }
 
 /**
+ * A number of seconds as a person reads it: `30s`, `5m`, `2h`, `30d`. A quota's period is a month
+ * in seconds, and nobody reads 2592000.
+ */
+export function humanDuration(sec: unknown): string {
+  if (typeof sec !== "number" || !Number.isFinite(sec)) return "?";
+  if (sec >= 86_400 && sec % 86_400 === 0) return `${sec / 86_400}d`;
+  if (sec >= 3_600 && sec % 3_600 === 0) return `${sec / 3_600}h`;
+  if (sec >= 120 && sec % 60 === 0) return `${sec / 60}m`;
+  return `${sec}s`;
+}
+
+/** The units a duration field offers, and what one of each is worth in the stored unit. */
+export const SECOND_UNITS = [
+  { unit: "s", label: "seconds", factor: 1 },
+  { unit: "min", label: "minutes", factor: 60 },
+  { unit: "h", label: "hours", factor: 3_600 },
+  { unit: "d", label: "days", factor: 86_400 },
+] as const;
+export const MILLISECOND_UNITS = [
+  { unit: "ms", label: "milliseconds", factor: 1 },
+  { unit: "s", label: "seconds", factor: 1_000 },
+  { unit: "min", label: "minutes", factor: 60_000 },
+] as const;
+type DurationUnits = typeof SECOND_UNITS | typeof MILLISECOND_UNITS;
+
+/**
+ * The unit a stored duration opens in: the largest one it is a whole number of, so a month-long
+ * quota opens as 30 days and a sixty-second cache as 1 minute, rather than as 2592000 and 60 in a
+ * box labelled "(seconds)".
+ */
+export function unitFor(value: number, units: DurationUnits): string {
+  if (!Number.isFinite(value) || value <= 0) return units[0].unit;
+  let chosen: string = units[0].unit;
+  for (const entry of units) if (value % entry.factor === 0) chosen = entry.unit;
+  return chosen;
+}
+
+/**
+ * A duration, typed as an amount and a unit and stored in the unit the vocabulary uses.
+ *
+ * Every period on this form was a bare number of seconds — the quota's default was 2592000 — which
+ * is a sum the reader does before they can tell whether the value is right. Changing the unit keeps
+ * the amount typed and changes the duration ("30", then "days"), which is what somebody choosing
+ * a unit means; the stored value is always a whole number of the base unit.
+ */
+function DurationField({
+  label,
+  value,
+  onChange,
+  units = SECOND_UNITS,
+  min = 0,
+  max,
+  hint,
+}: {
+  label: string;
+  value: number;
+  onChange: (next: number) => void;
+  units?: DurationUnits;
+  min?: number;
+  max?: number;
+  hint?: string;
+}) {
+  const [unit, setUnit] = useState(() => unitFor(value, units));
+  const factor = units.find((entry) => entry.unit === unit)?.factor ?? 1;
+  const amount = Number.isFinite(value) ? Number((value / factor).toFixed(3)) : "";
+  return (
+    <Field label={label} hint={hint}>
+      <span className="duration-input">
+        <input
+          type="number"
+          aria-label={label}
+          min={min / factor}
+          max={max === undefined ? undefined : max / factor}
+          step="any"
+          value={amount}
+          onChange={(event) => onChange(Math.round(Number(event.target.value) * factor))}
+        />
+        <select
+          aria-label={`${label}, unit`}
+          value={unit}
+          onChange={(event) => {
+            const next = units.find((entry) => entry.unit === event.target.value)!;
+            setUnit(next.unit);
+            if (typeof amount === "number") onChange(Math.round(amount * next.factor));
+          }}
+        >
+          {units.map((entry) => (
+            <option key={entry.unit} value={entry.unit}>
+              {entry.label}
+            </option>
+          ))}
+        </select>
+      </span>
+    </Field>
+  );
+}
+
+/**
  * A one-line reading of what a unit is *set to*, for the collapsed row.
  *
  * The description says what a policy does and is the same on every API; this says what this one
@@ -156,14 +254,7 @@ export function summarize(unitKey: string, value: unknown): string | null {
     const n = Array.isArray(entry) ? entry.length : 0;
     return `${n} ${noun}${n === 1 ? "" : "s"}`;
   };
-  // A quota's period is a month in seconds. Nobody reads 2592000.
-  const duration = (sec: unknown) => {
-    if (typeof sec !== "number" || !Number.isFinite(sec)) return "?";
-    if (sec >= 86_400 && sec % 86_400 === 0) return `${sec / 86_400}d`;
-    if (sec >= 3_600 && sec % 3_600 === 0) return `${sec / 3_600}h`;
-    if (sec >= 120 && sec % 60 === 0) return `${sec / 60}m`;
-    return `${sec}s`;
-  };
+  const duration = humanDuration;
   switch (unitKey) {
     case "auth.subscriptionKey":
       return `${String(v.in ?? "header")} ${String(v.name ?? "")}`.trim();
@@ -176,13 +267,13 @@ export function summarize(unitKey: string, value: unknown): string | null {
     case "auth.basic":
       return String(v.credentialRef || "no credential");
     case "rateLimit":
-      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} per replica`;
+      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} per gateway`;
     case "quota":
-      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} across the fleet`;
+      return `${v.calls ?? "?"} calls / ${duration(v.periodSec)} across all gateways`;
     case "cache":
       return `${duration(v.ttlSec)}`;
     case "concurrency":
-      return `${v.maxInFlight ?? "?"} in flight per replica`;
+      return `${v.maxInFlight ?? "?"} in flight per gateway`;
     case "retries":
       return `${v.attempts ?? "?"} ${v.attempts === 1 ? "attempt" : "attempts"}`;
     case "circuitBreaker":
@@ -296,9 +387,9 @@ function CredentialPicker({
       </Field>
       {dangling && (
         <Notice kind="warn">
-          Nothing in {catalogue.applicationId || "this application"} or in the integrations file
-          answers to <span className="mono">{value}</span>. A gateway refuses every request through
-          this route with 503 until it does.
+          Nothing in {catalogue.applicationId || "this application"}, and nothing an administrator
+          registered, answers to <span className="mono">{value}</span>. Every request through this
+          route is refused with 503 until it does — choose another, or add it on Credentials.
         </Notice>
       )}
       {own.length === 0 && (
@@ -327,7 +418,7 @@ function AdminRefPicker({
 }: {
   label: string;
   hint: string;
-  /** What to say when the estate has none registered — the answer is always "ask an admin". */
+  /** What to say when none is registered — the answer is always "ask an admin". */
   nothing: string;
   value: string;
   onChange: (next: string) => void;
@@ -349,9 +440,9 @@ function AdminRefPicker({
       </Field>
       {dangling && (
         <Notice kind="warn">
-          No entry called <span className="mono">{value}</span> is registered in this estate's
-          integrations file, so this route will refuse every request with 503. An administrator
-          registers one.
+          Nothing called <span className="mono">{value}</span> is registered, so every request
+          through this route is refused with 503. Choose another, or ask an administrator to
+          register it.
         </Notice>
       )}
       {registered.length === 0 && <p className="muted">{nothing}</p>}
@@ -372,7 +463,7 @@ function IssuerPicker({
     <AdminRefPicker
       label="Token issuer"
       hint="The algorithm allowlist and the JWKS come from the issuer's own registration, so an API cannot widen what its issuer will accept."
-      nothing="This estate has no token issuer registered. Deciding whose tokens the gateways believe is an administrator's decision — ask one to add it, then it appears here."
+      nothing="No token issuer is registered yet. Deciding whose tokens the gateways believe is an administrator's decision — ask one to add it, then it appears here."
       value={value}
       onChange={onChange}
       registered={registered}
@@ -725,7 +816,7 @@ function PolicyCard({
         <div className="policy-card-body">
           <div className="policy-card-title">
             {unit.title} <span className="mono muted">{unit.key}</span>
-            {inherited && <span className="badge">whole environment</span>}
+            {inherited && <span className="chip">whole environment</span>}
           </div>
           <div className="policy-card-summary">
             {summary ?? unit.description.split(".")[0]}
@@ -779,7 +870,7 @@ function PolicyCard({
         <p className="muted small">
           Set for every API in this environment. As an administrator you can give this one its own
           value, or switch it off here; taking it off the API altogether is a decision for the
-          whole estate, on <Link to="/policy">Global policy</Link>.
+          whole environment, on <Link to="/policy">Global policy</Link>.
         </p>
       )}
       {lockedReason && (
@@ -822,7 +913,30 @@ function PolicyCard({
 // box for that unit alone, which is still better than the whole document: the field names and the
 // error message belong to one policy.
 
-function UnitForm({
+/**
+ * What one unit's form takes. Exported, and meant to stay this shape, because the global-policy
+ * screen is to edit its units with these same controls rather than with a JSON box: one form per
+ * unit, whichever document the unit belongs to. A caller with no application passes
+ * `EMPTY_CATALOGUE`, an empty certificate list and a no-op `onCertificate`.
+ */
+export interface UnitFormProps {
+  /** The unit's key in the closed vocabulary, `rateLimit`, `auth.jwt`, `timeoutMs`… */
+  unitKey: string;
+  /** The unit's current value, exactly as it sits in the policy document. */
+  value: any;
+  /** The unit's next value, exactly as it should sit in the policy document. */
+  onChange: (next: unknown) => void;
+  /** Gateways running in the environment, for the "in total" arithmetic in the notes. */
+  instances: number;
+  /** The client certificates the owner may attach to the backend call, when backend authentication is mutual TLS. */
+  certificates: Array<{ id: string; name: string }>;
+  certificate: string;
+  onCertificate: (id: string) => void;
+  /** What the credential and issuer pickers are drawn from. */
+  catalogue: CredentialCatalogue;
+}
+
+export function UnitForm({
   unitKey,
   value,
   onChange,
@@ -831,16 +945,7 @@ function UnitForm({
   certificate,
   onCertificate,
   catalogue,
-}: {
-  unitKey: string;
-  value: any;
-  onChange: (next: unknown) => void;
-  instances: number;
-  certificates: Array<{ id: string; name: string }>;
-  certificate: string;
-  onCertificate: (id: string) => void;
-  catalogue: CredentialCatalogue;
-}) {
+}: UnitFormProps) {
   const num = (next: string) => Number(next);
 
   if (unitKey === "auth.subscriptionKey") {
@@ -934,14 +1039,11 @@ function UnitForm({
           onChange={(next) => onChange({ ...value, issuerRef: next })}
           registered={catalogue.registered.issuers}
         />
-        <Field label="Cache the answer for (seconds)">
-          <input
-            type="number"
-            min={0}
-            value={value?.cacheTtlSec ?? 60}
-            onChange={(e) => onChange({ ...value, cacheTtlSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Cache the answer for"
+          value={value?.cacheTtlSec ?? 60}
+          onChange={(next) => onChange({ ...value, cacheTtlSec: next })}
+        />
         <p className="muted">
           The cache TTL is how long a revoked token keeps working. Shorter is safer and costs a
           round trip per call.
@@ -1043,14 +1145,11 @@ function UnitForm({
             ))}
           </div>
         </Field>
-        <Field label="Preflight cache (seconds)">
-          <input
-            type="number"
-            min={0}
-            value={value?.maxAgeSec ?? 600}
-            onChange={(e) => onChange({ ...value, maxAgeSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Browsers may cache the preflight for"
+          value={value?.maxAgeSec ?? 600}
+          onChange={(next) => onChange({ ...value, maxAgeSec: next })}
+        />
         <Field label="Allow credentials">
           <select
             value={value?.credentials ? "yes" : "no"}
@@ -1212,14 +1311,12 @@ function UnitForm({
   if (unitKey === "cache") {
     return (
       <>
-        <Field label="Time to live (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={value?.ttlSec ?? 60}
-            onChange={(e) => onChange({ ...value, ttlSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Keep a response for"
+          min={1}
+          value={value?.ttlSec ?? 60}
+          onChange={(next) => onChange({ ...value, ttlSec: next })}
+        />
         <Field label="Separate cache per subscription">
           <select
             value={value?.varyBySubscription === false ? "no" : "yes"}
@@ -1240,8 +1337,8 @@ function UnitForm({
           </select>
         </Field>
         <p className="muted">
-          Per instance, in memory, bounded, and keyed under the active config digest — activating a
-          new config empties it. GET and HEAD only.
+          Each gateway keeps its own copy in memory, emptied whenever this API's configuration
+          changes. GET and HEAD only.
         </p>
       </>
     );
@@ -1260,14 +1357,12 @@ function UnitForm({
             onChange={(e) => onChange({ ...value, calls: num(e.target.value) })}
           />
         </Field>
-        <Field label="Per (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={periodSec}
-            onChange={(e) => onChange({ ...value, periodSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Per"
+          min={1}
+          value={periodSec}
+          onChange={(next) => onChange({ ...value, periodSec: next })}
+        />
         <Field label="Counted per">
           <select
             value={value?.scope ?? (unitKey === "rateLimit" ? "route" : "product")}
@@ -1289,15 +1384,14 @@ function UnitForm({
         <p className="muted">
           {unitKey === "rateLimit" ? (
             <>
-              Per instance: {calls}/{periodSec}s × {Math.max(instances, 1)} gateway
-              {instances === 1 ? "" : "s"} ⇒ up to {calls * Math.max(instances, 1)} per {periodSec}s
-              across the fleet. Counted per subscription, so the subscription-key unit has to be
-              attached too.
+              Each gateway counts on its own: with {Math.max(instances, 1)} running, up to{" "}
+              {calls * Math.max(instances, 1)} calls per {humanDuration(periodSec)} in total. Counted
+              per subscription, so the subscription-key policy has to be attached too.
             </>
           ) : (
             <>
-              Fleet-wide, aggregated on the config poll, so the worst case is one poll interval of
-              overshoot rather than a quota multiplied by {Math.max(instances, 1)}.
+              Counted across all gateways together. The total can briefly run over while the
+              gateways' counts are combined — by seconds of traffic, not by a multiple of the quota.
             </>
           )}
         </p>
@@ -1311,18 +1405,17 @@ function UnitForm({
         {/* Both bounds come from the vocabulary rather than being retyped here. The fallback was a
             literal `30000` that stayed behind when the default moved, and there was no `max` at
             all, so the ceiling was something you discovered from a 400 after saving. */}
-        <Field label="Backend timeout (milliseconds)">
-          <input
-            type="number"
-            min={1}
-            max={MAX_TIMEOUT_MS}
-            value={typeof value === "number" ? value : DEFAULT_TIMEOUT_MS}
-            onChange={(e) => onChange(num(e.target.value))}
-          />
-        </Field>
+        <DurationField
+          label="Backend timeout"
+          units={MILLISECOND_UNITS}
+          min={1}
+          max={MAX_TIMEOUT_MS}
+          value={typeof value === "number" ? value : DEFAULT_TIMEOUT_MS}
+          onChange={onChange}
+        />
         <p className="muted">
           The whole upstream exchange, retries included. Defaults to{" "}
-          {DEFAULT_TIMEOUT_MS / 1000}s — what the APIM this replaces enforced — and cannot exceed{" "}
+          {DEFAULT_TIMEOUT_MS / 1000}s and cannot exceed{" "}
           {MAX_TIMEOUT_MS / 1000}s. Raising it holds a slot and two sockets for longer when a
           backend stops answering, so attach a concurrency ceiling alongside it.
         </p>
@@ -1394,22 +1487,18 @@ function UnitForm({
             onChange={(e) => onChange({ ...value, failures: num(e.target.value) })}
           />
         </Field>
-        <Field label="Within (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={windowSec}
-            onChange={(e) => onChange({ ...value, windowSec: num(e.target.value) })}
-          />
-        </Field>
-        <Field label="Stay open for (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={openSec}
-            onChange={(e) => onChange({ ...value, openSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Within"
+          min={1}
+          value={windowSec}
+          onChange={(next) => onChange({ ...value, windowSec: next })}
+        />
+        <DurationField
+          label="Stay open for"
+          min={1}
+          value={openSec}
+          onChange={(next) => onChange({ ...value, openSec: next })}
+        />
         <Field label="Half-open probes">
           <input
             type="number"
@@ -1419,10 +1508,10 @@ function UnitForm({
           />
         </Field>
         <p className="muted">
-          {failures} failures within {windowSec}s take that backend out of the pool for {openSec}s,
-          then {probes} request{probes === 1 ? "" : "s"} is let through to see whether it recovered.
-          The counter is per instance and per backend, so one gateway's connectivity fault cannot
-          trip the fleet.
+          {failures} failures within {humanDuration(windowSec)} take that backend out of the pool for{" "}
+          {humanDuration(openSec)}, then {probes} request{probes === 1 ? "" : "s"} is let through to
+          see whether it recovered. Each gateway counts on its own, per backend, so one gateway's
+          connectivity fault cannot take the backend away from every gateway.
         </p>
       </>
     );
@@ -1440,18 +1529,15 @@ function UnitForm({
             onChange={(e) => onChange({ ...value, maxInFlight: num(e.target.value), per: "instance" })}
           />
         </Field>
-        <Field label="Retry-After (seconds)">
-          <input
-            type="number"
-            min={0}
-            value={value?.retryAfterSec ?? 1}
-            onChange={(e) => onChange({ ...value, retryAfterSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Ask callers to retry after"
+          value={value?.retryAfterSec ?? 1}
+          onChange={(next) => onChange({ ...value, retryAfterSec: next })}
+        />
         <p className="muted">
-          {maxInFlight} × {Math.max(instances, 1)} gateway{instances === 1 ? "" : "s"} ⇒{" "}
-          {maxInFlight * Math.max(instances, 1)} in flight across the fleet. Past the ceiling
-          requests are shed with 503 rather than queued.
+          With {Math.max(instances, 1)} gateway{instances === 1 ? "" : "s"} running, up to{" "}
+          {maxInFlight * Math.max(instances, 1)} requests in flight in total. Past the ceiling
+          requests are refused with 503 rather than queued.
         </p>
       </>
     );
@@ -1542,7 +1628,7 @@ function UnitForm({
             <AdminRefPicker
               label="Token endpoint"
               hint="Where the gateway asks for a backend token, and the client secret it presents there."
-              nothing="This estate has no token endpoint registered. Where a client secret is sent is an administrator's decision, so this one is not yours to add — ask one, and it appears here."
+              nothing="No token endpoint is registered yet. Where a client secret is sent is an administrator's decision, so this one is not yours to add — ask one, and it appears here."
               value={value?.tokenProviderRef ?? ""}
               onChange={(next) => onChange({ ...value, tokenProviderRef: next })}
               registered={catalogue.registered.tokenProviders}
@@ -1605,22 +1691,18 @@ function UnitForm({
             <option value="yes">Yes</option>
           </select>
         </Field>
-        <Field label="Idle timeout (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={value?.streamIdleTimeoutSec ?? 300}
-            onChange={(e) => onChange({ ...value, streamIdleTimeoutSec: num(e.target.value) })}
-          />
-        </Field>
-        <Field label="Maximum connection (seconds)">
-          <input
-            type="number"
-            min={1}
-            value={value?.maxConnectionSec ?? 3600}
-            onChange={(e) => onChange({ ...value, maxConnectionSec: num(e.target.value) })}
-          />
-        </Field>
+        <DurationField
+          label="Close an idle stream after"
+          min={1}
+          value={value?.streamIdleTimeoutSec ?? 300}
+          onChange={(next) => onChange({ ...value, streamIdleTimeoutSec: next })}
+        />
+        <DurationField
+          label="Longest connection"
+          min={1}
+          value={value?.maxConnectionSec ?? 3600}
+          onChange={(next) => onChange({ ...value, maxConnectionSec: next })}
+        />
         <Field label="Concurrent connections per gateway">
           <input
             type="number"
@@ -1805,10 +1887,10 @@ function HeaderRulesForm({
             <button
               type="button"
               className="btn sm"
-              aria-label={`Delete this rule for ${rule.name || "an unnamed header"}`}
+              aria-label={`Remove the rule for ${rule.name || "an unnamed header"}`}
               onClick={() => write(rules.filter((entry) => entry.id !== rule.id))}
             >
-              Delete rule
+              Remove
             </button>
           </div>
         );

@@ -8,9 +8,11 @@ import {
   Modal,
   Notice,
   Panel,
+  Segmented,
   Skeleton,
   StatusChip,
   Link,
+  envLabel,
   go,
   useAction,
   useAsync,
@@ -257,6 +259,21 @@ export function Catalog({
     return found;
   }, [subscriptions.data, products.data, s.application]);
 
+  /**
+   * Resource id → the products that sell it, for the deletion dialog. "Every subscription that
+   * reaches it through a product stops working" asked the publisher to work out which products
+   * those were; the dialog can name them.
+   */
+  const soldBy = useMemo(() => {
+    const found = new Map<string, string[]>();
+    for (const product of products.data?.items ?? []) {
+      for (const member of product.members ?? []) {
+        found.set(member.id, [...(found.get(member.id) ?? []), product.name]);
+      }
+    }
+    return found;
+  }, [products.data]);
+
   const families = useMemo(() => {
     // `apis` means REST and SOAP, not "everything": MCP servers and A2A agents have their own
     // sidebar entries, and listing them here too put the same API under two headings.
@@ -325,19 +342,17 @@ export function Catalog({
             {/* Offered only when there is something on both sides of it. A three-way filter over a
                 list that is entirely one of the three is a control that operates nothing. */}
             {ours.length > 0 && theirs > 0 && (
-              <div className="seg catalog-scope" role="group" aria-label={`Which ${noun.many} to show`}>
-                {(Object.keys(SHOWING) as Showing[]).map((option) => (
-                  <button
-                    key={option}
-                    className={showing === option ? "active" : ""}
-                    aria-pressed={showing === option}
-                    onClick={() => setShowing(option)}
-                  >
-                    {SHOWING[option]}{" "}
-                    {option === "all" ? families.length : option === "ours" ? ours.length : theirs}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                label={`Which ${noun.many} to show`}
+                value={showing}
+                onChange={setShowing}
+                options={(Object.keys(SHOWING) as Showing[]).map((option) => ({
+                  value: option,
+                  label: `${SHOWING[option]} ${
+                    option === "all" ? families.length : option === "ours" ? ours.length : theirs
+                  }`,
+                }))}
+              />
             )}
             <div className="catalog-search">
               <span aria-hidden="true"><I.Search /></span>
@@ -366,7 +381,7 @@ export function Catalog({
                     ? `${s.applicationName(s.application)} publishes no ${noun.many}`
                     : `${s.applicationName(s.application)} subscribes to no ${noun.many}`
               }
-              detail={`The search covers the name, the domain, the publisher and each version's description, across what ${s.applicationName(s.application)} publishes and what it subscribes to. The estate-wide catalogue searches the contract itself.`}
+              detail="This list searches names, domains, publishers and descriptions. To search inside every published contract, use the Catalog."
               action={
                 <button
                   className="btn sm"
@@ -384,11 +399,14 @@ export function Catalog({
               title={`${s.applicationName(s.application)} has no ${noun.many} yet`}
               detail={`Publish your first ${noun.one}, or find a resource to subscribe to in the Catalog.`}
               action={
-                <button className="btn sm" onClick={() => go(`/${s.application}/publish${section === "mcp" || section === "a2a" ? `?kind=${section}` : ""}`)}>
+                <Link
+                  className="btn sm"
+                  to={`/${s.application}/publish${section === "mcp" || section === "a2a" ? `?kind=${section}` : ""}`}
+                >
                   {/* All three are read letter-first — "an API", "an MCP server", "an A2A agent" —
                       so the article is a constant rather than a fourth field on the noun. */}
                   Publish an {noun.one}
-                </button>
+                </Link>
               }
             />
           )
@@ -400,6 +418,7 @@ export function Catalog({
                 family={family}
                 session={s}
                 reach={reach}
+                soldBy={soldBy}
                 onChanged={data.reload}
               />
             ))}
@@ -414,11 +433,13 @@ function CatalogRow({
   family,
   session: s,
   reach,
+  soldBy,
   onChanged,
 }: {
   family: Family;
   session: Session;
   reach: ReadonlyMap<string, Reach>;
+  soldBy: ReadonlyMap<string, string[]>;
   onChanged: () => void;
 }) {
   const [selected, setSelected] = useState(family.versions[0]!.apiVersion);
@@ -467,7 +488,7 @@ function CatalogRow({
               title={`Published by ${s.applicationName(family.applicationId)}. ${
                 s.applicationName(s.application)
               } calls it through ${via.products.join(", ")} in ${[...via.environments]
-                .map((environment) => environment.toUpperCase())
+                .map((environment) => envLabel(environment))
                 .join(", ")}.`}
             >
               subscribed
@@ -506,15 +527,13 @@ function CatalogRow({
         trailing={
           !ours ? null : (
           <>
+            {/* Not disabled when refused: an icon has no room for a reason beside it, and a
+                disabled one kept its reason in a tooltip that touch and keyboard never see. Each
+                opens its dialog, and the dialog says why its own button is disabled. */}
             <button
               className="icon-btn workspace-row-change-owner"
               aria-label={`Change who owns ${family.name}`}
-              title={
-                canTransfer.enabled
-                  ? `Hand ${family.name} to another application`
-                  : (canTransfer.reason ?? undefined)
-              }
-              disabled={!canTransfer.enabled}
+              title={`Hand ${family.name} to another application`}
               onClick={() => setTransferring(true)}
             >
               <I.Users size={14} />
@@ -522,12 +541,7 @@ function CatalogRow({
             <button
               className="icon-btn danger workspace-row-delete"
               aria-label={`Delete ${family.name} ${version.apiVersion}`}
-              title={
-                canDelete.enabled
-                  ? `Delete ${family.name} ${version.apiVersion}`
-                  : (canDelete.reason ?? undefined)
-              }
-              disabled={!canDelete.enabled}
+              title={`Delete ${family.name} ${version.apiVersion}`}
               onClick={() => setDeleting(true)}
             >
               <I.Trash size={14} />
@@ -553,6 +567,7 @@ function CatalogRow({
         <DeleteVersionDialog
           family={family}
           version={version}
+          products={soldBy.get(version.id) ?? []}
           permission={canDelete}
           close={() => setDeleting(false)}
           onDeleted={() => {
@@ -568,25 +583,32 @@ function CatalogRow({
 /**
  * Deleting one version, with its name typed back.
  *
- * The sentence says what stops working and *when* — at each gateway's next poll, not instantly —
- * because a publisher who believes the deletion is immediate will not go and warn their consumers.
- * One version, never the family: the picker chose which contract this is about.
+ * The sentence says what stops working — the environments it is live in and the products whose
+ * subscriptions reach it — because a publisher who cannot see who is affected will not go and warn
+ * them. One version, never the family: the picker chose which contract this is about.
  */
 function DeleteVersionDialog({
   family,
   version,
+  products,
   permission,
   close,
   onDeleted,
 }: {
   family: Family;
   version: Version;
+  /** The products that sell this version, whose subscriptions stop reaching it. */
+  products: string[];
   permission: Permission;
   close: () => void;
   onDeleted: () => void;
 }) {
   const w = useAction();
-  const live = [...version.environments].map((environment) => environment.toUpperCase());
+  const live = [...version.environments].map((environment) => envLabel(environment));
+  const sold =
+    products.length === 0
+      ? "No product sells it, so no subscription is affected."
+      : `Subscriptions to ${products.join(", ")} stop reaching it.`;
   return (
     <Modal title={`Delete ${family.name} ${version.apiVersion}?`} close={close}>
       <DangerZone
@@ -594,10 +616,11 @@ function DeleteVersionDialog({
         name={family.name}
         consequence={
           live.length === 0
-            ? "This version is not live anywhere, so no call stops working — but its definition, its policies and its history go with it."
-            : `It is live on ${live.join(", ")}. Calls to it start failing at each gateway's next poll, and every subscription that reaches it through a product stops working.`
+            ? `This version is not live anywhere, so no call stops working — but its definition, its policies and its history go with it. ${sold}`
+            : `It is live in ${live.join(", ")}, and calls to it start failing within seconds. ${sold}`
         }
         permission={permission}
+        open
         busy={w.busy}
         error={w.error}
         onConfirm={() =>
@@ -609,7 +632,7 @@ function DeleteVersionDialog({
       />
       <div className="native-actions">
         <button className="btn" onClick={close}>
-          Keep it
+          Cancel
         </button>
       </div>
     </Modal>
@@ -760,6 +783,11 @@ function ChangeOwnerDialog({
             >
               Hand it over
             </button>
+            {/* The reason on the screen: the row's icon opens this dialog whether or not the
+                reader may use it, so this is where the answer to "why not" has to be. */}
+            {!permission.enabled && permission.reason && (
+              <span className="action-reason">{permission.reason}</span>
+            )}
           </div>
         </form>
       )}

@@ -1,19 +1,21 @@
 import { useState } from "react";
 import { api, type ModelDiff, type RevisionDiff, type RevisionList, type RevisionRow } from "../api";
 import {
+  Action,
   Panel,
-  Digest,
   EmptyState,
   Notice,
   Skeleton,
   StatusChip,
   Term,
+  envLabel,
   useAction,
   useAsync,
+  useLeaveGuard,
 } from "../components";
 import type { Permission } from "../lib/capabilities";
 import { blockedBecause, first } from "../lib/capabilities";
-import { releasedInChip } from "../lib/status";
+import { diffChangeChip, releasedInChip } from "../lib/status";
 import { formatDateTime } from "../lib/datetime";
 
 /**
@@ -54,18 +56,21 @@ export function RevisionsPanel({
   environment,
   canPublish,
   onReleased,
+  onOpenDefinition,
 }: {
   resourceId: string;
   chain: string[];
   canEdit: Permission;
   /**
-   * The environment a rollback would target. Omitted by the screens that only *read* the history —
-   * the catalog listing and the legacy detail view — and set by the workspace, which is the one
-   * place a publisher is already choosing an environment.
+   * The environment a rollback would target. The workspace is the one place that draws this panel,
+   * and the one place a publisher is already choosing an environment; without it the panel reads
+   * the history and offers no rollback.
    */
   environment?: string;
   canPublish?: Permission;
   onReleased?: () => void;
+  /** Where "there is no definition yet" sends the reader: the tab that imports one. */
+  onOpenDefinition?: () => void;
 }) {
   const list = useAsync(() => api.get<RevisionList>(`/api/resources/${resourceId}/revisions`), [resourceId]);
   const [compare, setCompare] = useState<{ from: string; to: string } | null>(null);
@@ -80,7 +85,13 @@ export function RevisionsPanel({
       <EmptyState
         title="No definition yet"
         detail="A revision is one upload of this API's contract. Until there is one, there is nothing to route, validate or publish."
-        action={<span className="muted small">Import a definition on the Definition tab.</span>}
+        action={
+          onOpenDefinition ? (
+            <button type="button" className="btn" onClick={onOpenDefinition}>
+              Open Definition
+            </button>
+          ) : null
+        }
       />
     );
   }
@@ -90,7 +101,7 @@ export function RevisionsPanel({
       <Panel
         title="Revisions"
         className="revision-history"
-        hint="One upload of the definition each, newest first. A revision becomes immutable the moment it is released."
+        hint="One upload of the definition each, newest first. A revision cannot change once it has been released."
       >
         <table>
           <thead>
@@ -99,7 +110,6 @@ export function RevisionsPanel({
               <th>Where it runs</th>
               <th>Operations</th>
               <th>Came from</th>
-              <th>Fingerprint</th>
               <th />
             </tr>
           </thead>
@@ -107,22 +117,27 @@ export function RevisionsPanel({
             {items.map((revision, index) => (
               <tr key={revision.id} className={revision.prunedAt ? "row-dim" : ""}>
                 <td>
-                  <strong>rev {revision.rev}</strong>
+                  {/* The fingerprint was a column of its own: twelve hex characters on every row,
+                      which nobody reading this table compares by eye. It is kept as the tooltip for
+                      the one person who does. */}
+                  <strong title={revision.versionDigest}>rev {revision.rev}</strong>
                   <div className="muted small">
                     {formatDateTime(revision.createdAt)} · {revision.createdBy}
                   </div>
                 </td>
                 <td>
-                  {chain.map((environment) => {
-                    const state = revision.releasedIn[environment] ?? "never";
-                    if (state === "never") return null;
-                    return (
-                      <span key={environment} style={{ marginRight: 6 }}>
-                        <StatusChip chip={releasedInChip(state)} />{" "}
-                        <span className="muted small">{environment.toUpperCase()}</span>
-                      </span>
-                    );
-                  })}
+                  <span className="revision-envs">
+                    {chain.map((environment) => {
+                      const state = revision.releasedIn[environment] ?? "never";
+                      if (state === "never") return null;
+                      return (
+                        <span key={environment} className="revision-env">
+                          <StatusChip chip={releasedInChip(state)} />
+                          <span className="muted small">{envLabel(environment)}</span>
+                        </span>
+                      );
+                    })}
+                  </span>
                   {Object.keys(revision.releasedIn).length === 0 && (
                     <span className="muted">Never published</span>
                   )}
@@ -144,35 +159,30 @@ export function RevisionsPanel({
                   {revision.source}
                   {revision.sourceDetail && <div className="mono small">{revision.sourceDetail}</div>}
                 </td>
-                <td>
-                  <Digest value={revision.versionDigest} />
-                </td>
                 <td className="right">
-                  <Compare
-                    revision={revision}
-                    previous={items[index + 1] ?? null}
-                    onCompare={(from) => setCompare({ from, to: revision.id })}
-                  />
-                  {environment && canPublish && (
-                    <>
-                      {" "}
+                  <span className="revision-actions">
+                    <Compare
+                      revision={revision}
+                      previous={items[index + 1] ?? null}
+                      onCompare={(from) => setCompare({ from, to: revision.id })}
+                    />
+                    {environment && canPublish && (
                       <RollBack
                         revision={revision}
                         environment={environment}
                         permission={canPublish}
                         onStart={() => setRollback(revision)}
                       />
-                    </>
-                  )}
-                  {" "}
-                  <a
-                    className="small"
-                    href={`/api/revisions/${revision.id}/spec?format=original`}
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    Download
-                  </a>
+                    )}
+                    <a
+                      className="btn ghost sm"
+                      href={`/api/revisions/${revision.id}/spec?format=original`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Download
+                    </a>
+                  </span>
                 </td>
               </tr>
             ))}
@@ -232,28 +242,18 @@ function Compare({
 }) {
   // A pruned revision is a tombstone: the row survives so releases and audit still resolve, and
   // pretending its diff is empty would be the worse answer (design §4.1).
+  //
+  // The reasons are a few words each because they are drawn under the button, on every row where
+  // they apply — a sentence in a tooltip was a reason nobody on a keyboard or a phone ever read.
   const permission = first(
-    blockedBecause(!revision.diffable, "This revision's definition was pruned, so it cannot be compared."),
-    blockedBecause(
-      previous === null,
-      "This is the first revision of this API, so there is nothing before it.",
-    ),
-    blockedBecause(
-      previous !== null && !previous.diffable,
-      "The revision before this one was pruned, so there is nothing to compare it with.",
-    ),
+    blockedBecause(!revision.diffable, "Pruned"),
+    blockedBecause(previous === null, "First revision"),
+    blockedBecause(previous !== null && !previous.diffable, "Previous one pruned"),
   );
   return (
-    <span className="action">
-      <button
-        className="ghost small"
-        disabled={!permission.enabled}
-        title={permission.reason ?? undefined}
-        onClick={() => previous && onCompare(previous.id)}
-      >
-        Compare
-      </button>
-    </span>
+    <Action permission={permission} className="ghost sm" onClick={() => previous && onCompare(previous.id)}>
+      Compare
+    </Action>
   );
 }
 
@@ -277,32 +277,20 @@ function RollBack({
   onStart: () => void;
 }) {
   const state = revision.releasedIn[environment] ?? "never";
+  // Short, because they sit under the button on each row they apply to. Who may change this API at
+  // all is said once at the top of the workspace, so here it is two words rather than the sentence
+  // repeated down the table.
   const allowed = first(
-    permission,
-    blockedBecause(
-      state === "live",
-      `Revision ${revision.rev} is what ${environment.toUpperCase()} is already running.`,
-    ),
-    blockedBecause(
-      revision.frozenAt === null,
-      "This revision has never been released, so this would be a first release rather than a rollback — promote it from the Definition tab.",
-    ),
-    blockedBecause(
-      !revision.diffable,
-      "This revision's definition was pruned, so there is nothing left to serve.",
-    ),
+    blockedBecause(!permission.enabled, "Read-only"),
+    blockedBecause(state === "live", `Live in ${envLabel(environment)}`),
+    // Never released means this would be a first release, which is a promotion, not a rollback.
+    blockedBecause(revision.frozenAt === null, "Never released"),
+    blockedBecause(!revision.diffable, "Pruned"),
   );
   return (
-    <span className="action">
-      <button
-        className="ghost small"
-        disabled={!allowed.enabled}
-        title={allowed.reason ?? `Put revision ${revision.rev} back into ${environment.toUpperCase()}`}
-        onClick={onStart}
-      >
-        Roll back
-      </button>
-    </span>
+    <Action permission={allowed} className="ghost sm" onClick={onStart}>
+      Roll back
+    </Action>
   );
 }
 
@@ -337,35 +325,37 @@ function RollBackCard({
 
   return (
     <Panel
-      title={`Roll ${environment.toUpperCase()} back to revision ${revision.rev}`}
+      title={`Roll ${envLabel(environment)} back to revision ${revision.rev}`}
       hint="A rollback is a release of an older revision. Nothing is deleted, and the revision that was live stays in this list."
     >
       {done ? (
         <>
           <p>
-            {environment.toUpperCase()} is being moved back to revision {revision.rev}. The gateways
-            apply it on their next poll.
+            {envLabel(environment)} is moving back to revision {revision.rev}. It takes effect as each
+            gateway picks the change up; the bell says when it has landed.
           </p>
-          <button className="primary" onClick={onDone}>
-            Done
-          </button>
+          <div className="native-actions">
+            <button className="btn primary" onClick={onDone}>
+              Done
+            </button>
+          </div>
         </>
       ) : (
         <>
           <p className="muted small">
             {live
-              ? `Revision ${live.rev} is live in ${environment.toUpperCase()} and stays in the history as "was live".`
-              : `Nothing is currently live in ${environment.toUpperCase()}.`}
+              ? `Revision ${live.rev} is live in ${envLabel(environment)} and stays in the history as "was live".`
+              : `Nothing is currently live in ${envLabel(environment)}.`}
           </p>
           <Notice kind="error">{dryRun.error ?? confirm.error}</Notice>
           {plan && <PlanSummary plan={plan} />}
-          <div className="row">
-            <button className="ghost" onClick={onClose}>
+          <div className="native-actions">
+            <button className="btn" onClick={onClose}>
               Cancel
             </button>
             {plan ? (
               <button
-                className="primary"
+                className="btn primary"
                 disabled={confirm.busy || (plan.blockers ?? []).length > 0}
                 onClick={() =>
                   void confirm.run(async () => {
@@ -385,7 +375,7 @@ function RollBackCard({
               </button>
             ) : (
               <button
-                className="primary"
+                className="btn primary"
                 disabled={dryRun.busy}
                 onClick={() =>
                   void dryRun.run(async () =>
@@ -471,9 +461,14 @@ function DiffCard({
   return (
     <Panel
       title={`What changed in revision ${toRev?.rev ?? "?"}`}
-      hint="Compared over the normalized contract, so a reformatted or converted document shows as no change."
+      hint="Compared as a contract, so a reformatted or converted document shows as no change."
+      actions={
+        <button className="btn sm" onClick={onClose}>
+          Close
+        </button>
+      }
     >
-      <div className="row wrap" style={{ marginBottom: 12 }}>
+      <div className="row wrap revision-diff-from">
         <div className="field">
           <label htmlFor="diff-from">Compare with</label>
           <select id="diff-from" value={fromId} onChange={(event) => setFromId(event.target.value)}>
@@ -486,12 +481,9 @@ function DiffCard({
               ))}
           </select>
         </div>
-        <button className="ghost" onClick={onClose}>
-          Close
-        </button>
       </div>
 
-      {diff.error && <Notice kind="error">{diff.error}</Notice>}
+      <Notice kind="error">{diff.error}</Notice>
       {!diff.data && !diff.error && <Skeleton rows={4} />}
       {diff.data && <DiffBody diff={diff.data} />}
     </Panel>
@@ -568,13 +560,7 @@ function DiffBody({ diff }: { diff: ModelDiff }) {
                 )}
               </td>
               <td>
-                <StatusChip
-                  chip={{
-                    label: operation.change,
-                    tone: operation.breaking ? "stop" : operation.change === "added" ? "live" : "warn",
-                    title: operation.breaking ? "breaks callers who use it today" : "safe for callers",
-                  }}
-                />
+                <StatusChip chip={diffChangeChip(operation.change, operation.breaking)} />
               </td>
               <td>
                 {/* The rule that fired, in words. A classifier nobody can interrogate stops being
@@ -616,13 +602,7 @@ function DiffBody({ diff }: { diff: ModelDiff }) {
                 <div className="muted small">skill</div>
               </td>
               <td>
-                <StatusChip
-                  chip={{
-                    label: skill.change,
-                    tone: skill.breaking ? "stop" : skill.change === "added" ? "live" : "warn",
-                    title: skill.breaking ? "breaks agents that use it" : "safe",
-                  }}
-                />
+                <StatusChip chip={diffChangeChip(skill.change, skill.breaking)} />
               </td>
               <td>{skill.rule ? (RULE_LABEL[skill.rule] ?? skill.rule) : <span className="muted">—</span>}</td>
             </tr>
@@ -636,8 +616,11 @@ function DiffBody({ diff }: { diff: ModelDiff }) {
 /**
  * Correcting a draft in place (plan §7.3). Only while unfrozen: once a revision has been released,
  * the contract somebody else is running is not something to edit under them — and the refusal from
- * the server says so and offers the next revision, which is why this control is disabled with the
- * same sentence rather than hidden.
+ * the server says so and offers the next revision.
+ *
+ * When nothing can be corrected the panel says why in one line and draws no box to paste into. A
+ * disabled textarea the height of a definition, on every API whose revisions have all shipped —
+ * which is most of them — was the largest thing on the tab and the one that could do nothing.
  */
 function Correct({
   revisions,
@@ -651,12 +634,14 @@ function Correct({
   const draft = revisions.find((revision) => revision.editable) ?? null;
   const [spec, setSpec] = useState("");
   const action = useAction();
+  // A pasted definition is lost to a tab switch or a navigation like any other edit.
+  useLeaveGuard(spec.trim().length > 0, `the corrected definition for revision ${draft?.rev ?? ""}`.trim());
 
   const permission = first(
     canEdit,
     blockedBecause(
       draft === null,
-      "Every revision of this API has been released, so none can be edited. Upload a new revision instead.",
+      "Every revision of this API has been released, so none can be corrected. Save a changed definition to make a new one.",
     ),
   );
 
@@ -667,35 +652,40 @@ function Correct({
     >
       <Notice kind="error">{action.error}</Notice>
       <Notice kind="ok">{action.message}</Notice>
-      <div className="field">
-        <label htmlFor="correct-spec">Definition</label>
-        <textarea
-          id="correct-spec"
-          value={spec}
-          placeholder="Paste the corrected OpenAPI, WSDL, MCP manifest or Agent Card"
-          onChange={(event) => setSpec(event.target.value)}
-          disabled={!permission.enabled}
-        />
-      </div>
-      <div className="action">
-        <button
-          disabled={!permission.enabled || action.busy || spec.trim().length === 0}
-          title={permission.reason ?? undefined}
-          onClick={async () => {
-            const ok = await action.run(
-              () => api.put(`/api/revisions/${draft!.id}/spec`, { spec: parse(spec) }),
-              `Revision ${draft!.rev} now carries the definition you pasted.`,
-            );
-            if (ok) {
-              setSpec("");
-              onCorrected();
-            }
-          }}
-        >
-          {draft ? `Replace revision ${draft.rev}` : "Replace"}
-        </button>
-        {permission.reason && <span className="action-reason">{permission.reason}</span>}
-      </div>
+      {!permission.enabled ? (
+        <p className="muted">{permission.reason}</p>
+      ) : (
+        <>
+          <div className="field">
+            <label htmlFor="correct-spec">Definition</label>
+            <textarea
+              id="correct-spec"
+              value={spec}
+              placeholder="Paste the corrected OpenAPI, WSDL, MCP manifest or Agent Card"
+              onChange={(event) => setSpec(event.target.value)}
+            />
+          </div>
+          <div className="native-actions">
+            <button
+              className="btn"
+              disabled={action.busy || spec.trim().length === 0}
+              onClick={async () => {
+                const ok = await action.run(
+                  () => api.put(`/api/revisions/${draft!.id}/spec`, { spec: parse(spec) }),
+                  `Revision ${draft!.rev} now carries the definition you pasted.`,
+                );
+                if (ok) {
+                  setSpec("");
+                  onCorrected();
+                }
+              }}
+            >
+              {action.busy ? "Replacing…" : `Replace revision ${draft!.rev}`}
+            </button>
+            {spec.trim().length === 0 && <span className="action-reason">Paste a definition first.</span>}
+          </div>
+        </>
+      )}
     </Panel>
   );
 }

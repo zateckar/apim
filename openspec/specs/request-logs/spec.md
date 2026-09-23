@@ -152,6 +152,9 @@ every request, and never sample.
 - GIVEN a response marked `simulated`
 - WHEN it renders
 - THEN the screen SHALL say the results are simulated, in words, beside them
+- AND it SHALL say what that means for the reader — these calls were not observed — without naming
+  the environment variable that connects a real index, which is an operator's concern and not the
+  publisher's
 
 ### Requirement: Read logs from where the question is asked
 
@@ -162,12 +165,32 @@ every request, and never sample.
 - THEN it SHALL be filtered to that resource and the workspace's environment
 - AND it SHALL offer the status, method, path, subscription and duration filters, and a histogram
   above the lines
+- AND the window SHALL be chosen by one segmented control of presets — 15 minutes, an hour, six
+  hours, a day, a week — with no preset pressed while the window is a custom one, and an explicit
+  **Extend to now** for a window that has fallen behind
+- AND the duration filter SHALL be one labelled checkbox that names its threshold ("1.0 s or
+  more"), rather than a toggle button whose meaning is its colour
+- AND the subscription filter SHALL be set from a line's detail ("only this subscription's
+  calls") and shown as a removable chip, because a subscription id is nothing anybody types
+- AND a failure of the timeline SHALL be shown once, in the timeline, and a failure of the lines
+  once, above the lines
+- AND while the first page loads the table SHALL show a skeleton rather than an empty state
+- AND every status SHALL be the shared HTTP status chip, and every environment its display label
+
+#### Scenario: A body capture window is opened or closed from the panel
+
+- GIVEN the Logs panel
+- WHEN a window is opened or closed early
+- THEN a failure of either SHALL be shown once, beside the control that failed
 
 #### Scenario: A traffic row is followed from the dashboard
 
 - GIVEN a row in the dashboard's traffic table
 - WHEN it is activated
 - THEN it SHALL open that resource's workspace on the Logs panel, via `?tab=logs`
+- AND a `sinceMin` in the same address SHALL choose the panel's initial window, snapped to the
+  nearest preset on a logarithmic scale with a tie going to the wider one, so the lines shown are
+  the ones that were counted; without it the window SHALL be the last hour
 
 ### Requirement: Open a body capture window per API, per environment, for at most an hour
 

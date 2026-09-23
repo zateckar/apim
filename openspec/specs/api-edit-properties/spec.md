@@ -19,6 +19,21 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - AND the panel SHALL be selected by a segmented control, and the definition SHALL be the default
 - AND History SHALL show each operation once, without a second deployment-progress panel repeating its entries
 
+#### Scenario: The workspace head renders
+
+- GIVEN a resource the caller may see
+- WHEN its workspace opens
+- THEN the page heading SHALL be the resource's name and version, so two workspaces open side by
+  side can be told apart
+- AND the head SHALL carry the owning application, the kind, the version, the domain, the products
+  and, when it is not active, the lifecycle chip — and, once published here, the first address a
+  consumer calls, with a control that copies it
+- AND the head SHALL NOT be a card, and no panel of any tab SHALL be drawn inside another panel:
+  each tab's panels are top-level sections of the page
+- AND **New version** and **Promote** SHALL be disabled with a short reason drawn beside them —
+  read-only, not published in this environment, new versions start in the first stage — rather
+  than a tooltip or a sentence standing in for the control
+
 #### Scenario: Another version of the same API is opened
 
 - GIVEN a resource with more than one version
@@ -174,7 +189,10 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 
 - GIVEN a resource with a documentation link
 - WHEN the workspace and the catalogue listing render
-- THEN both SHALL offer it as a single **Open wiki** deep link beside the description
+- THEN both SHALL offer it as a single **Open wiki** deep link — at the top of the workspace, and
+  beside the description on the listing
+- AND the field's hint SHALL say that the link appears once saved, and where, rather than pointing
+  "above" at a control that is not drawn until there is a link
 - AND there SHALL be exactly one such link, because the question a consumer has after the
   description is "where do I read more", and two answers to it means one of them is stale
 
@@ -203,14 +221,14 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - AND the same reader SHALL be used as on publish, so a pool cannot mean one thing in the wizard
   and another here
 
-### Requirement: Lay the properties panel out as sections, not as nested cards
+### Requirement: Lay the properties tab out as three panels, none inside another
 
 #### Scenario: The properties panel renders
 
-- GIVEN the properties panel
+- GIVEN the properties tab
 - WHEN it renders
-- THEN it SHALL be three headed sections — catalog information, backends for this environment, and
-  the published address — rather than three cards inside the workspace's own card
+- THEN it SHALL be three panels — catalog information, backends for this environment, and the
+  published address — each at the top level of the page, and none inside a workspace card
 - AND each coherent set of fields SHALL sit on one tinted group surface, and a group SHALL NOT be
   nested inside another group
 - AND the reason SHALL be that the tint used to appear on the domain pair alone, which made the one
@@ -233,6 +251,9 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
   inside and outside the network has two names
 - AND there SHALL be exactly one list: the bare origins and the addresses-with-path SHALL NOT be
   drawn as two controls, which printed every URL twice, differing only in the part worth reading
+- AND each address line SHALL carry a control that copies it
+- AND a paused gateway SHALL carry the **Paused** status chip, because a change to an API on it is
+  held rather than refused
 - AND an environment with a single gateway SHALL state it and its addresses rather than offer a
   checkbox that cannot be unticked
 - AND an environment with no gateway SHALL say so and name who adds one
@@ -246,6 +267,18 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - THEN the base path SHALL be re-derived, or the save SHALL be refused with a message naming the
   new prefix
 - AND a path that ends up outside the domain's prefix SHALL never be stored
+
+#### Scenario: A save would move the address
+
+- GIVEN the stored base path and the one derived from the domain now chosen
+- WHEN the properties tab renders
+- THEN a warning SHALL say that saving moves the API from the one to the other in this environment
+  **only when the two differ**, whether the API had a domain before or not
+- AND a resource published before domains, with no domain chosen yet, SHALL instead be told to
+  choose one, without a move being announced
+- AND the reason SHALL be that the warning used to follow "has no stored domain" rather than the
+  address, so it announced a move from `/checkout/v2` to `/checkout/v2` and said nothing about a
+  real move between two domains
 
 #### Scenario: A version segment would be doubled
 
@@ -271,12 +304,44 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - GIVEN one or more operations this API has not finished deploying
 - WHEN the workspace renders
 - THEN the progress table SHALL appear on the History panel and on no other panel
-- AND every other panel SHALL carry at most one sentence saying how many changes are still reaching
-  the gateways, linking to History
+- AND the only other place SHALL be one link beside Save saying how many changes are still rolling
+  out, which opens History
 - AND completion SHALL be announced through the notification feed (`operation.complete`) rather
   than by a table the reader has to be looking at
 - AND the reason SHALL be that a rollout table under the definition editor, the playground and the
   log search is a table about something else on every screen but the one named after it
+
+### Requirement: Say what Save would write, and what stops it
+
+#### Scenario: Edits are held on more than one tab
+
+- GIVEN edits on the definition, properties or policies tabs, which share one Save
+- WHEN the workspace renders
+- THEN each tab holding an unsaved edit SHALL be marked in the tab strip, with a text alternative
+  for assistive technology
+- AND the sentence beside Save SHALL name the tabs it would write, and say "No unsaved changes"
+  with Save disabled when there are none
+- AND a reformatted definition, a reordered gateway list or an empty backend row SHALL NOT count as
+  an edit
+
+#### Scenario: Save is blocked by a problem on another tab
+
+- GIVEN a missing domain, an invalid backend or documentation URL, a policy that is not a JSON
+  object, or an edited definition that does not parse
+- WHEN any of the three tabs is open
+- THEN Save SHALL be disabled and every blocking problem SHALL be listed where Save is, each naming
+  what is wrong
+- AND a problem on a tab other than the open one SHALL carry a control that opens that tab
+- AND the reason SHALL be that Save was blocked by a field on Properties from every tab while only
+  one of the tabs said so, and an unparseable policy failed inside the save as a parse error that
+  did not say where
+
+#### Scenario: The reader leaves with unsaved edits
+
+- GIVEN unsaved edits on any of the three tabs
+- WHEN the reader navigates away, switches environment, opens another version, or reloads
+- THEN they SHALL be asked first, naming the tabs, the API, its version and the environment
+- AND a successful promotion or new version SHALL move to its destination through the same question
 
 #### Scenario: Nothing changed
 

@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import * as I from "../icons";
+import { envLabel } from "../../components";
 
 /**
  * The version selector and the promotion-chain buttons, as one cluster.
@@ -100,7 +101,7 @@ export function VersionEnvPicker({
       {hideVersion ? (
         // An invisible placeholder of exactly the picker's width, so the chevrons of a versionless
         // row still line up with every other row's.
-        <span className="version-picker" style={{ visibility: "hidden" }} aria-hidden="true">
+        <span className="version-picker version-picker-placeholder" aria-hidden="true">
           <span className="version-picker-value">v1</span>
           <span className="version-picker-chev" data-hidden="true">
             <I.ChevDown size={12} />
@@ -149,12 +150,12 @@ export function VersionEnvPicker({
             index === 0 ? "first" : index === chain.length - 1 ? "last" : "middle";
           const state = failed ? "failed" : loading ? "loading" : available ? "available" : "unavailable";
           const title = failed
-            ? `${environment.toUpperCase()} could not be read — ${failure}`
+            ? `${envLabel(environment)} could not be read — ${failure}`
             : loading
-              ? `Checking ${environment.toUpperCase()}…`
+              ? `Checking ${envLabel(environment)}…`
               : available
-                ? `Open ${environment.toUpperCase()}`
-                : `Not published on ${environment.toUpperCase()}`;
+                ? `Open ${envLabel(environment)}`
+                : `Not published on ${envLabel(environment)}`;
           return (
             <span
               key={environment}
@@ -178,7 +179,7 @@ export function VersionEnvPicker({
                 <svg className="env-btn-shape" viewBox="0 0 100 28" preserveAspectRatio="none" aria-hidden="true">
                   <path d={PATHS[position]} />
                 </svg>
-                <span className="env-btn-label">{environment.toUpperCase()}</span>
+                <span className="env-btn-label">{envLabel(environment)}</span>
               </button>
             </span>
           );

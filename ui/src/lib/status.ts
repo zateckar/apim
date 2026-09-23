@@ -266,6 +266,66 @@ export const STATUS_DOMAINS = {
 
 // ==================================================================== phase-2: workspace
 // Chips for the workspace screens. Add below this line only; the anchor keeps parallel additions apart.
+
+/**
+ * An HTTP status, as the workspace's three readers of one draw it: the log table, the playground's
+ * answer and the playground's history.
+ *
+ * Each of them picked its own tones, so a 302 was grey in the logs and amber in the playground
+ * beside it, and the history built its chip objects inline. One function, and the redirect is
+ * `neutral` everywhere — it is neither a success nor a refusal, and amber taught the reader to go
+ * looking for a problem that was not there. `null` is a call that got no answer at all.
+ */
+export function httpStatusChip(
+  status: number | null,
+  detail: { statusText?: string | null; durationMs?: number | null; error?: string | null } = {},
+): Chip {
+  if (status === null || detail.error) {
+    return {
+      label: "No response",
+      tone: "stop",
+      title: `no response — ${detail.error ?? "the call did not get an answer"}`,
+    };
+  }
+  const took = typeof detail.durationMs === "number" ? ` in ${Math.round(detail.durationMs)} ms` : "";
+  const text = `${status}${detail.statusText ? ` ${detail.statusText}` : ""}${took}`;
+  if (status >= 500) return { label: String(status), tone: "stop", title: `${text} — the backend or the gateway failed` };
+  if (status >= 400) return { label: String(status), tone: "warn", title: `${text} — the request was refused` };
+  if (status >= 300) return { label: String(status), tone: "neutral", title: `${text} — redirected elsewhere` };
+  return { label: String(status), tone: "live", title: `${text} — succeeded` };
+}
+
+/**
+ * One operation's change between two revisions. The word is the change; the tone is whether it
+ * breaks somebody calling today, which is the only thing the reader of a diff is deciding about.
+ */
+export function diffChangeChip(change: string, breaking: boolean): Chip {
+  const label = change.charAt(0).toUpperCase() + change.slice(1);
+  if (breaking) return { label, tone: "stop", title: `${change} — breaks callers who use it today` };
+  if (change === "added") return { label, tone: "live", title: "added — new, so nobody depends on it yet" };
+  return { label, tone: "warn", title: `${change} — safe for the callers there are today` };
+}
+
+/** A definition check's severity. `error` is what publishing would refuse; the rest are advice. */
+export function diagnosticChip(severity: "error" | "warning" | "info"): Chip {
+  if (severity === "error") return { label: "Error", tone: "stop", title: "error — publishing refuses a definition with this" };
+  if (severity === "warning") return { label: "Warning", tone: "warn", title: "warning — accepted, but likely to surprise a caller" };
+  return { label: "Info", tone: "neutral", title: "info — worth knowing, and nothing to fix" };
+}
+
+/**
+ * A gateway an API can be placed on, when it is not simply available. Paused is the one state worth
+ * a chip: a change to an API on a paused gateway is held rather than refused (control-plane-surface,
+ * The environment cannot take the change), which a publisher otherwise reads as a stuck deployment.
+ */
+export function localityChip(locality: { paused: boolean }): Chip | null {
+  if (!locality.paused) return null;
+  return {
+    label: "Paused",
+    tone: "warn",
+    title: "paused — deployments to this gateway wait until an administrator resumes it",
+  };
+}
 // end phase-2: workspace
 
 

@@ -79,7 +79,8 @@ They are two lists because they answer two questions, and each is exactly one sc
 
 - GIVEN a list with at least one owned row and at least one subscribed row
 - WHEN it renders
-- THEN a filter SHALL be offered over all, published-here and subscribed, each with its count
+- THEN a filter SHALL be offered over all, published-here and subscribed, each with its count, as
+  the shared segmented control
 - AND the filter SHALL NOT be offered when the list is entirely one of them, because a control that
   cannot change what is shown is a control that operates nothing
 
@@ -102,6 +103,7 @@ They are two lists because they answer two questions, and each is exactly one sc
 - THEN an empty state SHALL be shown naming the next action — publishing a first API
 - AND the section SHALL still be present, because sections follow capability rather than inventory
 - AND the empty-state publish action SHALL preserve the resource kind on MCP Servers and A2A Agents, matching the page-head action
+- AND it SHALL be a link, because it goes somewhere
 
 #### Scenario: A row is opened
 
@@ -366,7 +368,10 @@ They are two lists because they answer two questions, and each is exactly one sc
 - THEN it SHALL be permitted only for a member of the owning application or an administrator
 - AND it SHALL go through the typed confirmation, with the resource's name typed back
 - AND the confirmation SHALL name what will stop working — the live environments, the products it
-  is in and the subscriptions through them
+  is in and the subscriptions through them — and SHALL be drawn open, with **Cancel** beside it
+- AND the row's delete and change-owner controls SHALL open their dialogs even for a reader who may
+  not use them, and the dialog SHALL say why its own control is disabled, because an icon has no
+  room for a visible reason and a tooltip is one a keyboard and a touch screen never see
 
 ### Requirement: Keep the workspace and the catalogue in one vocabulary
 

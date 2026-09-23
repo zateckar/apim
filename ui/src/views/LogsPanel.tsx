@@ -6,7 +6,20 @@ import {
   type LogHistogram,
   type LogPage,
 } from "../api";
-import { EmptyState, Field, Modal, Notice, useAction, useAsync, useTicker } from "../components";
+import {
+  EmptyState,
+  Field,
+  Modal,
+  Notice,
+  Segmented,
+  Skeleton,
+  StatusChip,
+  envLabel,
+  useAction,
+  useAsync,
+  useTicker,
+} from "../components";
+import { httpStatusChip } from "../lib/status";
 import { formatDateTime, formatDuration, toDateTimeInput, fromDateTimeInput } from "../lib/datetime";
 import { LogsHistogram } from "./LogsHistogram";
 
@@ -24,13 +37,13 @@ import { LogsHistogram } from "./LogsHistogram";
  * server decides that from the session before a query exists.
  */
 
-const RANGES: Array<{ label: string; minutes: number }> = [
-  { label: "15m", minutes: 15 },
-  { label: "1h", minutes: 60 },
-  { label: "6h", minutes: 360 },
-  { label: "24h", minutes: 1440 },
-  { label: "7d", minutes: 10080 },
-];
+const RANGES = [
+  { value: "15m", label: "15m", minutes: 15 },
+  { value: "1h", label: "1h", minutes: 60 },
+  { value: "6h", label: "6h", minutes: 360 },
+  { value: "24h", label: "24h", minutes: 1440 },
+  { value: "7d", label: "7d", minutes: 10080 },
+] as const;
 
 const STATUS_FILTERS: Array<{ value: string; label: string }> = [
   { value: "", label: "Any status" },
@@ -41,6 +54,38 @@ const STATUS_FILTERS: Array<{ value: string; label: string }> = [
 ];
 
 const PAGE_SIZE = 50;
+
+/** What "slow" means for the one-click filter: a call a person would have noticed waiting for. */
+const SLOW_MS = 1000;
+
+/**
+ * Which preset the window is, or `custom` for one somebody typed or dragged. `custom` is not an
+ * option of the control, so no preset reads as pressed while the window is something else.
+ */
+export function rangeOf(window: { from: number; to: number }): string {
+  const span = window.to - window.from;
+  return RANGES.find((range) => range.minutes * 60_000 === span)?.value ?? "custom";
+}
+
+/**
+ * The preset a `?sinceMin=` asks for, snapped to the nearest one offered, or 60 when there is none.
+ *
+ * The dashboard's traffic rows link here with the window they were counted over (dashboard-health,
+ * "Make traffic drillable"), and a drill-down that opened on the last hour regardless showed a
+ * different set of calls from the number that was clicked. Nearest on a log scale, because the
+ * presets are, and a tie goes to the wider one so the calls that were counted are all inside it.
+ */
+export function initialMinutes(search: string): number {
+  const asked = Number(new URLSearchParams(search).get("sinceMin"));
+  if (!Number.isFinite(asked) || asked <= 0) return 60;
+  let best: number = RANGES[0].minutes;
+  for (const range of RANGES) {
+    const distance = Math.abs(Math.log(range.minutes / asked));
+    const bestDistance = Math.abs(Math.log(best / asked));
+    if (distance < bestDistance || (distance === bestDistance && range.minutes > best)) best = range.minutes;
+  }
+  return best;
+}
 
 export function LogsPanel({
   resourceId,
@@ -58,12 +103,16 @@ export function LogsPanel({
   // reload would renumber the rows under somebody who is reading them.
   const [window, setWindow] = useState(() => {
     const to = Date.now();
-    return { from: to - 60 * 60_000, to };
+    const minutes = initialMinutes(typeof location === "undefined" ? "" : location.search);
+    return { from: to - minutes * 60_000, to };
   });
   const [status, setStatus] = useState("");
   const [method, setMethod] = useState("");
   const [path, setPath] = useState("");
   const [slowOnly, setSlowOnly] = useState(false);
+  // Set from a line's detail rather than typed: a subscription id is nothing anybody knows by
+  // heart, and "whose calls were these" is always asked about a call already on the screen.
+  const [subscriptionId, setSubscriptionId] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [expanded, setExpanded] = useState<string | null>(null);
 
@@ -77,9 +126,10 @@ export function LogsPanel({
     if (status) params.set("status", status);
     if (method) params.set("method", method);
     if (path.trim()) params.set("path", path.trim());
-    if (slowOnly) params.set("minDurationMs", "1000");
+    if (slowOnly) params.set("minDurationMs", String(SLOW_MS));
+    if (subscriptionId) params.set("subscriptionId", subscriptionId);
     return params;
-  }, [environment, resourceId, window.from, window.to, status, method, path, slowOnly]);
+  }, [environment, resourceId, window.from, window.to, status, method, path, slowOnly, subscriptionId]);
 
   const list = useAsync(
     () =>
@@ -123,35 +173,35 @@ export function LogsPanel({
   return (
     <div className="logs-panel">
       {simulated && (
+        // What the reader needs is the fact and its consequence. Which variable an operator sets
+        // to connect a real index is `request-logs` and the README's business, and a publisher
+        // reading this banner cannot set it anyway.
         <Notice kind="warn">
-          These request logs are <strong>simulated</strong>. This deployment has no log index
-          configured, so the control plane generates deterministic traffic from the APIs that are
-          actually published here. Nothing below is an observation. Set <code>LOGS_PROVIDER=elk</code>{" "}
-          with <code>ELK_URL</code> to read the real index.
+          These request logs are <strong>simulated</strong>: no log index is connected, so this
+          traffic is generated from the APIs published here. Nothing below was observed.
         </Notice>
       )}
 
       <BodyCapture resourceId={resourceId} environment={environment} />
 
       <div className="filter-bar">
-        <div className="uptime-range" role="group" aria-label="Time range">
-          {RANGES.map((range) => {
-            const active = window.to - window.from === range.minutes * 60_000;
-            return (
-              <button
-                key={range.label}
-                className={`uptime-range-btn${active ? " active" : ""}`}
-                aria-pressed={active}
-                onClick={() => retarget(Date.now() - range.minutes * 60_000, Date.now())}
-              >
-                {range.label}
-              </button>
-            );
-          })}
-          <button className="uptime-range-btn" onClick={() => retarget(window.from, Date.now())}>
-            Now
-          </button>
-        </div>
+        <Segmented
+          label="Time range"
+          value={rangeOf(window)}
+          onChange={(value) => {
+            const range = RANGES.find((entry) => entry.value === value)!;
+            retarget(Date.now() - range.minutes * 60_000, Date.now());
+          }}
+          options={RANGES.map((range) => ({ value: range.value, label: range.label }))}
+        />
+        <button
+          type="button"
+          className="btn sm ghost"
+          title="Keep the start, move the end of the window to now"
+          onClick={() => retarget(window.from, Date.now())}
+        >
+          Extend to now
+        </button>
 
         <div className="logs-range-inputs">
           <RangeInput label="From" value={window.from} onCommit={(ms) => retarget(ms, window.to)} />
@@ -210,20 +260,38 @@ export function LogsPanel({
           />
         </div>
 
-        <button
-          className={`uptime-range-btn${slowOnly ? " active" : ""}`}
-          aria-pressed={slowOnly}
-          onClick={() => {
-            setSlowOnly(!slowOnly);
-            setOffset(0);
-          }}
-          title="Only calls that took a second or more"
-        >
-          Slow only
-        </button>
+        {/* A checkbox, because it is one: on or off. It was drawn as a fourth range button, which
+            read as a sixth window length rather than as a filter. */}
+        <label className="check-inline">
+          <input
+            type="checkbox"
+            checked={slowOnly}
+            onChange={(event) => {
+              setSlowOnly(event.target.checked);
+              setOffset(0);
+            }}
+          />
+          Only slow calls ({formatDuration(SLOW_MS)} or more)
+        </label>
+
+        {subscriptionId && (
+          <span className="chip logs-filter-chip">
+            Subscription <span className="mono">{subscriptionId}</span>
+            <button
+              type="button"
+              className="btn sm ghost"
+              aria-label="Show every subscription again"
+              onClick={() => {
+                setSubscriptionId(null);
+                setOffset(0);
+              }}
+            >
+              ×
+            </button>
+          </span>
+        )}
       </div>
 
-      <Notice kind="error">{chart.error}</Notice>
       <LogsHistogram
         data={chart.data}
         loading={chart.loading}
@@ -238,8 +306,8 @@ export function LogsPanel({
       <Notice kind="error">{list.error}</Notice>
 
       {list.loading && !page ? (
-        <p className="muted">Loading request logs…</p>
-      ) : items.length === 0 ? (
+        <Skeleton rows={6} />
+      ) : list.error ? null : items.length === 0 ? (
         <EmptyState
           title="No requests in this window"
           detail="Nothing matched. Widen the range, clear a filter, or call the API from the Playground tab and look again."
@@ -270,6 +338,14 @@ export function LogsPanel({
                   entry={entry}
                   open={expanded === entry.id}
                   onToggle={() => setExpanded(expanded === entry.id ? null : entry.id)}
+                  onSubscription={
+                    entry.subscriptionId && entry.subscriptionId !== subscriptionId
+                      ? () => {
+                          setSubscriptionId(entry.subscriptionId);
+                          setOffset(0);
+                        }
+                      : undefined
+                  }
                 />
               ))}
             </tbody>
@@ -278,22 +354,24 @@ export function LogsPanel({
           <div className="logs-pager">
             <span className="muted small">
               {page!.total.toLocaleString()}
-              {page!.totalIsLowerBound ? "+" : ""} request{page!.total === 1 ? "" : "s"} ·{" "}
-              {page!.provider === "mock" ? "simulated index" : "log index"}
+              {page!.totalIsLowerBound ? "+" : ""} request{page!.total === 1 ? "" : "s"}
+              {simulated ? " · simulated" : ""}
             </span>
             <div className="logs-pager-nums">
               <button
-                className="logs-pager-num"
+                type="button"
+                className="btn sm"
                 disabled={current === 0}
                 onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
               >
                 Previous
               </button>
               <span className="logs-pager-gap">
-                page {current + 1} of {Math.max(1, pages)}
+                Page {current + 1} of {Math.max(1, pages)}
               </span>
               <button
-                className="logs-pager-num"
+                type="button"
+                className="btn sm"
                 disabled={!page!.nextCursor}
                 onClick={() => setOffset(offset + PAGE_SIZE)}
               >
@@ -322,13 +400,17 @@ export function LogsPanel({
  * enforces on its own clock; `remainingSec` was only ever that instant minus the moment the response
  * was built. Polling once every tick to watch a number tick down would be a request every three
  * seconds for an hour, to learn something arithmetic already knows.
+ *
+ * Starting and stopping are two actions with two errors. They shared one, so a refused start was
+ * printed twice while its dialog was open — once inside it and once on the page behind.
  */
 function BodyCapture({ resourceId, environment }: { resourceId: string; environment: string }) {
   const [asking, setAsking] = useState(false);
   const [reason, setReason] = useState("");
   const [reload, setReload] = useState(0);
   const tick = useTicker();
-  const action = useAction();
+  const start = useAction();
+  const stop = useAction();
 
   const windows = useAsync(
     () =>
@@ -349,23 +431,24 @@ function BodyCapture({ resourceId, environment }: { resourceId: string; environm
   );
   const live = remainingMs > 0 ? found : null;
   const kib = page ? Math.round(page.maxBytes / 1024) : 8;
+  const minutes = page ? page.maxMinutes : 60;
 
   return (
     <>
       <Notice kind="error">{windows.error}</Notice>
-      <Notice kind="error">{action.error}</Notice>
+      <Notice kind="error">{stop.error}</Notice>
 
       {live ? (
         <Notice kind="warn">
-          <strong>Bodies are being captured</strong> for this API in {environment.toUpperCase()},
-          for another {formatDuration(remainingMs)}. Requested by {live.openedBy}:{" "}
+          <strong>Bodies are being captured</strong> for this API in {envLabel(environment)}, for
+          another {formatDuration(remainingMs)}. Requested by {live.openedBy}:{" "}
           <em>{live.reason}</em>. The first {kib} KiB of each request and response is written into
           the log index, with credential-shaped fields replaced. Headers never are.{" "}
           <button
             className="btn sm"
-            disabled={action.busy}
+            disabled={stop.busy}
             onClick={() =>
-              action
+              stop
                 .run(() => api.del(`/api/logs/body-capture/${live.id}`))
                 .then(() => setReload((n) => n + 1))
             }
@@ -387,10 +470,10 @@ function BodyCapture({ resourceId, environment }: { resourceId: string; environm
       {asking && (
         <Modal title="Capture request and response bodies" close={() => setAsking(false)}>
           <p className="hint">
-            For one hour, on this API in {environment.toUpperCase()}, the first {kib} KiB of each
-            request and response body is written into its access-log lines. They go to the same log
-            index as everything else, so anyone who can read this API's traffic can read them. The
-            window cannot be extended — opening a second one is a second decision.
+            For {minutes === 60 ? "one hour" : `${minutes} minutes`}, on this API in{" "}
+            {envLabel(environment)}, the first {kib} KiB of each request and response body is written
+            into its log lines. Anyone who can read this API's traffic can read them. The window
+            cannot be extended — opening a second one is a second decision.
           </p>
           <Field
             label="Why"
@@ -403,16 +486,16 @@ function BodyCapture({ resourceId, environment }: { resourceId: string; environm
               placeholder="INC-4471: the order POST returns 400 for one consumer only"
             />
           </Field>
-          <Notice kind="error">{action.error}</Notice>
-          <div className="row-actions">
+          <Notice kind="error">{start.error}</Notice>
+          <div className="native-actions">
             <button className="btn" onClick={() => setAsking(false)}>
               Cancel
             </button>
             <button
               className="btn primary"
-              disabled={action.busy || reason.trim().length < 20}
+              disabled={start.busy || reason.trim().length < 20}
               onClick={async () => {
-                const ok = await action.run(() =>
+                const ok = await start.run(() =>
                   api.post("/api/logs/body-capture", {
                     resourceId,
                     environment,
@@ -427,6 +510,11 @@ function BodyCapture({ resourceId, environment }: { resourceId: string; environm
             >
               Start capturing
             </button>
+            {reason.trim().length < 20 && (
+              <span className="action-reason">
+                {20 - reason.trim().length} more character{20 - reason.trim().length === 1 ? "" : "s"} of reason needed.
+              </span>
+            )}
           </div>
         </Modal>
       )}
@@ -438,18 +526,18 @@ function cursorOf(offset: number): string {
   return offset === 0 ? "" : btoa(String(offset)).replace(/=+$/, "").replace(/\+/g, "-").replace(/\//g, "_");
 }
 
-/**
- * The status class as one of `lib/status.ts`'s six tone words, so the table never writes a colour
- * of its own and a 5xx here is the same red as a failed release everywhere else.
- */
-function toneOf(status: number): string {
-  if (status >= 500) return "stop";
-  if (status >= 400) return "warn";
-  if (status >= 300) return "neutral";
-  return "live";
-}
-
-function Row({ entry, open, onToggle }: { entry: LogEntry; open: boolean; onToggle: () => void }) {
+function Row({
+  entry,
+  open,
+  onToggle,
+  onSubscription,
+}: {
+  entry: LogEntry;
+  open: boolean;
+  onToggle: () => void;
+  /** Narrow the table to this line's subscription; absent when it has none or already is. */
+  onSubscription?: () => void;
+}) {
   return (
     <>
       <tr>
@@ -469,7 +557,7 @@ function Row({ entry, open, onToggle }: { entry: LogEntry; open: boolean; onTogg
         <td className="mono">{entry.method}</td>
         <td className="mono">{entry.path}</td>
         <td>
-          <span className={`chip-status tone-${toneOf(entry.status)}`}>{entry.status}</span>
+          <StatusChip chip={httpStatusChip(entry.status, { durationMs: entry.durationMs })} />
         </td>
         <td className="mono">{formatDuration(entry.durationMs)}</td>
         <td>{entry.consumerApplicationId ?? <span className="muted">—</span>}</td>
@@ -486,13 +574,18 @@ function Row({ entry, open, onToggle }: { entry: LogEntry; open: boolean; onTogg
                   <Kv k="Client" v={entry.clientIp ?? "not recorded"} />
                   <Kv k="Subscription" v={entry.subscriptionId ?? "none — refused before matching"} />
                 </div>
+                {onSubscription && (
+                  <button type="button" className="btn sm" onClick={onSubscription}>
+                    Only this subscription's calls
+                  </button>
+                )}
               </section>
               <section className="log-detail-section">
                 <div className="title">Served by</div>
                 <div className="kv-list compact">
-                  <Kv k="Environment" v={entry.environment.toUpperCase()} />
+                  <Kv k="Environment" v={envLabel(entry.environment)} />
                   <Kv k="Gateway" v={entry.gateway} />
-                  <Kv k="Replica" v={entry.instance ?? "not recorded"} />
+                  <Kv k="Instance" v={entry.instance ?? "not recorded"} />
                   <Kv k="Upstream took" v={formatDuration(entry.backendMs)} />
                 </div>
               </section>
@@ -541,6 +634,7 @@ function RangeInput({
   return (
     <input
       aria-label={label}
+      aria-invalid={parsed === undefined ? true : undefined}
       className={parsed === undefined ? "invalid" : undefined}
       value={text}
       onChange={(event) => setDraft(event.target.value)}

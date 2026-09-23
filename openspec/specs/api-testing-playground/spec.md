@@ -56,6 +56,19 @@ SHALL be the whole of what a send names.
   whole URL rather than as a bare path
 - AND a gateway's published address and a replica SHALL be told apart on the control, because a
   replica's address changes when the fleet is resized and is never published to a consumer
+- AND the explanation of that difference SHALL appear only when a replica is on offer
+
+#### Scenario: The call is taken elsewhere
+
+- GIVEN the composed call on screen
+- WHEN the reader wants it outside the portal
+- THEN the whole URL SHALL be copyable, and so SHALL the call as one `curl` line
+- AND the `curl` line SHALL carry the method, the query and the enabled headers and body as they
+  would be sent, each quoted for a POSIX shell
+- AND where the effective policy wants a key it SHALL carry the placeholder `<subscription-key>` in
+  the header or query parameter the policy names, and **never** a key, which the browser does not
+  have
+- AND a response's body, and the request as it was sent, SHALL each be copyable from the result
 
 #### Scenario: No gateway label is given
 
@@ -132,7 +145,9 @@ SHALL be the whole of what a send names.
 
 - GIVEN a body over `PLAYGROUND_MAX_BODY_BYTES`
 - WHEN it is submitted
-- THEN it SHALL be refused, and the editor SHALL say so **before** sending
+- THEN it SHALL be refused, and the editor SHALL say so **before** sending, stating the size and
+  the limit in bytes, kilobytes or megabytes rather than as a raw byte count
+- AND a response's size and duration SHALL be shown in the same human units
 
 #### Scenario: The response is too large
 
@@ -178,6 +193,14 @@ SHALL be the whole of what a send names.
 - THEN it SHALL be permitted without a typed confirmation
 - AND the reason SHALL be that it removes a record of the caller's own console, not a thing anybody
   depends on
+- AND a failed removal SHALL be shown beside the history, rather than the row silently staying
+
+#### Scenario: History is listed
+
+- GIVEN recorded calls
+- WHEN the history renders
+- THEN each row SHALL carry its environment, its status as the shared HTTP status chip, and two
+  actions — **Load**, which puts the call back in the form, and **Delete**
 
 ### Requirement: Explain a failure before it looks like the API's fault
 

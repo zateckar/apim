@@ -317,6 +317,30 @@ has never served.
   by the order the rows were added
 - AND the collapsed row's summary SHALL count every action present, not only two of them
 
+#### Scenario: A duration is edited
+
+- GIVEN a unit carrying a period, a window, a timeout or a lifetime — rate limit, quota, cache,
+  introspection, CORS preflight, backend timeout, circuit breaker, concurrency retry, streaming
+- WHEN its form renders
+- THEN the duration SHALL be typed as an amount and a unit (seconds, minutes, hours, days; or
+  milliseconds, seconds and minutes for a timeout), and stored as a whole number of the unit the
+  vocabulary uses
+- AND a stored value SHALL open in the largest unit it is a whole number of, so a month-long quota
+  reads "30 days" rather than 2592000 in a box labelled seconds
+- AND the collapsed row's summary SHALL use the same short units ("30d", "2h", "90s")
+
+#### Scenario: A unit's note explains its arithmetic
+
+- GIVEN a unit counted per gateway (rate limit, concurrency, circuit breaker) or across all of them
+  (quota)
+- WHEN its note renders
+- THEN it SHALL say which, and the total with the number of gateways running, in the reader's
+  words — "per gateway", "in total", "across all gateways" — without naming the configuration poll,
+  the fleet or an instance
+- AND a reference that names nothing registered SHALL say that every request through the route is
+  refused until it does, and what to do — choose another, add a credential, or ask an administrator
+  — without naming the file an administrator registers it in
+
 #### Scenario: A unit is detached
 
 - GIVEN an attached resource-level unit

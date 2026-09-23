@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { LogHistogram } from "../api";
+import { Notice } from "../components";
 import { formatClock, formatDateTimeShort } from "../lib/datetime";
 
 /**
@@ -63,7 +64,9 @@ export function LogsHistogram({
     return () => window.removeEventListener("keydown", onKey);
   }, [drag]);
 
-  if (error) return <div className="logs-hist-note">Timeline unavailable: {error}</div>;
+  // The one place the timeline's failure is said. The panel above it used to print the same error
+  // in a banner as well, so one failed request read as two problems.
+  if (error) return <Notice kind="error">The timeline could not be drawn: {error}</Notice>;
   if (!data && loading) return <div className="logs-hist-skeleton" aria-hidden="true" />;
   if (!data) return null;
 
@@ -143,6 +146,8 @@ export function LogsHistogram({
         </button>
       </div>
       <div className="logs-hist-main">
+        {/* The only inline styles on the workspace, and deliberately so: each label's offset is
+            computed from the data, and a class cannot carry a number it does not know. */}
         <div className="logs-hist-yaxis">
           {ticks.map((value) => (
             <span

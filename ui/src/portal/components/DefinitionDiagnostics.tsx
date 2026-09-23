@@ -4,15 +4,18 @@
 // its output: `lintSource` was exported and never called, so the only thing that told an author
 // their document was unacceptable was a 400 from `POST /api/publish`, after the wizard had closed.
 // The two rules that reject real-world documents most often — it must be JSON, and every `$ref`
-// must point inside it — were not even checked, because the Azure-era validator this was ported
-// from cared about a version matrix instead.
+// must point inside it — were not even checked before this.
+//
+// A sub-section (`h4`) rather than a `Panel`: it always sits under the editor it judges, and both of
+// the places that draw it — the publish wizard and the workspace's Definition panel — are already a
+// panel. Two boxes, one inside the other, was the nesting the consistency pass removed.
 
 import { useMemo } from 'react';
-import { Notice, Panel } from '../../components';
+import { Notice, StatusChip } from '../../components';
+import { diagnosticChip } from '../../lib/status';
 import { convertSource, lintDefinition, type SpecDiagnostic } from '../lib/specValidate';
 
 const ORDER = { error: 0, warning: 1, info: 2 } as const;
-const TONE = { error: 'err', warning: 'warn', info: 'info' } as const;
 
 /** `['paths', '/pets', 'get']` reads as `paths./pets.get`, which is what the editor shows. */
 function pathOf(diagnostic: SpecDiagnostic): string | null {
@@ -44,34 +47,38 @@ export function DefinitionDiagnostics({
 
   if (sorted.length === 0) {
     // Said out loud rather than left blank. "No news" and "not checked" look identical otherwise,
-    // and this panel's whole purpose is to be the thing the author trusts before they publish.
+    // and this section's whole purpose is to be the thing the author trusts before they publish.
     return (
-      <Panel title="Definition checks">
+      <section className="workspace-section definition-checks">
+        <h4>Definition checks</h4>
         <Notice kind="ok">
-          No problems found. This is what the control plane checks on publish, run here as you type
-          — it is structural, so it does not follow every <code>$ref</code> target or validate each
-          schema.
+          No problems found. These are the checks publishing runs; they look at the structure, not
+          at every schema.
         </Notice>
-      </Panel>
+      </section>
     );
   }
 
   return (
-    <Panel
-      title={`Definition checks · ${errors} ${errors === 1 ? 'error' : 'errors'}, ${warnings} ${warnings === 1 ? 'warning' : 'warnings'}`}
-    >
+    <section className="workspace-section definition-checks">
+      <h4>
+        Definition checks · {errors} {errors === 1 ? 'error' : 'errors'}, {warnings}{' '}
+        {warnings === 1 ? 'warning' : 'warnings'}
+      </h4>
       {errors > 0 && (
         <Notice kind="error">
-          {errors === 1 ? 'This is' : 'These are'} what publishing would be refused for.
+          Publishing refuses {errors === 1 ? 'a definition with this error' : 'a definition with these errors'}.
         </Notice>
       )}
       {/* The one problem with a one-click answer. Converting is offered rather than done, because
           re-emitting somebody's YAML rewrites their comments, their quoting and their key order —
-          a thing to accept, not a thing to have happen. */}
+          a thing to accept, not a thing to have happen. Not `primary`: the screen's one primary is
+          its Save, and this is a step on the way to it. */}
       {result.convertible && onFix && (
         <div className="native-actions">
           <button
-            className="btn primary"
+            type="button"
+            className="btn"
             onClick={() => onFix(convertSource(source, 'yaml', 'json'))}
           >
             Convert this document to JSON
@@ -84,9 +91,7 @@ export function DefinitionDiagnostics({
       <ul className="plain diagnostics">
         {sorted.map((diagnostic, index) => (
           <li key={index} className={`diagnostic sev-${diagnostic.severity}`}>
-            {/* The estate's closed tone vocabulary — `err`, `warn`, `info` — rather than three new
-                words meaning the same three things. */}
-            <span className={`chip ${TONE[diagnostic.severity]}`}>{diagnostic.severity}</span>
+            <StatusChip chip={diagnosticChip(diagnostic.severity)} />
             <span className="diagnostic-body">
               <span>{diagnostic.message}</span>
               {(pathOf(diagnostic) || diagnostic.line !== undefined) && (
@@ -99,6 +104,6 @@ export function DefinitionDiagnostics({
           </li>
         ))}
       </ul>
-    </Panel>
+    </section>
   );
 }

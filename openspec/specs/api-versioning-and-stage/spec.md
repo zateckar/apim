@@ -15,7 +15,11 @@ an order. See *Release States* in `openspec/project.md`.
 - GIVEN an API bound to a subset of gateways
 - WHEN its new-version dialog publishes
 - THEN it SHALL carry the saved gateway selection into the new resource
-- AND the dialog SHALL explain that access follows the selected product's subscriptions
+- AND the dialog SHALL explain that access follows the selected product's subscriptions — as a
+  warning when both versions would share one product, so one key opens both, and as a plain
+  sentence otherwise
+- AND it SHALL offer **Cancel**, and say beside the disabled publish control when the application has
+  no active product to put the version in
 
 #### Scenario: A different revision is selected
 
@@ -28,7 +32,12 @@ an order. See *Release States* in `openspec/project.md`.
 
 - GIVEN the workspace's promotion dialog
 - WHEN it explains what will be promoted
-- THEN it SHALL name saved configuration and tell the publisher to save pending edits first
+- THEN it SHALL say that the saved definition and settings are what is copied, and that backends
+  already set in the target are kept
+- AND when the workspace holds unsaved edits it SHALL warn that they are not promoted, naming the
+  tabs that hold them, rather than a general reminder shown whether or not there is anything to save
+- AND it SHALL offer **Cancel** beside **Promote**, and a successful promotion SHALL switch to the
+  target environment through the unsaved-edits question, never around it
 
 ### Requirement: Two versions of an API are two resources
 
@@ -96,6 +105,19 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN each SHALL show its number, when it was written, by whom, and — per environment — whether it
   is live, was live, or has never been released there
 - AND a structural diff against the previous revision SHALL be available
+- AND a comparison or rollback that cannot be offered SHALL be shown disabled with its reason drawn
+  beside it — the revision was pruned, it is the first, the one before it was pruned, the reader may
+  not change this API, it is already live here, it was never released here — rather than in a
+  tooltip
+- AND an API with no revision yet SHALL offer the way to the definition as its empty state's action
+
+#### Scenario: The newest revision is corrected
+
+- GIVEN the revisions panel's correction form, which replaces the definition of a revision that has
+  never been released, keeping its number
+- WHEN a definition has been pasted into it
+- THEN leaving the workspace SHALL ask first, because the pasted document is an unsaved edit
+- AND its submit control SHALL say why it is disabled while nothing has been pasted
 
 ### Requirement: Promote only along the chain, and only what has already reached the fleet
 

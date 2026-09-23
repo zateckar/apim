@@ -3,11 +3,13 @@ import { EMPTY_CATALOGUE, PolicyForm, type CredentialCatalogue } from "./PolicyF
 import { PlaygroundPanel } from "../views/PlaygroundPanel";
 import { LogsPanel } from "../views/LogsPanel";
 import { RevisionsPanel } from "../views/RevisionsPanel";
-import { Fragment, useState, useId } from "react";
+import { Fragment, useEffect, useState, useId } from "react";
 import { EditorView } from "@codemirror/view";
 import type { Session } from "../App";
 import { api, type Locality } from "../api";
 import {
+  Action,
+  CopyButton,
   EmptyState,
   ChoiceField,
   TextField,
@@ -18,19 +20,26 @@ import {
   OperationList,
   Panel,
   Skeleton,
+  StatusChip,
   Term,
+  envLabel,
   go,
   useAction,
   useAsync,
+  useLeaveGuard,
+  usePageTitle,
+  whenLeaving,
 } from "../components";
 import { ALLOWED, type Permission } from "../lib/capabilities";
+import { lifecycleChip, localityChip } from "../lib/status";
+import { KindBadge } from "./components/KindBadge";
 import { parse } from "yaml";
 import CodeMirror from "@uiw/react-codemirror";
 import { yaml } from "@codemirror/lang-yaml";
 import { command, listAll } from "./client";
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
-import { OperationsCard, WsdlServicesCard } from "./components/OperationsCard";
+import { OperationsCard, SoapOperationsCard } from "./components/OperationsCard";
 import { DefinitionDiagnostics } from "./components/DefinitionDiagnostics";
 import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
@@ -169,24 +178,30 @@ export function GatewayPicker({
   if (localities.length === 0) {
     return (
       <p className="muted">
-        {environment.toUpperCase()} has no gateway. An administrator adds one on the Gateways
+        {envLabel(environment)} has no gateway. An administrator adds one on the Gateways
         screen; until then nothing published here is served.
       </p>
     );
   }
+  // Each line is what a consumer will call, so each line can be copied — selecting a URL out of a
+  // label that also toggles a checkbox was the only way to take one away before.
   const addresses = (locality: Locality) =>
     locality.addresses.length === 0 ? (
-      <li className="muted small">no published address yet</li>
+      <li className="muted small">No published address yet</li>
     ) : (
       locality.addresses.map((address) => (
-        <li key={address.url}>
-          <span className="badge">
+        <li key={address.url} className="copy-row">
+          <span className="chip">
             {address.network === "intranet" ? "Intranet" : "Internet"}
           </span>
-          <span className="mono">
+          <code>
             {address.url}
             {path}
-          </span>
+          </code>
+          <CopyButton
+            value={`${address.url}${path}`}
+            what={`the ${address.network === "intranet" ? "intranet" : "internet"} address on ${locality.name}`}
+          />
         </li>
       ))
     );
@@ -199,7 +214,7 @@ export function GatewayPicker({
       <div className="gateway-list">
         <p className="muted">
           Answers on <strong>{only.name}</strong>
-          {only.label ? ` · ${only.label}` : ""} — the only gateway {environment.toUpperCase()} has.
+          {only.label ? ` · ${only.label}` : ""} — the only gateway {envLabel(environment)} has.
         </p>
         <ul className="url-list">{addresses(only)}</ul>
       </div>
@@ -210,7 +225,7 @@ export function GatewayPicker({
       <div className="pick-list-head">
         <strong>Gateways</strong>
         <span className="muted small">
-          {selected.length} of {localities.length} selected · {environment.toUpperCase()}
+          {selected.length} of {localities.length} selected · {envLabel(environment)}
         </span>
       </div>
       {localities.map((locality) => {
@@ -235,7 +250,8 @@ export function GatewayPicker({
               <span>
                 <strong>{locality.name}</strong>
                 {locality.label ? <span className="muted"> · {locality.label}</span> : null}
-                {locality.paused && <span className="badge warn">paused</span>}
+                {" "}
+                <StatusChip chip={localityChip(locality)} />
               </span>
               <ul className="url-list">{addresses(locality)}</ul>
             </span>
@@ -243,8 +259,8 @@ export function GatewayPicker({
         );
       })}
       <p className="hint">
-        An API must be published on at least one gateway. Each address above is a gateway's own
-        published hostname; its replicas sit behind it and are never called directly.
+        An API must be published on at least one gateway, so the last one ticked cannot be
+        unticked.
       </p>
     </div>
   );
@@ -352,6 +368,23 @@ export function Publish({ session: s }: { session: Session }) {
   const [gateways, setGateways] = useState<string[] | null>(null);
   const selected = gateways ?? localities.map((l) => l.name);
 
+  // The address the wizard lands on once it has published, set rather than navigated to from the
+  // submit handler: the leave guard below is still registered in that handler, so navigating from
+  // it asked "leave without saving?" about the API that had just been saved.
+  const [published, setPublished] = useState<string | null>(null);
+  const started = Boolean(
+    name.trim() || description.trim() || docsUrl.trim() || backendUrl.trim() || domain ||
+      spec.trim() || url.trim(),
+  );
+  useLeaveGuard(started && published === null, `the ${noun} you were publishing`);
+  useEffect(() => {
+    if (published === null) return;
+    s.setEnvironment(s.meta.chain[0]!);
+    go(`/${s.application}/apis/${published}`);
+  }, [published]);
+  // The route's title is "Publish an API"; the wizard also publishes the other two kinds.
+  usePageTitle(fixedKind ? `Publish ${noun === "API" ? "an API" : `an ${noun}`}` : null);
+
   const duplicate = resources.data?.items.find(resource => resource.applicationId === s.application && resource.name.toLowerCase() === name.trim().toLowerCase());
   const nameProblem = nameError(name) ?? (duplicate ? `This application already has ${name}. Open its workspace to edit it or create a new version.` : null);
   const versionProblem = versionError(apiVersion);
@@ -385,7 +418,7 @@ export function Publish({ session: s }: { session: Session }) {
   const blocked = missing(at);
 
   return (
-    <Panel title={`Publish ${noun} to ${first.toUpperCase()}`} className="publish-flow">
+    <Panel title={`Publish ${noun} to ${envLabel(first)}`} className="publish-flow">
       <div className="stepper">
         {PUBLISH_STEPS.map((entry, index) => (
           <Fragment key={entry.key}>
@@ -435,8 +468,7 @@ export function Publish({ session: s }: { session: Session }) {
               ] = url;
             else body.spec = kind === "soap" ? spec : parse(spec);
             const result = await command("/api/publish", body);
-            s.setEnvironment(s.meta.chain[0]!);
-            go(`/${s.application}/apis/${result.resourceId}`);
+            setPublished(result.resourceId);
           });
         }}
       >
@@ -535,7 +567,7 @@ export function Publish({ session: s }: { session: Session }) {
         {at === 2 && (
           <>
             <div className="native-form-grid">
-              <Field label={`${first.toUpperCase()} backend URL`}>
+              <Field label={`${envLabel(first)} backend URL`}>
                 <input
                   type="url"
                   value={backendUrl}
@@ -586,7 +618,7 @@ export function Publish({ session: s }: { session: Session }) {
               className="btn primary"
               disabled={w.busy || !s.application || Boolean(blocked)}
             >
-              {w.busy ? "Publishing…" : `Publish to ${first.toUpperCase()}`}
+              {w.busy ? "Publishing…" : `Publish to ${envLabel(first)}`}
             </button>
           )}
           {at === last && (
@@ -724,6 +756,192 @@ export function definitionChanged(edited: string, stored: string, kind: string):
   }
 }
 
+/** What each workspace tab is called on screen — in the tab strip, and wherever Save names one. */
+const TAB_LABEL: Record<string, string> = {
+  definition: "Definition",
+  properties: "Properties",
+  policies: "Policies",
+  subscriptions: "Subscriptions",
+  playground: "Playground",
+  logs: "Logs",
+  revisions: "Revisions",
+  history: "History",
+};
+
+/** "Definition", "Definition and Properties", "Definition, Properties and Policies". */
+function listOf(words: string[]): string {
+  if (words.length <= 1) return words.join("");
+  return `${words.slice(0, -1).join(", ")} and ${words[words.length - 1]}`;
+}
+
+/**
+ * Everything the workspace's one Save writes, as the editor holds it. The same shape describes what
+ * was stored, so "what changed" is a comparison of two of these rather than a check written once
+ * per field in the save handler and again in every place that needs to know.
+ */
+export interface WorkspaceEdits {
+  description: string;
+  docsUrl: string;
+  domain: string;
+  subdomain: string;
+  pool: PoolEntry[];
+  rule: string;
+  gateways: string[];
+  policy: string;
+  certificate: string;
+  spec: string;
+}
+
+/** The pool as the configure endpoint takes it: blank rows dropped, a weight only where it means something. */
+export function poolBody(pool: PoolEntry[], rule: string): PoolEntry[] {
+  return pool
+    .filter((entry) => entry.url.trim())
+    .map((entry) => ({
+      url: entry.url.trim(),
+      ...(rule === "round-robin" && entry.weight && entry.weight !== 1
+        ? { weight: Number(entry.weight) }
+        : {}),
+    }));
+}
+
+/** Two policy documents are the same policy when they parse to the same thing; whitespace is not a change. */
+function samePolicy(a: string, b: string): boolean {
+  try {
+    return JSON.stringify(JSON.parse(a)) === JSON.stringify(JSON.parse(b));
+  } catch {
+    return a === b;
+  }
+}
+
+/**
+ * The tabs holding edits Save has not written yet, in tab order.
+ *
+ * Save is one button for three tabs, so without this a reader who changed a backend, wandered to
+ * Policies and pressed Save could not tell what they were about to deploy — and one who navigated
+ * away lost an edit on a tab they were no longer looking at, without being asked. The tab strip
+ * marks each of these, the leave guard names them, and the promotion dialog warns about them.
+ */
+export function dirtyTabs(edited: WorkspaceEdits, stored: WorkspaceEdits, kind: string): string[] {
+  const tabs: string[] = [];
+  if (definitionChanged(edited.spec, stored.spec, kind)) tabs.push("definition");
+  const sameGateways = [...edited.gateways].sort().join("\n") === [...stored.gateways].sort().join("\n");
+  if (
+    edited.description !== stored.description ||
+    edited.docsUrl.trim() !== stored.docsUrl.trim() ||
+    edited.domain !== stored.domain ||
+    edited.subdomain !== stored.subdomain ||
+    edited.rule !== stored.rule ||
+    JSON.stringify(poolBody(edited.pool, edited.rule)) !== JSON.stringify(poolBody(stored.pool, stored.rule)) ||
+    !sameGateways
+  )
+    tabs.push("properties");
+  if (!samePolicy(edited.policy, stored.policy) || edited.certificate !== stored.certificate)
+    tabs.push("policies");
+  return tabs;
+}
+
+export interface SaveBlocker {
+  /** The tab the problem is on, so Save can offer to open it. */
+  tab: string;
+  reason: string;
+}
+
+/**
+ * What stops Save, and on which tab.
+ *
+ * The workspace's Save is shared by Definition, Properties and Policies, and it used to be disabled
+ * by a missing domain whichever of the three the reader was on — while an unparseable policy or
+ * definition was not checked at all, and failed inside the save handler as a JSON error that did
+ * not say where. Each problem is named here with the tab it lives on, and Save lists them where the
+ * button is, with a way to the ones that are somewhere else.
+ */
+export function saveBlockers(input: {
+  domain: string;
+  docsUrl: string;
+  pool: PoolEntry[];
+  policy: string;
+  spec: string;
+  kind: string;
+  definitionChanged: boolean;
+}): SaveBlocker[] {
+  const blockers: SaveBlocker[] = [];
+  // Only an edited definition: an unchanged one is not sent, so it cannot fail the save.
+  if (input.definitionChanged && input.kind !== "soap") {
+    let parsed: unknown = null;
+    try {
+      parsed = parse(input.spec);
+    } catch {
+      parsed = undefined;
+    }
+    if (parsed === undefined)
+      blockers.push({ tab: "definition", reason: "The definition does not parse as JSON or YAML." });
+    else if (parsed === null || typeof parsed !== "object")
+      blockers.push({ tab: "definition", reason: "The definition is empty." });
+  }
+  if (!input.domain)
+    blockers.push({
+      tab: "properties",
+      reason: "Choose a domain. It is the first segment of the address.",
+    });
+  const docs = httpUrlError(input.docsUrl, true);
+  if (docs) blockers.push({ tab: "properties", reason: `Documentation link: ${docs}` });
+  input.pool.forEach((entry, index) => {
+    const problem = entry.url.trim() ? httpUrlError(entry.url.trim()) : null;
+    if (problem) blockers.push({ tab: "properties", reason: `Backend ${index + 1}: ${problem}` });
+  });
+  let policy: unknown = null;
+  try {
+    policy = JSON.parse(input.policy);
+  } catch {
+    policy = undefined;
+  }
+  if (policy === undefined || policy === null || typeof policy !== "object" || Array.isArray(policy))
+    blockers.push({
+      tab: "policies",
+      reason: "The policy under Advanced settings is not a valid JSON object.",
+    });
+  return blockers;
+}
+
+/**
+ * The move a save would make to the published address, or `null` when it makes none.
+ *
+ * The properties tab used to warn about a move whenever the API had no stored domain — including
+ * before one was chosen, when it announced a move from `/checkout/v2` to `/checkout/v2` — and said
+ * nothing at all when an API that already had a domain was moved to another. The warning is about
+ * the address, so it is decided by the address.
+ */
+export function addressMove(
+  stored: string | null | undefined,
+  next: string | null | undefined,
+): { from: string; to: string } | null {
+  const from = (stored ?? "").replace(/\/+$/, "");
+  const to = (next ?? "").replace(/\/+$/, "");
+  if (!from || !to || from === to) return null;
+  return { from, to };
+}
+
+/** What was stored, in the shape the editor holds it. */
+function storedEdits(d: any, localities: Locality[]): WorkspaceEdits {
+  return {
+    description: d.resource.description ?? "",
+    docsUrl: d.resource.docsUrl ?? "",
+    domain: d.resource.domain ?? "",
+    subdomain: d.resource.subdomain ?? "",
+    pool: (d.settings?.backend?.pool ?? []).map((entry: PoolEntry) => ({ ...entry })),
+    rule: d.settings?.backend?.rule ?? "failover",
+    // Where it answers today. Falling back to every gateway rather than to none: a row published
+    // before an environment could hold more than one is on all of them, and an empty list here
+    // would read as "on nothing" and refuse the next save.
+    gateways: (d.settings?.gateways ?? []).length
+      ? [...d.settings.gateways]
+      : localities.map((l) => l.name),
+    policy: JSON.stringify(d.settings?.policy ?? {}, null, 2),
+    certificate: d.settings?.backend?.clientCertRef ?? "",
+    spec: d.definition ?? "",
+  };
+}
+
 function EditorForm({
   data: d,
   session: s,
@@ -740,9 +958,15 @@ function EditorForm({
   tick: number;
 }) {
   const tabId = useId();
+  const ENV = envLabel(s.environment);
   // The link in the chain before this one, which is where an unpublished API is promoted from.
   // `null` at the head of the chain, where there is nothing before it and the answer is to publish.
   const previousEnvironment = s.meta.chain[s.meta.chain.indexOf(s.environment) - 1] ?? null;
+  const environmentMeta = s.meta.environments.find(
+    (e) => e.environment === s.environment,
+  );
+  const localities = environmentMeta?.localities ?? [];
+  const [stored] = useState(() => storedEdits(d, localities));
   const w = useAction(),
     // How a link lands on the right panel: the dashboard's traffic table opens the Logs tab, an
     // attention row opens Policies. The address may name it as a segment — `/apis/:id/policy`,
@@ -750,26 +974,24 @@ function EditorForm({
     [tab, setTab] = useState(() =>
       editorTab(asked ?? new URLSearchParams(location.search).get("tab")),
     ),
-    [description, setDescription] = useState(d.resource.description ?? ""),
-    [docsUrl, setDocsUrl] = useState(d.resource.docsUrl ?? ""),
+    [description, setDescription] = useState(stored.description),
+    [docsUrl, setDocsUrl] = useState(stored.docsUrl),
     [pool, setPool] = useState<PoolEntry[]>(() =>
-      (d.settings?.backend?.pool ?? []).length
-        ? d.settings.backend.pool.map((entry: PoolEntry) => ({ ...entry }))
-        : [{ url: "" }],
+      stored.pool.length ? stored.pool.map((entry) => ({ ...entry })) : [{ url: "" }],
     ),
-    [rule, setRule] = useState<string>(d.settings?.backend?.rule ?? "failover"),
-    [domain, setDomain] = useState<string>(d.resource.domain ?? ""),
-    [subdomain, setSubdomain] = useState<string>(d.resource.subdomain ?? ""),
+    [rule, setRule] = useState<string>(stored.rule),
+    [domain, setDomain] = useState<string>(stored.domain),
+    [subdomain, setSubdomain] = useState<string>(stored.subdomain),
     [spec, setSpec] = useState(() => prettyDefinition(d.definition ?? "", d.resource.kind)),
-    [policy, setPolicy] = useState(
-      JSON.stringify(d.settings?.policy ?? {}, null, 2),
-    ),
+    [policy, setPolicy] = useState(stored.policy),
     [promote, setPromote] = useState(false),
     [version, setVersion] = useState(false),
-    [certificate, setCertificate] = useState(
-      d.settings?.backend?.clientCertRef ?? "",
-    ),
+    [certificate, setCertificate] = useState(stored.certificate),
+    [gateways, setGateways] = useState<string[]>(() => [...stored.gateways]),
     [subscribe, setSubscribe] = useState(false);
+  // The shell's heading names the object, not the kind of screen: two workspaces open in two tabs
+  // were both "API workspace", and the version is half of which API it is.
+  usePageTitle(`${d.resource.name} ${d.resource.apiVersion}`);
   const certificates = useAsync(
     () =>
       d.resource.canEdit
@@ -804,22 +1026,11 @@ function EditorForm({
   const first = s.meta.chain[0]!;
   const versions: Array<{ id: string; apiVersion: string; lifecycle: string }> =
     d.versions ?? [];
-  const environmentMeta = s.meta.environments.find(
-    (e) => e.environment === s.environment,
-  );
-  const localities = environmentMeta?.localities ?? [];
-  // Where it answers today. Falling back to every gateway rather than to none: a row published
-  // before an environment could hold more than one is on all of them, and an empty list here
-  // would read as "on nothing" and refuse the next save.
-  const [gateways, setGateways] = useState<string[]>(() =>
-    (d.settings?.gateways ?? []).length
-      ? [...d.settings.gateways]
-      : localities.map((l: Locality) => l.name),
-  );
+  const lifecycle = versions.find((v) => v.id === d.resource.id)?.lifecycle;
   /**
    * The address, derived from the taxonomy rather than typed, and always ending in the version —
-   * the same shape every other API in the estate has, so a consumer reading the URL knows which
-   * contract they are on.
+   * the same shape every other API has, so a consumer reading the URL knows which contract they
+   * are on.
    */
   const basePath = domain
     ? publishedPath({
@@ -829,198 +1040,291 @@ function EditorForm({
         apiVersion: d.resource.apiVersion,
       })
     : (d.settings?.basePath ?? "");
-  /** Changes this API has made that the fleet has not finished acknowledging. */
+  const move = domain ? addressMove(d.settings?.basePath, basePath) : null;
+  /** Changes this API has made that have not reached every gateway yet. */
   const inFlight = operations.filter(
     (operation) => !["complete", "superseded", "failed"].includes(operation.state),
   ).length;
   /** Load balancing and the breaker need somewhere to fail over to. */
   const members = pool.filter((entry) => entry.url.trim()).length;
   const canBalance = members >= 2;
+  const edits: WorkspaceEdits = {
+    description, docsUrl, domain, subdomain, pool, rule, gateways, policy, certificate, spec,
+  };
+  const dirty = dirtyTabs(edits, stored, d.resource.kind);
+  const definitionEdited = dirty.includes("definition");
+  const blockers = saveBlockers({
+    domain, docsUrl, pool, policy, spec, kind: d.resource.kind, definitionChanged: definitionEdited,
+  });
+  const dirtyNames = listOf(dirty.map((t) => TAB_LABEL[t]!.toLowerCase()));
+  useLeaveGuard(
+    dirty.length > 0,
+    `the ${dirtyNames} of ${d.resource.name} ${d.resource.apiVersion} in ${ENV}`,
+  );
+  /**
+   * The first address a consumer would call, for the head of the workspace. The full list, one
+   * line per gateway and network, is on Properties; this is the one somebody came to copy.
+   */
+  const storedPath = d.settings?.basePath ?? "";
+  const publicUrl = d.published && storedPath
+    ? (() => {
+        const on = localities.filter((l) => (stored.gateways).includes(l.name));
+        const address = on.flatMap((l) => l.addresses)[0];
+        return address ? `${address.url}${storedPath}` : null;
+      })()
+    : null;
+  const readOnly = d.resource.canEdit ? null : "Read-only";
+  const promotePermission: Permission = readOnly
+    ? { enabled: false, reason: readOnly }
+    : !d.published
+      ? { enabled: false, reason: `Not published in ${ENV}` }
+      : ALLOWED;
+  const versionPermission: Permission =
+    s.environment !== first
+      ? { enabled: false, reason: `New versions start in ${envLabel(first)}` }
+      : promotePermission;
+  const saveTab = ["definition", "properties", "policies"].includes(tab);
+  const canSave =
+    d.resource.canEdit && d.published && blockers.length === 0 && dirty.length > 0;
   let doc: unknown = null;
   try {
     doc = parse(spec);
   } catch {}
+
+  function save() {
+    void w.run(async () => {
+      const body: any = {
+        environment: s.environment,
+        description,
+        // `""` is how the link is taken off — absent would mean "the form does not
+        // carry this field", which is what the definition and policy tabs mean.
+        docsUrl: docsUrl.trim(),
+        domain,
+        subdomain: subdomain || null,
+        basePath,
+        gateways,
+      };
+      if (certificate !== stored.certificate) body.clientCertRef = certificate || null;
+      const nextPool = poolBody(pool, rule);
+      if (
+        JSON.stringify(nextPool) !== JSON.stringify(poolBody(stored.pool, stored.rule)) ||
+        rule !== stored.rule
+      ) {
+        body.pool = nextPool;
+        body.rule = rule;
+      }
+      if (!samePolicy(policy, stored.policy)) body.policy = JSON.parse(policy);
+      if (definitionEdited) body.spec = d.resource.kind === "soap" ? spec : parse(spec);
+      await command(`/api/resources/${d.resource.id}/configure`, body, d.resource.etag);
+      refresh();
+    });
+  }
+
+  const definitionPanel = (
+    <Panel title="Definition">
+      <CodeMirror
+        value={spec}
+        extensions={[yaml(), EditorView.lineWrapping]}
+        minHeight="340px"
+        maxHeight="560px"
+        editable={d.resource.canEdit && !!d.settings}
+        onChange={setSpec}
+      />
+      {/* Under the editor, so the text being judged is the text on screen, and in the same
+          column, so a diagnostic and the line it is about are never in different halves. */}
+      <DefinitionDiagnostics
+        source={spec}
+        kind={d.resource.kind}
+        onFix={d.resource.canEdit ? setSpec : undefined}
+      />
+    </Panel>
+  );
+
   return (
-    <>
-      <Panel
-        title={d.resource.name}
-        className="api-workspace"
-        actions={
-          <div className="native-actions">
-            {/* The documentation link, where somebody looking at the API is: the description says
-                what it is, this is the rest of the story. Absent rather than disabled — unlike the
-                controls below there is nothing to explain, the owner simply has not set one. */}
-            {d.resource.docsUrl && (
-              <a
-                className="btn"
-                href={d.resource.docsUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-              >
-                Open wiki ↗
-              </a>
+    <div className="api-workspace">
+      {/* The head is the API's identity and the acts that move it between environments and
+          versions. It is not a card: the shell's heading already names the API, and the panel
+          that used to carry the name again held every tab's own panels inside it — a box around
+          boxes, which the consistency pass removed. */}
+      <div className="workspace-head">
+        <div className="workspace-identity">
+          <p className="workspace-summary">
+            {s.applicationName(d.resource.applicationId)} ·{" "}
+            <KindBadge kind={d.resource.kind} /> · {d.resource.apiVersion} ·{" "}
+            {d.resource.domain
+              ? `${d.resource.domain}${d.resource.subdomain ? ` / ${d.resource.subdomain}` : ""}`
+              : "No domain yet"}{" "}
+            · Products: {d.products.map((p: any) => p.name).join(", ") || "None"}
+            {lifecycle && lifecycleChip(lifecycle as any) && (
+              <>
+                {" "}
+                <StatusChip chip={lifecycleChip(lifecycle as any)} />
+              </>
             )}
-            {/* Beside "New version", because switching version and making one are the same kind
-                of act — moving between siblings of the thing on screen. It was a page-wide `Field`
-                under the summary line, which put a navigation control among the API's properties
-                and gave a two-character value a thousand pixels of box. */}
-            {versions.length > 1 && (
-              <label className="workspace-version">
-                <span className="lbl">Version</span>
-                <select
-                  aria-label="Version"
-                  value={d.resource.id}
-                  onChange={(e) => go(`/${s.application}/apis/${e.target.value}`)}
-                >
-                  {versions.map((v) => (
-                    <option key={v.id} value={v.id}>
-                      {v.apiVersion}
-                      {v.lifecycle === "active" ? "" : ` (${v.lifecycle})`}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
-            {/* Present and disabled rather than absent, with the reason on the screen: a control
-                that vanishes leaves somebody wondering whether the feature exists at all, and on a
-                foreign API that was the only answer this workspace gave (finding 8). */}
-            {s.environment === first ? (
-              <button
-                className="btn"
-                disabled={w.busy || !d.resource.canEdit || !d.published}
-                title={d.resource.editReason ?? undefined}
-                onClick={() => setVersion(true)}
-              >
-                New version
-              </button>
-            ) : (
-              <span className="muted">
-                A new version starts in {first.toUpperCase()} — switch
-                environment to publish one.
-              </span>
-            )}
-            {next && (
-              <button
-                className="btn primary"
-                disabled={w.busy || !d.resource.canEdit || !d.published}
-                title={d.resource.editReason ?? undefined}
-                onClick={() => setPromote(true)}
-              >
-                Promote to {next.toUpperCase()}
-              </button>
-            )}
-          </div>
-        }
-      >
-        {d.resource.editReason && (
-          <Notice kind="warn">{d.resource.editReason}</Notice>
-        )}
-        <p className="workspace-summary">
-          {s.applicationName(d.resource.applicationId)} ·{" "}
-          {d.resource.kind.toUpperCase()} · {d.resource.apiVersion} ·{" "}
-          {d.resource.domain
-            ? `${d.resource.domain}${d.resource.subdomain ? ` / ${d.resource.subdomain}` : ""}`
-            : "no domain yet"}{" "}
-          · Products: {d.products.map((p: any) => p.name).join(", ") || "None"}
-        </p>
-        <div className="workspace-tabs" role="tablist" aria-label="API workspace panels">
-          {EDITOR_TABS.map((t) => (
-            <button
-              className={tab === t ? "active" : ""}
-              type="button"
-              role="tab"
-              id={`${tabId}-${t}`}
-              aria-selected={tab === t}
-              aria-controls={`${tabId}-panel`}
-              tabIndex={tab === t ? 0 : -1}
-              key={t}
-              onClick={() => setTab(t)}
-              onKeyDown={(event) => {
-                const index = EDITOR_TABS.indexOf(t);
-                const next = event.key === "ArrowRight" ? (index + 1) % EDITOR_TABS.length
-                  : event.key === "ArrowLeft" ? (index + EDITOR_TABS.length - 1) % EDITOR_TABS.length
-                  : event.key === "Home" ? 0 : event.key === "End" ? EDITOR_TABS.length - 1 : null;
-                if (next === null) return;
-                event.preventDefault();
-                setTab(EDITOR_TABS[next]!);
-                (event.currentTarget.parentElement?.children[next] as HTMLElement)?.focus();
-              }}
-            >
-              {t.charAt(0).toUpperCase() + t.slice(1)}
-            </button>
-          ))}
+          </p>
+          {publicUrl && (
+            <div className="copy-row workspace-url">
+              <span className="muted small">Answers at</span>
+              <code>{publicUrl}</code>
+              <CopyButton value={publicUrl} what="the public address" />
+            </div>
+          )}
         </div>
-        <div role="tabpanel" id={`${tabId}-panel`} aria-labelledby={`${tabId}-${tab}`} tabIndex={0}>
+        <div className="native-actions">
+          {/* The documentation link, where somebody looking at the API is: the description says
+              what it is, this is the rest of the story. Absent rather than disabled — unlike the
+              controls beside it there is nothing to explain, the owner simply has not set one. */}
+          {d.resource.docsUrl && (
+            <a
+              className="btn"
+              href={d.resource.docsUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              Open wiki ↗
+            </a>
+          )}
+          {/* Beside "New version", because switching version and making one are the same kind
+              of act — moving between siblings of the thing on screen. */}
+          {versions.length > 1 && (
+            <label className="workspace-version">
+              <span className="lbl">Version</span>
+              <select
+                aria-label="Version"
+                value={d.resource.id}
+                onChange={(e) => go(`/${s.application}/apis/${e.target.value}`)}
+              >
+                {versions.map((v) => (
+                  <option key={v.id} value={v.id}>
+                    {v.apiVersion}
+                    {v.lifecycle === "active" ? "" : ` (${v.lifecycle})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          {/* Present and disabled rather than absent, with a short reason under each: a control
+              that vanishes leaves somebody wondering whether the feature exists at all, and on a
+              foreign API that was the only answer this workspace gave (finding 8). The reason used
+              to be a tooltip on one and a sentence in place of the other. */}
+          <Action permission={versionPermission} busy={w.busy} onClick={() => setVersion(true)}>
+            New version
+          </Action>
+          {next && (
+            <Action
+              permission={promotePermission}
+              busy={w.busy}
+              className="primary"
+              onClick={() => setPromote(true)}
+            >
+              Promote to {envLabel(next)}
+            </Action>
+          )}
+        </div>
+      </div>
+      {d.resource.editReason && <Notice kind="warn">{d.resource.editReason}</Notice>}
+      <div className="workspace-tabs" role="tablist" aria-label="API workspace panels">
+        {EDITOR_TABS.map((t) => (
+          <button
+            className={tab === t ? "active" : ""}
+            type="button"
+            role="tab"
+            id={`${tabId}-${t}`}
+            aria-selected={tab === t}
+            aria-controls={`${tabId}-panel`}
+            tabIndex={tab === t ? 0 : -1}
+            key={t}
+            onClick={() => setTab(t)}
+            onKeyDown={(event) => {
+              const index = EDITOR_TABS.indexOf(t);
+              const target = event.key === "ArrowRight" ? (index + 1) % EDITOR_TABS.length
+                : event.key === "ArrowLeft" ? (index + EDITOR_TABS.length - 1) % EDITOR_TABS.length
+                : event.key === "Home" ? 0 : event.key === "End" ? EDITOR_TABS.length - 1 : null;
+              if (target === null) return;
+              event.preventDefault();
+              setTab(EDITOR_TABS[target]!);
+              (event.currentTarget.parentElement?.children[target] as HTMLElement)?.focus();
+            }}
+          >
+            {TAB_LABEL[t]}
+            {/* Which tabs Save would write. One Save serves three tabs, and an edit on a tab you
+                are not looking at is otherwise invisible until it is deployed or lost. */}
+            {dirty.includes(t) && (
+              <>
+                <span className="tab-dirty" aria-hidden="true"> ●</span>
+                <span className="sr-only"> (unsaved changes)</span>
+              </>
+            )}
+          </button>
+        ))}
+      </div>
+      <div
+        role="tabpanel"
+        className="workspace-panel"
+        id={`${tabId}-panel`}
+        aria-labelledby={`${tabId}-${tab}`}
+        tabIndex={0}
+      >
         <Notice kind="error">{w.error}</Notice>
         {!d.published && (
-          <EmptyState
-            title={`Not published to ${s.environment.toUpperCase()}`}
-            detail="Everything on the panels below is per environment, and this one is serving none of it. A version reaches an environment by being promoted into it from the one before."
-            // The action is the environment it would come *from*, because "promote it" with no way
-            // to reach the screen that promotes is the dead end this rule exists to stop.
-            action={
-              previousEnvironment ? (
-                <button className="btn" onClick={() => s.setEnvironment(previousEnvironment)}>
-                  Open {previousEnvironment.toUpperCase()} and promote it →
-                </button>
-              ) : (
-                <Link to={`/${s.application}/publish`}>Publish an API →</Link>
-              )
-            }
-          />
+          <Panel>
+            <EmptyState
+              title={`Not published to ${ENV}`}
+              detail="Everything on these tabs is per environment, and this one serves none of it. A version reaches an environment by being promoted from the one before."
+              // The action is the environment it would come *from*, because "promote it" with no
+              // way to reach the screen that promotes is the dead end this rule exists to stop.
+              action={
+                previousEnvironment ? (
+                  <button
+                    className="btn"
+                    onClick={() => whenLeaving(() => s.setEnvironment(previousEnvironment))}
+                  >
+                    Open {envLabel(previousEnvironment)} and promote it →
+                  </button>
+                ) : (
+                  <Link className="btn" to={`/${s.application}/publish`}>
+                    Publish an API →
+                  </Link>
+                )
+              }
+            />
+          </Panel>
         )}
         {/* Not an empty state: the API is published and answering, and what is hidden is hidden on
             purpose. Saying "nothing here" about somebody else's configuration would be a lie. */}
         {d.published && d.settings?.redacted && (
           <Notice kind="info">
-            It answers on <span className="mono">{d.settings.basePath}</span> in{" "}
-            {s.environment.toUpperCase()}. Its backends and its policy belong to{" "}
-            {d.resource.applicationName} and are not shown outside it.
+            It answers on <span className="mono">{d.settings.basePath}</span> in {ENV}. Its
+            backends and its policy belong to {d.resource.applicationName} and are not shown
+            outside it.
           </Notice>
         )}
-        {tab === "definition" && (
-          /* Two columns, because they are two readings of one document and the question this tab
-             answers is whether they agree. Stacked, the operation list began below a definition
-             that is routinely a thousand lines long — so the editor grew to the height of whatever
-             was pasted into it, the page scrolled for a minute, and the list of what the API
-             actually offers was somewhere past the end of it. The editor is capped and scrolls
-             within itself instead; the columns collapse below 1100px, where side by side would
-             mean two unreadable ones. */
-          <div className="definition-split">
-            <div className="definition-source">
-              <CodeMirror
-                value={spec}
-                extensions={[yaml(), EditorView.lineWrapping]}
-                minHeight="340px"
-                maxHeight="560px"
-                editable={d.resource.canEdit && !!d.settings}
-                onChange={setSpec}
-              />
-              {/* Under the editor, so the text being judged is the text on screen, and in the same
-                  column, so a diagnostic and the line it is about are never in different halves. */}
-              <DefinitionDiagnostics
-                source={spec}
-                kind={d.resource.kind}
-                onFix={d.resource.canEdit ? setSpec : undefined}
-              />
+        {tab === "definition" &&
+          (d.resource.kind === "rest" || d.resource.kind === "soap" ? (
+            /* Two columns, because they are two readings of one document and the question this
+               tab answers is whether they agree. Stacked, the operation list began below a
+               definition that is routinely a thousand lines long. The editor is capped and
+               scrolls within itself instead; the columns collapse below 1100px. Two panels side
+               by side rather than one holding the other. */
+            <div className="definition-split">
+              <div className="definition-source">{definitionPanel}</div>
+              <div className="definition-shape">
+                {d.resource.kind === "rest" ? (
+                  <OperationsCard doc={doc} loading={false} />
+                ) : (
+                  <SoapOperationsCard wsdl={parseWsdl(spec)} loading={false} />
+                )}
+              </div>
             </div>
-            <div className="definition-shape">
-              {d.resource.kind === "rest" && <OperationsCard doc={doc} loading={false} />}
-              {d.resource.kind === "soap" && (
-                <WsdlServicesCard wsdl={parseWsdl(spec)} loading={false} />
-              )}
-            </div>
-          </div>
-        )}
+          ) : (
+            definitionPanel
+          ))}
         {tab === "properties" && (
-          /* Three headed sections rather than three cards inside the workspace's own card. A
-             panel is a boundary, and nesting one inside another draws a boundary around
-             something that was never separate — the reader was looking at a box, in a box, in a
-             box, and the only thing the inner two added was a border and a shadow. What actually
-             groups here is a *set of fields*, and that is what carries the tint. */
+          /* Three panels, one per question: what the catalog says about it, where calls go, and
+             where it answers. Each is a topic of its own, so each is its own boundary — and none
+             sits inside another, which is what the workspace's old outer card made of them. */
           <div className="workspace-properties">
-            <section className="workspace-section">
-              <h4>Catalog information</h4>
+            <Panel title="Catalog information">
               <div className="field-group">
                 <DescriptionField
                   value={description}
@@ -1031,7 +1335,7 @@ function EditorForm({
                     "where do I read more", and two answers to it means one of them is stale. */}
                 <Field
                   label="Documentation link"
-                  hint="Shown on the catalog listing and behind Open wiki above. Clear it to remove the link."
+                  hint="Once saved, it appears as Open wiki at the top of this workspace and on the catalog listing. Leave it empty for no link."
                 >
                   <input
                     type="url"
@@ -1042,114 +1346,112 @@ function EditorForm({
                   />
                 </Field>
               </div>
-            </section>
-            <section className="workspace-section">
-              <h4>Backends · {s.environment.toUpperCase()}</h4>
+            </Panel>
+            <Panel title={`Backends · ${ENV}`}>
               <div className="field-group">
-              {/* A pool, not a URL: one member is the ordinary case and reads as one field, and the
-                  second one appears only when somebody asks for it. */}
-              <div className="native-pool">
-                <span className="lbl">
-                  {s.environment.toUpperCase()} backends
-                </span>
-                {/* The weight column names itself once, above the rows. Each input carries an
-                    `aria-label`, so a screen reader always knew what the box was for; a sighted
-                    reader saw an unexplained `1` in a narrow box next to a URL. */}
-                {rule === "round-robin" && (
-                  <div className="backend-row backend-row-head" aria-hidden="true">
-                    <span className="hint">Address</span>
-                    <span className="hint">Share</span>
-                    <span />
-                  </div>
-                )}
-                {pool.map((entry, index) => (
-                  <div className="backend-row" key={index}>
-                    <input
-                      type="url"
-                      aria-label={`Backend ${index + 1} URL`}
-                      disabled={!d.resource.canEdit}
-                      value={entry.url}
-                      onChange={(e) =>
-                        setPool(
-                          pool.map((row, at) =>
-                            at === index ? { ...row, url: e.target.value } : row,
-                          ),
-                        )
-                      }
-                    />
-                    {rule === "round-robin" && (
+                {/* A pool, not a URL: one member is the ordinary case and reads as one field, and
+                    the second one appears only when somebody asks for it. */}
+                <div className="native-pool">
+                  <span className="lbl">Where calls in {ENV} are sent</span>
+                  {/* The weight column names itself once, above the rows. Each input carries an
+                      `aria-label`, so a screen reader always knew what the box was for; a sighted
+                      reader saw an unexplained `1` in a narrow box next to a URL. */}
+                  {rule === "round-robin" && (
+                    <div className="backend-row backend-row-head" aria-hidden="true">
+                      <span className="hint">Address</span>
+                      <span className="hint">Share</span>
+                      <span />
+                    </div>
+                  )}
+                  {pool.map((entry, index) => (
+                    <div className="backend-row" key={index}>
                       <input
-                        type="number"
-                        min={1}
-                        max={MAX_WEIGHT}
-                        aria-label={`Backend ${index + 1} share of traffic`}
+                        type="url"
+                        aria-label={`Backend ${index + 1} URL`}
                         disabled={!d.resource.canEdit}
-                        value={entry.weight ?? 1}
+                        value={entry.url}
                         onChange={(e) =>
                           setPool(
                             pool.map((row, at) =>
-                              at === index
-                                ? { ...row, weight: Number(e.target.value) }
-                                : row,
+                              at === index ? { ...row, url: e.target.value } : row,
                             ),
                           )
                         }
                       />
-                    )}
-                    <button
-                      type="button"
-                      className="btn sm"
-                      disabled={!d.resource.canEdit || pool.length === 1}
-                      onClick={() =>
-                        setPool(pool.filter((_, at) => at !== index))
-                      }
-                    >
-                      Remove
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  className="btn sm"
-                  disabled={!d.resource.canEdit || pool.length >= MAX_POOL_SIZE}
-                  onClick={() => setPool([...pool, { url: "" }])}
-                >
-                  Add backend
-                </button>
+                      {rule === "round-robin" && (
+                        <input
+                          type="number"
+                          min={1}
+                          max={MAX_WEIGHT}
+                          aria-label={`Backend ${index + 1} share of traffic`}
+                          disabled={!d.resource.canEdit}
+                          value={entry.weight ?? 1}
+                          onChange={(e) =>
+                            setPool(
+                              pool.map((row, at) =>
+                                at === index
+                                  ? { ...row, weight: Number(e.target.value) }
+                                  : row,
+                              ),
+                            )
+                          }
+                        />
+                      )}
+                      <button
+                        type="button"
+                        className="btn sm"
+                        aria-label={`Remove backend ${index + 1}`}
+                        disabled={!d.resource.canEdit || pool.length === 1}
+                        onClick={() => setPool(pool.filter((_, at) => at !== index))}
+                      >
+                        Remove
+                      </button>
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    className="btn sm"
+                    disabled={!d.resource.canEdit || pool.length >= MAX_POOL_SIZE}
+                    onClick={() => setPool([...pool, { url: "" }])}
+                  >
+                    Add backend
+                  </button>
+                  {pool.length >= MAX_POOL_SIZE && (
+                    <span className="hint">At most {MAX_POOL_SIZE} backends.</span>
+                  )}
+                </div>
+                {/* Load balancing is a choice between backends, so it only exists once there are
+                    two. Shown disabled with the reason rather than hidden, so "where did the
+                    setting go" has an answer on the screen. */}
+                <Field label="How calls are spread across the backends">
+                  <select
+                    disabled={!d.resource.canEdit || !canBalance}
+                    value={canBalance ? rule : "failover"}
+                    onChange={(e) => setRule(e.target.value)}
+                  >
+                    <option value="failover">
+                      Failover — try them in the order written
+                    </option>
+                    <option value="round-robin">
+                      Round-robin — spread calls across them
+                    </option>
+                  </select>
+                </Field>
+                {!canBalance ? (
+                  <p className="muted">
+                    Add a second backend to choose between failover and round-robin. With one
+                    backend every call goes to it, and a circuit breaker has nothing to fail over
+                    to — so that policy is unavailable too.
+                  </p>
+                ) : rule === "round-robin" ? (
+                  <p className="muted">
+                    Each gateway keeps its own place in the rotation, so the spread is even per
+                    gateway rather than exactly even in total.
+                  </p>
+                ) : null}
               </div>
-              {/* Load balancing is a choice between backends, so it only exists once there are two.
-                  Shown disabled with the reason rather than hidden, so "where did the setting go"
-                  has an answer on the screen. */}
-              <Field label="How calls are spread across the backends">
-                <select
-                  disabled={!d.resource.canEdit || !canBalance}
-                  value={canBalance ? rule : "failover"}
-                  onChange={(e) => setRule(e.target.value)}
-                >
-                  <option value="failover">
-                    Failover — try them in the order written
-                  </option>
-                  <option value="round-robin">
-                    Round-robin — spread calls across them
-                  </option>
-                </select>
-              </Field>
-              {!canBalance ? (
-                <p className="muted">
-                  Add a second backend to choose between failover and round-robin.
-                  With one backend every call goes to it, and a circuit breaker
-                  has nothing to fail over to — so that policy is unavailable too.
-                </p>
-              ) : rule === "round-robin" ? (
-                <p className="muted">
-                  Each gateway keeps its own place in the rotation, so calls are
-                  spread per instance rather than across the fleet.
-                </p>
-              ) : null}
-              </div>
-            </section>
-            <section className="workspace-section">
-              <h4>Published address · {s.environment.toUpperCase()}</h4>
+            </Panel>
+            <Panel title={`Published address · ${ENV}`}>
               {/* Domain, sub-domain and path are one thought — the first two *are* the third — so
                   one group holds all three, and the derived path sits with the two boxes that
                   decide it rather than under a heading of its own. */}
@@ -1171,12 +1473,17 @@ function EditorForm({
                       somebody could edit freely is a path that could contradict the catalog. */}
                   <input readOnly value={basePath} aria-label="Public path" />
                 </Field>
-                {!d.resource.domain && (
+                {!d.resource.domain && !domain && (
                   <Notice kind="warn">
-                    This API was published before the catalog had domains. Choosing
-                    one moves it from <span className="mono">{d.settings?.basePath}</span>{" "}
-                    to <span className="mono">{basePath}</span> when you save, so
-                    anybody calling the old address has to be told.
+                    This API was published before the catalog had domains. Choose one to give it a
+                    catalog location — its address will change to match when you save.
+                  </Notice>
+                )}
+                {move && (
+                  <Notice kind="warn">
+                    Saving moves it in {ENV} from <span className="mono">{move.from}</span> to{" "}
+                    <span className="mono">{move.to}</span>, so anybody calling the old address
+                    has to be told.
                   </Notice>
                 )}
               </div>
@@ -1190,12 +1497,11 @@ function EditorForm({
                   onChange={setGateways}
                 />
               </div>
-              <Notice kind="error">{certificates.error}</Notice>
-            </section>
+            </Panel>
           </div>
         )}
         {tab === "policies" && (
-          <>
+          <Panel title={`Policies · ${ENV}`}>
             <PolicyForm
               value={policy}
               onChange={setPolicy}
@@ -1213,21 +1519,21 @@ function EditorForm({
               catalogue={catalogue}
               globalUnits={d.globalUnits ?? []}
             />
+            <Notice kind="error">{certificates.error}</Notice>
             <Notice kind="error">{credentials.error}</Notice>
             <details className="workspace-advanced">
               <summary>Advanced settings</summary>
               {/*
                 The cards above lock an inherited unit for a non-admin, and this editor is the same
-                document with the locks off. It is not the enforcement point — the control plane
-                refuses the save — but a reader who edits here and is refused on Save has been let
-                walk into it, so the rule is stated before they type rather than after.
+                document with the locks off. It is not the enforcement point — the server refuses
+                the save — but a reader who edits here and is refused on Save has been let walk
+                into it, so the rule is stated before they type rather than after.
               */}
               {!s.user.isAdmin && (d.globalUnits ?? []).length > 0 && (
                 <Notice kind="info">
                   <span className="mono">{(d.globalUnits ?? []).join(", ")}</span>{" "}
-                  {(d.globalUnits ?? []).length === 1 ? "is" : "are"} set for every API in{" "}
-                  {s.environment.toUpperCase()}. Changing{" "}
-                  {(d.globalUnits ?? []).length === 1 ? "it" : "them"} here, or naming{" "}
+                  {(d.globalUnits ?? []).length === 1 ? "is" : "are"} set for every API in {ENV}.
+                  Changing {(d.globalUnits ?? []).length === 1 ? "it" : "them"} here, or naming{" "}
                   {(d.globalUnits ?? []).length === 1 ? "it" : "them"} in{" "}
                   <span className="mono">disabled</span>, is refused on Save: only a platform
                   administrator can override the environment for one API.
@@ -1240,11 +1546,11 @@ function EditorForm({
                 onChange={setPolicy}
               />
             </details>
-          </>
+          </Panel>
         )}
         {tab === "subscriptions" && (
           <Subscriptions session={s} tick={tick} resourceId={d.resource.id} />
-        )}{" "}
+        )}
         {tab === "playground" && (
           <div className="native-legacy">
             <PlaygroundPanel
@@ -1260,9 +1566,9 @@ function EditorForm({
             resourceId={d.resource.id}
             close={() => setSubscribe(false)}
           />
-        )}{" "}
+        )}
         {tab === "logs" && (
-          <div className="native-legacy">
+          <Panel title={`Request logs · ${ENV}`} className="native-legacy">
             {/* Publisher-only, and said so on the screen rather than by the tab disappearing: a
                 consumer who wonders where their calls went should learn who to ask. */}
             <LogsPanel
@@ -1271,7 +1577,7 @@ function EditorForm({
               canRead={d.resource.canEdit}
               reason={d.resource.editReason}
             />
-          </div>
+          </Panel>
         )}
         {tab === "revisions" && (
           <div className="native-legacy">
@@ -1284,124 +1590,77 @@ function EditorForm({
               canEdit={editPermission(d)}
               canPublish={editPermission(d)}
               onReleased={refresh}
+              onOpenDefinition={() => setTab("definition")}
             />
           </div>
         )}
         {tab === "history" && (
-          /* The one place deployment progress is reported. It used to be here *and* in a panel
-             below the workspace on every other tab — so the Definition tab, the Playground and the
-             log search each carried a table about something else, and the tab named after it was
-             the only one that did not. Finishing is announced by the bell rather than by a table
-             somebody has to be looking at (`operation.complete`). */
-          <section className="workspace-section">
-            <h4>Deployment progress</h4>
+          /* The one place deployment progress is reported. Finishing is announced by the bell
+             rather than by a table somebody has to be looking at (`operation.complete`). */
+          <Panel title="Deployment progress">
             <OperationList items={operations} />
-          </section>
-        )}{" "}
-        {["definition", "properties", "policies"].includes(tab) && (
-          <div className="native-actions workspace-save">
-            <button
-              className="btn primary"
-              disabled={w.busy || !d.resource.canEdit || !d.published || !domain}
-              title={d.resource.editReason ?? undefined}
-              onClick={() =>
-                void w.run(async () => {
-                  const body: any = {
-                    environment: s.environment,
-                    description,
-                    // `""` is how the link is taken off — absent would mean "the form does not
-                    // carry this field", which is what the definition and policy tabs mean.
-                    docsUrl: docsUrl.trim(),
-                    domain,
-                    subdomain: subdomain || null,
-                    basePath,
-                    gateways,
-                  };
-                  if (certificate !== (d.settings.backend.clientCertRef ?? ""))
-                    body.clientCertRef = certificate || null;
-                  const next = pool
-                    .filter((entry) => entry.url.trim())
-                    .map((entry) => ({
-                      url: entry.url.trim(),
-                      ...(rule === "round-robin" && entry.weight && entry.weight !== 1
-                        ? { weight: Number(entry.weight) }
-                        : {}),
-                    }));
-                  if (
-                    JSON.stringify(next) !==
-                      JSON.stringify(d.settings.backend.pool ?? []) ||
-                    rule !== (d.settings.backend.rule ?? "failover")
-                  ) {
-                    body.pool = next;
-                    body.rule = rule;
-                  }
-                  if (policy !== JSON.stringify(d.settings.policy, null, 2))
-                    body.policy = JSON.parse(policy);
-                  if (definitionChanged(spec, d.definition, d.resource.kind))
-                    body.spec = d.resource.kind === "soap" ? spec : parse(spec);
-                  await command(
-                    `/api/resources/${d.resource.id}/configure`,
-                    body,
-                    d.resource.etag,
-                  );
-                  refresh();
-                })
-              }
-            >
-              {w.busy ? "Saving…" : "Save changes"}
-            </button>
-            {/* The reason a disabled Save is disabled, in the order it becomes true. */}
-            {!d.resource.canEdit ? (
-              <span className="muted">{d.resource.editReason}</span>
-            ) : !d.published ? (
-              <span className="muted">
-                Nothing to save: this API is not in {s.environment.toUpperCase()}.
-              </span>
-            ) : !domain ? (
-              /* The blocker is one field, and this Save is shared by three panels — so the reason
-                 has to know which one the reader is looking at. It used to say "choose a domain on
-                 the properties tab first" from every one of them, including from Properties, where
-                 the field is a few centimetres up the same screen. */
-              <span className="muted">
-                {tab === "properties" ? (
-                  "Choose a domain above first — it is the first segment of the address."
-                ) : (
-                  <>
-                    <button type="button" className="linklike" onClick={() => setTab("properties")}>
-                      Choose a domain
-                    </button>{" "}
-                    first — it is the first segment of the address.
-                  </>
-                )}
-              </span>
-            ) : (
-              /* Where the progress went. One sentence beside the button that starts a deployment,
-                 rather than a table on every panel: what is still in flight is on History, and
-                 what has landed arrives in the bell without anybody watching for it. */
-              <span className="muted">
-                Saving deploys automatically.{" "}
-                {inFlight > 0 ? (
-                  <>
-                    <button type="button" className="linklike" onClick={() => setTab("history")}>
-                      {inFlight} change{inFlight === 1 ? "" : "s"} still reaching the gateways
-                    </button>
-                    .
-                  </>
-                ) : (
-                  <>
-                    Progress is on{" "}
-                    <button type="button" className="linklike" onClick={() => setTab("history")}>
-                      History
-                    </button>
-                    ; the bell says when it lands.
-                  </>
-                )}
-              </span>
+          </Panel>
+        )}
+        {saveTab && (
+          <div className="workspace-save">
+            {/* Every problem that stops Save, named, with the tab it is on. It used to be one
+                reason at a time, and only the missing domain — a policy that was not JSON failed
+                inside the save as a parse error that did not say where. */}
+            {d.resource.canEdit && d.published && blockers.length > 0 && (
+              <Notice kind="warn">
+                Save is blocked until {blockers.length === 1 ? "this is" : "these are"} fixed:
+                <ul className="save-blockers">
+                  {blockers.map((blocker) => (
+                    <li key={`${blocker.tab}:${blocker.reason}`}>
+                      {blocker.reason}
+                      {blocker.tab !== tab && (
+                        <>
+                          {" "}
+                          <button
+                            type="button"
+                            className="linklike"
+                            onClick={() => setTab(blocker.tab)}
+                          >
+                            Open {TAB_LABEL[blocker.tab]}
+                          </button>
+                        </>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </Notice>
             )}
+            <div className="native-actions">
+              <button className="btn primary" disabled={w.busy || !canSave} onClick={save}>
+                {w.busy ? "Saving…" : "Save changes"}
+              </button>
+              {/* The reason a disabled Save is disabled, or what pressing it will do. */}
+              <span className="muted">
+                {!d.resource.canEdit ? (
+                  "Read-only — see the note above."
+                ) : !d.published ? (
+                  `Nothing to save: this API is not in ${ENV}.`
+                ) : blockers.length > 0 ? (
+                  "Fix the problems above first."
+                ) : dirty.length === 0 ? (
+                  "No unsaved changes."
+                ) : (
+                  <>
+                    Saves your changes to the {dirtyNames} and deploys them to {ENV}.
+                  </>
+                )}{" "}
+                {/* Where the progress went. One sentence beside the button that starts a
+                    deployment, rather than a table on every panel. */}
+                {inFlight > 0 && (
+                  <button type="button" className="linklike" onClick={() => setTab("history")}>
+                    {inFlight} change{inFlight === 1 ? "" : "s"} still rolling out
+                  </button>
+                )}
+              </span>
+            </div>
           </div>
         )}
-        </div>
-      </Panel>
+      </div>
       {version && (
         <NewVersion
           data={d}
@@ -1418,10 +1677,11 @@ function EditorForm({
           // What it answers on here, as the preview's path until the destination has one of its
           // own — the address is derived from the taxonomy, so it is the same in every environment.
           basePath={basePath}
+          unsaved={dirty.map((t) => TAB_LABEL[t]!)}
           close={() => setPromote(false)}
         />
       )}
-    </>
+    </div>
   );
 }
 
@@ -1444,6 +1704,7 @@ function PromoteDialog({
   session: s,
   to,
   basePath,
+  unsaved,
   close,
 }: {
   resourceId: string;
@@ -1451,6 +1712,8 @@ function PromoteDialog({
   to: string;
   /** The address it answers on today, for the preview before the destination has a route. */
   basePath: string;
+  /** The workspace tabs with edits not saved yet, which a promotion does not carry. */
+  unsaved: string[];
   close: () => void;
 }) {
   const w = useAction();
@@ -1472,7 +1735,7 @@ function PromoteDialog({
       : localities.map((l) => l.name));
 
   return (
-    <Modal title={`Promote to ${to.toUpperCase()}`} close={close}>
+    <Modal title={`Promote to ${envLabel(to)}`} close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -1483,14 +1746,25 @@ function PromoteDialog({
               ...(targetUrl ? { backendUrl: targetUrl } : {}),
             });
             close();
-            s.setEnvironment(to);
+            // Through the guard: the workspace may still hold edits the promotion did not carry,
+            // and switching environment remounts it on the destination's copy.
+            whenLeaving(() => s.setEnvironment(to));
           });
         }}
       >
         <p>
-          Your saved API definition and settings will be promoted automatically. Save any pending
-          edits before promoting. Existing target backend settings are retained.
+          The saved definition and settings in {envLabel(s.environment)} are copied to{" "}
+          {envLabel(to)}. Backends already set in {envLabel(to)} are kept.
         </p>
+        {/* Promotion copies what is stored, never what is on screen, and the dialog opened over a
+            workspace that could be holding edits without saying so — which read as "promote this"
+            and did not promote it. */}
+        {unsaved.length > 0 && (
+          <Notice kind="warn">
+            Unsaved changes on {unsaved.join(", ")} are not promoted. Cancel and save them first if
+            they should go to {envLabel(to)}.
+          </Notice>
+        )}
         <Notice kind="error">{there.error}</Notice>
         {there.loading && !there.data ? (
           <Skeleton rows={3} />
@@ -1499,8 +1773,8 @@ function PromoteDialog({
             <Field
               label={
                 first
-                  ? `${to.toUpperCase()} backend URL (required for the first promotion)`
-                  : `${to.toUpperCase()} backend URL (leave empty to keep the one it has)`
+                  ? `${envLabel(to)} backend URL (required for the first promotion)`
+                  : `${envLabel(to)} backend URL (leave empty to keep the one it has)`
               }
             >
               <input
@@ -1520,12 +1794,17 @@ function PromoteDialog({
           </>
         )}
         <Notice kind="error">{w.error}</Notice>
-        <button
-          className="btn primary"
-          disabled={w.busy || there.loading || selected.length === 0}
-        >
-          {w.busy ? "Promoting…" : `Promote to ${to.toUpperCase()}`}
-        </button>
+        <div className="native-actions">
+          <button
+            className="btn primary"
+            disabled={w.busy || there.loading || selected.length === 0}
+          >
+            {w.busy ? "Promoting…" : `Promote to ${envLabel(to)}`}
+          </button>
+          <button type="button" className="btn" onClick={close}>
+            Cancel
+          </button>
+        </div>
       </form>
     </Modal>
   );
@@ -1608,24 +1887,35 @@ function NewVersion({
                 : {}),
               spec: d.resource.kind === "soap" ? spec : parse(spec),
             });
-            s.setEnvironment(first);
             close();
-            go(`/${s.application}/apis/${result.resourceId}`);
+            // One guarded step: the workspace this dialog sits on may hold unsaved edits, and
+            // both the environment switch and the navigation would discard them.
+            whenLeaving(() => {
+              s.setEnvironment(first);
+              go(`/${s.application}/apis/${result.resourceId}`);
+            });
           });
         }}
       >
         <p>
-          This publishes a separate API to {first.toUpperCase()}.{" "}
+          This publishes a separate API to {envLabel(first)}.{" "}
           <strong>{d.resource.apiVersion}</strong> keeps serving on its own path.
         </p>
         {/* Conditional on the product chosen below, because that is what actually decides it: a
             subscription is held against a product, not against an API, so putting both versions in
             one product means one key opens both (finding 7). */}
-        <p className={sameProduct ? "banner warn" : "muted"}>
-          {sameProduct
-            ? `Both versions will be in ${sameProduct}, so an existing key for ${d.resource.apiVersion} will open ${identifier} too. Choose a different product below if the versions should be subscribed to separately.`
-            : `${identifier} goes into a different product, so it has its own subscriptions and an existing key for ${d.resource.apiVersion} will not open it.`}
-        </p>
+        {sameProduct ? (
+          <Notice kind="warn">
+            Both versions will be in {sameProduct}, so an existing key for {d.resource.apiVersion}{" "}
+            will open {identifier} too. Choose a different product below if the versions should be
+            subscribed to separately.
+          </Notice>
+        ) : (
+          <p className="muted">
+            {identifier} goes into a different product, so it has its own subscriptions and an
+            existing key for {d.resource.apiVersion} will not open it.
+          </p>
+        )}
         <Notice kind="error">{products.error ?? w.error}</Notice>
         <Field label="Version identifier">
           <input
@@ -1661,13 +1951,24 @@ function NewVersion({
           </select>
         </Field>
         <p className="muted">
-          Carried over: the definition on screen, the {first.toUpperCase()}{" "}
+          Carried over: the definition on screen, the {envLabel(first)}{" "}
           backends, gateway selection and saved policies. Access comes from the selected product's
           subscriptions. Settings in later environments are not carried over.
         </p>
-        <button className="btn primary" disabled={w.busy || !productId || refusal !== null}>
-          {w.busy ? "Publishing…" : `Publish ${identifier} to ${first.toUpperCase()}`}
-        </button>
+        <div className="native-actions">
+          <button className="btn primary" disabled={w.busy || !productId || refusal !== null}>
+            {w.busy ? "Publishing…" : `Publish ${identifier} to ${envLabel(first)}`}
+          </button>
+          <button type="button" className="btn" onClick={close}>
+            Cancel
+          </button>
+          {!productId && !products.loading && (
+            <span className="muted">
+              {d.resource.applicationName ?? "The application"} has no active product to put it
+              in. Create one on Products first.
+            </span>
+          )}
+        </div>
       </form>
     </Modal>
   );

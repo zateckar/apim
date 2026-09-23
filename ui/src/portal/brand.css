@@ -4631,6 +4631,83 @@ dialog.native-modal { margin: auto; }
 /* ==================================================================== phase-2: workspace
    Screen-specific rules for the workspace screens. Add below this line only.
    (Anchor kept apart from its neighbours so parallel additions merge.) */
+
+/* The API workspace's head: identity on the left, the acts that move it on the right. Not a card —
+   the shell's heading names the API, and the old outer card held every tab's own panels inside it. */
+.native-portal .api-workspace .workspace-head {
+  display: flex; flex-wrap: wrap; align-items: flex-start; justify-content: space-between;
+  gap: 12px 20px; margin-bottom: 16px;
+}
+.native-portal .api-workspace .workspace-identity { min-width: 0; flex: 1 1 360px; }
+.native-portal .api-workspace .workspace-head .workspace-summary { margin: 0 0 8px; }
+.native-portal .api-workspace .workspace-head .workspace-summary .api-kind-badge { vertical-align: middle; }
+.native-portal .api-workspace .workspace-head > .native-actions { align-items: flex-start; flex-wrap: wrap; }
+.native-portal .api-workspace .workspace-url { max-width: 720px; }
+.native-portal .api-workspace .workspace-url > code { font-size: 12.5px; }
+/* Which tabs hold unsaved edits. The accent dot, not a colour of its own. */
+.native-portal .workspace-tabs .tab-dirty { color: var(--accent); font-size: 10px; vertical-align: 2px; }
+/* The one Save for three tabs stays in reach while a long definition or policy list scrolls. */
+.native-portal .api-workspace .workspace-save {
+  position: sticky; bottom: 0; z-index: 2;
+  margin-top: 8px; padding: 12px 16px;
+  border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-sm);
+}
+.native-portal .api-workspace .workspace-save > .banner { margin: 0 0 10px; }
+.native-portal .api-workspace .save-blockers { margin: 6px 0 0; padding-left: 18px; }
+.native-portal .api-workspace .save-blockers li + li { margin-top: 2px; }
+.native-portal .api-workspace .definition-checks { margin-top: 16px; }
+/* The policy editor inside its Policies panel: the panel's padding is the only padding. */
+.native-portal .api-workspace .card-body > .policy-editor { padding: 0; border: 0; }
+
+/* The version/environment picker keeps its width on a row whose version is hidden. */
+.native-portal .version-picker-placeholder { visibility: hidden; }
+
+/* Operations panel: what the inline styles used to say, as classes. */
+.native-portal .op-list { list-style: none; margin: 0; padding: 0; }
+.native-portal .op-list > li + li { border-top: 1px solid var(--divider, var(--border)); }
+.native-portal .op-note { font-size: 12.5px; color: var(--fg-muted); }
+.native-portal .op-note.spread { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.native-portal .op-count { font-size: 11.5px; color: var(--fg-subtle); }
+.native-portal .op-row-copy { flex: 1; min-width: 0; text-align: left; }
+.native-portal .op-row-path { font-size: 12.5px; font-weight: 500; word-break: break-all; }
+.native-portal .op-row-summary { font-size: 11px; color: var(--fg-muted); margin-top: 2px; }
+.native-portal .op-row-static { cursor: default; }
+.native-portal .op-row-static:hover { background: transparent; }
+.native-portal .op-faint { font-size: 11px; color: var(--fg-subtle); }
+.native-portal .op-chip { font-size: 10.5px; padding: 0 6px; }
+.native-portal .op-status { font-weight: 600; }
+.native-portal .op-param-head { display: flex; align-items: baseline; gap: 6px; flex-wrap: wrap; }
+.native-portal .op-required { font-size: 10.5px; color: var(--err); font-weight: 600; }
+.native-portal .op-response-text { font-size: 11.5px; color: var(--fg); }
+
+/* Definition checks: the severity chip keeps one width so the messages line up. */
+.native-portal .diagnostic > .chip-status { flex: 0 0 72px; justify-content: center; }
+
+/* Playground. */
+.native-portal .playground-request .pg-target.copy-row { align-items: center; flex-wrap: wrap; }
+.native-portal .playground-request .pg-target.copy-row > code { flex: 1 1 240px; font-size: 12.5px; }
+.native-portal .pg-body { min-height: 160px; }
+.native-portal .pg-body-field { margin-top: 10px; }
+.native-portal .pg-kv-block { margin-top: 10px; }
+.native-portal .pg-kv-line { margin-top: 6px; }
+.native-portal .pg-sent { margin-bottom: 10px; }
+.native-portal .pg-sent > summary { cursor: pointer; color: var(--fg-muted); padding: 4px 0; }
+
+/* Revisions. */
+.native-portal .revision-envs { display: inline-flex; flex-wrap: wrap; gap: 4px 0; }
+.native-portal .revision-env { display: inline-flex; align-items: center; gap: 4px; margin-right: 6px; }
+.native-portal .revision-actions { display: inline-flex; flex-wrap: wrap; align-items: flex-start; gap: 6px; }
+.native-portal .revision-diff-from { margin-bottom: 12px; }
+
+/* Request logs: the subscription filter, set from a line, shown as a removable chip. */
+.native-portal .logs-filter-chip { display: inline-flex; align-items: center; gap: 6px; }
+.native-portal .logs-filter-chip > button { min-height: 0; padding: 0 4px; line-height: 1; }
+
+/* A duration: the amount and its unit, one control's width. */
+.native-portal .duration-input { display: flex; gap: 6px; min-width: 0; }
+.native-portal .duration-input > input { flex: 1 1 auto; min-width: 0; }
+.native-portal .duration-input > select { flex: 0 0 auto; width: auto; }
 /* end phase-2: workspace */
 
 

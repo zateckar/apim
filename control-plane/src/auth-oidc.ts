@@ -26,6 +26,7 @@ import {
 } from "./principals.ts";
 import type { App } from "./router.ts";
 import { trustedFetch } from "./trust-store.ts";
+import { PLATFORM_APPLICATION_ID } from "../../shared/kafka-proxy.ts";
 
 /**
  * The OIDC provider (v5 plan §5.4). Authorization code + PKCE, owned end to end by the control
@@ -471,8 +472,10 @@ export function mapGroupsToApplications(
   onCreate?: (application: { id: string; name: string; sourceGroup: string }) => void,
 ): { applicationIds: string[]; unmapped: string[] } {
   const rows = db
-    .query<{ id: string; source_group: string | null }, []>("SELECT id, source_group FROM application")
-    .all();
+    .query<{ id: string; source_group: string | null }, [string]>(
+      "SELECT id, source_group FROM application WHERE id <> ?",
+    )
+    .all(PLATFORM_APPLICATION_ID);
   const bySourceGroup = new Map<string, string>();
   const byId = new Map<string, string | null>();
   for (const row of rows) {
@@ -502,7 +505,9 @@ export function mapGroupsToApplications(
     }
 
     const id = applicationIdForGroup(value);
-    if (!id) {
+    // A group spelled like the portal's own application is reported, never matched or provisioned:
+    // holding it would otherwise make its members the owners of the shared Kafka proxy.
+    if (!id || id === PLATFORM_APPLICATION_ID) {
       refuse(value);
       continue;
     }

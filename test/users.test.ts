@@ -628,7 +628,7 @@ describe("applications", () => {
         const again = mapGroupsToApplications(cp.app.db, ["EAI", "EAI-TEST", "SKODA-IDP"]);
         expect(again.applicationIds.sort()).toEqual(["eai", "eai-test", "skoda-idp"]);
         expect(
-          cp.app.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM application").get()!.n,
+          cp.app.db.query<{ n: number }, []>("SELECT COUNT(*) AS n FROM application WHERE id <> 'platform'").get()!.n,
         ).toBe(first.applicationIds.length + 2); // the two seeded development applications
       } finally {
         cp.close();

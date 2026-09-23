@@ -13,6 +13,7 @@ import { writeAudit } from "../audit.ts";
 import { policyFor } from "../config-build.ts";
 import { nowIso } from "../db.ts";
 import { displayNames } from "../principals.ts";
+import { namesPlatformRef } from "../operations.ts";
 import {
   effectiveWithOrigin,
   globalDocument,
@@ -156,6 +157,11 @@ export function registerPolicyRoutes(router: Router): void {
     const body = await readJson<{ value?: unknown }>(ctx);
     const unitErrors = validateUnit(unitKey, body.value);
     if (unitErrors.length > 0) throw badRequest(unitErrors.join("; "));
+    // Not even here: a global unit reaches every API in the environment, and the portal's own key is
+    // presented only on the APIs the portal generates (kafka-rest-proxy).
+    if (namesPlatformRef(body.value)) {
+      throw forbidden(`${unitKey}: a "platform:" reference is the portal's own credential and only the portal writes one`);
+    }
 
     const globals = globalUnitsOf(ctx, environment);
     globals.set(unitKey, body.value);

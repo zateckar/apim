@@ -663,6 +663,8 @@ export interface MarketCard {
   environments: string[];
   /** Visible to the caller only because they own it. The card says so rather than implying it. */
   unpublished: boolean;
+  /** The Kafka topic this API produces to, when it was generated from one (kafka-rest-proxy). */
+  kafkaTopic?: string | null;
   operationCount: number;
   subscriberCount: number;
   subscribed: boolean;

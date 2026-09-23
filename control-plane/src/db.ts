@@ -54,6 +54,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 13, name: "egress is denied by rule, not allowed by list", file: "schema-013.sql" },
   { version: 14, name: "the gateway's own latency, below a millisecond", file: "schema-014.sql" },
   { version: 15, name: "an application keeps its own credentials", file: "schema-015.sql" },
+  { version: 16, name: "a Kafka topic is produced to through a generated API", file: "schema-016.sql" },
 ];
 
 /**

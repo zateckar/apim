@@ -578,8 +578,19 @@ function refField(value: unknown, where: string, errors: string[]): void {
  * keeps itself. Whether the named credential *exists* is decided where the reference is resolved —
  * here the question is only whether it is a reference at all.
  */
+/**
+ * The portal's own credential, `platform:<name>` — today only `platform:kafka-proxy`, the platform
+ * application's key to the shared Kafka proxy. Accepted by the shape check so the API the portal
+ * generates validates like any other; *who* may write one is the control plane's decision, not the
+ * vocabulary's, and it refuses it on every API but the ones it generates (kafka-rest-proxy).
+ */
+const PLATFORM_REF = /^platform:[a-z0-9][a-z0-9-]{0,40}$/;
+
 function credentialRefField(value: unknown, where: string, errors: string[]): void {
-  if (typeof value !== "string" || (!REF_NAME.test(value) && !APP_CREDENTIAL_REF.test(value))) {
+  if (
+    typeof value !== "string" ||
+    (!REF_NAME.test(value) && !APP_CREDENTIAL_REF.test(value) && !PLATFORM_REF.test(value))
+  ) {
     errors.push(
       `${where}: expected one of this application's own credentials ` +
         `("app:<application>:<name>") or the name of an entry in INTEGRATIONS_FILE ` +

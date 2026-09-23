@@ -42,6 +42,7 @@ import { credentialVault, EMPTY_VAULT, type CredentialVault } from "./credential
 import { effectiveDocument } from "./globals.ts";
 import { settingsFor } from "./settings.ts";
 import { liveAnchorsFor } from "./trust-store.ts";
+import { isPlatformRef } from "../../shared/kafka-proxy.ts";
 
 export const COMPILER_VERSION = "v3-1";
 
@@ -658,9 +659,12 @@ export function buildReferences(
     hmacSchemes[ref] = { appId, appKey };
   }
 
-  /** The application's own credential, or the administrator's file. Never one standing in for the other. */
+  /**
+   * The application's own credential (or the portal's, `platform:`), or the administrator's file.
+   * Never one standing in for the other.
+   */
   const secretFor = (ref: string) =>
-    parseAppCredentialRef(ref) ? vault.secret(ref) : resolveSecret(integrations, ref);
+    parseAppCredentialRef(ref) || isPlatformRef(ref) ? vault.secret(ref) : resolveSecret(integrations, ref);
 
   const secretHashes: Record<string, string> = {};
   for (const ref of hashRefs) {

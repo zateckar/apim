@@ -59,6 +59,8 @@ estate believes.
 - GIVEN any policy write
 - WHEN a secret-only reference is validated
 - THEN `app:<applicationId>:<name>` and a plain integrations-file name SHALL both be accepted
+- AND so SHALL the shape `platform:<name>`, the portal's own credential — which the control plane
+  then refuses on every API but the ones it generates (`kafka-rest-proxy`)
 - AND anything else SHALL be refused naming the field
 
 ### Requirement: A credential belongs to one application and one environment

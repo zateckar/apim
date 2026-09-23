@@ -208,7 +208,7 @@ export const ROUTES: RouteDef[] = [
     environmentScoped: true,
     patterns: ["/kafka-proxy"],
     title: "Kafka REST Proxy",
-    purpose: "Reaching those topics over HTTP, for callers that cannot speak the Kafka protocol.",
+    purpose: "Producing to this application's topics over HTTP, through an API generated from each topic's schema.",
     scope: "application",
     nav: { group: "Kafka", label: "Kafka REST Proxy", icon: "Globe" },
   },

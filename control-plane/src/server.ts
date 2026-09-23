@@ -1,4 +1,5 @@
 import { registerKafkaRoutes } from "./kafka.ts";
+import { registerKafkaProxyRoutes } from "./api/kafka-proxy.ts";
 import { registerOperationRoutes } from "./operations.ts";
 import { existsSync, statSync } from "node:fs";
 import { join, normalize, resolve, sep } from "node:path";
@@ -66,6 +67,7 @@ export function createRouter(): Router {
   registerNotificationRoutes(router);
   registerOperationRoutes(router);
   registerKafkaRoutes(router);
+  registerKafkaProxyRoutes(router);
   return router;
 }
 

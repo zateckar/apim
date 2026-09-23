@@ -553,6 +553,8 @@ function cardFor(ctx: Ctx, row: ResourceRow) {
     applicationId: row.application_id,
     lifecycle: row.lifecycle,
     visibility: row.visibility,
+    /** The Kafka topic a generated API produces to (kafka-rest-proxy), so the card can say so. */
+    kafkaTopic: row.kafka_topic ?? null,
     environments,
     /** True when the caller can see this only because they own it. The card badges it. */
     unpublished: environments.length === 0,

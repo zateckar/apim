@@ -1,6 +1,8 @@
 import type { DB } from "./db.ts";
 import { decrypt } from "./crypto.ts";
 import { parseAppCredentialRef } from "../../shared/policy.ts";
+import { PLATFORM_KAFKA_KEY_REF } from "../../shared/kafka-proxy.ts";
+import { platformKafkaKey } from "./kafka-proxy.ts";
 
 /**
  * The credentials an application keeps for itself (migration v15).
@@ -311,6 +313,9 @@ export function credentialVault(db: DB, kek: Buffer, environment: string): Crede
 
   return {
     secret(ref) {
+      // The portal's own key to the shared Kafka proxy (kafka-rest-proxy). Resolved here so the build
+      // treats it like any other secret reference, including reporting it when it resolves to nothing.
+      if (ref === PLATFORM_KAFKA_KEY_REF) return platformKafkaKey(db, kek, environment);
       const entry = load(ref);
       if (!entry) return null;
       // `basic` composes; `secret` is the value itself. An `hmac` credential is deliberately not

@@ -27,6 +27,10 @@ export interface ResourceRow {
    * `null` means the row predates domains and gets one on its next save. */
   domain: string | null;
   subdomain: string | null;
+  /** The Kafka topic a generated API fronts, by name (schema-016). `null` on everything else. */
+  kafka_topic: string | null;
+  /** `kafka-proxy` on the platform's shared proxy (schema-016). `null` on everything else. */
+  platform_role: string | null;
 }
 
 export function getResource(ctx: Ctx, id: string): ResourceRow {

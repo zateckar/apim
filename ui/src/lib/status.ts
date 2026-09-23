@@ -443,13 +443,21 @@ export function mailChip(state: string): Chip {
 }
 
 /**
- * A topic's HTTP proxy. Off is not a fault — it is the default (kafka-workspace, "Offer an HTTP
- * proxy per topic, off by default") — so it is `neutral`, never `stop`.
+ * Whether a topic has an HTTP API in this environment (kafka-rest-proxy). Having none is not a
+ * fault — most topics are produced to over Kafka itself — so it is `neutral`, never `stop`. The
+ * first reason it cannot have one, when there is one, is the title.
  */
-export function kafkaProxyChip(enabled: boolean): Chip {
-  return enabled
-    ? { label: "Proxy on", tone: "live", title: "proxy_enabled — this topic can be produced to and read over HTTP" }
-    : { label: "Proxy off", tone: "neutral", title: "proxy disabled — the topic's owner has not turned the HTTP proxy on" };
+/** On a catalog card: this API produces to a Kafka topic, and was generated from its schema. */
+export function kafkaTopicApiChip(topic: string): Chip {
+  return { label: "Kafka topic", tone: "neutral", title: `produces records to the Kafka topic ${topic}; its contract is the topic's schema` };
+}
+
+export function topicApiChip(published: boolean, blocker?: string | null): Chip {
+  if (published)
+    return { label: "HTTP API", tone: "live", title: "this topic has an API here, generated from its schema" };
+  return blocker
+    ? { label: "No HTTP API", tone: "neutral", title: blocker }
+    : { label: "No HTTP API", tone: "neutral", title: "the topic's owner can create one on Kafka REST Proxy" };
 }
 
 // end phase-2: processes

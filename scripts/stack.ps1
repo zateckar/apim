@@ -1,7 +1,8 @@
 <#
 .SYNOPSIS
-  Start, stop or inspect the whole stack: three upstreams (the petstore backend, an MCP server and
-  an A2A agent), the control plane, and four gateways (two in DEV, one in TEST, one in PROD).
+  Start, stop or inspect the whole stack: the upstreams (the petstore backend twice, an MCP server,
+  an A2A agent and a simulated Kafka REST proxy), the control plane, and four gateways (two in DEV,
+  one in TEST, one in PROD).
 
 .DESCRIPTION
   The three upstreams exist so that every variant this platform publishes has something real to
@@ -46,6 +47,9 @@ $Upstreams = @(
   @{ name = "backend-2"; entry = "tools/backend/server.ts"; port = 9081; what = "the second petstore backend" }
   @{ name = "mcp";       entry = "tools/mcp/server.ts";     port = 9085; what = "the MCP server" }
   @{ name = "a2a";       entry = "tools/a2a/agent.ts";      port = 9086; what = "the A2A agent" }
+  # The far end of the shared Kafka proxy API: a simulated Confluent REST Proxy v3, cluster
+  # `local-cluster`. An administrator points the shared proxy at it from Kafka REST Proxy.
+  @{ name = "kafka-rest"; entry = "tools/kafka-rest/server.ts"; port = 9087; what = "the Kafka REST proxy (simulated)" }
 )
 
 function Wait-Endpoint {
@@ -176,7 +180,10 @@ foreach ($gw in $Gateways) {
 Write-Host ""
 Write-Host "stack up. logs in .data/*.log, state in $StateFile"
 Write-Host "  UI          http://localhost:8080   (bun run build:ui first, or bun run dev:ui)"
-Write-Host "  MCP server  http://localhost:9085/mcp   (publish it from APIs -> new mcp API -> Discover)"
-Write-Host "  A2A agent   http://localhost:9086        (its card is at /.well-known/agent-card.json)"
+# The upstreams are printed as 127.0.0.1, not localhost: the platform's own egress rule denies the
+# PUBLIC_URL host on every port (deny-rules.ts selfRule), and locally that host is localhost.
+Write-Host "  MCP server  http://127.0.0.1:9085/mcp   (publish it from APIs -> new mcp API -> Discover)"
+Write-Host "  A2A agent   http://127.0.0.1:9086        (its card is at /.well-known/agent-card.json)"
+Write-Host "  Kafka REST  http://127.0.0.1:9087        (cluster local-cluster; the shared proxy's backend)"
 Write-Host "  walkthrough pwsh -File scripts/demo.ps1"
 Write-Host "  stop        pwsh -File scripts/stack.ps1 -Down"

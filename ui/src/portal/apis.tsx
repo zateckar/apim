@@ -1120,14 +1120,28 @@ function EditorForm({
     });
   }
 
+  /**
+   * The Kafka topic this API is generated from (kafka-rest-proxy). Its definition, backend and
+   * certificate follow the topic and the shared proxy, and the server refuses an edit to any of
+   * them, so the workspace says so where each would be edited rather than letting a Save find out.
+   */
+  const generatedFrom: string | null = d.resource.kafkaTopic ?? null;
+  const kafkaTopics = `/${d.resource.applicationId}/kafka`;
+
   const definitionPanel = (
     <Panel title="Definition">
+      {generatedFrom && (
+        <Notice kind="info">
+          Generated from the schema of the Kafka topic <span className="mono">{generatedFrom}</span>.
+          Change the schema on <Link to={kafkaTopics}>Kafka Topics</Link> and this definition follows.
+        </Notice>
+      )}
       <CodeMirror
         value={spec}
         extensions={[yaml(), EditorView.lineWrapping]}
         minHeight="340px"
         maxHeight="560px"
-        editable={d.resource.canEdit && !!d.settings}
+        editable={d.resource.canEdit && !!d.settings && !generatedFrom}
         onChange={setSpec}
       />
       {/* Under the editor, so the text being judged is the text on screen, and in the same
@@ -1135,7 +1149,7 @@ function EditorForm({
       <DefinitionDiagnostics
         source={spec}
         kind={d.resource.kind}
-        onFix={d.resource.canEdit ? setSpec : undefined}
+        onFix={d.resource.canEdit && !generatedFrom ? setSpec : undefined}
       />
     </Panel>
   );
@@ -1359,6 +1373,14 @@ function EditorForm({
               </div>
             </Panel>
             <Panel title={`Backends · ${ENV}`}>
+              {generatedFrom && (
+                <Notice kind="info">
+                  Calls go to the shared Kafka proxy in {ENV}, presenting the topic's client
+                  certificate and the portal's own key. Both follow the topic: change the certificate
+                  on <Link to={kafkaTopics}>Kafka Topics</Link>.
+                </Notice>
+              )}
+              <fieldset className="unit-form" disabled={Boolean(generatedFrom)}>
               <div className="field-group">
                 {/* A pool, not a URL: one member is the ordinary case and reads as one field, and
                     the second one appears only when somebody asks for it. */}
@@ -1461,6 +1483,7 @@ function EditorForm({
                   </p>
                 ) : null}
               </div>
+              </fieldset>
             </Panel>
             <Panel title={`Published address · ${ENV}`}>
               {/* Domain, sub-domain and path are one thought — the first two *are* the third — so
@@ -1513,6 +1536,13 @@ function EditorForm({
         )}
         {tab === "policies" && (
           <Panel title={`Policies · ${ENV}`}>
+            {generatedFrom && (
+              <Notice kind="info">
+                Backend authentication is the portal's: it presents the portal's key to the shared Kafka
+                proxy, and it is kept on every save. The client certificate is the topic's. Every other
+                unit is this API's own.
+              </Notice>
+            )}
             <PolicyForm
               value={policy}
               onChange={setPolicy}

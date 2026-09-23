@@ -361,7 +361,9 @@ export function registerUserRoutes(router: Router): void {
     const user = requireUser(ctx);
     const rows = ctx.app.db
       .query<{ id: string; name: string; source_group: string | null }, []>(
-        "SELECT id, name, source_group FROM application ORDER BY name",
+        // Not the portal's own application: nobody can join it or pick it, so offering it in the
+        // picker and the directory would be an application with no possible member (kafka-rest-proxy).
+        "SELECT id, name, source_group FROM application WHERE id <> 'platform' ORDER BY name",
       )
       .all();
     const counts = memberCounts(ctx);

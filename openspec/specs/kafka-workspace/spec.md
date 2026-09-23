@@ -2,9 +2,10 @@
 
 ## Purpose
 
-Define Kafka topics as catalogue items owned by an application, the access requests that are the
-Kafka counterpart of subscribing, and the HTTP proxy that lets a caller produce over HTTP. The
-broker itself is simulated in this phase, and every response says so.
+Define Kafka topics as catalogue items owned by an application, with the schema and client
+certificate they are produced with, and the access requests that are the Kafka counterpart of
+subscribing. The broker itself is simulated in this phase, and every response says so. Producing to
+a topic over HTTP is `kafka-rest-proxy`'s.
 
 ## Requirements
 
@@ -53,6 +54,24 @@ broker itself is simulated in this phase, and every response says so.
 - AND the reason the domain is still required SHALL be that an unclassified topic is one nobody
   browsing by domain will ever see
 
+#### Scenario: A topic carries its schema and its certificate
+
+- GIVEN a topic being created or changed by its owner
+- WHEN its schema type, schema or certificate is set
+- THEN the schema type SHALL be one of `json`, `avro` or `protobuf`, or unrecorded
+- AND only a `json` topic SHALL carry a JSON Schema, at most 256 KiB, which SHALL be refused unless
+  the gateway's schema compiler accepts it as a request body — the same check `kafka-rest-proxy`'s
+  generated API is compiled with — so a schema nothing could enforce is refused on the topic rather
+  than accepted and later reported as unvalidated
+- AND the certificate SHALL be one of the owning application's own, in the topic's environment,
+  not expired
+- AND an Avro or Protobuf topic SHALL record only its type, because its schema lives in a registry
+  this portal does not model
+- AND the portal SHALL run the same schema check as the owner types, and SHALL keep a certificate
+  the topic already names in the picker even when it has since expired, so a save does not
+  silently take it off
+- AND the schema itself SHALL NOT be written to the audit detail, only that it changed
+
 #### Scenario: Topics are counted in the catalogue
 
 - GIVEN domains holding both APIs and topics
@@ -80,9 +99,10 @@ broker itself is simulated in this phase, and every response says so.
 
 - GIVEN a topic row
 - WHEN it is opened
-- THEN the topic's owner, environment, description, partition count, domain and proxy setting
-  SHALL be shown, with the selected application's access to it
-- AND the proxy setting SHALL link to the Kafka REST Proxy section, which is where it is changed
+- THEN the topic's owner, environment, description, partition count, domain, schema, certificate
+  and whether it has an HTTP API here SHALL be shown, with the selected application's access to it
+- AND a topic with an HTTP API SHALL link to that API, and one without SHALL link to the Kafka REST
+  Proxy section, which says why it has none
 - AND for anybody who is not a member of the owning application the facts SHALL be shown read-only
   with a sentence naming who can change them, rather than as a form of disabled fields
 
@@ -114,7 +134,7 @@ broker itself is simulated in this phase, and every response says so.
 - AND a request pending on the owner's own topic SHALL link to Approvals instead, because a request
   is decided there with Approve or Reject, not cancelled on the requester's behalf
 
-### Requirement: Delete a topic only when nothing is consuming it
+### Requirement: Delete a topic only when nothing is consuming it or producing through it
 
 #### Scenario: A topic with live access is deleted
 
@@ -122,46 +142,19 @@ broker itself is simulated in this phase, and every response says so.
 - WHEN deletion is attempted
 - THEN it SHALL be refused with `409` saying to revoke or cancel the topic's subscriptions first
 
+#### Scenario: A topic with an HTTP API is deleted
+
+- GIVEN a topic whose API (`kafka-rest-proxy`) is published in the topic's environment
+- WHEN deletion is attempted
+- THEN it SHALL be refused with `409` saying to retire the API first, because the API would go on
+  answering for a topic that no longer exists
+
 #### Scenario: A topic is deleted
 
 - GIVEN a topic nothing is consuming
 - WHEN it is deleted
 - THEN it SHALL be marked deleted rather than removed, and the deletion SHALL be audited
 - AND the control SHALL sit behind the typed confirmation
-
-### Requirement: Offer an HTTP proxy per topic, off by default
-
-#### Scenario: The proxy is enabled
-
-- GIVEN a topic
-- WHEN its owner enables the proxy
-- THEN producing a JSON message over HTTP SHALL become available for that topic
-- AND it SHALL be off unless somebody turns it on
-
-#### Scenario: The Kafka REST Proxy section is opened
-
-- GIVEN the sidebar's Kafka group
-- WHEN the Kafka REST Proxy section opens
-- THEN it SHALL list every topic in the selected environment that the selected application owns or
-  holds active access to, each with whether its proxy is on
-- AND a topic without the proxy enabled SHALL say so rather than be absent
-- AND the owner SHALL be able to turn the proxy on and off there, and anybody else SHALL be told
-  who can
-- AND a topic whose proxy is on and which the application may use SHALL show the HTTP endpoint and
-  a produce and a consume command, each with a copy control
-- AND a topic whose proxy is on but which the application holds no active access to SHALL say that
-  access is needed first, and link to Kafka Topics
-- AND the section SHALL NOT offer creating a topic, because that belongs to Kafka Topics
-
-#### Scenario: The proxy's address is given
-
-- GIVEN the simulated broker of this phase
-- WHEN the endpoint and commands are composed
-- THEN they SHALL name the portal's own Kafka console endpoint at the portal's public origin, with
-  the portal session and a matching `Origin` header, because that is what answers
-- AND the section SHALL say that the portal answers for the proxy and that a call uses the portal
-  sign-in rather than a subscription key
-- AND the reason SHALL be that an invented proxy host would be an address that answers nothing
 
 ### Requirement: Say that Kafka is simulated
 

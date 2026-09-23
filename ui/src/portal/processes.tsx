@@ -5,7 +5,6 @@ import type { Session } from "../App";
 import { api } from "../api";
 import {
   Action,
-  CopyButton,
   DangerZone,
   TextField,
   EmptyState,
@@ -27,12 +26,16 @@ import { formatDateTime } from "../lib/datetime";
 import {
   integrationEventChip,
   kafkaGrantChip,
-  kafkaProxyChip,
   kafkaTopicChip,
+  operationChip,
+  topicApiChip,
   subscriptionChip,
 } from "../lib/status";
 import { SubscriptionKeys } from "../views/SubscriptionKeys";
 import { DomainPicker } from "./apis";
+import { command } from "./client";
+import { topicSchemaError } from "../../../shared/kafka-proxy";
+import type { OperationState } from "../../../shared/types";
 
 export function Activity({ items, loading = false }: { items: any[]; loading?: boolean }) {
   const [scope, setScope] = useState<"all" | "active">("all");
@@ -584,6 +587,10 @@ export function Kafka({
       () => api.get<{ items: any[] }>("/api/kafka/access"),
       [tick, s.application],
     ),
+    certificates = useAsync(
+      () => api.get<{ items: any[] }>(`/api/certificates?environment=${encodeURIComponent(s.environment)}`),
+      [tick, s.environment],
+    ),
     w = useAction();
   const [create, setCreate] = useState(false),
     [name, setName] = useState(""),
@@ -598,6 +605,8 @@ export function Kafka({
   // the refresh underneath it.
   const [draft, setDraft] = useState({ partitions: 3, description: "" });
   const [taxonomy, setTaxonomy] = useState({ domain: "", subdomain: "" });
+  const [contract, setContract] = useState<ContractDraft>(contractDraftOf());
+  const [note, setNote] = useState<string | null>(null);
   const rows =
     topics.data?.items.filter(
       (t) => t.environment === s.environment && t.state !== "deleted",
@@ -610,12 +619,13 @@ export function Kafka({
   const grants = access.data?.items ?? [];
   const topicNameProblem = !/^[A-Za-z0-9][A-Za-z0-9._-]{1,100}$/.test(name) ? "Use 2–101 letters, digits, dots, underscores or hyphens." : topics.data?.items.some(topic => topic.environment === s.environment && topic.name === name) ? "This topic name already exists in this environment." : null;
   const partitionProblem = integerError(draft.partitions, selected && !create ? selected.partitions : 1, 100);
-  const createBlocked = Boolean(topicNameProblem || partitionProblem || !taxonomy.domain || topics.loading || topics.error);
+  const createBlocked = Boolean(topicNameProblem || partitionProblem || contractProblem(name, contract) || !taxonomy.domain || topics.loading || topics.error);
   function startCreating() {
     setSelected(null);
     setName("");
     setDraft({ partitions: 3, description: "" });
     setTaxonomy({ domain: "", subdomain: "" });
+    setContract(contractDraftOf());
     setCreate(true);
   }
   function openTopic(t: any) {
@@ -625,6 +635,8 @@ export function Kafka({
     setValue("");
     setDraft({ partitions: t.partitions, description: t.description ?? "" });
     setTaxonomy({ domain: t.domain ?? "", subdomain: t.subdomain ?? "" });
+    setContract(contractDraftOf(t));
+    setNote(null);
   }
   const currentAccess = selected ? grantFor(grants, selected.id, s.application) : undefined;
   if (topics.error || access.error) return <Notice kind="error">{topics.error ?? access.error}</Notice>;
@@ -742,7 +754,7 @@ export function Kafka({
               ) : (
                 <p className="muted">No access in {envLabel(s.environment)} yet. Open a topic above to request it.</p>
               )}
-              <h4>Who else uses {s.applicationName(s.application)}'s topics</h4>
+              <h4>Who else uses topics owned by {s.applicationName(s.application)}</h4>
               {against.length ? (
                 against.map((a) => row(a, false))
               ) : (
@@ -797,6 +809,7 @@ export function Kafka({
                   description: draft.description,
                   domain: taxonomy.domain,
                   subdomain: taxonomy.subdomain || null,
+                  ...contractBody(contract),
                 });
                 setCreate(false);
                 setName("");
@@ -815,6 +828,7 @@ export function Kafka({
               subdomain={taxonomy.subdomain}
               onChange={setTaxonomy}
             />
+            <TopicContract s={s} topic={name} draft={contract} onChange={setContract} certificates={certificates} />
             <Field label="Partitions" hint="Whole numbers from 1 to 100. Partitions can only increase later.">
               <input
                 type="number"
@@ -876,32 +890,47 @@ export function Kafka({
                 subdomain={taxonomy.subdomain}
                 onChange={setTaxonomy}
               />
+              <TopicContract s={s} topic={selected.name} draft={contract} onChange={setContract} certificates={certificates} />
+              {selected.apiPublished && (
+                <p className="hint">
+                  This topic has an HTTP API here. Saving a new schema regenerates its definition, and a
+                  new certificate rebinds it; both reach the gateways as an ordinary change.
+                </p>
+              )}
               {partitionProblem && <p className="field-error">{partitionProblem}</p>}
               <div className="native-actions">
                 <button
                   className="btn primary"
-                  disabled={w.busy || !taxonomy.domain || Boolean(partitionProblem)}
+                  disabled={w.busy || !taxonomy.domain || Boolean(partitionProblem) || Boolean(contractProblem(selected.name, contract))}
                   onClick={() =>
                     void w.run(async () => {
-                      await api.patch(`/api/kafka/topics/${selected.id}`, {
+                      const saved = await api.patch<{ operation: unknown }>(`/api/kafka/topics/${selected.id}`, {
                         description: draft.description,
                         partitions: draft.partitions,
                         domain: taxonomy.domain,
                         subdomain: taxonomy.subdomain || null,
+                        ...contractBody(contract),
                       });
                       setSelected({
                         ...selected,
                         ...draft,
                         domain: taxonomy.domain,
                         subdomain: taxonomy.subdomain || null,
+                        ...contractBody(contract),
                       });
                       topics.reload();
+                      setNote(
+                        saved.operation
+                          ? "Saved. The topic's API is being regenerated; Activity shows it reaching the gateways."
+                          : "Saved.",
+                      );
                     })
                   }
                 >
                   Save topic
                 </button>
               </div>
+              <Notice kind="ok">{note}</Notice>
             </>
           ) : (
             // The facts, read-only, and who can change them. A form of disabled fields would be
@@ -915,11 +944,15 @@ export function Kafka({
               <p className="muted">Only members of {s.applicationName(selected.applicationId)} can change this topic.</p>
             </>
           )}
-          {/* The proxy's switch lives on its own screen, beside the endpoint it turns on; this says
-              which way it is set, as the spec's "a topic is opened" asks. */}
+          {/* Whether it has an HTTP API here, and where to go about it: the API itself when it has
+              one, the proxy screen — which says why not — when it does not. */}
           <p>
-            <StatusChip chip={kafkaProxyChip(Boolean(selected.proxy_enabled))} />{" "}
-            <Link to={`/${s.application}/kafka-proxy`}>Kafka REST Proxy</Link>
+            <StatusChip chip={topicApiChip(Boolean(selected.apiPublished), selected.apiBlockers?.[0])} />{" "}
+            {selected.apiPublished && selected.apiResourceId ? (
+              <Link to={`/${selected.applicationId}/apis/${selected.apiResourceId}`}>Open its API</Link>
+            ) : (
+              <Link to={`/${s.application}/kafka-proxy`}>Kafka REST Proxy</Link>
+            )}
           </p>
           <Notice kind="error">{w.error}</Notice>
           <h4>Access for {s.applicationName(s.application)}</h4>
@@ -1035,138 +1068,341 @@ export function Kafka({
   );
 }
 
-/**
- * The HTTP call a topic's proxy answers, as a command somebody can paste.
- *
- * In this phase the broker and its proxy are simulated, and what answers is the portal's own Kafka
- * console endpoint (kafka-playground) — so that is the address given, and the command carries what
- * that endpoint actually checks: the portal session, and an `Origin` matching the portal, because
- * the control plane refuses a cross-origin write. An invented proxy host would have been a URL that
- * answered nothing.
- */
-export function proxyCall(
-  portalUrl: string,
-  topicId: string,
-  applicationId: string,
-  action: "produce" | "consume",
-): { endpoint: string; curl: string } {
-  const origin = new URL(portalUrl).origin;
-  const endpoint = `${origin}/api/kafka/topics/${encodeURIComponent(topicId)}/playground`;
-  const body = JSON.stringify(
-    action === "produce" ? { applicationId, action, value: "hello" } : { applicationId, action },
-  );
-  const curl = `curl -X POST '${endpoint}' -H 'Content-Type: application/json' -H 'Origin: ${origin}' -b 'apim_session=<your portal session>' -d '${body}'`;
-  return { endpoint, curl };
+/** What a topic is produced with, as the forms hold it: the schema as text, so a typo is not lost. */
+export interface ContractDraft {
+  schemaType: string;
+  schemaText: string;
+  certificateId: string;
+}
+
+export function contractDraftOf(t?: { schemaType?: string | null; schema?: unknown; certificateId?: string | null }): ContractDraft {
+  return {
+    schemaType: t?.schemaType ?? "",
+    schemaText: t?.schema ? JSON.stringify(t.schema, null, 2) : "",
+    certificateId: t?.certificateId ?? "",
+  };
 }
 
 /**
- * The Kafka REST Proxy screen: every topic this application can reach, with its proxy state.
+ * Why a draft cannot be saved, or `null` — the server's own check (`topicSchemaError`), run as the
+ * owner types, so a schema the gateway could not enforce is refused here rather than after a round
+ * trip. An empty schema on a JSON topic is allowed: the topic can exist before its contract does;
+ * it just cannot have an HTTP API until it has one.
+ */
+export function contractProblem(topic: string, draft: ContractDraft): string | null {
+  if (draft.schemaType !== "json" || !draft.schemaText.trim()) return null;
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(draft.schemaText);
+  } catch (error) {
+    return `schema: not valid JSON — ${(error as Error).message}`;
+  }
+  return topicSchemaError(topic || "topic", parsed);
+}
+
+/** The PATCH or POST fields for a draft. */
+function contractBody(draft: ContractDraft) {
+  return {
+    schemaType: draft.schemaType || null,
+    schema: draft.schemaType === "json" && draft.schemaText.trim() ? JSON.parse(draft.schemaText) : null,
+    certificateId: draft.certificateId || null,
+  };
+}
+
+/**
+ * A topic's schema and certificate (kafka-rest-proxy, "A topic carries its schema and its
+ * certificate"). One component for the create form and the owner's edit form, so the two cannot
+ * come to ask for different things.
+ */
+function TopicContract({
+  s,
+  topic,
+  draft,
+  onChange,
+  certificates,
+}: {
+  s: Session;
+  topic: string;
+  draft: ContractDraft;
+  onChange: (next: ContractDraft) => void;
+  certificates: { data: { items: any[] } | null; error: string | null };
+}) {
+  const usable = (certificates.data?.items ?? []).filter(
+    (c) => c.applicationId === s.application && !c.expired,
+  );
+  const problem = contractProblem(topic, draft);
+  return (
+    <>
+      <Field label="Schema type" hint="What the records on this topic are. Only a JSON topic can have an HTTP API.">
+        <select value={draft.schemaType} onChange={(e) => onChange({ ...draft, schemaType: e.target.value })}>
+          <option value="">Not recorded</option>
+          <option value="json">JSON</option>
+          <option value="avro">Avro</option>
+          <option value="protobuf">Protobuf</option>
+        </select>
+      </Field>
+      {draft.schemaType === "json" && (
+        <Field
+          label="JSON Schema"
+          hint="The record's shape. It becomes the request body of the topic's HTTP API, which refuses a record that does not match it."
+        >
+          <textarea
+            className="mono"
+            rows={10}
+            spellCheck={false}
+            value={draft.schemaText}
+            onChange={(e) => onChange({ ...draft, schemaText: e.target.value })}
+          />
+        </Field>
+      )}
+      {problem && <p className="field-error">{problem}</p>}
+      <Field
+        label="Client certificate"
+        hint={`Presented by the topic's HTTP API when it produces a record. One of the certificates ${s.applicationName(s.application)} holds in ${envLabel(s.environment)}.`}
+      >
+        <select value={draft.certificateId} onChange={(e) => onChange({ ...draft, certificateId: e.target.value })}>
+          <option value="">None</option>
+          {usable.map((c) => (
+            <option key={c.id} value={c.id}>{c.name}</option>
+          ))}
+          {/* The one it has, even when it has since expired: a select that silently showed "None"
+              would save the certificate off the topic. */}
+          {draft.certificateId && !usable.some((c) => c.id === draft.certificateId) && (
+            <option value={draft.certificateId}>{draft.certificateId} (expired or not yours)</option>
+          )}
+        </select>
+      </Field>
+      <Notice kind="warn">{certificates.error && `Certificates could not be read: ${certificates.error}`}</Notice>
+      {certificates.data && usable.length === 0 && (
+        <p className="hint">
+          {s.applicationName(s.application)} has no certificate in {envLabel(s.environment)}.{" "}
+          <Link to={`/${s.application}/credentials`}>Add one on Credentials</Link>
+        </p>
+      )}
+    </>
+  );
+}
+
+interface SharedStage {
+  environment: string;
+  published: boolean;
+  urls: string[];
+  operation: { id: string; state: string; error: string | null } | null;
+  keyReady: boolean;
+  /** An administrator's only: the Kafka REST Proxy the shared proxy calls, and the cluster. */
+  backendUrl?: string | null;
+  clusterId?: string | null;
+}
+interface ProxyTopic {
+  id: string;
+  name: string;
+  environment: string;
+  applicationId: string;
+  applicationName: string;
+  schemaType: string | null;
+  certificateName: string | null;
+  canEdit: boolean;
+  apiResourceId: string | null;
+  published: boolean;
+  blockers: string[];
+}
+interface ProxyStatus {
+  sharedResourceId: string | null;
+  environments: SharedStage[];
+  topics: ProxyTopic[];
+}
+
+/**
+ * What the shared-proxy button does in this environment, said on the button: publish it where the
+ * chain starts, promote it one stage on, or point the one that is here somewhere else. `null` when
+ * nothing can be done here yet, with the reason in `blocked`.
+ */
+export function sharedProxyAction(
+  status: { sharedResourceId: string | null; environments: Array<Pick<SharedStage, "environment" | "published">> },
+  environment: string,
+): { label: string; blocked: string | null } {
+  const index = status.environments.findIndex((e) => e.environment === environment);
+  const here = status.environments[index];
+  const first = status.environments[0]?.environment ?? environment;
+  if (!status.sharedResourceId)
+    return index === 0
+      ? { label: "Publish the shared proxy", blocked: null }
+      : { label: "Publish the shared proxy", blocked: `It starts in ${envLabel(first)}; set it up there first.` };
+  if (here?.published) return { label: "Save", blocked: null };
+  const previous = status.environments[index - 1];
+  return previous?.published
+    ? { label: `Promote to ${envLabel(environment)}`, blocked: null }
+    : { label: `Promote to ${envLabel(environment)}`, blocked: `Set it up in ${envLabel(previous?.environment ?? first)} first.` };
+}
+
+/**
+ * What a topic's row offers on this screen (kafka-rest-proxy, "The Kafka REST Proxy screen"). One
+ * decision, named, so the rules are tested rather than read out of JSX: open the API it has, create
+ * one, promote the one it has into this stage — or why none of those is possible yet.
+ */
+export function topicApiAction(
+  topic: Pick<ProxyTopic, "published" | "apiResourceId" | "blockers" | "canEdit">,
+  stage: { published: boolean; first: boolean } | undefined,
+): { kind: "open" | "create" | "promote" | "none"; reason: string | null } {
+  if (topic.published) return { kind: "open", reason: null };
+  if (topic.blockers.length > 0) return { kind: "none", reason: topic.blockers[0]! };
+  if (!stage?.published)
+    return { kind: "none", reason: "The shared Kafka proxy is not published here yet. An administrator sets it up above." };
+  if (!topic.canEdit) return { kind: "none", reason: "Only the topic's owner can give it an API." };
+  if (topic.apiResourceId) return { kind: "promote", reason: null };
+  return stage.first
+    ? { kind: "create", reason: null }
+    : { kind: "none", reason: "A topic's API starts where the chain does: create it there, then promote it here." };
+}
+
+/**
+ * The Kafka REST Proxy screen (kafka-rest-proxy): a topic's records produced over HTTP, through an
+ * API generated from the topic's schema.
  *
- * It used to be the topics screen again, filtered to `proxy_enabled` — so a topic whose proxy was
- * off vanished instead of saying so (kafka-workspace, "The Kafka REST Proxy section is opened"),
- * and the screen offered "Create topic" beside no topics. What belongs here is what differs: the
- * switch, the address, and the command that uses it.
+ * Two things, in the order they depend on each other. The shared proxy — the portal's own API, in
+ * front of the Kafka REST Proxy — which an administrator sets up per environment and everybody else
+ * can only see the state of. Then this application's topics, each with its API or the first reason
+ * it cannot have one. A consumer never comes here: a topic's API is in the Catalog, and is
+ * subscribed to like any other.
  */
 export function KafkaProxy({ session: s, tick }: { session: Session; tick: number }) {
-  const topics = useAsync(
-      () => api.get<{ items: any[] }>("/api/kafka/topics"),
-      [tick, s.application],
-    ),
-    access = useAsync(
-      () => api.get<{ items: any[] }>("/api/kafka/access"),
-      [tick, s.application],
-    ),
+  const status = useAsync(() => api.get<ProxyStatus>("/api/kafka/proxy"), [tick]),
     w = useAction();
-  if (topics.error || access.error) return <Notice kind="error">{topics.error ?? access.error}</Notice>;
-  if (!topics.data || !access.data) return <Skeleton rows={4} />;
-  const grants = access.data.items;
-  // What this application owns, and what it has been granted: the two ways a topic is one it can
-  // produce to. Anybody else's topic is on Kafka Topics, where access is asked for.
-  const rows = topics.data.items.filter((t) => {
-    if (t.environment !== s.environment || t.state === "deleted") return false;
-    return t.applicationId === s.application || grantFor(grants, t.id, s.application)?.state === "active";
-  });
+  // The administrator's two fields, held apart from the refresh underneath them.
+  const [draft, setDraft] = useState<{ backendUrl: string; clusterId: string } | null>(null);
+  if (status.error) return <Notice kind="error">{status.error}</Notice>;
+  if (!status.data) return <Skeleton rows={4} />;
+  const data = status.data;
+  const index = data.environments.findIndex((e) => e.environment === s.environment);
+  const here = data.environments[index];
+  const form = draft ?? { backendUrl: here?.backendUrl ?? "", clusterId: here?.clusterId ?? "" };
+  const action = sharedProxyAction(data, s.environment);
+  const busyOperation = here?.operation && !["complete", "superseded"].includes(here.operation.state) ? here.operation : null;
+  const topics = data.topics.filter((t) => t.environment === s.environment && t.applicationId === s.application);
   const kafka = `/${s.application}/kafka`;
+
+  const run = (fn: () => Promise<unknown>) =>
+    void w.run(async () => {
+      await fn();
+      setDraft(null);
+      status.reload();
+    });
+
   return (
-    <Panel
-      className="kafka-proxy"
-      title={`Topics in ${envLabel(s.environment)}`}
-      hint="Simulated: the portal answers for the proxy, and a call uses your portal sign-in rather than a subscription key."
-    >
-      <Notice kind="error">{w.error}</Notice>
-      {rows.length === 0 ? (
-        <EmptyState
-          title={`No topics to reach in ${envLabel(s.environment)}`}
-          detail="Topics this application owns, or has been granted access to, are listed here with their proxy."
-          action={<Link className="btn sm" to={kafka}>Open Kafka Topics</Link>}
-        />
-      ) : (
-        rows.map((t) => {
-          const on = Boolean(t.proxy_enabled);
-          const owner = s.applicationName(t.applicationId);
-          const usable = grantFor(grants, t.id, s.application)?.state === "active";
-          const produce = proxyCall(s.meta.publicUrl, t.id, s.application, "produce");
-          const consume = proxyCall(s.meta.publicUrl, t.id, s.application, "consume");
-          return (
-            <div className="native-row" key={t.id}>
-              <div>
-                <div className="approval-head">
-                  <strong>{t.name}</strong>
-                  <StatusChip chip={kafkaProxyChip(on)} />
-                </div>
-                <small>{t.applicationId === s.application ? `Owned by ${owner}` : `${owner}'s topic`}</small>
-                {!on ? (
-                  <small>
-                    {t.canEdit ? "Turn the proxy on to produce to and read this topic over HTTP." : `Only members of ${owner} can turn the proxy on.`}
-                  </small>
-                ) : !usable ? (
-                  // The proxy is the same relationship a client would use, not a way around it: the
-                  // call is refused without an active grant (kafka-playground).
-                  <small>
-                    Calls need {s.applicationName(s.application)}'s own access to the topic. <Link to={kafka}>Request it on Kafka Topics</Link>
-                  </small>
-                ) : (
-                  <>
-                    <h4>Endpoint</h4>
-                    <div className="copy-row">
-                      <code>{produce.endpoint}</code>
-                      <CopyButton value={produce.endpoint} what={`${t.name} endpoint`} />
-                    </div>
-                    <h4>Produce a message</h4>
-                    <div className="copy-row">
-                      <code>{produce.curl}</code>
-                      <CopyButton value={produce.curl} what={`produce command for ${t.name}`} />
-                    </div>
-                    <h4>Read the newest messages</h4>
-                    <div className="copy-row">
-                      <code>{consume.curl}</code>
-                      <CopyButton value={consume.curl} what={`consume command for ${t.name}`} />
-                    </div>
-                  </>
-                )}
-              </div>
-              {/* The owner's switch; nobody else gets a disabled one, because the sentence above
-                  already says who can, and that is all a greyed button would have said. */}
-              {t.canEdit && (
-                <div className="native-actions">
-                  <button
-                    className="btn sm"
-                    disabled={w.busy}
-                    onClick={() =>
-                      void w.run(async () => {
-                        await api.patch(`/api/kafka/topics/${t.id}`, { proxyEnabled: !on });
-                        topics.reload();
-                      })
-                    }
-                  >
-                    {on ? "Turn off" : "Turn on"}
-                  </button>
-                </div>
+    <>
+      <Panel
+        title={`Shared Kafka proxy in ${envLabel(s.environment)}`}
+        hint="The portal's own API in front of the Kafka REST Proxy. Every topic's API calls it with the portal's key; no application subscribes to it."
+        actions={
+          <StatusChip
+            chip={
+              busyOperation
+                ? operationChip(busyOperation.state as OperationState)
+                : here?.published
+                  ? { label: "Published", tone: "live", title: "the shared proxy answers in this environment" }
+                  : { label: "Not set up", tone: "neutral", title: "no topic here can have an HTTP API until an administrator publishes it" }
+            }
+          />
+        }
+      >
+        {here?.operation?.error && <Notice kind="warn">{here.operation.error}</Notice>}
+        {s.user.isAdmin ? (
+          <form
+            onSubmit={(e) => {
+              e.preventDefault();
+              run(() => command("/api/kafka/proxy/shared", { environment: s.environment, ...form }));
+            }}
+          >
+            <TextField
+              label="Kafka REST Proxy URL"
+              type="url"
+              required
+              value={form.backendUrl}
+              onChange={(backendUrl) => setDraft({ ...form, backendUrl })}
+              placeholder="https://kafka-rest.example:8082"
+              hint="The Confluent REST Proxy (v3) this environment produces through."
+            />
+            <TextField
+              label="Cluster id"
+              required
+              pattern="[A-Za-z0-9._\-]{1,255}"
+              value={form.clusterId}
+              onChange={(clusterId) => setDraft({ ...form, clusterId })}
+              hint="The Kafka cluster's id, as GET /v3/clusters on that proxy reports it."
+            />
+            {action.blocked && <p className="hint">{action.blocked}</p>}
+            <Notice kind="error">{w.error}</Notice>
+            <div className="native-actions">
+              <button className="btn primary" disabled={w.busy || Boolean(action.blocked) || !form.backendUrl || !form.clusterId}>
+                {action.label}
+              </button>
+              {data.sharedResourceId && (
+                <Link className="btn" to={`/${s.application}/apis/${data.sharedResourceId}`}>Open its API</Link>
               )}
             </div>
-          );
-        })
-      )}
-    </Panel>
+          </form>
+        ) : (
+          <p className="muted">
+            {here?.published
+              ? `Answering on ${here.urls.length} gateway address${here.urls.length === 1 ? "" : "es"} in ${envLabel(s.environment)}.`
+              : `Not set up in ${envLabel(s.environment)} yet. An administrator sets it up here; until then no topic can have an HTTP API.`}
+          </p>
+        )}
+      </Panel>
+      <Panel
+        className="kafka-proxy"
+        title={`Topics owned by ${s.applicationName(s.application)} in ${envLabel(s.environment)}`}
+        hint="A JSON topic with a schema and a client certificate can have an HTTP API, generated from its schema and owned by this application."
+      >
+        {topics.length === 0 ? (
+          <EmptyState
+            title={`${s.applicationName(s.application)} owns no topics in ${envLabel(s.environment)}`}
+            detail="A topic's HTTP API is made from the topic, so the topic comes first."
+            action={<Link className="btn sm" to={kafka}>Open Kafka Topics</Link>}
+          />
+        ) : (
+          topics.map((t) => {
+            const next = topicApiAction(t, here ? { published: here.published, first: index === 0 } : undefined);
+            return (
+              <div className="native-row" key={t.id}>
+                <div>
+                  <div className="approval-head">
+                    <strong>{t.name}</strong>
+                    <StatusChip chip={topicApiChip(t.published, t.blockers[0])} />
+                  </div>
+                  <small>
+                    {t.schemaType ? `${t.schemaType.toUpperCase()} schema` : "No schema recorded"}
+                    {" · "}
+                    {t.certificateName ? `certificate ${t.certificateName}` : "no client certificate"}
+                  </small>
+                  {next.reason && <small>{next.reason}</small>}
+                </div>
+                <div className="native-actions">
+                  {next.kind === "open" && (
+                    <Link className="btn sm" to={`/${t.applicationId}/apis/${t.apiResourceId}`}>Open API <I.ChevRight /></Link>
+                  )}
+                  {(next.kind === "create" || next.kind === "promote") && (
+                    <button
+                      className="btn sm primary"
+                      disabled={w.busy}
+                      onClick={() => run(() => command(`/api/kafka/topics/${t.id}/proxy`, {}))}
+                    >
+                      {next.kind === "create" ? "Create HTTP API" : `Promote its API to ${envLabel(s.environment)}`}
+                    </button>
+                  )}
+                  {next.kind === "none" && t.canEdit && t.blockers.length > 0 && (
+                    <Link className="btn sm" to={kafka}>Edit topic</Link>
+                  )}
+                </div>
+              </div>
+            );
+          })
+        )}
+        {!s.user.isAdmin && <Notice kind="error">{w.error}</Notice>}
+        <p className="muted small">
+          Other applications' topic APIs are in the <Link to="/catalog">Catalog</Link>, where they are subscribed to like any API.
+        </p>
+      </Panel>
+    </>
   );
 }

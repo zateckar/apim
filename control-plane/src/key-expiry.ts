@@ -2,6 +2,7 @@ import { nowIso } from "./db.ts";
 import { writeAudit } from "./audit.ts";
 import { emitIntegration } from "./integrations.ts";
 import type { App } from "./router.ts";
+import { rotatePlatformKeys } from "./kafka-proxy.ts";
 
 /**
  * Subscription keys age, and past a point they stop working.
@@ -75,9 +76,12 @@ export function runKeyExpiry(app: App, now = Date.now()): KeyExpiryResult {
          FROM subscription s
          JOIN application a ON a.id = s.application_id
          JOIN product p     ON p.id = s.product_id
-        WHERE s.state = 'active'`,
+        WHERE s.state = 'active' AND s.application_id <> 'platform'`,
     )
     .all();
+
+  // The platform's own keys are rotated rather than retired; see `rotatePlatformKeys`.
+  rotatePlatformKeys(app, warnDays, now);
 
   let expired = 0;
   let warned = 0;

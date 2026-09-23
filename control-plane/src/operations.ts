@@ -12,7 +12,7 @@ import {
   notFound,
 } from "./router.ts";
 import { can } from "./auth.ts";
-import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl } from "./api/common.ts";
+import { assertCan, getResource, etagOf, assertIfMatch, readDocsUrl, type ResourceRow } from "./api/common.ts";
 import { revisionSource, writeRevision } from "./api/resources.ts";
 import { newId, nowIso, type DB } from "./db.ts";
 import { validateDocument, type PolicyDocument } from "../../shared/policy.ts";
@@ -40,6 +40,8 @@ import { writeAudit } from "./audit.ts";
 import { reindexResource } from "./search.ts";
 import { emitIntegration } from "./integrations.ts";
 import { digestOf } from "../../shared/canonical.ts";
+import { isPlatformRef, KAFKA_PROXY_ROLE } from "../../shared/kafka-proxy.ts";
+import { ensurePlatformSubscription, managedUnitsFor, topicApiBinding } from "./kafka-proxy.ts";
 
 interface Snapshot {
   revisionId: string;
@@ -146,18 +148,43 @@ function env(ctx: Ctx, value?: string): string {
     throw badRequest("unknown environment");
   return e;
 }
-function key(ctx: Ctx): string {
+/**
+ * How a caller other than the three routes below drives the spine (kafka-rest-proxy). The Kafka
+ * endpoints publish, configure and promote APIs the platform generates, and they have to do it
+ * through exactly these functions: a second path to a release is a second set of rules about what
+ * a release may contain.
+ */
+export interface SpineOptions {
+  /**
+   * The idempotency key when the request that caused this operation is not itself the command — a
+   * topic's schema edit that regenerates its API. Such a caller has no `Idempotency-Key` of its own
+   * to give, and its retry is the edit's, so a fresh one per call is correct.
+   */
+  idempotencyKey?: string;
+  /**
+   * Units the platform writes on this resource and nobody else does, administrators included —
+   * forced into every document, whatever the request sent. See `managedUnitsFor`.
+   */
+  managed?: Record<string, unknown>;
+  /** Set only by the platform's own regeneration: the definition and backend are its to change. */
+  generated?: boolean;
+  /** Columns a platform-created resource is born with (publish only). */
+  columns?: { kafka_topic?: string; platform_role?: string; visibility?: "listed" | "unlisted" };
+}
+
+function key(ctx: Ctx, options?: SpineOptions): string {
+  if (options?.idempotencyKey) return `${requireUser(ctx).id}:${options.idempotencyKey}`;
   const value = ctx.req.headers.get("idempotency-key");
   if (!value || value.length > 160)
     throw badRequest("Idempotency-Key is required (up to 160 characters)");
   return `${requireUser(ctx).id}:${value}`;
 }
-function repeated(ctx: Ctx, requestDigest: string): Response | null {
+function repeated(ctx: Ctx, requestDigest: string, options?: SpineOptions): Response | null {
   const row = ctx.app.db
     .query<OperationRow, [string]>(
       "SELECT * FROM operation WHERE idempotency_key=?",
     )
-    .get(key(ctx));
+    .get(key(ctx, options));
   if (!row) return null;
   if (JSON.parse(row.input_json).requestDigest !== requestDigest)
     throw conflict("Idempotency-Key was already used for a different command");
@@ -187,6 +214,7 @@ function queue(
   environment: string,
   kind: string,
   snapshot: Snapshot,
+  options?: SpineOptions,
 ): Response {
   const id = newId("op"),
     at = nowIso(),
@@ -204,7 +232,7 @@ function queue(
       JSON.stringify(snapshot),
       at,
       at,
-      key(ctx),
+      key(ctx, options),
     ],
   );
   writeAudit(ctx.app.db, {
@@ -227,6 +255,7 @@ async function settings(
   taxonomy: Taxonomy,
   apiVersion: string,
   defaults?: Snapshot,
+  managed?: Record<string, unknown>,
 ): Promise<Omit<Snapshot, "revisionId">> {
   const h = normalizeHost(body.host ?? defaults?.host ?? "*");
   // The domain is the first segment of the address, not a label filed beside it, so the default
@@ -371,6 +400,26 @@ async function settings(
       if (moved.length > 0) throw forbidden(globalOverrideRefusal(environment, moved));
     }
   }
+  /**
+   * The platform's units last, over whatever was sent, so no document — an administrator's
+   * included — can leave a topic's API without the key it reaches the shared Kafka proxy with.
+   * Forced rather than refused: the editor sends the whole effective document back on every save,
+   * and a save about a rate limit should not fail over a unit the owner never touched.
+   */
+  if (managed) Object.assign(policy, managed);
+  // And a `platform:` reference anywhere else is refused. It resolves to the platform's own
+  // subscription key, so a unit that named it on any other API would present that key to a backend
+  // of its owner's choosing (kafka-rest-proxy, "The platform's key is presented only where the
+  // platform put it").
+  for (const [unit, value] of Object.entries(policy)) {
+    if (managed?.[unit] !== undefined) continue;
+    if (namesPlatformRef(value)) {
+      throw forbidden(
+        `${unit}: a "platform:" reference is the portal's own credential and only the portal ` +
+          "writes one, on the APIs it generates",
+      );
+    }
+  }
   const errors = validateDocument(policy, { kind });
   if (errors.length) throw badRequest(errors.join("; "));
   return {
@@ -380,6 +429,20 @@ async function settings(
     policy,
     gateways: readGateways(ctx, environment, body.gateways ?? defaults?.gateways),
   };
+}
+
+/**
+ * Whether a unit value names a `platform:` reference in any of its reference fields — every
+ * `…Ref` key the vocabulary has (`credentialRef`, `schemeRef`, `issuerRef`, `tokenProviderRef`).
+ * The keys rather than any string, so a header whose value happens to start `platform:` is not a
+ * reference and is not refused.
+ */
+export function namesPlatformRef(value: unknown): boolean {
+  if (Array.isArray(value)) return value.some(namesPlatformRef);
+  if (!value || typeof value !== "object") return false;
+  return Object.entries(value as Record<string, unknown>).some(([name, entry]) =>
+    name.endsWith("Ref") && typeof entry === "string" ? isPlatformRef(entry) : namesPlatformRef(entry),
+  );
 }
 
 /**
@@ -438,7 +501,7 @@ function environmentsOf(ctx: Ctx, id: string): string[] {
     (environment) => currentSnapshot(ctx, id, environment) !== null,
   );
 }
-function currentSnapshot(
+export function currentSnapshot(
   ctx: Ctx,
   id: string,
   environment: string,
@@ -551,6 +614,316 @@ export function ownProductFor(db: DB, applicationId: string, apiName: string): s
   return id;
 }
 
+/** `POST /api/publish`: a new resource, its first revision and product, queued in the first stage. */
+export async function publishResource(
+  ctx: Ctx,
+  body: PublishInput,
+  options?: SpineOptions,
+): Promise<Response> {
+  const user = requireUser(ctx);
+  const requestDigest = digestOf({ path: ctx.url.pathname, body });
+  const again = repeated(ctx, requestDigest, options);
+  if (again) return again;
+  const applicationId = body.applicationId ?? "";
+  assertCan(user, applicationId, "publish for this application");
+  if (
+    !ctx.app.db
+      .query("SELECT id FROM application WHERE id=?")
+      .get(applicationId)
+  )
+    throw notFound("application not found");
+  const kind = body.kind ?? "rest",
+    version = body.apiVersion ?? "v1",
+    environment = ctx.app.config.promotionChain[0]!;
+  if (!["rest", "soap", "mcp", "a2a"].includes(kind))
+    throw badRequest("kind: rest, soap, mcp or a2a");
+  if (!body.name || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.name))
+    throw badRequest("name: 2–61 lowercase letters, digits or hyphens");
+  if (!API_VERSION_PATTERN.test(version))
+    throw badRequest("apiVersion: use v followed by a positive integer, for example v1 or v2 (maximum 32 characters)");
+  // A product is no longer something the publisher has to have decided. Naming one is still
+  // accepted, and choosing an existing one still is, but the common case — one API, sold on its
+  // own — makes its own. Requiring it meant every first publish stopped to invent a bundle for a
+  // bundle of one, and the answer people gave was the API's name anyway.
+  if (body.productName && !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.productName))
+    throw badRequest("productName: 2–61 lowercase letters, digits or hyphens");
+  // Required on a new API, with no "unclassified" escape: a catalog you cannot browse by domain
+  // is a list, and one API without a domain is enough to make the grouping incomplete.
+  const taxonomy = readTaxonomy(body, { domain: null, subdomain: null }, true);
+  const source = await revisionSource(ctx, { kind }, body);
+  const config = await settings(ctx, body, kind, environment, taxonomy, version, undefined, options?.managed);
+  return ctx.app.db.transaction(() => {
+    const duplicate = repeated(ctx, requestDigest, options);
+    if (duplicate) return duplicate;
+    const id = newId("res"),
+      at = nowIso();
+    assertRouteFree(ctx, id, environment, config.host, config.basePath);
+    if (
+      ctx.app.db
+        .query(
+          "SELECT id FROM resource WHERE application_id=? AND name=? AND api_version=?",
+        )
+        .get(applicationId, body.name!, version)
+    )
+      throw conflict("API name and version already exist");
+    let productId = body.productId;
+    if (productId) {
+      const p = ctx.app.db
+        .query<{ application_id: string; lifecycle: string }, [string]>(
+          "SELECT application_id,lifecycle FROM product WHERE id=?",
+        )
+        .get(productId);
+      if (
+        !p ||
+        p.application_id !== applicationId ||
+        p.lifecycle !== "active"
+      )
+        throw badRequest(
+          "choose an active product owned by this application",
+        );
+    } else if (body.productName) {
+      productId = newId("prod");
+      if (
+        ctx.app.db
+          .query("SELECT id FROM product WHERE name=?")
+          .get(body.productName)
+      )
+        throw conflict("product name already exists");
+      ctx.app.db.run(
+        "INSERT INTO product(id,name,application_id,lifecycle) VALUES (?,?,?,'active')",
+        [productId, body.productName, applicationId],
+      );
+    } else {
+      productId = ownProductFor(ctx.app.db, applicationId, body.name!);
+    }
+    ctx.app.db.run(
+      `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,docs_url,domain,subdomain,created_at,updated_at,kafka_topic,platform_role,visibility)
+    VALUES (?,?,?,?,?,'active',?,?,?,?,?,?,?,?,?)`,
+      [
+        id,
+        kind,
+        body.name!,
+        applicationId,
+        version,
+        body.description ?? "",
+        readDocsUrl(body.docsUrl) ?? null,
+        taxonomy.domain,
+        taxonomy.subdomain,
+        at,
+        at,
+        options?.columns?.kafka_topic ?? null,
+        options?.columns?.platform_role ?? null,
+        options?.columns?.visibility ?? "listed",
+      ],
+    );
+    writeRevision(ctx, getResource(ctx, id), source, "revision.create");
+    const revision = ctx.app.db
+      .query<{ id: string }, [string]>(
+        "SELECT id FROM revision WHERE resource_id=? ORDER BY rev DESC LIMIT 1",
+      )
+      .get(id)!;
+    ctx.app.db.run(
+      "INSERT INTO product_member(product_id,resource_id) VALUES (?,?)",
+      [productId, id],
+    );
+    arrived(ctx.app, getResource(ctx, id), environment);
+    return queue(ctx, applicationId, id, environment, "publish", {
+      ...config,
+      revisionId: revision.id,
+      requestDigest,
+    }, options);
+  })();
+}
+
+/**
+ * `POST /api/resources/:id/configure`: the next snapshot of an API already in this stage.
+ *
+ * A topic's API (kafka-rest-proxy) refuses a new definition, a new backend and a new certificate
+ * from anybody but the platform's own regeneration: all three are derived from the topic and the
+ * shared proxy, and an edit here would be undone — or worse, not undone — by the next change there.
+ * Its policy is the owner's like any API's, less the one unit the platform manages.
+ */
+export async function configureResource(
+  ctx: Ctx,
+  row: ResourceRow,
+  body: PublishInput,
+  options?: SpineOptions,
+): Promise<Response> {
+  assertCan(ctx.user, row.application_id, "configure this API");
+  const environment = env(ctx, body.environment);
+  const requestDigest = digestOf({ path: ctx.url.pathname, body });
+  const again = repeated(ctx, requestDigest, options);
+  if (again) return again;
+  // The platform's own regeneration follows a change on the topic, not an edit of this API, so the
+  // caller has no ETag of the resource to present and is not racing anybody who does.
+  if (!options?.generated) assertIfMatch(ctx, row);
+  if (row.kafka_topic && !options?.generated) {
+    if (body.spec !== undefined || body.specUrl || body.discoverUrl)
+      throw conflict(
+        `This API is generated from the Kafka topic ${row.kafka_topic}. Change the topic's schema ` +
+          "on Kafka topics and the definition follows.",
+      );
+    if (body.backendUrl !== undefined || body.pool !== undefined || body.urls !== undefined || body.clientCertRef !== undefined)
+      throw conflict(
+        `This API's backend is the shared Kafka proxy and its certificate is the topic's. Change ` +
+          `the certificate on the Kafka topic ${row.kafka_topic}.`,
+      );
+  }
+  const previous = currentSnapshot(ctx, row.id, environment);
+  if (!previous)
+    throw conflict("publish or promote to this environment first");
+  // Required from here on, including for a row published before domains existed: the save that
+  // classifies it is also the save that moves its path, so both happen at once or neither does.
+  const taxonomy = readTaxonomy(
+    body,
+    { domain: row.domain, subdomain: row.subdomain },
+    true,
+  );
+  const config = await settings(
+    ctx,
+    { ...body, applicationId: row.application_id, name: row.name },
+    row.kind,
+    environment,
+    taxonomy,
+    row.api_version,
+    previous,
+    options?.managed ?? managedUnitsFor(row),
+  );
+  const source =
+    body.spec !== undefined || body.specUrl || body.discoverUrl
+      ? await revisionSource(ctx, row, body)
+      : null;
+  return ctx.app.db.transaction(() => {
+    if (!options?.generated) assertIfMatch(ctx, getResource(ctx, row.id));
+    assertRouteFree(ctx, row.id, environment, config.host, config.basePath);
+    let revisionId = previous.revisionId;
+    if (source) {
+      writeRevision(ctx, getResource(ctx, row.id), source, "revision.create");
+      revisionId = ctx.app.db
+        .query<{ id: string }, [string]>(
+          "SELECT id FROM revision WHERE resource_id=? ORDER BY rev DESC LIMIT 1",
+        )
+        .get(row.id)!.id;
+    }
+    // `docsUrl` absent means the caller's form does not carry the field (the policy tab, the
+    // definition tab) — not that the link should go. Sending `""` is how it is cleared.
+    const docsUrl = readDocsUrl(body.docsUrl);
+    ctx.app.db.run(
+      "UPDATE resource SET updated_at=?,description=COALESCE(?,description),docs_url=?,domain=?,subdomain=? WHERE id=?",
+      [
+        nowIso(),
+        body.description ?? null,
+        docsUrl === undefined ? row.docs_url : docsUrl,
+        taxonomy.domain,
+        taxonomy.subdomain,
+        row.id,
+      ],
+    );
+    if (body.policy && environment !== ctx.app.config.promotionChain[0])
+      ctx.app.db.run(
+        "INSERT INTO environment_override(resource_id,environment,policy_json) VALUES (?,?,?) ON CONFLICT(resource_id,environment) DO UPDATE SET policy_json=excluded.policy_json",
+        [row.id, environment, JSON.stringify(body.policy)],
+      );
+    reindexResource(ctx.app.db, row.id);
+    return queue(ctx, row.application_id, row.id, environment, "configure", {
+      ...config,
+      revisionId,
+      requestDigest,
+    }, options);
+  })();
+}
+
+/**
+ * `POST /api/resources/:id/promote`: the previous stage's snapshot, carried one stage on.
+ *
+ * A topic's API is not given a backend or a certificate by whoever promotes it: both are the
+ * target stage's own — that stage's shared proxy and that stage's topic of the same name — and the
+ * promotion is refused, saying which is missing, until both exist (kafka-rest-proxy, "A topic's
+ * API is promoted to where its topic is").
+ */
+export async function promoteResource(
+  ctx: Ctx,
+  row: ResourceRow,
+  requested: PublishInput,
+  options?: SpineOptions,
+): Promise<Response> {
+  assertCan(ctx.user, row.application_id, "promote this API");
+  const environment = env(ctx, requested.environment);
+  const requestDigest = digestOf({ path: ctx.url.pathname, body: requested });
+  const again = repeated(ctx, requestDigest, options);
+  if (again) return again;
+  const index = ctx.app.config.promotionChain.indexOf(environment);
+  if (index < 1) throw badRequest("promote to TEST or PROD");
+  const body = row.kafka_topic
+    ? { ...requested, ...topicApiBinding(ctx.app.db, row, environment) }
+    : requested;
+  const sourceEnvironment = ctx.app.config.promotionChain[index - 1]!;
+  const source = currentSnapshot(ctx, row.id, sourceEnvironment);
+  if (!source)
+    throw conflict(`publish to ${sourceEnvironment.toUpperCase()} first`);
+  const sourceOp = ctx.app.db
+    .query<{ id: string }, string[]>(
+      "SELECT id FROM operation WHERE resource_id=? AND environment=? AND state<>'superseded' ORDER BY rowid DESC LIMIT 1",
+    )
+    .get(row.id, sourceEnvironment);
+  const target = currentSnapshot(ctx, row.id, environment);
+  const override = ctx.app.db
+    .query<{ policy_json: string }, string[]>(
+      "SELECT policy_json FROM environment_override WHERE resource_id=? AND environment=?",
+    )
+    .get(row.id, environment);
+  const defaults = {
+    ...source,
+    backend: target?.backend ?? {},
+    host: target?.host ?? source.host,
+    basePath: target?.basePath ?? source.basePath,
+    policy: override ? JSON.parse(override.policy_json) : source.policy,
+    // Where it is already answering here, if anywhere. Not carried over from the source: the
+    // gateway names may not line up across environments, and a promotion into a locality this
+    // environment does not have is a decision, not a default.
+    gateways: target?.gateways,
+  };
+  if (!target && !body.backendUrl && !body.urls)
+    throw badRequest(
+      `backendUrl is required for the first promotion to ${environment.toUpperCase()}`,
+    );
+  // A promotion carries the taxonomy the resource already has: the domain belongs to the API,
+  // not to one environment's route, so it is never re-asked here and never differs across the
+  // chain. A row published before domains existed promotes unchanged rather than being blocked
+  // — it gets classified on its next edit, which is where the path can move safely.
+  const config = await settings(
+    ctx,
+    { ...body, applicationId: row.application_id, name: row.name },
+    row.kind,
+    environment,
+    { domain: row.domain, subdomain: row.subdomain },
+    row.api_version,
+    defaults,
+    options?.managed ?? managedUnitsFor(row),
+  );
+  return ctx.app.db.transaction(() => {
+    assertRouteFree(ctx, row.id, environment, config.host, config.basePath);
+    arrived(ctx.app, row, environment);
+    return queue(ctx, row.application_id, row.id, environment, "promote", {
+      ...config,
+      revisionId: source.revisionId,
+      sourceEnvironment,
+      sourceOperationId: sourceOp?.id,
+      requestDigest,
+    }, options);
+  })();
+}
+
+/**
+ * What has to exist beside a resource the moment it reaches a stage. Only the shared Kafka proxy
+ * has anything: the platform's own subscription to it there, whose key every topic's API in that
+ * stage presents. Written in the same transaction as the operation, so there is never a moment when
+ * the proxy is on its way to a stage and the key that reaches it is not (kafka-rest-proxy).
+ */
+function arrived(app: App, row: ResourceRow, environment: string): void {
+  if (row.platform_role === KAFKA_PROXY_ROLE) ensurePlatformSubscription(app, row.id, environment);
+}
+
 export function registerOperationRoutes(router: Router) {
   router.add("GET", "/api/operations", "session", (ctx) => {
     const user = requireUser(ctx),
@@ -581,121 +954,9 @@ export function registerOperationRoutes(router: Router) {
     assertCan(ctx.user, row.application_id, "read this operation");
     return json(operationView(row));
   });
-  router.add("POST", "/api/publish", "session", async (ctx) => {
-    const user = requireUser(ctx),
-      body = await readJson<PublishInput>(
-        ctx,
-        ctx.app.config.maxSpecBytes + 32768,
-      );
-    const requestDigest = digestOf({ path: ctx.url.pathname, body });
-    const again = repeated(ctx, requestDigest);
-    if (again) return again;
-    const applicationId = body.applicationId ?? "";
-    assertCan(user, applicationId, "publish for this application");
-    if (
-      !ctx.app.db
-        .query("SELECT id FROM application WHERE id=?")
-        .get(applicationId)
-    )
-      throw notFound("application not found");
-    const kind = body.kind ?? "rest",
-      version = body.apiVersion ?? "v1",
-      environment = ctx.app.config.promotionChain[0]!;
-    if (!["rest", "soap", "mcp", "a2a"].includes(kind))
-      throw badRequest("kind: rest, soap, mcp or a2a");
-    if (!body.name || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.name))
-      throw badRequest("name: 2–61 lowercase letters, digits or hyphens");
-    if (!API_VERSION_PATTERN.test(version))
-      throw badRequest("apiVersion: use v followed by a positive integer, for example v1 or v2 (maximum 32 characters)");
-    // A product is no longer something the publisher has to have decided. Naming one is still
-    // accepted, and choosing an existing one still is, but the common case — one API, sold on its
-    // own — makes its own. Requiring it meant every first publish stopped to invent a bundle for a
-    // bundle of one, and the answer people gave was the API's name anyway.
-    if (body.productName && !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.productName))
-      throw badRequest("productName: 2–61 lowercase letters, digits or hyphens");
-    // Required on a new API, with no "unclassified" escape: a catalog you cannot browse by domain
-    // is a list, and one API without a domain is enough to make the grouping incomplete.
-    const taxonomy = readTaxonomy(body, { domain: null, subdomain: null }, true);
-    const source = await revisionSource(ctx, { kind }, body);
-    const config = await settings(ctx, body, kind, environment, taxonomy, version);
-    return ctx.app.db.transaction(() => {
-      const duplicate = repeated(ctx, requestDigest);
-      if (duplicate) return duplicate;
-      const id = newId("res"),
-        at = nowIso();
-      assertRouteFree(ctx, id, environment, config.host, config.basePath);
-      if (
-        ctx.app.db
-          .query(
-            "SELECT id FROM resource WHERE application_id=? AND name=? AND api_version=?",
-          )
-          .get(applicationId, body.name!, version)
-      )
-        throw conflict("API name and version already exist");
-      let productId = body.productId;
-      if (productId) {
-        const p = ctx.app.db
-          .query<{ application_id: string; lifecycle: string }, [string]>(
-            "SELECT application_id,lifecycle FROM product WHERE id=?",
-          )
-          .get(productId);
-        if (
-          !p ||
-          p.application_id !== applicationId ||
-          p.lifecycle !== "active"
-        )
-          throw badRequest(
-            "choose an active product owned by this application",
-          );
-      } else if (body.productName) {
-        productId = newId("prod");
-        if (
-          ctx.app.db
-            .query("SELECT id FROM product WHERE name=?")
-            .get(body.productName)
-        )
-          throw conflict("product name already exists");
-        ctx.app.db.run(
-          "INSERT INTO product(id,name,application_id,lifecycle) VALUES (?,?,?,'active')",
-          [productId, body.productName, applicationId],
-        );
-      } else {
-        productId = ownProductFor(ctx.app.db, applicationId, body.name!);
-      }
-      ctx.app.db.run(
-        `INSERT INTO resource(id,kind,name,application_id,api_version,lifecycle,description,docs_url,domain,subdomain,created_at,updated_at)
-    VALUES (?,?,?,?,?,'active',?,?,?,?,?,?)`,
-        [
-          id,
-          kind,
-          body.name!,
-          applicationId,
-          version,
-          body.description ?? "",
-          readDocsUrl(body.docsUrl) ?? null,
-          taxonomy.domain,
-          taxonomy.subdomain,
-          at,
-          at,
-        ],
-      );
-      writeRevision(ctx, getResource(ctx, id), source, "revision.create");
-      const revision = ctx.app.db
-        .query<{ id: string }, [string]>(
-          "SELECT id FROM revision WHERE resource_id=? ORDER BY rev DESC LIMIT 1",
-        )
-        .get(id)!;
-      ctx.app.db.run(
-        "INSERT INTO product_member(product_id,resource_id) VALUES (?,?)",
-        [productId, id],
-      );
-      return queue(ctx, applicationId, id, environment, "publish", {
-        ...config,
-        revisionId: revision.id,
-        requestDigest,
-      });
-    })();
-  });
+  router.add("POST", "/api/publish", "session", async (ctx) =>
+    publishResource(ctx, await readJson<PublishInput>(ctx, ctx.app.config.maxSpecBytes + 32768)),
+  );
   /**
    * Where this resource exists, independent of which environment is selected.
    *
@@ -755,6 +1016,13 @@ export function registerOperationRoutes(router: Router) {
         docsUrl: row.docs_url ?? null,
         domain: row.domain ?? null,
         subdomain: row.subdomain ?? null,
+        /**
+         * The Kafka topic this API is generated from, or the platform role it plays
+         * (kafka-rest-proxy) — so the workspace can say which of its parts are the platform's to
+         * change before the owner edits one and is refused.
+         */
+        kafkaTopic: row.kafka_topic ?? null,
+        platformRole: row.platform_role ?? null,
         etag: etagOf(row),
         canEdit,
         // One sentence saying why, rather than controls that vanish (finding 8). Present for
@@ -815,144 +1083,16 @@ export function registerOperationRoutes(router: Router) {
         .all(row.application_id, row.name),
     });
   });
-  router.add("POST", "/api/resources/:id/configure", "session", async (ctx) => {
-    const row = getResource(ctx, ctx.params.id!);
-    assertCan(ctx.user, row.application_id, "configure this API");
-    const body = await readJson<PublishInput>(
-        ctx,
-        ctx.app.config.maxSpecBytes + 32768,
-      ),
-      environment = env(ctx, body.environment);
-    const requestDigest = digestOf({ path: ctx.url.pathname, body });
-    const again = repeated(ctx, requestDigest);
-    if (again) return again;
-    assertIfMatch(ctx, row);
-    const previous = currentSnapshot(ctx, row.id, environment);
-    if (!previous)
-      throw conflict("publish or promote to this environment first");
-    // Required from here on, including for a row published before domains existed: the save that
-    // classifies it is also the save that moves its path, so both happen at once or neither does.
-    const taxonomy = readTaxonomy(
-      body,
-      { domain: row.domain, subdomain: row.subdomain },
-      true,
-    );
-    const config = await settings(
+  router.add("POST", "/api/resources/:id/configure", "session", async (ctx) =>
+    configureResource(
       ctx,
-      { ...body, applicationId: row.application_id, name: row.name },
-      row.kind,
-      environment,
-      taxonomy,
-      row.api_version,
-      previous,
-    );
-    const source =
-      body.spec !== undefined || body.specUrl || body.discoverUrl
-        ? await revisionSource(ctx, row, body)
-        : null;
-    return ctx.app.db.transaction(() => {
-      assertIfMatch(ctx, getResource(ctx, row.id));
-      assertRouteFree(ctx, row.id, environment, config.host, config.basePath);
-      let revisionId = previous.revisionId;
-      if (source) {
-        writeRevision(ctx, getResource(ctx, row.id), source, "revision.create");
-        revisionId = ctx.app.db
-          .query<{ id: string }, [string]>(
-            "SELECT id FROM revision WHERE resource_id=? ORDER BY rev DESC LIMIT 1",
-          )
-          .get(row.id)!.id;
-      }
-      // `docsUrl` absent means the caller's form does not carry the field (the policy tab, the
-      // definition tab) — not that the link should go. Sending `""` is how it is cleared.
-      const docsUrl = readDocsUrl(body.docsUrl);
-      ctx.app.db.run(
-        "UPDATE resource SET updated_at=?,description=COALESCE(?,description),docs_url=?,domain=?,subdomain=? WHERE id=?",
-        [
-          nowIso(),
-          body.description ?? null,
-          docsUrl === undefined ? row.docs_url : docsUrl,
-          taxonomy.domain,
-          taxonomy.subdomain,
-          row.id,
-        ],
-      );
-      if (body.policy && environment !== ctx.app.config.promotionChain[0])
-        ctx.app.db.run(
-          "INSERT INTO environment_override(resource_id,environment,policy_json) VALUES (?,?,?) ON CONFLICT(resource_id,environment) DO UPDATE SET policy_json=excluded.policy_json",
-          [row.id, environment, JSON.stringify(body.policy)],
-        );
-      reindexResource(ctx.app.db, row.id);
-      return queue(ctx, row.application_id, row.id, environment, "configure", {
-        ...config,
-        revisionId,
-        requestDigest,
-      });
-    })();
-  });
-  router.add("POST", "/api/resources/:id/promote", "session", async (ctx) => {
-    const row = getResource(ctx, ctx.params.id!);
-    assertCan(ctx.user, row.application_id, "promote this API");
-    const body = await readJson<PublishInput>(ctx),
-      environment = env(ctx, body.environment);
-    const requestDigest = digestOf({ path: ctx.url.pathname, body });
-    const again = repeated(ctx, requestDigest);
-    if (again) return again;
-    const index = ctx.app.config.promotionChain.indexOf(environment);
-    if (index < 1) throw badRequest("promote to TEST or PROD");
-    const sourceEnvironment = ctx.app.config.promotionChain[index - 1]!;
-    const source = currentSnapshot(ctx, row.id, sourceEnvironment);
-    if (!source)
-      throw conflict(`publish to ${sourceEnvironment.toUpperCase()} first`);
-    const sourceOp = ctx.app.db
-      .query<{ id: string }, string[]>(
-        "SELECT id FROM operation WHERE resource_id=? AND environment=? AND state<>'superseded' ORDER BY rowid DESC LIMIT 1",
-      )
-      .get(row.id, sourceEnvironment);
-    const target = currentSnapshot(ctx, row.id, environment);
-    const override = ctx.app.db
-      .query<{ policy_json: string }, string[]>(
-        "SELECT policy_json FROM environment_override WHERE resource_id=? AND environment=?",
-      )
-      .get(row.id, environment);
-    const defaults = {
-      ...source,
-      backend: target?.backend ?? {},
-      host: target?.host ?? source.host,
-      basePath: target?.basePath ?? source.basePath,
-      policy: override ? JSON.parse(override.policy_json) : source.policy,
-      // Where it is already answering here, if anywhere. Not carried over from the source: the
-      // gateway names may not line up across environments, and a promotion into a locality this
-      // environment does not have is a decision, not a default.
-      gateways: target?.gateways,
-    };
-    if (!target && !body.backendUrl)
-      throw badRequest(
-        `backendUrl is required for the first promotion to ${environment.toUpperCase()}`,
-      );
-    // A promotion carries the taxonomy the resource already has: the domain belongs to the API,
-    // not to one environment's route, so it is never re-asked here and never differs across the
-    // chain. A row published before domains existed promotes unchanged rather than being blocked
-    // — it gets classified on its next edit, which is where the path can move safely.
-    const config = await settings(
-      ctx,
-      { ...body, applicationId: row.application_id, name: row.name },
-      row.kind,
-      environment,
-      { domain: row.domain, subdomain: row.subdomain },
-      row.api_version,
-      defaults,
-    );
-    return ctx.app.db.transaction(() => {
-      assertRouteFree(ctx, row.id, environment, config.host, config.basePath);
-      return queue(ctx, row.application_id, row.id, environment, "promote", {
-        ...config,
-        revisionId: source.revisionId,
-        sourceEnvironment,
-        sourceOperationId: sourceOp?.id,
-        requestDigest,
-      });
-    })();
-  });
+      getResource(ctx, ctx.params.id!),
+      await readJson<PublishInput>(ctx, ctx.app.config.maxSpecBytes + 32768),
+    ),
+  );
+  router.add("POST", "/api/resources/:id/promote", "session", async (ctx) =>
+    promoteResource(ctx, getResource(ctx, ctx.params.id!), await readJson<PublishInput>(ctx)),
+  );
 }
 
 /**

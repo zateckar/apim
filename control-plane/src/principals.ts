@@ -3,6 +3,7 @@ import { newId, nowIso } from "./db.ts";
 import { conflict, HttpError, notFound } from "./errors.ts";
 import type { App } from "./router.ts";
 import type { User } from "./auth.ts";
+import { PLATFORM_APPLICATION_ID } from "../../shared/kafka-proxy.ts";
 
 /**
  * The directory (v5 plan §4, §6, §7). One table for every human the portal knows, whichever
@@ -288,6 +289,12 @@ export function grantMembership(
   source: "idp" | "local",
   grantedBy: string,
 ): void {
+  // The portal's own application has no members, by construction (kafka-rest-proxy): under the one
+  // authorization rule that is what makes the shared Kafka proxy an administrator's alone. Refused
+  // here, the one place a membership is written, so no provider and no screen can grant one.
+  if (applicationId === PLATFORM_APPLICATION_ID) {
+    throw conflict(`"${PLATFORM_APPLICATION_ID}" is the portal's own application and has no members`);
+  }
   db.run(
     `INSERT INTO membership (application_id, user_id, source, granted_by, granted_at)
      VALUES (?, ?, ?, ?, ?)

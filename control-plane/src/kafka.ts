@@ -14,18 +14,99 @@ import { newId, nowIso } from "./db.ts";
 import { emitIntegration, requestApproval } from "./integrations.ts";
 import { writeAudit } from "./audit.ts";
 import { domainError } from "../../shared/domains.ts";
-interface Topic {
-  id: string;
-  application_id: string;
-  environment: string;
-  name: string;
-  partitions: number;
-  description: string;
-  state: string;
-  proxy_enabled: number;
-  domain: string | null;
-  subdomain: string | null;
+import {
+  MAX_TOPIC_SCHEMA_BYTES,
+  TOPIC_SCHEMA_TYPES,
+  topicApiBlockers,
+  topicApiDefinition,
+  topicSchemaError,
+} from "../../shared/kafka-proxy.ts";
+import { certificateUsable, parseSchema, topicApiOf, topicFacts, type TopicRow } from "./kafka-proxy.ts";
+import { configureResource, currentSnapshot } from "./operations.ts";
+import { getResource } from "./api/common.ts";
+
+type Topic = TopicRow;
+
+/** What a topic is produced with: its schema and the certificate its records are written under. */
+interface ContractInput {
+  schemaType?: string | null;
+  schema?: unknown;
+  certificateId?: string | null;
 }
+type Contract = Pick<TopicRow, "schema_type" | "schema_json" | "certificate_id">;
+
+/**
+ * The schema and certificate a write is asking for, on top of what the topic has (kafka-rest-proxy,
+ * "A topic carries its schema and its certificate"). Absent keeps a field; `null` clears it.
+ *
+ * Only a JSON topic carries a schema here. An Avro or Protobuf topic records its type — so the
+ * proxy screen can say why it has no HTTP API — but its schema lives in a registry this portal does
+ * not model, and a text field for one would be a schema nothing checks.
+ */
+function readContract(
+  db: Ctx["app"]["db"],
+  topic: Pick<TopicRow, "application_id" | "environment" | "name"> & Partial<Contract>,
+  body: ContractInput,
+): Contract {
+  let schemaType = topic.schema_type ?? null;
+  if (body.schemaType !== undefined) {
+    schemaType = body.schemaType || null;
+    if (schemaType && !(TOPIC_SCHEMA_TYPES as readonly string[]).includes(schemaType))
+      throw badRequest(`schemaType: one of ${TOPIC_SCHEMA_TYPES.join(", ")}`);
+  }
+  let schemaJson = topic.schema_json ?? null;
+  if (body.schema !== undefined) {
+    if (body.schema === null || body.schema === "") schemaJson = null;
+    else {
+      const parsed = typeof body.schema === "string" ? tryParse(body.schema) : body.schema;
+      const problem = topicSchemaError(topic.name, parsed);
+      if (problem) throw badRequest(problem);
+      schemaJson = JSON.stringify(parsed);
+      if (schemaJson.length > MAX_TOPIC_SCHEMA_BYTES)
+        throw badRequest(`schema: at most ${MAX_TOPIC_SCHEMA_BYTES / 1024} KiB`);
+    }
+  }
+  if (schemaType !== "json") {
+    if (body.schema !== undefined && schemaJson)
+      throw badRequest("schema: only a JSON topic carries a JSON Schema here");
+    schemaJson = null;
+  }
+  let certificateId = topic.certificate_id ?? null;
+  if (body.certificateId !== undefined) {
+    certificateId = body.certificateId || null;
+    if (certificateId && !certificateUsable(db, certificateId, topic))
+      throw badRequest(
+        `certificateId: choose a certificate of this topic's application in ` +
+          `${topic.environment.toUpperCase()} that has not expired`,
+      );
+  }
+  return { schema_type: schemaType, schema_json: schemaJson, certificate_id: certificateId };
+}
+
+function tryParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw badRequest("schema: not valid JSON");
+  }
+}
+
+/** A topic as the portal reads it: the row, in camel case where the screens read it, and its API. */
+function topicView(ctx: Ctx, t: Topic) {
+  const api = topicApiOf(ctx.app.db, t);
+  return {
+    ...t,
+    applicationId: t.application_id,
+    canEdit: can(ctx.user, t.application_id),
+    schemaType: t.schema_type,
+    schema: parseSchema(t.schema_json),
+    certificateId: t.certificate_id,
+    apiResourceId: api?.id ?? null,
+    apiPublished: api ? currentSnapshot(ctx, api.id, t.environment) !== null : false,
+    apiBlockers: topicApiBlockers(topicFacts(ctx.app.db, t)),
+  };
+}
+
 function topic(ctx: Ctx): Topic {
   const t = ctx.app.db
     .query<Topic, [string]>("SELECT * FROM kafka_topic WHERE id=?")
@@ -40,11 +121,7 @@ export function registerKafkaRoutes(router: Router) {
       items: ctx.app.db
         .query<Topic, []>("SELECT * FROM kafka_topic ORDER BY name")
         .all()
-        .map((t) => ({
-          ...t,
-          applicationId: t.application_id,
-          canEdit: can(ctx.user, t.application_id),
-        })),
+        .map((t) => topicView(ctx, t)),
     }),
   );
   router.add("POST", "/api/kafka/topics", "session", async (ctx) => {
@@ -57,7 +134,7 @@ export function registerKafkaRoutes(router: Router) {
         description?: string;
         domain?: string;
         subdomain?: string;
-      }>(ctx);
+      } & ContractInput>(ctx);
     assertCan(u, body.applicationId, "create a topic");
     if (
       !body.environment ||
@@ -85,10 +162,15 @@ export function registerKafkaRoutes(router: Router) {
         .get(body.environment, body.name)
     )
       throw conflict("topic already exists");
+    const contract = readContract(
+      ctx.app.db,
+      { application_id: body.applicationId!, environment: body.environment, name: body.name },
+      body,
+    );
     const id = newId("topic");
     ctx.app.db.transaction(() => {
       ctx.app.db.run(
-        "INSERT INTO kafka_topic(id,application_id,environment,name,partitions,description,domain,subdomain,created_at) VALUES (?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO kafka_topic(id,application_id,environment,name,partitions,description,domain,subdomain,created_at,schema_type,schema_json,certificate_id) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
         [
           id,
           body.applicationId!,
@@ -99,6 +181,9 @@ export function registerKafkaRoutes(router: Router) {
           domain,
           subdomain,
           nowIso(),
+          contract.schema_type,
+          contract.schema_json,
+          contract.certificate_id,
         ],
       );
       emitIntegration(
@@ -128,10 +213,9 @@ export function registerKafkaRoutes(router: Router) {
     const body = await readJson<{
       description?: string;
       partitions?: number;
-      proxyEnabled?: boolean;
       domain?: string;
       subdomain?: string | null;
-    }>(ctx);
+    } & ContractInput>(ctx);
     if (t.state === "deleted") throw conflict("topic was deleted");
     if (
       body.partitions !== undefined &&
@@ -148,29 +232,76 @@ export function registerKafkaRoutes(router: Router) {
     if (!domain) throw badRequest("domain: required — every catalog item belongs to a domain");
     const problem = domainError(domain, subdomain);
     if (problem) throw badRequest(problem);
+    const next = readContract(ctx.app.db, t, body);
+
+    /**
+     * A topic with an API in its stage carries that API with it (kafka-rest-proxy, "A schema edit
+     * regenerates the topic's API"): a new schema is a new definition and a new certificate a new
+     * binding, queued as an ordinary configure before the topic row changes — so a schema the
+     * compiler refuses leaves both as they were, rather than the topic saying one thing and its API
+     * another. What the API cannot run without cannot be taken off while it exists.
+     */
+    const api = topicApiOf(ctx.app.db, t);
+    let operation: unknown = null;
+    if (api && currentSnapshot(ctx, api.id, t.environment)) {
+      if (next.schema_type !== "json" || !next.schema_json || !next.certificate_id)
+        throw conflict(
+          `${t.name} has an API in ${t.environment.toUpperCase()}, which needs a JSON schema and a ` +
+            "client certificate. Keep both, or retire the API first.",
+        );
+      const schemaChanged = next.schema_json !== t.schema_json;
+      const certificateChanged = next.certificate_id !== t.certificate_id;
+      if (schemaChanged || certificateChanged) {
+        const response = await configureResource(
+          ctx,
+          getResource(ctx, api.id),
+          {
+            environment: t.environment,
+            ...(schemaChanged
+              ? {
+                  spec: topicApiDefinition(
+                    t.name,
+                    parseSchema(next.schema_json)!,
+                    body.description ?? t.description,
+                  ),
+                }
+              : {}),
+            ...(certificateChanged ? { clientCertRef: next.certificate_id } : {}),
+          },
+          { generated: true, idempotencyKey: newId("kafka") },
+        );
+        operation = await response.json();
+      }
+    }
+
     ctx.app.db.run(
-      "UPDATE kafka_topic SET description=?,partitions=?,proxy_enabled=?,domain=?,subdomain=? WHERE id=?",
+      "UPDATE kafka_topic SET description=?,partitions=?,domain=?,subdomain=?,schema_type=?,schema_json=?,certificate_id=? WHERE id=?",
       [
         body.description ?? t.description,
         body.partitions ?? t.partitions,
-        body.proxyEnabled === undefined
-          ? t.proxy_enabled
-          : body.proxyEnabled
-            ? 1
-            : 0,
         domain,
         subdomain,
+        next.schema_type,
+        next.schema_json,
+        next.certificate_id,
         t.id,
       ],
     );
+    // The schema itself is not audited — it can be a quarter of a megabyte — only that it changed.
+    const { schema: _schema, ...audited } = body;
     writeAudit(ctx.app.db, {
       actor: requireUser(ctx).id,
       action: "kafka.configure",
       subject: t.id,
       outcome: "ok",
-      detail: { applicationId: t.application_id, ...body, simulated: true },
+      detail: {
+        applicationId: t.application_id,
+        ...audited,
+        ...(body.schema !== undefined ? { schemaChanged: next.schema_json !== t.schema_json } : {}),
+        simulated: true,
+      },
     });
-    return json({ id: t.id, simulated: true });
+    return json({ id: t.id, simulated: true, operation });
   });
   router.add("DELETE", "/api/kafka/topics/:id", "session", (ctx) => {
     const t = topic(ctx);
@@ -183,6 +314,11 @@ export function registerKafkaRoutes(router: Router) {
         .get(t.id)
     )
       throw conflict("revoke or cancel topic subscriptions first");
+    // Its API would go on answering, bound to a topic that no longer exists and a certificate the
+    // topic no longer names. Retiring the API is the owner's decision, made on its workspace.
+    const api = topicApiOf(ctx.app.db, t);
+    if (api && currentSnapshot(ctx, api.id, t.environment))
+      throw conflict(`${t.name} has an API in ${t.environment.toUpperCase()}; retire the API first`);
     ctx.app.db.run("UPDATE kafka_topic SET state='deleted' WHERE id=?", [t.id]);
     writeAudit(ctx.app.db, {
       actor: requireUser(ctx).id,

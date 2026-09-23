@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, type Application, type MarketCard, type MarketFacets, type Meta, type User } from "../api";
 import { EmptyState, Panel, Link, Notice, Segmented, Skeleton, StatusChip, envLabel, useAsync } from "../components";
-import { catalogAccessChip, lifecycleChip, unpublishedChip } from "../lib/status";
+import { catalogAccessChip, kafkaTopicApiChip, lifecycleChip, unpublishedChip } from "../lib/status";
 import * as I from "../portal/icons";
 import { KindBadge, type Kind } from "../portal/components/KindBadge";
 
@@ -440,6 +440,8 @@ function ListingCard({
           <div className="catalog-result-title">
             <Link to={`/catalog/${item.id}`}><strong>{item.title}</strong></Link>
             <KindBadge kind={item.kind as Kind} />
+            {/* A generated API is still a REST API; this says what it is for, which the kind cannot. */}
+            {item.kafkaTopic && <StatusChip chip={kafkaTopicApiChip(item.kafkaTopic)} />}
             {item.unpublished && <StatusChip chip={unpublishedChip()} />}
             <StatusChip chip={catalogAccessChip(item)} />
             {lifecycle && <StatusChip chip={lifecycle} />}

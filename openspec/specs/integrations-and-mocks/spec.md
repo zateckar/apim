@@ -124,6 +124,22 @@ durable outbox. Plus the rule that a simulated result is always labelled as one.
 - AND the transition SHALL be guarded on the state it is moving **from**, so a repeated delivery
   changes nothing
 
+#### Scenario: A record reaches the simulated Kafka REST Proxy
+
+- GIVEN the local stack's `kafka-rest` upstream (`tools/kafka-rest/server.ts`, port 9087, cluster
+  `local-cluster`), which the shared Kafka proxy (`kafka-rest-proxy`) is pointed at as
+  `http://127.0.0.1:9087` — not `localhost`, which the platform's egress rule for the portal's own
+  address denies on every port
+- WHEN `POST /v3/clusters/{cluster}/topics/{topic}/records` arrives
+- THEN it SHALL accept only a body of `{"value":{"type":"JSON","data":…}}`, answering `400`
+  otherwise, and `404` for any cluster but its own
+- AND it SHALL answer with Confluent's v3 produce response — `topic_name`, `partition_id`, a
+  per-topic `offset`, `timestamp` — and errors as `{ error_code, message }`
+- AND it SHALL be strict rather than accepting anything, so a gateway that wrapped a record wrongly
+  fails here instead of passing
+- AND it SHALL keep the last records per topic in memory only, answering a `GET` on the same path
+  that is not part of Confluent's API and SHALL say `simulated: true`; nothing is written to a broker
+
 ### Requirement: Approval fans out to five events, once
 
 #### Scenario: Access is requested from another application

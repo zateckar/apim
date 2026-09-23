@@ -389,8 +389,8 @@ describe("claims become roles and applications", () => {
     expect(mapped.applicationIds.sort()).toEqual(["application_orders", "application_platform"]);
     expect(mapped.unmapped).toEqual([]);
     // Matching takes precedence over provisioning, so a group an application already carries adds
-    // nothing: still the three rows this test created.
-    expect(cp.app.db.query("SELECT COUNT(*) AS n FROM application").get()).toEqual({ n: 3 });
+    // nothing: still the three rows this test created (and the portal's own, which migration 16 adds).
+    expect(cp.app.db.query("SELECT COUNT(*) AS n FROM application WHERE id <> 'platform'").get()).toEqual({ n: 3 });
   });
 
   test("a group nothing carries provisions an application rather than being refused", async () => {

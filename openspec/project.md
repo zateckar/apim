@@ -156,7 +156,8 @@ Modules named by more than one capability spec:
 | `app-credentials` | Everything an application holds to prove who it is, and which references stay an admin's |
 | `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
 | `dashboard-health` | Health Status (with FixMe's diagnose-and-repair section), uptime, telemetry, the application dashboard |
-| `kafka-workspace` | Topics, access requests, the HTTP proxy |
+| `kafka-workspace` | Topics, their schema and certificate, access requests |
+| `kafka-rest-proxy` | A topic produced to over HTTP: its generated API, the portal's shared proxy, the portal's own key |
 | `kafka-playground` | Producing one message and reading recent ones |
 | `integrations-and-mocks` | The six surrounding systems and the durable outbox |
 | `skonet-integration` | Approval requests and the decision that comes back |
@@ -407,6 +408,9 @@ defines — see *Policy Vocabulary* and `api-policy-controls`.
 | PATCH · DELETE | `/api/kafka/topics/:id` | ses |
 | POST | `/api/kafka/topics/:id/subscribe` | ses |
 | POST | `/api/kafka/topics/:id/playground` | ses |
+| POST | `/api/kafka/topics/:id/proxy` | ses |
+| GET | `/api/kafka/proxy` | ses |
+| POST | `/api/kafka/proxy/shared` | ses (admin) |
 | GET | `/api/kafka/access` | ses |
 | DELETE | `/api/kafka/access/:id` | ses |
 
@@ -455,7 +459,11 @@ Tables, by the capability that owns them:
   vocabulary, owned per application and per environment: its `secret_enc` is KEK-encrypted and its
   `principal` — the username, the client id — is deliberately in the clear, so a listing can say
   which account a credential is without the key.
-- **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`.
+- **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`. A topic carries `schema_type`,
+  `schema_json` and `certificate_id` (schema-016); `proxy_enabled` is no longer read. A resource
+  generated from a topic names it by `resource.kafka_topic`, and the portal's shared Kafka proxy is
+  the resource whose `platform_role` is `kafka-proxy`, owned by the reserved application `platform`,
+  which has no members (`kafka-rest-proxy`).
 - **Logs** — `body_capture`. The lines themselves live in the log index, never here.
 - **Everything else** — `audit`, `integration_event`, `playground_call`, `schema_version`.
 
@@ -573,7 +581,10 @@ something carrying a URL (`issuerRef`, `tokenProviderRef`) resolve through the a
 integrations file. The references that are **only a secret** (`credentialRef`, `schemeRef`) resolve
 through that file *or* through `app_credential`, the owning application's own store, written
 `app:<applicationId>:<name>` — see `app-credentials`. The line is what resolving the reference makes
-the gateway *do*: a password is compared or presented, an issuer is fetched from.
+the gateway *do*: a password is compared or presented, an issuer is fetched from. A third form,
+`platform:<name>`, is the portal's own credential — today only `platform:kafka-proxy` — which the
+shape check accepts and the control plane refuses on every API but the ones it generates
+(`kafka-rest-proxy`).
 
 A **unit** is the smallest thing that can independently exist or be absent; everything beneath a
 unit is its values and moves as one piece. Half a `rateLimit` is never merged.
@@ -1125,7 +1136,7 @@ To recreate the system, implement in this order. The capability specs follow the
 13. Certificates, credentials and the trust store — `app-certificates`, `app-credentials`,
     `trust-store`
 14. The RPC variants — `ai-gateway-mcp-a2a`
-15. Kafka — `kafka-workspace`, `kafka-playground`
+15. Kafka — `kafka-workspace`, `kafka-rest-proxy`, `kafka-playground`
 16. The surrounding systems — `integrations-and-mocks`, `skonet-integration`,
     `leanix-integration`, `notifications-and-mail`
 17. Administration — `platform-administration`

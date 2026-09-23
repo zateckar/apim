@@ -192,7 +192,7 @@ describe("interaction hygiene", () => {
     {
       file: "views/GlobalPolicyView.tsx",
       endpoint: "/api/policy/global/units/",
-      why: "detaching a global policy unit, which re-attaches with the same click",
+      why: "detaching a global policy unit: a unit is not a named object anybody created, the dialog before it says which APIs stop receiving it, and attaching it again is one action",
     },
     {
       file: "views/AccountView.tsx",
@@ -287,6 +287,89 @@ describe("interaction hygiene", () => {
       if (name === "components.tsx") continue;
       const match = SHARED.exec(readFileSync(file, "utf8"));
       if (match) offenders.push(`${name} exports ${match[1]}`);
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  /**
+   * What the per-screen consistency pass removed, held to by structure rather than by memory.
+   * Each of these came back at least once in the history before there was a test for it.
+   */
+  test("a reader is not shown the design history or the words the portal stopped using", () => {
+    // Citations belong in comments, where they explain a decision to the next developer; on a
+    // screen they are words a member cannot act on. "Developer" was the footer's role word before
+    // membership was the thing the authorization rule turns on (portal-shell-navigation), and APIM
+    // is the product this portal is not built on (CLAUDE.md, "No Azure").
+    const BANNED = [
+      { pattern: /\bdesign section\b/gi, why: "a design citation" },
+      { pattern: /\bdeviation D\d+/gi, why: "a design deviation id" },
+      // Not inside a name: `SG-APIM-ORDERS` is how the directory's groups are called, not a product.
+      { pattern: /(?<![-\w])APIM(?![-\w])/g, why: "an Azure product name" },
+      { pattern: /\bDeveloper\b/g, why: "the old role word — say Member" },
+      { pattern: /\b(?:plan|design) §\s?\d/g, why: "a plan citation" },
+    ];
+    const offenders: string[] = [];
+    for (const file of sources) {
+      const text = withoutComments(readFileSync(file, "utf8"));
+      for (const { pattern, why } of BANNED) {
+        for (const match of text.matchAll(pattern)) {
+          const line = text.slice(0, match.index!).split("\n").length;
+          offenders.push(`${relative(SRC, file)}:${line} "${match[0]}" — ${why}`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("a button modifier is never written without the button it modifies", () => {
+    // `className="ghost small"` and `"danger small"` were a second button vocabulary: the same
+    // intent drawn at a different size and radius on every screen that invented it. The house
+    // button is `btn` and the modifier rides on it — or `icon-btn`, the icon-only button, which
+    // brand.css gives its own `.danger` hover.
+    const offenders: string[] = [];
+    for (const file of sources) {
+      const text = withoutComments(readFileSync(file, "utf8"));
+      for (const match of text.matchAll(/<(button|a|Link)\b[^>]*?className="([^"]*)"/g)) {
+        const classes = match[2]!.split(/\s+/);
+        const based = classes.includes("btn") || classes.includes("icon-btn");
+        if (classes.some((name) => ["primary", "danger", "ghost"].includes(name)) && !based) {
+          const line = text.slice(0, match.index!).split("\n").length;
+          offenders.push(`${relative(SRC, file)}:${line} <${match[1]} className="${match[2]}">`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("the banned section classes cannot come back through a template literal either", () => {
+    // The rule above reads `className="…"`. A `className={\`empty ${x}\`}` walked straight past it.
+    const offenders: string[] = [];
+    for (const file of sources) {
+      if (relative(SRC, file) === "components.tsx") continue;
+      const text = withoutComments(readFileSync(file, "utf8"));
+      for (const match of text.matchAll(/className=\{`([^`]*)`\}/g)) {
+        const literal = match[1]!.replace(/\$\{[^}]*\}/g, " ");
+        const hit = /(?:^|\s)(empty|notice|banner|card)(?:\s|$)/.exec(literal);
+        if (hit) {
+          const line = text.slice(0, match.index!).split("\n").length;
+          offenders.push(`${relative(SRC, file)}:${line} writes "${hit[1]}" in a template class`);
+        }
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  test("an environment is written through envLabel, one way everywhere", () => {
+    // DEV / TEST / PROD. It was upper case in the shell, lower case in the listing and whatever the
+    // row carried in a table — three spellings of one stage on one screen.
+    const offenders: string[] = [];
+    for (const file of sources) {
+      if (relative(SRC, file) === "components.tsx") continue;
+      const text = withoutComments(readFileSync(file, "utf8"));
+      for (const match of text.matchAll(/\b(?:environment|env|stage|target)\??\.toUpperCase\(\)/g)) {
+        const line = text.slice(0, match.index!).split("\n").length;
+        offenders.push(`${relative(SRC, file)}:${line} ${match[0]} — use envLabel()`);
+      }
     }
     expect(offenders).toEqual([]);
   });

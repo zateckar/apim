@@ -4222,8 +4222,6 @@ dialog.native-modal { margin: auto; }
 .page-toolbar p { margin: 0; }
 .page-toolbar .row { align-items: center; }
 .native-portal .page-toolbar select { width: auto; }
-.native-portal .uptime-range-btn { font-size: 13px; min-height: 32px; }
-.native-portal .uptime-range-btn.active { background: var(--accent-soft); color: var(--accent); border-color: var(--border); }
 .native-portal .notif-body { padding: 0; }
 .native-portal .notif-item { border-radius: 0; border-bottom: 1px solid var(--divider); padding: 14px; }
 .native-portal .notif-item.is-unread { background: var(--bg-subtle); }

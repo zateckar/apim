@@ -76,7 +76,7 @@ import type { CircuitBreaker } from "../../shared/backend.ts";
  * Design section 5.2: the pipeline order is part of the contract, and several orderings are
  * constraints rather than conveniences.
  *
- *   1  route match                 · 13  rewrite
+ *   1  route match                 · 13  rewrite (or kafkaProduce's path, method and body)
  *   2  trusted-proxy context       · 14  request headers
  *   3  always-on limits            · 15  request transform (none — D21)
  *   4  ipAllow                     · 16  cache lookup
@@ -1037,8 +1037,16 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     route.kind !== "a2a" &&
     hasRequestBody &&
     matchesMedia(mediaTypeOf(req.headers.get("content-type")), JSON_MEDIA);
+  // `kafkaProduce` wraps the whole body in the REST Proxy's record envelope at step 13, so it has to
+  // be read here, under the same cap and budget as every other buffered body — never around them.
+  const kafkaNeedsBody =
+    policy.kafkaProduce !== undefined &&
+    matchesMedia(mediaTypeOf(req.headers.get("content-type")), JSON_MEDIA);
 
-  if (hasRequestBody && (needsAlwaysScan || (wantsBodyValidation && requestState === "blocking"))) {
+  if (
+    hasRequestBody &&
+    (needsAlwaysScan || kafkaNeedsBody || (wantsBodyValidation && requestState === "blocking"))
+  ) {
     if (!bufferedBody) {
       const reserved = deps.budget.tryReserve(routeMaxBody);
       if (!reserved) {
@@ -1241,6 +1249,58 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
     path = strip ? rendered : `${route.basePath === "/" ? "" : route.basePath}${rendered}`;
   }
 
+  /*
+   * 13 and 15 at once, for `kafkaProduce`: the upstream call is a Confluent REST Proxy v3 produce,
+   * so the unit writes its path, method and body outright (api-policy-controls, "Produce to Kafka
+   * through the Confluent REST Proxy"). It sits here rather than earlier so request validation at
+   * 12 has already judged the *caller's* body against the API's own schema; what the proxy
+   * receives is an envelope nobody's definition describes. `validateDocument` refuses `rewrite`
+   * and `transform` beside it, so nothing above is being overridden that anybody wrote.
+   */
+  let upstreamMethod = req.method;
+  const kafka = policy.kafkaProduce;
+  if (kafka) {
+    const topic = operation ? pathParams.topic : undefined;
+    if (topic === undefined || topic === "") {
+      return deny(
+        500,
+        "this route produces to Kafka, and its contract has no {topic} path parameter to take the " +
+          "topic from — the API's definition needs an operation like POST /topics/{topic}",
+        "route-misconfigured",
+        {},
+        rateHeaders,
+      );
+    }
+    const media = mediaTypeOf(req.headers.get("content-type"));
+    if (!matchesMedia(media, JSON_MEDIA)) {
+      return deny(
+        415,
+        `this route produces a JSON record, so it accepts application/json (got "${media || "nothing"}")`,
+        "content-type",
+        {},
+        rateHeaders,
+      );
+    }
+    // Read with the route's own JSON limits, so the record is the document the always block agreed
+    // to — and an empty body is refused here rather than produced as a record with no value.
+    const read = readJsonBody(new TextDecoder().decode(bufferedBody ?? new Uint8Array()), effectiveValidate);
+    if ("error" in read) {
+      return deny(
+        400,
+        `the request body is not acceptable JSON: ${read.error.message}`,
+        "validation-rejected",
+        {},
+        rateHeaders,
+      );
+    }
+    const envelope = JSON.stringify({ value: { type: "JSON", data: read.value } });
+    // Buffered, so a retry can replay it exactly as it could the caller's own body.
+    bufferedBody = new TextEncoder().encode(envelope) as Bytes;
+    upstreamBody = null;
+    upstreamMethod = "POST";
+    path = `/v3/clusters/${kafka.clusterId}/topics/${encodeURIComponent(topic)}/records`;
+  }
+
   const params = new URLSearchParams(
     rewrite?.path && rewrite.copyUnmatchedParams === false ? "" : url.search,
   );
@@ -1305,6 +1365,9 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
   for (const [name, value] of Object.entries(headerRules?.skip ?? {})) {
     if (!outHeaders.has(name)) outHeaders.set(name, render(value, templateCtx));
   }
+  // After the rules, not before: the body is the unit's envelope, and its media type is part of it.
+  // The caller's `+json` subtype described the caller's document, not the REST Proxy's.
+  if (kafka) outHeaders.set("content-type", "application/json");
 
   if (deps.trustedPeer) {
     // Append the address this hop received from — the proxy — so the chain reads
@@ -1393,7 +1456,9 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
 
   const retries = policy.retries;
   const maxAttempts = retries
-    ? retries.idempotentOnly !== false && !isIdempotent(req.method)
+    ? // The method the backend receives, which is what a replay repeats: a Kafka produce is a POST
+      // whatever the caller sent.
+      retries.idempotentOnly !== false && !isIdempotent(upstreamMethod)
       ? 1
       : // A body that was streamed cannot be replayed, so only a request with no body, or one that
         // blocking validation already buffered, can be retried past the first attempt (plan [R1-11]).
@@ -1446,7 +1511,7 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       const auth = await applyBackendAuth(
         policy.backendAuth,
         {
-          method: req.method,
+          method: upstreamMethod,
           operationTemplate: operation?.template ?? relativePath,
           references: deps.table.references,
         },
@@ -1482,7 +1547,7 @@ export async function handleRequest(req: Request, deps: PipelineDeps): Promise<P
       const target = joinBackend(entry.url, path, attemptQuery);
       const deadline = AbortSignal.timeout(remaining);
       const init: RequestInit & { duplex?: "half"; tls?: unknown; decompress?: boolean } = {
-        method: req.method,
+        method: upstreamMethod,
         headers: attemptHeaders,
         redirect: "manual",
         signal: clientGone ? AbortSignal.any([clientGone, deadline]) : deadline,

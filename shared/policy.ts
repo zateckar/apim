@@ -30,6 +30,7 @@ export const POLICY_UNITS = [
   "headers.request",
   "headers.response",
   "transform",
+  "kafkaProduce",
   "cache",
   "rateLimit",
   "quota",
@@ -48,9 +49,9 @@ export type PolicyUnitKey = (typeof POLICY_UNITS)[number];
  * Which units may be attached to an environment's **global** tier (goal G2, deviation D18).
  *
  * An allowlist rather than an exclusion list, so a unit added later is not globally attachable
- * until somebody decides it should be `[R2-08]`. The six that are missing are per-API by nature:
- * `errorFormat` is derived from the variant; `rewrite`, `transform`, `backendAuth` and `cache`
- * describe one backend and one contract; `passthrough` changes what a route *is*.
+ * until somebody decides it should be `[R2-08]`. The seven that are missing are per-API by nature:
+ * `errorFormat` is derived from the variant; `rewrite`, `transform`, `kafkaProduce`, `backendAuth`
+ * and `cache` describe one backend and one contract; `passthrough` changes what a route *is*.
  */
 export const GLOBAL_UNITS: readonly string[] = [
   "auth.subscriptionKey",
@@ -296,6 +297,23 @@ export interface TransformUnit {
   response?: "none" | "soap-to-json";
 }
 
+/**
+ * Turns `POST <base>/topics/{topic}` into a Confluent REST Proxy v3 produce call (api-policy-controls,
+ * "Produce to Kafka through the Confluent REST Proxy"). It exists for the platform's shared Kafka
+ * proxy API, whose backend *is* a REST Proxy: every per-topic API calls that one route, and the
+ * gateway rather than each caller speaks the proxy's record envelope.
+ *
+ * Only the cluster id is configurable. The path, the method and the envelope are the v3 contract,
+ * not choices, and the topic comes from the matched operation's `{topic}` path parameter — so
+ * nothing an owner writes here names an address the gateway will call.
+ */
+export interface KafkaProduceUnit {
+  clusterId: string;
+}
+
+/** A REST Proxy cluster id: what the v3 API puts in `/v3/clusters/<id>/…`. */
+const KAFKA_CLUSTER_ID = /^[A-Za-z0-9._-]+$/;
+
 export interface CacheUnit {
   ttlSec: number;
   vary?: string[];
@@ -408,6 +426,7 @@ export interface PolicyDocument {
   "headers.request"?: HeaderRulesUnit;
   "headers.response"?: HeaderRulesUnit;
   transform?: TransformUnit;
+  kafkaProduce?: KafkaProduceUnit;
   cache?: CacheUnit;
   rateLimit?: RateLimitUnit;
   quota?: QuotaUnit;
@@ -1219,6 +1238,17 @@ function validateTransform(value: unknown): string[] {
   return errors;
 }
 
+function validateKafkaProduce(value: unknown): string[] {
+  const errors: string[] = [];
+  if (!isPlainObject(value)) return ["kafkaProduce: expected an object"];
+  errors.push(...unknownKeys(value, ["clusterId"], "kafkaProduce"));
+  const id = value.clusterId;
+  if (typeof id !== "string" || id.length < 1 || id.length > 255 || !KAFKA_CLUSTER_ID.test(id)) {
+    errors.push("kafkaProduce.clusterId: expected the REST Proxy's cluster id (1-255 characters, letters, digits, . _ -)");
+  }
+  return errors;
+}
+
 function validateCache(value: unknown): string[] {
   const errors: string[] = [];
   if (!isPlainObject(value)) return ["cache: expected an object"];
@@ -1513,6 +1543,8 @@ export function validateUnit(unitKey: string, value: unknown): string[] {
       return validateHeaderRules(value, "headers.response");
     case "transform":
       return validateTransform(value);
+    case "kafkaProduce":
+      return validateKafkaProduce(value);
     case "cache":
       return validateCache(value);
     case "rateLimit":
@@ -1662,6 +1694,23 @@ export function validateDocument(
 
   if (transform?.response === "soap-to-json" && opts.kind !== undefined && opts.kind !== "soap") {
     errors.push(`transform.response: soap-to-json is only valid on a soap API (this one is "${opts.kind}")`);
+  }
+
+  // kafkaProduce writes the upstream path, method and body itself, from the REST Proxy's v3
+  // contract. A rewrite or a transform beside it would be a second author of the same request, and
+  // one of them would be silently ignored — so the combination is refused rather than ordered.
+  if (doc.kafkaProduce !== undefined) {
+    for (const other of ["rewrite", "transform"] as const) {
+      if (doc[other] !== undefined) {
+        errors.push(
+          `kafkaProduce and ${other} cannot both be attached: kafkaProduce owns the upstream path ` +
+            `and body (the REST Proxy's produce call), so a ${other} on the same route would never apply`,
+        );
+      }
+    }
+    if (opts.kind !== undefined && opts.kind !== "rest") {
+      errors.push(`kafkaProduce: only valid on a rest API (this one is "${opts.kind}")`);
+    }
   }
 
   if (!global) {
@@ -2027,6 +2076,18 @@ export const UNIT_CATALOGUE: Array<{
       "application's own; anything with a URL behind it stays administrator-registered, so no " +
       "owner writes an address the gateway will call.",
     defaultValue: { type: "none" },
+    global: false,
+  },
+  {
+    key: "kafkaProduce",
+    title: "Kafka produce",
+    group: "backend",
+    description:
+      "Sends the request body to a Kafka topic through a Confluent REST Proxy. The topic is taken " +
+      "from the path, the JSON body becomes the record's value, and the proxy's answer is passed " +
+      "back as it is. Replaces Rewrite and Transform on the same API.",
+    defaultValue: { clusterId: "" },
+    appliesToKinds: ["rest"],
     global: false,
   },
   {

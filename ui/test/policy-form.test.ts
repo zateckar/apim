@@ -70,4 +70,10 @@ describe("the collapsed row's summary", () => {
     // about the unit being empty.
     expect(summarize("headers.response", {})).toBe("no rules");
   });
+
+  test("a Kafka produce names its cluster, and says so when it has none", () => {
+    expect(summarize("kafkaProduce", { clusterId: "lkc-1" })).toBe("cluster lkc-1");
+    // The catalogue's default is an empty id; "clusterId " would read as a value.
+    expect(summarize("kafkaProduce", { clusterId: "" })).toBe("no cluster");
+  });
 });

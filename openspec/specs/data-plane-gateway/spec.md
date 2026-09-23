@@ -166,7 +166,8 @@ conveniences.
 - THEN the stages SHALL run in this order:
   1. route match · 2. trusted-proxy context · 3. always-on limits · 4. `ipAllow` ·
   5. CORS preflight · 6. authenticate · 7. authorize · 8. rate limit · 9. quota ·
-  10. preconditions · 11. operation resolution · 12. request validation · 13. `rewrite` ·
+  10. preconditions · 11. operation resolution · 12. request validation · 13. `rewrite` (or
+  `kafkaProduce`, which writes the upstream path, method and body here) ·
   14. request headers · 15. request transform · 16. cache lookup · 17. backend select ·
   18. backend auth · 19. proxy (timeout, retries, breaker) · 20. response validation, then
   response transform · 21. response headers + CORS · 22. backend-auth invalidation ·

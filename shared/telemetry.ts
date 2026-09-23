@@ -79,6 +79,12 @@ export const OUTCOMES = [
   "upgrade-saturated",
   /** A WebSocket or SSE stream that ran to completion or was closed by a ceiling. */
   "stream-closed",
+  /**
+   * The route's own configuration cannot serve the request — a `kafkaProduce` route whose matched
+   * operation has no `{topic}` path parameter. Not the caller's fault and not the backend's, so it
+   * is neither `validation-rejected` nor `upstream-error`: the fix is in the API's definition.
+   */
+  "route-misconfigured",
 ] as const;
 
 export type Outcome = (typeof OUTCOMES)[number];

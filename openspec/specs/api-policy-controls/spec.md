@@ -29,7 +29,7 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 
 - GIVEN any policy write, on either tier
 - WHEN it is validated
-- THEN every key SHALL be one of the twenty-three declared unit keys, or an
+- THEN every key SHALL be one of the twenty-four declared unit keys, or an
   `operations["<id>"].<unit>` key
 - AND an unknown unit key or an unknown field within a unit SHALL be **rejected**, so nothing
   passes through unread
@@ -69,12 +69,12 @@ tier and the resource's own — and the form that edits it. See *Policy Vocabula
 
 #### Scenario: A unit is not globally attachable
 
-- GIVEN a global entry for `rewrite`, `transform`, `backendAuth`, `cache`, `passthrough` or
-  `errorFormat`
+- GIVEN a global entry for `rewrite`, `transform`, `kafkaProduce`, `backendAuth`, `cache`,
+  `passthrough` or `errorFormat`
 - WHEN the effective document is computed
 - THEN it SHALL be excluded
 - AND attaching one globally SHALL be refused, because they are per-API by nature: `errorFormat` is
-  derived from the variant, four of them describe one backend and one contract, and `passthrough`
+  derived from the variant, five of them describe one backend and one contract, and `passthrough`
   changes what a route *is*
 
 #### Scenario: A per-operation unit is attached globally
@@ -251,6 +251,71 @@ has never served.
 - WHEN the request matches that operation
 - THEN the rendered path SHALL replace the relative path, and SHALL be appended to the base path
   only when `stripBasePath` is `false`
+
+### Requirement: Produce to Kafka through the Confluent REST Proxy
+
+`kafkaProduce` exists for the platform's shared Kafka proxy API, whose backend is a Confluent REST
+Proxy. Per-topic APIs call that one route at `POST <base path>/topics/<topic>` with a JSON body,
+and the gateway — not every caller — speaks the proxy's v3 produce contract: `POST
+/v3/clusters/<clusterId>/topics/<topic>/records` with the record envelope
+`{"value":{"type":"JSON","data":…}}`. Its value is `{ clusterId }` and nothing else: the path, the
+method and the envelope are the proxy's contract rather than choices, the topic comes from the
+called path, and no URL is written into the unit. It applies to `rest` APIs only, and it is neither
+globally attachable nor overridable per operation.
+
+#### Scenario: The unit is validated
+
+- GIVEN a `kafkaProduce` value
+- WHEN it is validated
+- THEN `clusterId` SHALL be required, 1–255 characters of letters, digits, `.`, `_` and `-`
+- AND any other field SHALL be refused, as in every unit
+- AND on an API whose kind is not `rest` the document SHALL be refused, naming the unit and the kind
+
+#### Scenario: It is attached beside `rewrite` or `transform`
+
+- GIVEN a document carrying `kafkaProduce` and `rewrite`, or `kafkaProduce` and `transform`
+- WHEN it is validated
+- THEN it SHALL be refused, with a sentence saying that `kafkaProduce` owns the upstream path and body
+- AND the reason SHALL be that two units writing the same upstream request cannot both apply, and
+  refusing the pair is honest where silently ignoring one of them is not
+
+#### Scenario: A record is produced
+
+- GIVEN a route with `kafkaProduce.clusterId` `c1`, bound to `https://proxy.example/kafka`, whose
+  matched operation is `POST /topics/{topic}`
+- WHEN `POST <base path>/topics/orders` arrives with an `application/json` (or `+json`) body
+- THEN request validation SHALL first run against the caller's body, as on any route
+- AND the backend SHALL be called with `POST https://proxy.example/kafka/v3/clusters/c1/topics/orders/records`,
+  `content-type: application/json`, and exactly `{"value":{"type":"JSON","data":<the body>}}`
+- AND the topic SHALL be URL-encoded into the path, and the operation's own path and the base path
+  SHALL play no part in the upstream path
+- AND authentication, header rules, backend authentication, the client certificate, the timeout,
+  retries, the circuit breaker and telemetry SHALL apply as on any route
+- AND the proxy's response SHALL be returned unchanged — status, body and content type — subject to
+  the usual response steps
+
+#### Scenario: The body is not JSON
+
+- GIVEN a `kafkaProduce` route
+- WHEN the request's content type is neither `application/json` nor a `+json` type
+- THEN it SHALL be refused with `415`, and nothing SHALL reach the backend
+
+#### Scenario: The body does not parse
+
+- GIVEN a `kafkaProduce` route and a JSON content type
+- WHEN the body is empty or does not parse as JSON within the route's limits
+- THEN it SHALL be refused with `400`, and nothing SHALL reach the backend
+- AND the body SHALL be read buffered, under the same size cap and buffer budget as any body the
+  gateway reads whole
+
+#### Scenario: The route's contract has no topic
+
+- GIVEN a `kafkaProduce` route whose matched operation has no `{topic}` path parameter
+- WHEN a request arrives
+- THEN it SHALL be answered `500` in the route's error shape, saying the contract needs a `{topic}`
+  path parameter, with the outcome `route-misconfigured`
+- AND the reason SHALL be that this is the API's configuration failing rather than the caller's
+  request, so it SHALL NOT read as a 4xx the caller could fix
 
 ### Requirement: Edit policy as units, not as a document
 

@@ -105,6 +105,8 @@ const PHASES: Array<{ id: string; label: string; note: string; units: string[] }
       "cache",
       "validate",
       "rewrite",
+      // Where rewrite runs, and in its place: it writes the upstream path and body.
+      "kafkaProduce",
       "headers.request",
       "transform",
     ],
@@ -288,6 +290,8 @@ export function summarize(unitKey: string, value: unknown): string | null {
     }
     case "backendAuth":
       return String(v.type ?? "none");
+    case "kafkaProduce":
+      return v.clusterId ? `cluster ${String(v.clusterId)}` : "no cluster";
     case "headers.request":
     case "headers.response": {
       // The collapsed row says what the rules *do*. It used to read "0 sets · 0 removals", which
@@ -1306,6 +1310,26 @@ export function UnitForm({
         <p className="muted">
           The request direction is <span className="mono">none</span> only: generating XML from an
           XSD is a writer, not a reader.
+        </p>
+      </>
+    );
+  }
+
+  if (unitKey === "kafkaProduce") {
+    return (
+      <>
+        <Field
+          label="Kafka cluster id"
+          hint="The Confluent REST Proxy's cluster id for this environment — each environment's proxy names its own cluster."
+        >
+          <input
+            value={value?.clusterId ?? ""}
+            onChange={(e) => onChange({ ...value, clusterId: e.target.value.trim() })}
+          />
+        </Field>
+        <p className="muted">
+          The topic comes from the <span className="mono">{"{topic}"}</span> in the called path, and
+          the JSON body is sent as the record's value. The proxy's answer comes back unchanged.
         </p>
       </>
     );

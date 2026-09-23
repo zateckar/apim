@@ -4,9 +4,12 @@ import { hashSubscriptionKey } from "../shared/keys.ts";
 import { canonicalIp, effectiveClientIp, ipInCidr } from "../shared/net.ts";
 import {
   DEFAULT_TIMEOUT_MS,
+  isGloballyAttachable,
   lintDocument,
   lintPattern,
   MAX_TIMEOUT_MS,
+  operationUnitKey,
+  UNIT_CATALOGUE,
   validateDocument,
   validateUnit,
 } from "../shared/policy.ts";
@@ -148,6 +151,67 @@ describe("policy validator", () => {
     expect(
       validateDocument({ rateLimit, "auth.subscriptionKey": { in: "header", name: "X-Api-Key" } }),
     ).toEqual([]);
+  });
+});
+
+/*
+ * api-policy-controls, "Produce to Kafka through the Confluent REST Proxy". The unit's whole value
+ * is a cluster id, so the tests are about what may sit beside it and where it may be attached.
+ */
+describe("kafkaProduce", () => {
+  test("a cluster id is the whole value", () => {
+    expect(validateUnit("kafkaProduce", { clusterId: "lkc-abc_1.2" })).toEqual([]);
+    expect(validateUnit("kafkaProduce", { clusterId: "x".repeat(255) })).toEqual([]);
+    expect(validateDocument({ kafkaProduce: { clusterId: "c1" } }, { kind: "rest" })).toEqual([]);
+  });
+
+  test("a missing, empty, over-long or oddly spelled cluster id is refused", () => {
+    for (const value of [{}, { clusterId: "" }, { clusterId: "x".repeat(256) }, { clusterId: "a/b" }, { clusterId: 7 }]) {
+      expect(validateUnit("kafkaProduce", value).join()).toContain("kafkaProduce.clusterId");
+    }
+    expect(validateUnit("kafkaProduce", "c1")).toEqual(["kafkaProduce: expected an object"]);
+  });
+
+  test("an unknown field is refused, like in every unit", () => {
+    expect(validateUnit("kafkaProduce", { clusterId: "c1", topic: "orders" }).join()).toContain(
+      'unknown field "topic"',
+    );
+  });
+
+  test("rewrite or transform beside it is refused, saying it owns the path and body", () => {
+    const withRewrite = validateDocument(
+      { kafkaProduce: { clusterId: "c1" }, rewrite: { stripBasePath: true } },
+      { kind: "rest" },
+    );
+    expect(withRewrite).toHaveLength(1);
+    expect(withRewrite[0]).toContain("kafkaProduce and rewrite cannot both be attached");
+    expect(withRewrite[0]).toContain("owns the upstream path and body");
+
+    const withTransform = validateDocument({
+      kafkaProduce: { clusterId: "c1" },
+      transform: { request: "none", response: "none" },
+    });
+    expect(withTransform.join()).toContain("kafkaProduce and transform cannot both be attached");
+
+    // Switched off is not attached: the cross-unit rules read what the gateway will be given.
+    expect(
+      validateDocument(
+        { kafkaProduce: { clusterId: "c1" }, rewrite: { stripBasePath: true }, disabled: ["rewrite"] },
+        { kind: "rest" },
+      ),
+    ).toEqual([]);
+  });
+
+  test("rest only, per-API only, and never per operation", () => {
+    expect(validateDocument({ kafkaProduce: { clusterId: "c1" } }, { kind: "soap" }).join()).toContain(
+      'kafkaProduce: only valid on a rest API (this one is "soap")',
+    );
+    expect(isGloballyAttachable("kafkaProduce")).toBe(false);
+    const entry = UNIT_CATALOGUE.find((unit) => unit.key === "kafkaProduce")!;
+    expect(entry).toMatchObject({ group: "backend", appliesToKinds: ["rest"], global: false });
+    expect(validateUnit(operationUnitKey("produce", "kafkaProduce"), { clusterId: "c1" })[0]).toContain(
+      "may be overridden per operation",
+    );
   });
 });
 

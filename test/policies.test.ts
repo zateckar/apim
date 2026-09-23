@@ -76,13 +76,15 @@ async function world(
     dp?: Partial<DpConfig>;
     kind?: "rest" | "soap";
     spec?: unknown;
+    /** A path on the backend URL itself, for a backend mounted below its origin. */
+    backendPath?: string;
   } = {},
 ): Promise<World> {
   const basePath = `/p-${++seq}`;
   const backend = startBackend(options.respondWith ?? (() => Response.json({ ok: true })));
   const cpServer = serveCp(cp);
   const api = await publishApi(cp, {
-    backendUrl: backend.url,
+    backendUrl: backend.url + (options.backendPath ?? ""),
     basePath,
     kind: options.kind,
     spec: options.spec ?? SPEC,
@@ -1267,6 +1269,143 @@ describe("transform.response: soap-to-json", () => {
       // Envelope and Body are transport framing; a consumer who asked for JSON did not ask for
       // SOAP's frame. And every value is a string: `007` survives a round trip, a guess does not.
       expect(await response.json()).toEqual({ petId: "1", name: "doggie", status: "available" });
+    } finally {
+      w.stop();
+    }
+  });
+});
+
+// --------------------------------------------------------------------------- kafkaProduce
+
+/*
+ * api-policy-controls, "Produce to Kafka through the Confluent REST Proxy". The backend here plays
+ * the REST Proxy, mounted below its origin at `/kafka` so the test can see that the backend's own
+ * path survives and the operation's path does not.
+ */
+describe("kafkaProduce", () => {
+  const KAFKA_SPEC = {
+    openapi: "3.0.0",
+    info: { title: "kafka proxy", version: "1.0.0" },
+    paths: {
+      "/topics/{topic}": {
+        post: {
+          operationId: "produce",
+          parameters: [{ name: "topic", in: "path", required: true, schema: { type: "string" } }],
+          requestBody: {
+            content: {
+              "application/json": {
+                schema: { type: "object", required: ["id"], properties: { id: { type: "string" } } },
+              },
+            },
+          },
+          responses: { "200": { description: "ok" } },
+        },
+      },
+      // A contract with nowhere to take the topic from: the configuration error the unit reports.
+      "/events": { post: { operationId: "produceSomewhere", responses: { "200": { description: "ok" } } } },
+    },
+  };
+
+  const PROXY_ANSWER = { error_code: 200, cluster_id: "c1", topic_name: "orders", partition_id: 0, offset: 42 };
+
+  function kafkaWorld(policy: Record<string, unknown> = {}) {
+    return world(
+      // No rewrite: the two are refused together, and world() would otherwise merge one in.
+      { rewrite: undefined, kafkaProduce: { clusterId: "c1" }, ...policy },
+      {
+        spec: KAFKA_SPEC,
+        backendPath: "/kafka",
+        respondWith: () => Response.json(PROXY_ANSWER, { status: 200, headers: { "x-proxy": "confluent" } }),
+      },
+    );
+  }
+
+  function post(w: World, path: string, body: string, contentType = "application/json") {
+    return get(w, path, { method: "POST", headers: { "content-type": contentType }, body });
+  }
+
+  test("the call becomes a v3 produce, and the proxy's answer comes back unchanged", async () => {
+    const w = await kafkaWorld();
+    try {
+      const response = await post(w, "/topics/orders?trace=1", JSON.stringify({ id: "ord_1", total: 3 }));
+      expect(response.status).toBe(200);
+      expect(response.headers.get("content-type")).toContain("application/json");
+      expect(response.headers.get("x-proxy")).toBe("confluent");
+      expect(await response.json()).toEqual(PROXY_ANSWER);
+
+      const seen = w.backend.requests.at(-1)!;
+      expect(seen.method).toBe("POST");
+      // The backend's own `/kafka` stays; the base path and `/topics/orders` do not.
+      expect(seen.path).toBe("/kafka/v3/clusters/c1/topics/orders/records");
+      expect(seen.headers["content-type"]).toBe("application/json");
+      expect(seen.body).toBe('{"value":{"type":"JSON","data":{"id":"ord_1","total":3}}}');
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("the topic is encoded into the proxy's path, and a +json body is JSON", async () => {
+    const w = await kafkaWorld();
+    try {
+      const response = await post(w, "/topics/a%20b", '{"id":"x"}', "application/vnd.orders+json");
+      expect(response.status).toBe(200);
+      const seen = w.backend.requests.at(-1)!;
+      expect(seen.path).toBe("/kafka/v3/clusters/c1/topics/a%20b/records");
+      // The caller's subtype described the caller's document, not the envelope.
+      expect(seen.headers["content-type"]).toBe("application/json");
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("request validation still judges the caller's body, before it is wrapped", async () => {
+    const w = await kafkaWorld();
+    try {
+      const response = await post(w, "/topics/orders", JSON.stringify({ total: 3 }));
+      expect(response.status).toBe(400);
+      expect(w.backend.requests).toHaveLength(0);
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("a body that is not JSON is 415, and one that does not parse is 400", async () => {
+    // The route's content-type allowlist is widened and schema validation is off, so the refusal is
+    // the unit's own rather than step 3's or the definition's (which declares only JSON).
+    const w = await kafkaWorld({
+      validate: {
+        request: "disabled",
+        downgradeReason: "this test is about the unit's own refusals, not about the schema",
+        always: { contentType: ["application/json", "application/*+json", "text/plain"] },
+      },
+    });
+    try {
+      const text = await post(w, "/topics/orders", "hello", "text/plain");
+      expect(text.status).toBe(415);
+      expect(text.headers.get("content-type")).toContain("application/problem+json");
+      expect((await text.json()).detail).toContain("accepts application/json");
+
+      const malformed = await post(w, "/topics/orders", '{"id":');
+      expect(malformed.status).toBe(400);
+
+      const empty = await post(w, "/topics/orders", "");
+      expect(empty.status).toBe(400);
+      expect((await empty.json()).detail).toContain("not acceptable JSON");
+
+      expect(w.backend.requests).toHaveLength(0);
+    } finally {
+      w.stop();
+    }
+  });
+
+  test("an operation with no {topic} is the route's configuration failing: 500, not the caller's 4xx", async () => {
+    const w = await kafkaWorld();
+    try {
+      const response = await post(w, "/events", '{"id":"x"}');
+      expect(response.status).toBe(500);
+      expect(response.headers.get("content-type")).toContain("application/problem+json");
+      expect((await response.json()).detail).toContain("{topic} path parameter");
+      expect(w.backend.requests).toHaveLength(0);
     } finally {
       w.stop();
     }

@@ -581,15 +581,18 @@ unit is its values and moves as one piece. Half a `rateLimit` is never merged.
 ```
 POLICY_UNITS = auth.subscriptionKey · auth.basic · auth.jwt · auth.introspection · auth.mtls ·
                ipAllow · cors · preconditions · validate · rewrite · headers.request ·
-               headers.response · transform · cache · rateLimit · quota · timeoutMs · retries ·
-               circuitBreaker · concurrency · backendAuth · passthrough · errorFormat
+               headers.response · transform · kafkaProduce · cache · rateLimit · quota · timeoutMs ·
+               retries · circuitBreaker · concurrency · backendAuth · passthrough · errorFormat
 ```
 
 - `GLOBAL_UNITS` — the seventeen a whole environment may carry. An allowlist, so a unit added
-  later is not globally attachable until somebody decides it should be. The six that are missing
+  later is not globally attachable until somebody decides it should be. The seven that are missing
   are per-API by nature: `errorFormat` is derived from the variant; `rewrite`, `transform`,
-  `backendAuth` and `cache` describe one backend and one contract; `passthrough` changes what a
-  route *is*.
+  `kafkaProduce`, `backendAuth` and `cache` describe one backend and one contract; `passthrough`
+  changes what a route *is*.
+- `kafkaProduce` — `{ clusterId }`, `rest` only: turns `POST <base>/topics/{topic}` into a
+  Confluent REST Proxy v3 produce call, and excludes `rewrite` and `transform` on the same
+  document. See `api-policy-controls`.
 - `OPERATION_OVERRIDABLE` — `validate`, `rateLimit`, `quota`, `timeoutMs`, `cache`. A per-operation
   key is written `operations["getPet"].rateLimit`, and no per-operation unit is globally
   attachable, because an operation id means nothing outside the API that declares it.

@@ -38,9 +38,6 @@ const ENDABLE = ["pending", "activating", "active"];
 /** The states in which calling it is, or is about to be, a thing somebody does. */
 const CALLABLE = ["pending", "activating", "active"];
 
-/** What the list returns beyond the shared `Subscription` shape, and this screen shows. */
-type SubscriptionDetail = Subscription & { purpose?: string | null; createdAt?: string | null };
-
 /** How an API asks for its key: the `auth.subscriptionKey` unit, as the gateway will be served it. */
 export interface KeyUnit {
   in: "header" | "query";
@@ -122,7 +119,7 @@ function resetsIn(seconds: number): string {
  * not on the screen — a reader with a key in hand still had to go and find the address it worked at.
  */
 export function SubscriptionView({ subscriptionId }: { subscriptionId: string }) {
-  const list = useAsync(() => api.get<{ items: SubscriptionDetail[] }>("/api/subscriptions"), []);
+  const list = useAsync(() => api.get<{ items: Subscription[] }>("/api/subscriptions"), []);
   const action = useAction();
   const subscription = list.data?.items.find((row) => row.id === subscriptionId);
   usePageTitle(
@@ -250,7 +247,7 @@ interface CallTarget {
  * each member's listing for its addresses, and each member's effective policy for its key and its
  * limits.
  */
-function Entitlements({ subscription, consumer }: { subscription: SubscriptionDetail; consumer: boolean }) {
+function Entitlements({ subscription, consumer }: { subscription: Subscription; consumer: boolean }) {
   const environment = envLabel(subscription.environment);
   const products = useAsync(() => listAll<Product>("/api/products"), []);
   const product = products.data?.items.find((entry) => entry.id === subscription.productId) ?? null;

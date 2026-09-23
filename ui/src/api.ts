@@ -620,6 +620,9 @@ export interface Subscription {
   state: SubscriptionState;
   applicationName?: string;
   productName?: string;
+  /** What the consumer said they need it for, when they asked — the publisher approves against it. */
+  purpose?: string | null;
+  createdAt?: string | null;
   /** When either key was last rotated — "when was this last touched", not "how old is the key". */
   keyRotatedAt: string | null;
   /**

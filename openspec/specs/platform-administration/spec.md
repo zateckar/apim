@@ -138,6 +138,21 @@ Administration group.
 - AND gateways SHALL be ordered by name
 - AND a gateway SHALL have no kind, class or category: its name and its label are what it is, and a
   taxonomy nothing reads is a field an administrator must fill in and cannot be told the meaning of
+- AND each gateway SHALL be read, not edited, in place: its addresses (each with a copy button),
+  how many APIs are published on it and how many of its replicas are answering; adding a gateway and
+  editing one's addresses and locality SHALL each be a dialog opened by a button, because a page an
+  administrator came to read was otherwise three editable boxes per gateway
+- AND an environment with no gateway SHALL be an empty state whose action adds one
+
+#### Scenario: A gateway's deployments are paused or resumed
+
+- GIVEN a gateway
+- WHEN an administrator pauses its deployments
+- THEN a dialog SHALL first say that it keeps serving what it has, and that publishes, policy
+  changes and promotions in its environment that include it are held until it is resumed and then
+  continue on their own
+- AND resuming SHALL be one click, because it is the safe direction: held changes go out and
+  nothing stops
 
 #### Scenario: A gateway's address is published
 
@@ -172,6 +187,11 @@ Administration group.
 - WHEN they mint an instance token
 - THEN the token SHALL be shown **once** and stored only as a hash
 - AND minting SHALL be administrator-only
+- AND the portal SHALL name the replica and mint in a dialog, and show the token in that dialog
+  with a copy button and a sentence saying it will not be shown again; closing the dialog SHALL be
+  the point after which it is gone, rather than a banner that stays on the page for anybody who
+  walks past
+- AND when the gateway is at its ceiling the mint button SHALL be disabled with the reason beside it
 
 #### Scenario: Too many instances are minted
 
@@ -186,6 +206,9 @@ Administration group.
 - WHEN it is revoked
 - THEN that instance SHALL stop serving at its next poll
 - AND the revocation SHALL be audited
+- AND in the portal it SHALL be a *Revoke…* button that opens a dialog holding the typed
+  confirmation, open, with the replica's name to type back, because a revoked token cannot be
+  un-revoked
 
 #### Scenario: An instance's state is read
 
@@ -194,8 +217,12 @@ Administration group.
 - THEN each SHALL show which configuration digest it has activated, when it was last seen, its
   process stats, and anything it has refused to activate — including a settings block its container
   cannot honour
-- AND its chip SHALL be **Revoked**, **Not reporting**, **Catching up** or **Healthy**, with the
-  underlying reason in the tooltip
+- AND its chip, on Health Status and on Gateways alike, SHALL be **Revoked**, **Not reporting**,
+  **Refused config**, **Catching up** or **Healthy**, worst first, with the underlying reason in the
+  tooltip
+- AND **Refused config** SHALL be distinct from **Catching up**, because a replica that refused its
+  document keeps serving the last one and will not converge on its own, and "catching up" tells an
+  administrator to wait for something that is not coming
 - AND an instance not seen within `INSTANCE_STALE_AFTER_SEC` SHALL be stale
 
 ### Requirement: Inspect what a gateway would be served

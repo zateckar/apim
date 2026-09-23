@@ -81,7 +81,7 @@ test("gateway inheritance previews the parent and a separate switch preserves dr
   await openPortal(page, "/gateway-settings");
   await page.getByLabel("Applies to", { exact: true }).selectOption("gateway:gw1");
   const number = page.getByRole("spinbutton", { name: "Concurrency", exact: true });
-  await expect(number).toHaveAttribute("placeholder", "inherit 20");
+  await expect(number).toHaveAccessibleDescription(/Empty inherits 20 from DEV\./);
   await number.fill("40");
   await page.getByRole("button", { name: "Turn access log back on" }).click();
   await expect(number).toHaveValue("40");

@@ -8,7 +8,7 @@ import {
   type SyntheticsSnapshot,
   type User,
 } from "../api";
-import { EmptyState, Link, Notice, Panel, Skeleton, useAsync } from "../components";
+import { EmptyState, envLabel, Link, Notice, Panel, Segmented, Skeleton, useAsync } from "../components";
 import { formatAgo, formatDateTime, formatDateTimeShort } from "../lib/datetime";
 import { SyntheticsChart } from "./SyntheticsChart";
 
@@ -29,9 +29,22 @@ import { SyntheticsChart } from "./SyntheticsChart";
  * a publisher promotes this afternoon, and a screen only admins can read makes them ask in chat.
  * The one thing that is admin-only is a failed check's *error text*, which quotes internal hosts —
  * and that gate is on the server, where it belongs.
+ *
+ * What the page *offers* follows the reader, though: Telemetry, Gateways and the log provider's
+ * configuration are an administrator's, so a member is not handed a link that ends in "this screen
+ * is for administrators" or told to set a variable on a host they cannot reach.
  */
 
-const RANGES = ["1h", "6h", "24h", "48h"] as const;
+const RANGES = [
+  { value: "1h", label: "1 h" },
+  { value: "6h", label: "6 h" },
+  { value: "24h", label: "24 h" },
+  { value: "48h", label: "48 h" },
+] as const;
+type Range = (typeof RANGES)[number]["value"];
+
+/** The status word each probe wears, in the hero's vocabulary: `disabled` is "not configured". */
+const STATUS_LABEL = { up: "Up", down: "Down", disabled: "Not configured" } as const;
 
 /** The verdict vocabulary, and the tone class each one wears. Closed, and shared with the CSS. */
 const VERDICTS = {
@@ -92,13 +105,22 @@ export function HealthView({ user }: { user: User }) {
   return (
     <div className="health-overview">
       <div className="page-actions health-toolbar">
-        <div className="native-actions"><Link to="/telemetry">Traffic &amp; errors →</Link>{user.isAdmin && <Link to="/gateways">Manage gateways →</Link>}</div>
+        {/* Both destinations are administrators' screens; a member has nowhere to go from here but
+            the page itself. */}
+        <div className="native-actions">
+          {user.isAdmin && (
+            <>
+              <Link className="btn ghost" to="/telemetry">Traffic &amp; errors →</Link>
+              <Link className="btn ghost" to="/gateways">Manage gateways →</Link>
+            </>
+          )}
+        </div>
         <button className="btn" onClick={() => void refresh()} disabled={health.loading}>
           {health.loading ? "Probing…" : "Refresh"}
         </button>
       </div>
 
-      {health.error && <Notice kind="error">{health.error}</Notice>}
+      <Notice kind="error">{health.error}</Notice>
 
       <div className="health-hero">
         {(snapshot?.environments ?? []).map((rollup) => {
@@ -106,7 +128,7 @@ export function HealthView({ user }: { user: User }) {
           const probeable = rollup.up + rollup.down;
           return (
             <div key={rollup.environment} className={`health-env-card ${verdict.tone}`}>
-              <div className="env-tag">{rollup.environment.toUpperCase()}</div>
+              <div className="env-tag">{envLabel(rollup.environment)}</div>
               <div className="health-env-verdict">
                 <div className={`pulse ${verdict.tone}`} />
                 <span className="v">{verdict.label}</span>
@@ -130,13 +152,15 @@ export function HealthView({ user }: { user: User }) {
 
       {health.loading && !snapshot && <Skeleton rows={3} />}
 
-      <Synthetics admin={user.isAdmin} />
+      <Synthetics
+        admin={user.isAdmin}
+        chain={(snapshot?.environments ?? []).map((rollup) => rollup.environment)}
+      />
 
       {snapshot && (
         /* One panel, four sections. The groups were four cards in a row of cards, which made the
            page read as four separate subjects when it is one — every probe the control plane ran,
-           sorted. A nested card renders as a heading and a rule (see `brand.css`), so the grouping
-           survives and the boxes do not. */
+           sorted. Each group is a section with a heading and a rule, not a panel inside a panel. */
         <Panel title="Components" className="health-detail">
           {GROUPS.map((group) => (
             <ComponentGroup
@@ -150,8 +174,8 @@ export function HealthView({ user }: { user: User }) {
             items={items.filter((item) => !claimed.has(item.kind))}
           />
           <p className="muted small">
-            Probed on the control plane's own timers; this page reads the latest result rather than
-            starting a check. Last assembled {formatDateTime(snapshot.generatedAt)}.
+            Each row is its check's latest result, as of {formatDateTime(snapshot.generatedAt)}.
+            Refresh asks for a new round.
           </p>
         </Panel>
       )}
@@ -162,7 +186,8 @@ export function HealthView({ user }: { user: User }) {
 function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }) {
   if (items.length === 0) return null;
   return (
-    <Panel title={title} className="health-group">
+    <section className="workspace-section health-group">
+      <h4>{title}</h4>
       <div className="health-rows">
           {items.map((item) => {
             const tone = STATUS_TONE[item.status];
@@ -170,7 +195,7 @@ function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }
               <div key={item.id} className="health-row" title={item.message ?? ""}>
                 <div className={`health-status ${tone}`}>
                   <div className={`pulse ${tone}`} />
-                  <span className="s">{item.status.toUpperCase()}</span>
+                  <span className="s">{STATUS_LABEL[item.status]}</span>
                 </div>
                 <div className="health-label">
                   {item.tag && <span className={`health-tag ${tagClass(item.tag)}`}>{item.tag}</span>}
@@ -184,7 +209,7 @@ function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }
                       (item.message ?? "—")
                     )
                   ) : (
-                    <span className="err-msg">{item.message ?? item.status.toUpperCase()}</span>
+                    <span className="err-msg">{item.message ?? STATUS_LABEL[item.status]}</span>
                   )}
                   <span className="t"> · {formatAgo(item.checkedAt)}</span>
                 </div>
@@ -192,7 +217,7 @@ function ComponentGroup({ title, items }: { title: string; items: HealthItem[] }
             );
           })}
       </div>
-    </Panel>
+    </section>
   );
 }
 
@@ -203,8 +228,16 @@ function tagClass(tag: string): string {
   return "mtls";
 }
 
-function Synthetics({ admin }: { admin: boolean }) {
-  const [range, setRange] = useState<(typeof RANGES)[number]>("24h");
+/**
+ * The uptime strips, one environment at a time.
+ *
+ * Its two choices are the shared `Segmented` rather than a tab strip and a hand-rolled button row,
+ * which were two looks for the same kind of control inside one panel head. Every stage of the chain
+ * is offered, and one with no gateway is disabled with the reason under the control: dropping it
+ * made an estate with two gateways read as an estate with two environments.
+ */
+function Synthetics({ admin, chain }: { admin: boolean; chain: string[] }) {
+  const [range, setRange] = useState<Range>("24h");
   const [environment, setEnvironment] = useState<string | null>(null);
   const history = useAsync(
     () => api.get<SyntheticsSnapshot>(`/api/health/synthetics?range=${range}`),
@@ -213,9 +246,11 @@ function Synthetics({ admin }: { admin: boolean }) {
   );
   const snapshot = history.data;
   const groups = useMemo(() => snapshot?.environments ?? [], [snapshot]);
-  // The chain's first environment until somebody chooses, and re-derived when the list arrives so
-  // an estate whose first stage has no gateway does not open on an empty tab.
+  // The chain's first environment with a gateway until somebody chooses, and re-derived when the
+  // list arrives so an estate whose first stage has no gateway does not open on an empty strip.
   const selected = groups.find((group) => group.environment === environment) ?? groups[0] ?? null;
+  // The hero's list is the chain; until it arrives, the stages the history knows about.
+  const stages = chain.length > 0 ? chain : groups.map((group) => group.environment);
 
   return (
     <Panel
@@ -223,64 +258,74 @@ function Synthetics({ admin }: { admin: boolean }) {
       className="synthetics-panel"
       actions={
         <div className="synthetics-controls">
-          <div className="tabs flat synthetics-env-tabs" role="group" aria-label="Environment">
-            {groups.map((group) => (
-              <button
-                key={group.environment}
-                className={`tab ${selected?.environment === group.environment ? "active" : ""}`}
-                aria-pressed={selected?.environment === group.environment}
-                onClick={() => setEnvironment(group.environment)}
-              >
-                {group.environment.toUpperCase()}
-              </button>
-            ))}
-          </div>
-          <div className="uptime-range" role="group" aria-label="Time range">
-            {RANGES.map((value) => (
-              <button
-                key={value}
-                className={`uptime-range-btn ${range === value ? "active" : ""}`}
-                aria-pressed={range === value}
-                onClick={() => setRange(value)}
-              >
-                {value}
-              </button>
-            ))}
-          </div>
+          {selected && (
+            <Segmented
+              label="Environment"
+              value={selected.environment}
+              onChange={setEnvironment}
+              options={stages.map((stage) => {
+                const watched = groups.some((group) => group.environment === stage);
+                return {
+                  value: stage,
+                  label: envLabel(stage),
+                  disabled: !watched,
+                  reason: watched ? undefined : `${envLabel(stage)} has no gateway to watch.`,
+                };
+              })}
+            />
+          )}
+          <Segmented
+            label="Time range"
+            value={range}
+            onChange={setRange}
+            options={RANGES.map((option) => ({ value: option.value, label: option.label }))}
+          />
         </div>
       }
     >
-      {history.error && <Notice kind="error">{history.error}</Notice>}
-        {snapshot?.simulated && (
-          <Notice kind="warn">
-            These strips are <strong>simulated</strong>. Nothing was checked — the history is
-            generated from the gateways that are registered. Set <code>LOGS_PROVIDER=elk</code> with{" "}
-            <code>ELK_URL</code> to read the real uptime index.
-          </Notice>
-        )}
-        {!selected ? (
-          history.loading ? (
-            <Skeleton rows={2} />
-          ) : (
-            <EmptyState
-              title="No gateway is registered in any environment yet"
-              detail="An uptime strip is drawn per gateway, so there is nothing to draw until one exists. A gateway is added, given a hostname and issued a replica token on the Gateways screen."
-              action={<Link to="/gateways">Add a gateway →</Link>}
-            />
-          )
-        ) : selected.monitors.length === 0 ? (
-          <EmptyState
-            title={`No monitor in ${selected.environment.toUpperCase()}`}
-            detail="Every gateway registered in this environment gets a monitor. This environment has one registered and nothing watching it yet."
-            action={<Link to="/gateways">Open Gateways →</Link>}
-          />
+      <Notice kind="error">{history.error}</Notice>
+      {snapshot?.simulated && (
+        <Notice kind="warn">
+          These strips are <strong>simulated</strong>: nothing was checked, and the history is
+          generated from the registered gateways.
+          {/* The fix is a variable on the control plane's host, which only an administrator can
+              act on; a member told to set it has been handed somebody else's task. */}
+          {admin && (
+            <>
+              {" "}Set <code>LOGS_PROVIDER=elk</code> with <code>ELK_URL</code> to read the real
+              uptime index.
+            </>
+          )}
+        </Notice>
+      )}
+      {!selected ? (
+        history.loading ? (
+          <Skeleton rows={2} />
         ) : (
-          <div className="uptime-bars">
-            {selected.monitors.map((monitor) => (
-              <UptimeRow key={monitor.id} monitor={monitor} admin={admin} />
-            ))}
-          </div>
-        )}
+          <EmptyState
+            title="No gateway is registered in any environment yet"
+            detail={
+              admin
+                ? "An uptime strip is drawn per gateway, so there is nothing to draw until one exists."
+                : "An uptime strip is drawn per gateway, so there is nothing to draw until an administrator adds one."
+            }
+            // A member cannot add a gateway, and a link to a screen that says so is not an action.
+            action={
+              admin ? (
+                <Link className="btn primary" to="/gateways">
+                  Add a gateway
+                </Link>
+              ) : undefined
+            }
+          />
+        )
+      ) : (
+        <div className="uptime-bars">
+          {selected.monitors.map((monitor) => (
+            <UptimeRow key={monitor.id} monitor={monitor} admin={admin} />
+          ))}
+        </div>
+      )}
     </Panel>
   );
 }

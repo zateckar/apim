@@ -44,12 +44,12 @@ test("the uptime strip has a range you can change", async ({ page }) => {
   const panel = page.locator(".synthetics-panel");
   await expect(panel).toBeVisible();
 
-  const ranges = panel.locator(".uptime-range-btn");
+  const ranges = panel.getByRole("group", { name: "Time range" }).getByRole("button");
   const count = await ranges.count();
   expect(count).toBeGreaterThan(1);
 
   await ranges.nth(count - 1).click();
-  await expect(ranges.nth(count - 1)).toHaveClass(/active/);
+  await expect(ranges.nth(count - 1)).toHaveAttribute("aria-pressed", "true");
   // Either a strip or a sentence saying why there is none. What must not happen is a panel that
   // renders neither and leaves the reader unable to tell "no data" from "still loading".
   await expect(panel.locator(".uptime-bars, .card-body .empty").first()).toBeVisible();

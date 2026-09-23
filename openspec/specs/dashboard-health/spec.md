@@ -98,8 +98,11 @@ there has been. Plus the telemetry both read from.
 - AND an "Other" group SHALL exist so a probe added later shows up somewhere rather than vanishing
 - AND each row SHALL show its status, its label, its latency or its failure message, and how long
   ago it was checked
-- AND the groups SHALL be **sections of one panel**, not a panel each: they are one subject —
-  every probe the control plane ran — and four cards in a page of cards read as four subjects
+- AND the status SHALL be written *Up*, *Down* or *Not configured*, the last in the hero's own words
+  for `disabled`, rather than the column value in capitals
+- AND the groups SHALL be **sections of one panel** — a heading and a rule each, not a panel nested
+  in a panel: they are one subject — every probe the control plane ran — and four cards in a page
+  of cards read as four subjects
 
 #### Scenario: A component was not really contacted
 
@@ -126,6 +129,15 @@ there has been. Plus the telemetry both read from.
 - AND the reason SHALL be that which environment is healthy is what decides whether a publisher
   promotes this afternoon, and a screen only administrators can read makes them ask in chat
 
+#### Scenario: The page's links are offered
+
+- GIVEN Health Status
+- WHEN its toolbar renders
+- THEN *Traffic & errors* (Telemetry) and *Manage gateways* (Gateways) SHALL be offered to an
+  administrator only, as links drawn as buttons, beside Refresh
+- AND a member SHALL be offered Refresh alone, because both destinations are administrators' screens
+  and a link that ends in "this screen is for administrators" is not somewhere to go
+
 #### Scenario: A failed check quotes an internal host
 
 - GIVEN a `down` component whose error text names an internal address
@@ -139,6 +151,10 @@ there has been. Plus the telemetry both read from.
 - WHEN it renders below the matrix
 - THEN what configuration each gateway's replicas are running, and anything one has refused, SHALL
   be shown to administrators only
+- AND the replicas SHALL be listed under the gateway they belong to, each gateway a section of its
+  environment's panel with its sync state, whether it is paused, its routes and its digest, because a
+  disagreement between replicas lives in one gateway rather than in the environment
+- AND a replica's state SHALL be the chip `platform-administration` defines
 
 ### Requirement: Show availability over a window, and say when it is simulated
 
@@ -151,6 +167,10 @@ there has been. Plus the telemetry both read from.
 - AND a bucket with no data SHALL say "no data" rather than a count, because the difference between
   "nobody checked" and "every check passed" is the one thing a grey mark has to convey
 - AND a failed bucket's error text SHALL be shown only to administrators
+- AND the environment and the range SHALL each be one segmented control, the portal's shared one,
+  with the environment written as its label (`DEV`) and the range as `1 h`, `6 h`, `24 h`, `48 h`
+- AND every stage of the chain SHALL be offered, one with no gateway disabled with the reason written
+  under the control, so an estate with two gateways does not read as an estate with two environments
 
 #### Scenario: The history is generated rather than observed
 
@@ -158,7 +178,9 @@ there has been. Plus the telemetry both read from.
 - WHEN the uptime panel renders
 - THEN it SHALL say the strips are simulated, that nothing was checked, and that the history is
   generated from the registered gateways
-- AND it SHALL name `LOGS_PROVIDER=elk` with `ELK_URL` as what reads the real uptime index
+- AND to an administrator only it SHALL name `LOGS_PROVIDER=elk` with `ELK_URL` as what reads the
+  real uptime index, because the fix is a variable on the control plane's host and a member told to
+  set it has been handed somebody else's task
 - AND the uptime index SHALL be separate from the access index, because a heartbeat writes one
   document per check and mixing them would make every request-count aggregation wrong
 
@@ -167,6 +189,8 @@ there has been. Plus the telemetry both read from.
 - GIVEN an estate with nothing registered
 - WHEN the uptime panel renders
 - THEN it SHALL say so rather than showing an empty chart
+- AND an administrator SHALL be offered *Add a gateway*; a member SHALL be told that an
+  administrator adds one, with no action they cannot take
 
 ### Requirement: Serve the application dashboard from one endpoint
 

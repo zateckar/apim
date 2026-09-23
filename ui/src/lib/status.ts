@@ -337,6 +337,57 @@ export function kafkaProxyChip(enabled: boolean): Chip {
 
 // ==================================================================== phase-2: gateways
 // Chips for the gateways screens. Add below this line only; the anchor keeps parallel additions apart.
+
+/**
+ * One replica, as Gateways and Health Status both list it.
+ *
+ * `instanceChip` answers three of the four questions; the fourth is a replica that *refused* the
+ * current document — a missing artifact, a settings block its container cannot honour. Left to
+ * `instanceChip` it read **Catching up**, which tells an administrator to wait for something that
+ * will never arrive on its own (platform-administration, "An instance's state is read").
+ */
+export function replicaChip(instance: {
+  revoked: boolean;
+  stale: boolean;
+  current: boolean;
+  refused?: string | null;
+}): Chip {
+  if (!instance.revoked && !instance.stale && instance.refused) {
+    return {
+      label: "Refused config",
+      tone: "stop",
+      title: `it refused the current configuration and keeps serving the last one it activated: ${instance.refused}`,
+    };
+  }
+  return instanceChip({ revoked: instance.revoked, stale: instance.stale, inSync: instance.current });
+}
+
+/**
+ * Whether one gateway's replicas have all applied its current document. "No replicas" is `stop`
+ * rather than `neutral` because a gateway with nothing behind it serves nothing, which is the
+ * outage, not the absence of news.
+ */
+export function gatewaySyncChip(gateway: { inSync: boolean; expectedReplicas: number; behindReplicas: number }): Chip {
+  if (gateway.expectedReplicas === 0) {
+    return { label: "No replicas", tone: "stop", title: "no un-revoked replica is registered, so nothing serves this gateway" };
+  }
+  if (gateway.inSync) {
+    return { label: "In sync", tone: "live", title: "every un-revoked replica has applied this gateway's current configuration" };
+  }
+  return {
+    label: `${gateway.behindReplicas} behind`,
+    tone: "wait",
+    title: "some replicas are not yet on the current configuration, or are not reporting",
+  };
+}
+
+/** A gateway whose deployments are held. It still serves; it is the *changes* that wait. */
+export const PAUSED_CHIP: Chip = {
+  label: "Paused",
+  tone: "warn",
+  title: "deployments are paused — it keeps serving what it has, and changes that include it wait until it is resumed",
+};
+
 // end phase-2: gateways
 
 

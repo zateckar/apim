@@ -22,8 +22,11 @@ and `data-plane-gateway` for what each bound does when it is reached.
 #### Scenario: Inheritance is offered
 
 - GIVEN a setting overridden at the selected layer
-- WHEN its inherit choice or placeholder renders
+- WHEN its inherit choice or the line under its field renders
 - THEN it SHALL show the parent layer's effective value, or the built-in default for the fleet
+- AND it SHALL name the layer that value comes from — the fleet, the environment by its label, or
+  the built-in default — as "inherits 8 MB from the fleet", because "inherit 8388608" said neither
+  where the number came from nor what it measured
 - AND it SHALL NOT use the selected layer's current override as its inherited value
 
 #### Scenario: A sensitive switch is saved beside other drafts
@@ -31,6 +34,8 @@ and `data-plane-gateway` for what each bound does when it is reached.
 - GIVEN unsaved numeric or flag overrides and an access-log switch
 - WHEN the access-log switch is saved separately
 - THEN unrelated pending edits SHALL remain available for Save or Discard
+- AND a failure SHALL be shown once, beside the control that was used — the table's at the head of
+  the panel, the switch's inside its confirmation — not at both
 
 ### Requirement: A setting exists only if a running instance can apply it without restarting
 
@@ -330,12 +335,29 @@ The portal SHALL offer an administrator one place to read and change every setti
 
 #### Scenario: The Gateway settings screen renders
 
-- GIVEN any signed-in user
+- GIVEN an administrator
 - WHEN Gateway settings renders
-- THEN each setting SHALL be shown with its label, its one-line purpose, the variable it replaced,
-  the value in force for the selected layer, and the layer that value came from
-- AND a member SHALL be able to read all of it, with the change refused by the control plane, as
-  every administration screen behaves
+- THEN each setting SHALL be shown with its label, its one-line purpose, the value in force for the
+  selected layer, and either "Set here" with who set it and when, or the layer it is inherited from
+- AND the variable it replaced SHALL be the setting's tooltip rather than a line of the row: an
+  administrator upgrading from a compose file is looking for it, and nobody else should read past a
+  constant name to reach the value
+- AND a member opening the address SHALL be told the screen is an administrator's and pointed at
+  Health Status, as every screen in the Administration group behaves (`portal-shell-navigation`);
+  the control plane still refuses a member's write
+
+#### Scenario: A size or a duration is shown and typed
+
+- GIVEN a setting of kind `bytes` or `seconds`
+- WHEN its value renders or its override is typed
+- THEN it SHALL be shown in the largest unit it is a whole number of — KB, MB, GB (binary multiples,
+  as the build declares its defaults) or s, min, h — and a byte count below 1 KB SHALL be shown in
+  bytes
+- AND its override SHALL be typed as an amount with the unit chosen beside the field, opening on the
+  unit the current value reads best in, and converted to bytes or seconds before it is sent
+- AND the allowed range SHALL be stated under the field in the same units
+- AND an amount that is not a whole number of bytes or seconds — `0.3 KB` — SHALL be refused with a
+  field error rather than rounded, for the reason a write is refused rather than clamped
 
 #### Scenario: A layer is chosen
 

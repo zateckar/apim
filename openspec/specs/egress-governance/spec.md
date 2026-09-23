@@ -194,6 +194,8 @@ have no portal surface that edits it.
 - THEN the removal SHALL be dated rather than destructive, and SHALL be audited
 - AND routes it was blocking SHALL be served again at the next configuration build
 - AND the reason SHALL be that "who blocked this, and when did we stop" outlives the rule itself
+- AND on the Trust screen it SHALL be deleted through the typed confirmation, in a dialog opened from
+  the rule's row, asking for the host pattern and saying how many routes start serving again
 
 #### Scenario: Too many rules are registered
 

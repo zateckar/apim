@@ -260,6 +260,30 @@ has never served.
 - WHEN the global policy page renders
 - THEN its current configuration SHALL be available in a disclosure, keeping the list of units scannable
 - AND opening the editor SHALL show a labelled configuration field
+- AND the draft SHALL be checked as it is typed — that it parses, and that it has the shape of the
+  unit's default — with the reason shown under the field and Save disabled until it passes, so a
+  write that would be refused is not sent; everything past that stays the control plane's to refuse
+- AND an unsaved draft SHALL be guarded against navigating away, as the per-API editor is
+- AND the field SHALL be one unit's JSON rather than the structured form the API workspace draws,
+  because that form edits a whole document with add, remove and switch-off controls the global tier
+  does not have
+- AND a reader who may not change the tier SHALL see the editor controls disabled, with one sentence
+  at the top of the page saying so, rather than hidden
+
+#### Scenario: A global unit is detached
+
+- GIVEN an attached global unit
+- WHEN an administrator detaches it
+- THEN a dialog SHALL ask first, naming the unit and the environment, how many APIs stop receiving
+  it, that the ones overriding it keep their own value, and that its configuration is discarded
+- AND it SHALL NOT be a typed confirmation, because attaching again undoes it
+
+#### Scenario: The global policy screen chooses its environment
+
+- GIVEN the environment-scoped Global policy route
+- WHEN it renders
+- THEN it SHALL show the shell's selected environment and SHALL NOT draw an environment picker of
+  its own
 
 #### Scenario: The policy panel renders
 
@@ -350,6 +374,9 @@ has never served.
 - AND the reason SHALL be stated plainly: a non-blocking mode observes and never rejects, so an
   invalid request reaches the backend
 - AND the same fact SHALL appear as an attention row for the owning application
+- AND on the Global policy screen each mode SHALL be a status chip in words — Blocking, Warning only,
+  Off — with who changed it and when, and the report SHALL be the selected environment's alone
+- AND the fleet's validation counters SHALL be read on Telemetry (`dashboard-health`), not here
 
 #### Scenario: The governance report is read
 

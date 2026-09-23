@@ -13,15 +13,19 @@ import {
   Panel,
   DangerZone,
   EmptyState,
+  Field,
+  Modal,
   TextField,
   Notice,
   Skeleton,
   StatusChip,
   Term,
+  envLabel,
   useAction,
   useAsync,
 } from "../components";
 import { ALLOWED, permitAdmin } from "../lib/capabilities";
+import { anchorExpiryChip } from "../lib/status";
 
 /**
  * Certificate authorities, per environment (G4, plan §8).
@@ -54,6 +58,7 @@ export function TrustAnchors({
         ? api.get<TrustAnchorList>(`/api/trust/anchors?environment=${environment}`)
         : Promise.resolve(null),
     [environment, isAdmin],
+    environment,
   );
 
   if (!isAdmin) {
@@ -75,6 +80,7 @@ export function TrustAnchors({
   if (!anchors.data) return <Skeleton rows={5} />;
   const items = anchors.data.items;
   const expiring = items.filter((row) => row.live && row.expiresInDays <= 30);
+  const env = envLabel(environment);
 
   return (
     <>
@@ -86,15 +92,22 @@ export function TrustAnchors({
         </Notice>
       )}
 
-      <Panel
-        title={`Authorities trusted in ${environment.toUpperCase()}`}
-        hint={anchors.data.note}
-      >
+      <Panel title={`Authorities trusted in ${env}`} hint={anchors.data.note}>
         {items.length === 0 ? (
           <EmptyState
             title="No internal authority registered here"
             detail="Until one is, a backend presenting an internally-signed certificate fails verification, and the only way past it is a dated TLS exception per backend."
-            action={<span className="muted small">Register one below — it is the shorter path.</span>}
+            action={
+              // Focus rather than navigation: the form is already on this page, below the list,
+              // and what the empty state has to say is where the next step is.
+              <button
+                type="button"
+                className="btn primary"
+                onClick={() => document.getElementById("anchor-pem")?.focus()}
+              >
+                Register an authority
+              </button>
+            }
           />
         ) : (
           <table>
@@ -132,61 +145,66 @@ export function TrustAnchors({
 
 function AnchorRow({ row, onChanged }: { row: TrustAnchorRow; onChanged: () => void }) {
   const action = useAction();
+  const [deleting, setDeleting] = useState(false);
 
   return (
-    <>
-      <tr className={row.expired ? "row-dim" : ""}>
-        <td>
-          <strong>{row.name}</strong>
-          <div className="muted small">
-            {row.addedBy} · {formatDate(row.addedAt)}
-            {row.selfSigned === false && " · not self-signed (an intermediate)"}
-            {row.keyAlgorithm && ` · ${row.keyAlgorithm}`}
-          </div>
-        </td>
-        <td className="small">{row.subject}</td>
-        <td className="small muted">{row.issuer}</td>
-        <td>
-          <StatusChip
-            chip={
-              row.expired
-                ? { label: "Expired", tone: "stop", title: `expired on ${row.notAfter}` }
-                : row.expiresInDays <= 30
-                  ? { label: `${row.expiresInDays} days`, tone: "warn", title: `expires on ${row.notAfter}` }
-                  : { label: `${row.expiresInDays} days`, tone: "live", title: `expires on ${row.notAfter}` }
-            }
-          />
-        </td>
-        <td className="mono small" title={row.thumbprint}>
-          {row.thumbprint.slice(0, 12)}…
-        </td>
-        <td>
-          {row.alsoLiveIn.length === 0 ? (
-            <span className="muted">only here</span>
-          ) : (
-            row.alsoLiveIn.map((other) => (
-              <span key={other} className="pill">
-                {other}
-              </span>
-            ))
-          )}
-        </td>
-        <td className="right">
-          <DangerZone
-            what={`Remove ${row.name}`}
-            name={row.name}
-            consequence={`Every gateway in ${row.environment.toUpperCase()} stops trusting it at the next poll, and any backend whose certificate chains to it fails verification from that moment.`}
-            permission={ALLOWED}
-            busy={action.busy}
-            error={action.error}
-            onConfirm={async () => {
-              const ok = await action.run(() => api.del(`/api/trust/anchors/${row.id}`));
-              if (ok) onChanged();
-            }}
-          />
-        </td>
-      </tr>
-    </>
+    <tr className={row.expired ? "row-dim" : ""}>
+      <td>
+        <strong>{row.name}</strong>
+        <div className="muted small">
+          {row.addedBy} · {formatDate(row.addedAt)}
+          {row.selfSigned === false && " · an intermediate, not a root"}
+          {row.keyAlgorithm && ` · ${row.keyAlgorithm}`}
+        </div>
+      </td>
+      <td className="small">{row.subject}</td>
+      <td className="small muted">{row.issuer}</td>
+      <td>
+        <StatusChip chip={anchorExpiryChip(row, formatDate(row.notAfter))} />
+        <div className="muted small">{formatDate(row.notAfter)}</div>
+      </td>
+      <td className="mono small" title={row.thumbprint}>
+        {row.thumbprint.slice(0, 12)}…
+      </td>
+      <td>
+        {row.alsoLiveIn.length === 0 ? (
+          <span className="muted">only here</span>
+        ) : (
+          row.alsoLiveIn.map((other) => (
+            <span key={other} className="chip">
+              {envLabel(other)}
+            </span>
+          ))
+        )}
+      </td>
+      <td className="right">
+        <button type="button" className="btn danger sm" onClick={() => setDeleting(true)}>
+          Delete…
+        </button>
+        {/* A dialog opened from the row, as every typed confirmation on Trust now is: collapsed
+            inline, the confirmation box stretched its cell to the width of a form. */}
+        {deleting && (
+          <Modal title={`Stop trusting ${row.name}?`} close={() => setDeleting(false)}>
+            <DangerZone
+              open
+              what="Delete this authority"
+              name={row.name}
+              consequence={`Every gateway in ${envLabel(row.environment)} stops trusting it at the next poll, and any backend whose certificate chains to it fails verification from that moment.`}
+              permission={ALLOWED}
+              busy={action.busy}
+              error={action.error}
+              onConfirm={async () => {
+                const ok = await action.run(() => api.del(`/api/trust/anchors/${row.id}`));
+                if (ok) {
+                  setDeleting(false);
+                  onChanged();
+                }
+              }}
+            />
+          </Modal>
+        )}
+      </td>
+    </tr>
   );
 }
 
@@ -198,17 +216,17 @@ function Register({ environment, onRegistered, taken }: { environment: string; o
   const previewAction = useAction();
   const registerAction = useAction();
   const nameProblem = nameError(name) ?? (taken.includes(name) ? "An authority with this name is already registered in this environment." : null);
+  const env = envLabel(environment);
 
   return (
     <Panel
-      title={`Register an authority for ${environment.toUpperCase()}`}
+      title={`Register an authority for ${env}`}
       hint="Paste the certificate authority's certificate in PEM form. It is parsed and shown to you before anything is stored."
     >
       <Notice kind="error">{previewAction.error || registerAction.error}</Notice>
       <Notice kind="ok">{registerAction.message}</Notice>
 
-      <div className="field">
-        <label htmlFor="anchor-pem">Certificate (PEM)</label>
+      <Field label="Certificate (PEM)">
         <textarea
           id="anchor-pem"
           disabled={previewAction.busy || registerAction.busy}
@@ -219,7 +237,7 @@ function Register({ environment, onRegistered, taken }: { environment: string; o
             setPreview(null);
           }}
         />
-      </div>
+      </Field>
 
       {preview ? (
         <>
@@ -230,7 +248,7 @@ function Register({ environment, onRegistered, taken }: { environment: string; o
             <dd>{preview.issuer}</dd>
             <dt>Valid until</dt>
             <dd>
-              {preview.notAfter} ({preview.expiresInDays} days)
+              {formatDate(preview.notAfter)} ({preview.expiresInDays} days)
             </dd>
             <dt>Fingerprint</dt>
             <dd className="mono">{preview.thumbprint}</dd>
@@ -255,16 +273,14 @@ function Register({ environment, onRegistered, taken }: { environment: string; o
             onChange={setName}
             placeholder="corp-internal-root"
           />
-          <p className="muted small">
-            Lowercase letters, digits and hyphens. This is how the anchor is referred to everywhere
-            else, including when somebody removes it.
-          </p>
           <button
+            type="button"
+            className="btn primary"
             disabled={registerAction.busy || Boolean(nameProblem)}
             onClick={async () => {
               const ok = await registerAction.run(
                 () => api.post("/api/trust/anchors", { environment, name, pem }),
-                `${name} is registered. Every gateway in ${environment.toUpperCase()} will trust it at its next poll.`,
+                `${name} is registered. Every gateway in ${env} will trust it at its next poll.`,
               );
               if (ok) {
                 setPem("");
@@ -274,12 +290,13 @@ function Register({ environment, onRegistered, taken }: { environment: string; o
               }
             }}
           >
-            Trust this authority in {environment.toUpperCase()}
+            Trust this authority in {env}
           </button>
         </>
       ) : (
         <button
-          className="ghost"
+          type="button"
+          className="btn"
           disabled={previewAction.busy || pem.trim().length === 0}
           onClick={async () => {
             setPreview(null);
@@ -321,6 +338,13 @@ function CopyFrom({
 
   if (others.length === 0) return null;
   const candidates = (source.data?.items ?? []).filter((row) => row.live);
+  const env = envLabel(environment);
+  const blocked =
+    plan === null
+      ? "Read the plan first: copying trust is not something to do by accident."
+      : plan.copy.length === 0
+        ? "Nothing would be copied."
+        : null;
 
   return (
     <Panel
@@ -331,10 +355,8 @@ function CopyFrom({
       <Notice kind="ok">{action.message}</Notice>
 
       <div className="row wrap">
-        <div className="field">
-          <label htmlFor="copy-from">From</label>
+        <Field label="From">
           <select
-            id="copy-from"
             disabled={action.busy}
             value={from}
             onChange={(event) => {
@@ -345,21 +367,21 @@ function CopyFrom({
           >
             {others.map((candidate) => (
               <option key={candidate} value={candidate}>
-                {candidate.toUpperCase()}
+                {envLabel(candidate)}
               </option>
             ))}
           </select>
-        </div>
+        </Field>
       </div>
 
       {source.error ? (
         // "Trusts nothing" and "could not be read" look identical as an empty list, and the first
         // is the one somebody would act on by uploading a duplicate PEM.
         <Notice kind="error">
-          {from.toUpperCase()}'s authorities could not be listed: {source.error}
+          {envLabel(from)}'s authorities could not be listed: {source.error}
         </Notice>
       ) : source.loading ? <Skeleton rows={3} /> : candidates.length === 0 ? (
-        <p className="muted small">{from.toUpperCase()} trusts no authorities of its own.</p>
+        <p className="muted small">{envLabel(from)} trusts no authorities of its own.</p>
       ) : (
         <ul className="plain">
           {candidates.map((row) => (
@@ -393,8 +415,7 @@ function CopyFrom({
           {plan.copy.length > 0 && (
             <Notice kind="warn">
               {plan.copy.length} authorit{plan.copy.length === 1 ? "y" : "ies"} would become trusted
-              by every gateway in {environment.toUpperCase()}:{" "}
-              {plan.copy.map((entry) => entry.name).join(", ")}.
+              by every gateway in {env}: {plan.copy.map((entry) => entry.name).join(", ")}.
             </Notice>
           )}
           {plan.skipped.length > 0 && (
@@ -409,9 +430,10 @@ function CopyFrom({
         </>
       )}
 
-      <div className="inline">
+      <div className="native-actions">
         <button
-          className="ghost"
+          type="button"
+          className="btn"
           disabled={action.busy || source.loading || Boolean(source.error) || chosen.length === 0}
           onClick={async () => {
             await action.run(async () => {
@@ -429,14 +451,9 @@ function CopyFrom({
         </button>
         <span className="action">
           <button
-            disabled={action.busy || plan === null || plan.copy.length === 0}
-            title={
-              plan === null
-                ? "Read the plan first: copying trust is not something to do by accident."
-                : plan.copy.length === 0
-                  ? "Nothing would be copied."
-                  : undefined
-            }
+            type="button"
+            className="btn primary"
+            disabled={action.busy || blocked !== null}
             onClick={async () => {
               const ok = await action.run(
                 () =>
@@ -446,7 +463,7 @@ function CopyFrom({
                     ids: chosen,
                     dryRun: false,
                   }),
-                `Copied into ${environment.toUpperCase()}. Every gateway there picks it up at its next poll.`,
+                `Copied into ${env}. Every gateway there picks it up at its next poll.`,
               );
               if (ok) {
                 setPlan(null);
@@ -455,13 +472,9 @@ function CopyFrom({
               }
             }}
           >
-            Copy into {environment.toUpperCase()}
+            Copy into {env}
           </button>
-          {plan === null && (
-            <span className="action-reason">
-              Read the plan first: copying trust is not something to do by accident.
-            </span>
-          )}
+          {blocked && <span className="action-reason">{blocked}</span>}
         </span>
       </div>
     </Panel>

@@ -251,10 +251,16 @@ Administration group.
 
 - GIVEN recorded audit events
 - WHEN Audit is opened
-- THEN it SHALL show the latest 200 events with date and time, actor, action, subject and outcome
+- THEN it SHALL load the latest 200 events with date and time, actor, action, subject and outcome
+- AND it SHALL draw them 50 at a time, saying how many of the loaded or matching events are shown,
+  with a Show more action while any remain
+- AND the actor and the subject SHALL be shown by name where the control plane can name them — a
+  person, an API, an application, a product — linked to their screen where they have one, with the
+  stored id beneath in monospace; a subject with no name SHALL be shown as stored
+- AND the outcome SHALL be a status chip in words: Succeeded, Refused, Failed
 - AND each nonempty detail SHALL be available through a View details disclosure rather than expanded JSON in every row
 - AND loading SHALL show a skeleton, and an empty audit SHALL offer Refresh events
-- AND a search control SHALL filter the loaded events by actor, action, subject and outcome, state that it searches at most the latest 200 events, and offer Clear search when nothing matches
+- AND a search control SHALL filter the loaded events by actor, action, subject and outcome — names as well as ids — state that it searches at most the latest 200 events, and offer Clear search when nothing matches
 - AND Refresh events SHALL remain available above a populated table
 
 ### Requirement: Check directory and gateway drafts before submission

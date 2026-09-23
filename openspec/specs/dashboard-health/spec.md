@@ -274,6 +274,28 @@ there has been. Plus the telemetry both read from.
 - WHEN they open Telemetry
 - THEN calls per minute across the estate SHALL be shown, split into served, refused by the gateway
   and failed upstream, with breakdowns by resource, by consumer and by instance
+- AND the window SHALL be chosen with the shared segmented control above everything it governs, and
+  a window with no traffic SHALL say so with an action rather than draw an empty chart
+- AND the chart's time labels SHALL be in the reader's local time, as every other time in the portal
+  is, rather than cut out of the UTC timestamp
+- AND the per-instance breakdown SHALL be titled **By replica** and give each replica's gateway,
+  grouped by gateway, because it counts replicas and was titled as though it counted gateways; a
+  replica whose gateway the fleet read cannot place SHALL be listed last with no gateway rather
+  than a guessed one
+- AND a query that reached its scan bound SHALL say that its figures cover part of the window
+
+#### Scenario: Validation at the gateways is read
+
+- GIVEN replicas reporting validation counters on their poll
+- WHEN Telemetry renders
+- THEN it SHALL sum them across the environment's replicas: refused in blocking mode, passed with a
+  warning, not sampled, shed at the blocking validation budget and without a compiled schema
+- AND it SHALL say that these are counts since each replica's last report rather than figures for the
+  selected window, because every other number on the page is governed by the window
+- AND a shed or schema-less request SHALL be raised as an error naming where to act — Gateway
+  settings for the budget, Health Status for a replica's activation
+- AND the reason it lives here rather than on Global policy SHALL be that it is a reading of the
+  fleet at run time, and among the global tier's controls it read as one of them
 
 #### Scenario: Latency is shown
 

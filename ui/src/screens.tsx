@@ -136,12 +136,7 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   user: ({ match, session }) => <UserView userId={match.params.userId!} me={session.user} />,
   telemetry: ({ session }) => <TelemetryView meta={session.meta} environment={session.environment} />,
   "global-policy": ({ session }) => (
-    <GlobalPolicyView
-      meta={session.meta}
-      user={session.user}
-      environment={session.environment}
-      onEnvironment={session.setEnvironment}
-    />
+    <GlobalPolicyView meta={session.meta} user={session.user} environment={session.environment} />
   ),
   trust: ({ session }) => (
     <TrustView meta={session.meta} user={session.user} environment={session.environment} />

@@ -160,6 +160,32 @@ the estate rather than about an API.
   verified is a "yes"
 - AND the result SHALL say plainly whether the exception can now be removed
 
+#### Scenario: The check is offered on the Trust screen
+
+- GIVEN a live exception in the TLS exceptions list
+- WHEN an administrator reads its row
+- THEN a **Re-check** action SHALL run the check above and show, under the row, whether the
+  exception is still needed and what each covered backend answered
+- AND it SHALL sit before **Revoke**, because asking is the cheap way to find out what revoking would
+  break
+- AND for anybody else both actions SHALL be disabled with the reason, not hidden
+
+#### Scenario: An exception or an authority is removed from the Trust screen
+
+- GIVEN a live exception or a registered authority
+- WHEN an administrator revokes the exception or deletes the authority
+- THEN a dialog SHALL open on the typed confirmation, asking for the API's or the authority's name
+  and saying what stops verifying and when
+- AND the confirmation SHALL NOT be drawn inline in the table row
+
+#### Scenario: Trust states are read
+
+- GIVEN the exceptions list, the authorities list or the governance report
+- WHEN they render
+- THEN a mode SHALL read as what is still checked — Pinned, No hostname check, Not verified — and an
+  expiry as the days left, Expired or Revoked, each as a status chip
+- AND environments SHALL be written as the shell writes them, in capitals
+
 ### Requirement: List every open exception in one place
 
 #### Scenario: The governance report is read

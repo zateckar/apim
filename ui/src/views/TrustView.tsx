@@ -1,5 +1,4 @@
-import { httpUrlError, integerError, nameError, NAME_HINT } from "../lib/form-validation";
-import * as I from "../portal/icons";
+import { httpUrlError, integerError } from "../lib/form-validation";
 import { formatDate } from "../lib/datetime";
 import { useState } from "react";
 import {
@@ -15,16 +14,22 @@ import {
 } from "../api";
 import {
   Panel,
+  ChoiceField,
   DangerZone,
   EmptyState,
+  Field,
   TextField,
   Link,
+  Modal,
   Notice,
   Skeleton,
+  StatusChip,
+  envLabel,
   useAction,
   useAsync,
 } from "../components";
 import { ALLOWED } from "../lib/capabilities";
+import { tlsExceptionChip, tlsModeChip } from "../lib/status";
 import { CertificateList } from "./CredentialsView";
 import { TrustAnchors } from "./TrustAnchors";
 
@@ -41,9 +46,9 @@ import { TrustAnchors } from "./TrustAnchors";
  * credential with an expiry date, and that was two navigation entries for one question.
  *
  * Two things this screen insists on, both from section 5.4: an exception has an end date with a
- * ceiling, and it has a reason long enough to be one. The form checks the reason and whole-day lifetime; the control plane
- * also enforces the configured ceiling. Asking for them up front is the difference between a policy
- * and a nag.
+ * ceiling, and it has a reason long enough to be one. The form checks the reason and whole-day
+ * lifetime; the control plane also enforces the configured ceiling. Asking for them up front is the
+ * difference between a policy and a nag.
  */
 export function TrustView({
   meta,
@@ -56,30 +61,34 @@ export function TrustView({
 }) {
   // Authorities first, and deliberately: it is the rung that removes the need for the other two
   // tabs, and putting exceptions first would teach the expensive habit (plan §8).
-  const [tab, setTab] = useState<"anchors" | "certificates" | "exceptions" | "deny" | "report">("anchors");
+  type Tab = "anchors" | "certificates" | "exceptions" | "deny" | "report";
+  const [tab, setTab] = useState<Tab>("anchors");
+  const tabs: Array<{ id: Tab; label: string }> = [
+    { id: "anchors", label: "Certificate authorities" },
+    { id: "certificates", label: "Client certificates" },
+    { id: "exceptions", label: "TLS exceptions" },
+    ...(user.isAdmin
+      ? [
+          { id: "deny", label: "Blocked backends" },
+          { id: "report", label: "Governance report" },
+        ] as const
+      : []),
+  ];
 
   return (
     <>
       <div className="tabs" role="group" aria-label="Trust sections">
-        <button className={tab === "anchors" ? "tab active" : "tab"} onClick={() => setTab("anchors")}>
-          Certificate authorities
-        </button>
-        <button className={tab === "certificates" ? "tab active" : "tab"} onClick={() => setTab("certificates")}>
-          Client certificates
-        </button>
-        <button className={tab === "exceptions" ? "tab active" : "tab"} onClick={() => setTab("exceptions")}>
-          TLS exceptions
-        </button>
-        {user.isAdmin && (
-          <button className={tab === "deny" ? "tab active" : "tab"} onClick={() => setTab("deny")}>
-            Blocked backends
+        {tabs.map((entry) => (
+          <button
+            type="button"
+            key={entry.id}
+            className={tab === entry.id ? "tab active" : "tab"}
+            aria-pressed={tab === entry.id}
+            onClick={() => setTab(entry.id)}
+          >
+            {entry.label}
           </button>
-        )}
-        {user.isAdmin && (
-          <button className={tab === "report" ? "tab active" : "tab"} onClick={() => setTab("report")}>
-            Governance report
-          </button>
-        )}
+        ))}
       </div>
 
       {tab === "anchors" && (
@@ -104,36 +113,77 @@ const MODES = [
   { value: "insecure", label: "Skip verification entirely", help: "Nothing about the backend's certificate is checked. Anything on the path can read and rewrite this traffic." },
 ];
 
+/** `POST /api/trust/exceptions/:id/check` — one handshake per backend the exception covers. */
+interface ExceptionCheck {
+  anchors: number;
+  backends: Array<{ url: string; wouldVerify: boolean; detail: string }>;
+  wouldVerify: boolean;
+}
+
 function Exceptions({ user, environment }: { user: User; environment: string }) {
   const [includeExpired, setIncludeExpired] = useState(false);
+  const scope = `${environment}:${includeExpired}`;
   const exceptions = useAsync(
     () =>
       api.get<{ items: TlsExceptionRow[] }>(
         `/api/trust/exceptions?environment=${environment}&includeExpired=${includeExpired ? "1" : "0"}`,
       ),
     [environment, includeExpired],
+    scope,
   );
   const [creating, setCreating] = useState(false);
-  const action = useAction();
+  const env = envLabel(environment);
+  const items = exceptions.data?.items ?? [];
 
   return (
-    <>
-      <Notice kind="error">{exceptions.error}</Notice>
-      <Panel
-        title={`TLS exceptions in ${environment}`}
-        hint="Admin-only, expiring, and reasoned. They live here rather than inside a binding so that an owner cannot decide to stop verifying their own backend, and so that this list can be asked for at all."
-      >
-        <div className="inline" style={{ marginBottom: 10 }}>
-          <label className="check-inline">
-            <input
-              type="checkbox"
-              checked={includeExpired}
-              onChange={(event) => setIncludeExpired(event.target.checked)}
-            />
-            Show expired and revoked
-          </label>
-        </div>
+    <Panel
+      title={`TLS exceptions in ${env}`}
+      hint="Administrator-only, dated and reasoned. They live here rather than in an API's backend settings so that an owner cannot decide alone to stop verifying their own backend, and so that this list exists."
+      actions={
+        user.isAdmin && (
+          <button type="button" className={creating ? "btn ghost sm" : "btn sm"} onClick={() => setCreating(!creating)}>
+            {creating ? "Cancel" : "Add an exception"}
+          </button>
+        )
+      }
+    >
+      {creating && (
+        <NewException
+          environment={environment}
+          onDone={() => {
+            setCreating(false);
+            exceptions.reload();
+          }}
+        />
+      )}
 
+      <label className="check-inline">
+        <input
+          type="checkbox"
+          checked={includeExpired}
+          onChange={(event) => setIncludeExpired(event.target.checked)}
+        />
+        Show expired and revoked
+      </label>
+
+      <Notice kind="error">{exceptions.error}</Notice>
+      {!exceptions.data ? (
+        !exceptions.error && <Skeleton rows={3} />
+      ) : items.length === 0 ? (
+        <EmptyState
+          title={includeExpired ? "No exception has ever been made here" : "Every backend is fully verified"}
+          detail={`No live TLS exception in ${env}. This is the state to be in.`}
+          action={
+            includeExpired ? (
+              <button type="button" className="btn sm" onClick={exceptions.reload}>Refresh</button>
+            ) : (
+              <button type="button" className="btn sm" onClick={() => setIncludeExpired(true)}>
+                Show expired and revoked
+              </button>
+            )
+          }
+        />
+      ) : (
         <table>
           <thead>
             <tr>
@@ -147,88 +197,126 @@ function Exceptions({ user, environment }: { user: User; environment: string }) 
             </tr>
           </thead>
           <tbody>
-            {(exceptions.data?.items ?? []).map((row) => (
-              <tr key={row.id} className={row.live ? "" : "row-dim"}>
-                <td>
-                  <Link to={`/apis/${row.resourceId}`}>{row.resourceName}</Link>
-                  <div className="muted">{row.environment}</div>
-                </td>
-                <td className="mono small">{row.backendUrl ?? "every backend in the pool"}</td>
-                <td>
-                  <span className={`badge ${row.mode === "pin" ? "ok" : row.mode === "insecure" ? "bad" : "warn"}`}>
-                    {row.mode}
-                  </span>
-                  {row.pinThumbprint && (
-                    <div className="mono small muted" title={row.pinThumbprint}>
-                      {row.pinThumbprint.slice(0, 16)}…
-                    </div>
-                  )}
-                </td>
-                <td>
-                  {row.revokedAt ? (
-                    <span className="badge">revoked</span>
-                  ) : row.live ? (
-                    <span className={row.expiresInDays <= 7 ? "badge warn" : "badge"}>
-                      {row.expiresInDays} days
-                    </span>
-                  ) : (
-                    <span className="badge">expired</span>
-                  )}
-                  <div className="muted">{formatDate(row.expiresAt)}</div>
-                </td>
-                <td className="small">{row.reason}</td>
-                <td className="muted small">{row.createdBy}</td>
-                <td>
-                  {row.live && (
-                    <DangerZone
-                      what={`Revoke this exception`}
-                      name={row.resourceName}
-                      consequence={`${row.resourceName} goes back to full certificate verification at the next poll. If its backend still presents a certificate the gateway cannot verify, its calls start failing — register the authority as a trust anchor first.`}
-                      permission={
-                        user.isAdmin
-                          ? ALLOWED
-                          : { enabled: false, reason: "Only an administrator can revoke a TLS exception." }
-                      }
-                      busy={action.busy}
-                      error={action.error}
-                      onConfirm={async () => {
-                        const ok = await action.run(() => api.del(`/api/trust/exceptions/${row.id}`));
-                        if (ok) exceptions.reload();
-                      }}
-                    />
-                  )}
-                </td>
-              </tr>
+            {items.map((row) => (
+              <ExceptionRowView key={row.id} row={row} isAdmin={user.isAdmin} reload={exceptions.reload} />
             ))}
-            {(exceptions.data?.items.length ?? 0) === 0 && (
-              <tr>
-                <td colSpan={7} className="muted">
-                  Nothing here — every backend in {environment} is fully verified. This is the state
-                  to be in.
-                </td>
-              </tr>
-            )}
           </tbody>
         </table>
-        <Notice kind="error">{action.error}</Notice>
+      )}
+    </Panel>
+  );
+}
 
-        {user.isAdmin && (
-          <div className="inline" style={{ marginTop: 12 }}>
-            <button className="ghost small" onClick={() => setCreating(!creating)}>
-              {creating ? "Cancel" : "Add an exception"}
-            </button>
-          </div>
-        )}
-        {creating && (
-          <NewException
-            environment={environment}
-            onDone={() => {
-              setCreating(false);
-              exceptions.reload();
-            }}
-          />
-        )}
-      </Panel>
+/**
+ * One exception, with the two things somebody does about it: ask whether it is still needed, and
+ * revoke it.
+ *
+ * Re-check comes first and is the cheap one. `trust-store`, *Check whether an exception is still
+ * needed*, is a server probe that has existed since `[P3-04]` without a control anywhere in the
+ * portal — so the only way to find out whether registering an authority had made an exception
+ * redundant was to revoke it and see what broke, which is the order this row now reverses.
+ */
+function ExceptionRowView({ row, isAdmin, reload }: { row: TlsExceptionRow; isAdmin: boolean; reload: () => void }) {
+  const check = useAction();
+  const revoke = useAction();
+  const [result, setResult] = useState<ExceptionCheck | null>(null);
+  const [revoking, setRevoking] = useState(false);
+  const adminOnly = "Only a platform administrator can check or revoke a TLS exception.";
+
+  return (
+    <>
+      <tr className={row.live ? "" : "row-dim"}>
+        <td>
+          <Link to={`/apis/${row.resourceId}`}>{row.resourceName}</Link>
+        </td>
+        <td className="mono small">{row.backendUrl ?? <span className="muted">every backend in the pool</span>}</td>
+        <td>
+          <StatusChip chip={tlsModeChip(row.mode)} />
+          {row.pinThumbprint && (
+            <div className="mono small muted" title={row.pinThumbprint}>
+              {row.pinThumbprint.slice(0, 16)}…
+            </div>
+          )}
+        </td>
+        <td>
+          <StatusChip chip={tlsExceptionChip(row)} />
+          <div className="muted small">{formatDate(row.revokedAt ?? row.expiresAt)}</div>
+        </td>
+        <td className="small">{row.reason}</td>
+        <td className="muted small">{row.createdBy}</td>
+        <td>
+          {row.live && (
+            <div className="inline">
+              <button
+                type="button"
+                className="btn sm"
+                disabled={!isAdmin || check.busy}
+                title={isAdmin ? "Try the backend without this exception" : adminOnly}
+                onClick={() =>
+                  check.run(async () => {
+                    setResult(null);
+                    setResult(await api.post<ExceptionCheck>(`/api/trust/exceptions/${row.id}/check`, {}));
+                  })
+                }
+              >
+                {check.busy ? "Checking…" : "Re-check"}
+              </button>
+              <button
+                type="button"
+                className="btn danger sm"
+                disabled={!isAdmin}
+                title={isAdmin ? undefined : adminOnly}
+                onClick={() => setRevoking(true)}
+              >
+                Revoke…
+              </button>
+            </div>
+          )}
+          {revoking && (
+            <Modal title={`Revoke the TLS exception for ${row.resourceName}?`} close={() => setRevoking(false)}>
+              <DangerZone
+                open
+                what="Revoke this exception"
+                name={row.resourceName}
+                consequence={`${row.resourceName} goes back to full certificate verification in ${envLabel(row.environment)} at the next configuration. If its backend still presents a certificate the gateway cannot verify, its calls start failing — Re-check first, or register the authority.`}
+                permission={ALLOWED}
+                busy={revoke.busy}
+                error={revoke.error}
+                onConfirm={async () => {
+                  const ok = await revoke.run(() => api.del(`/api/trust/exceptions/${row.id}`));
+                  if (ok) {
+                    setRevoking(false);
+                    reload();
+                  }
+                }}
+              />
+            </Modal>
+          )}
+        </td>
+      </tr>
+      {(check.error || result) && (
+        <tr>
+          <td colSpan={7}>
+            <Notice kind="error">{check.error}</Notice>
+            {result && (
+              <>
+                <Notice kind={result.wouldVerify ? "ok" : "warn"}>
+                  {result.wouldVerify
+                    ? `Still needed: no. Every backend this covers verifies without it, against the system roots and ${result.anchors} registered authorit${result.anchors === 1 ? "y" : "ies"} — it can be revoked.`
+                    : "Still needed: yes. Revoking it now would break the backend listed below."}
+                </Notice>
+                <ul className="plain small">
+                  {result.backends.map((backend) => (
+                    <li key={backend.url}>
+                      <span className="mono">{backend.url}</span> — {backend.detail}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </td>
+        </tr>
+      )}
     </>
   );
 }
@@ -251,11 +339,9 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
   return (
     <div className="subform">
       <Notice kind="error">{action.error ?? resources.error}</Notice>
-      <Notice kind="ok">{action.message}</Notice>
       <div className="row">
-        <div className="field">
-          <label htmlFor="exception-api">API</label>
-          <select id="exception-api" value={resourceId} onChange={(event) => setResourceId(event.target.value)}>
+        <Field label="API">
+          <select value={resourceId} onChange={(event) => setResourceId(event.target.value)}>
             <option value="">choose…</option>
             {(resources.data?.items ?? []).map((resource) => (
               <option key={resource.id} value={resource.id}>
@@ -263,7 +349,7 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
               </option>
             ))}
           </select>
-        </div>
+        </Field>
         <TextField
           label="Backend URL (optional)" type="url" hint="Leave empty to apply to every backend in this API’s pool." error={httpUrlError(backendUrl, true)}
           value={backendUrl}
@@ -273,37 +359,32 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
         <TextField label="Expires in (days)" type="number" min={1} step={1} error={daysError} hint="A whole number of days; the server also enforces the estate’s maximum lifetime." value={days} onChange={(next) => setDays(Number(next))} />
       </div>
 
-      <div className="field">
-        <label htmlFor="exception-mode">Mode</label>
-        <select id="exception-mode" value={mode} onChange={(event) => setMode(event.target.value)}>
-          {MODES.map((entry) => (
-            <option key={entry.value} value={entry.value}>
-              {entry.label}
-            </option>
-          ))}
-        </select>
-      </div>
-      {chosen && (
-        <p className={mode === "insecure" ? "notice warn" : "muted"}>{chosen.help}</p>
-      )}
+      {/* Three exclusive choices whose difference is the whole decision, so all three stay on
+          screen rather than behind a select. */}
+      <ChoiceField
+        label="What to relax"
+        value={mode}
+        onChange={setMode}
+        options={MODES.map((entry) => ({ value: entry.value, label: entry.label }))}
+        hint={mode === "insecure" ? undefined : chosen?.help}
+      />
+      {mode === "insecure" && <Notice kind="warn">{chosen?.help}</Notice>}
 
       {mode === "pin" && (
         <TextField
-          label="Pinned sha256 thumbprint (64 hex characters)" error={pinThumbprint ? pinError : null}
+          label="Pinned SHA-256 thumbprint (64 hex characters)" error={pinThumbprint ? pinError : null}
           value={pinThumbprint}
           onChange={setPinThumbprint}
         />
       )}
 
-      <div className="field">
-        <label htmlFor="exception-reason">
-          Reason <span className="muted">at least 20 characters — name the ticket and the plan to remove it</span>
-        </label>
-        <textarea id="exception-reason" minLength={20} value={reason} onChange={(event) => setReason(event.target.value)} />
-      </div>
+      <Field label="Reason" hint="At least 20 characters — name the ticket and the plan to remove it.">
+        <textarea minLength={20} value={reason} onChange={(event) => setReason(event.target.value)} />
+      </Field>
 
       {invalid && <p className="hint">Choose an API, provide a reason of at least 20 characters, and complete the fields required by the selected mode.</p>}
       <button
+        type="button"
         className="btn primary" disabled={action.busy || invalid}
         onClick={async () => {
           if (invalid) return;
@@ -318,17 +399,15 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
                 reason,
                 days,
               }),
-            "created",
           );
           if (ok) onDone();
         }}
       >
         Create exception
       </button>
-      <p className="muted" style={{ marginBottom: 0 }}>
-        The gateway expires this on its own clock, so it cannot outlive its date through a control
-        plane outage. A connection already open keeps its TLS options until it closes (deviation
-        D25).
+      <p className="muted small">
+        Each gateway expires the exception on its own clock, so it cannot outlive its date through a
+        control-plane outage. A connection already open keeps its TLS settings until it closes.
       </p>
     </div>
   );
@@ -352,7 +431,6 @@ function NewException({ environment, onDone }: { environment: string; onDone: ()
 function DenyRules({ meta, environment }: { meta: Meta; environment: string }) {
   const rules = useAsync(() => api.get<DenyRuleList>("/api/trust/deny-rules"), []);
   const [creating, setCreating] = useState(false);
-  const action = useAction();
 
   if (rules.error) return <Notice kind="error">{rules.error}</Notice>;
   if (!rules.data) return <Skeleton rows={4} />;
@@ -362,7 +440,6 @@ function DenyRules({ meta, environment }: { meta: Meta; environment: string }) {
 
   return (
     <>
-      <Notice kind="error">{action.error}</Notice>
       {blockedTotal > 0 && (
         <Notice kind="warn">
           {blockedTotal} route{blockedTotal === 1 ? " is" : "s are"} not being served because a rule
@@ -373,48 +450,15 @@ function DenyRules({ meta, environment }: { meta: Meta; environment: string }) {
 
       <Panel
         title="Hosts this estate does not reach"
-        hint="Egress is allowed by default: a team registers a backend without asking anybody. A rule here is how that default is taken back for one host — and it applies to routes already running, not only to the next one written."
-      >
-        {items.length === 0 ? (!creating && (
-          <EmptyState
-            title="No host is blocked"
-            detail="Any backend a team can reach is a backend they can register, as long as it is outside the denied network ranges in the integrations file. Add a rule when there is a host this estate should not reach."
-            action={
-              <button className="btn primary" onClick={() => setCreating(true)}>
-                Block a host
-              </button>
-            }
-          />
-        )) : (
-          <table>
-            <thead>
-              <tr>
-                <th>Host pattern</th>
-                <th>Applies to</th>
-                <th>Reason</th>
-                <th>Blocking</th>
-                <th>Added by</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((rule) => (
-                <DenyRuleRowView key={rule.id} rule={rule} reload={rules.reload} />
-              ))}
-            </tbody>
-          </table>
-        )}
-
-        {(items.length > 0 || creating) && (
-          <div className="inline" style={{ marginTop: 12 }}>
-            <button className={creating ? "btn ghost" : "btn primary"} onClick={() => setCreating(!creating)}>
+        hint="Egress is allowed by default: a team registers a backend without asking anybody. A rule here takes that back for one host — and it applies to routes already running, not only to the next one written."
+        actions={
+          (items.length > 0 || creating) && (
+            <button type="button" className={creating ? "btn ghost sm" : "btn sm"} onClick={() => setCreating(!creating)}>
               {creating ? "Cancel" : "Block a host"}
             </button>
-            <span className="muted">
-              {items.length} of {rules.data.maxRules} rules used
-            </span>
-          </div>
-        )}
+          )
+        }
+      >
         {creating && (
           <NewDenyRule
             meta={meta}
@@ -425,23 +469,55 @@ function DenyRules({ meta, environment }: { meta: Meta; environment: string }) {
             }}
           />
         )}
+        {items.length === 0 ? (!creating && (
+          <EmptyState
+            title="No host is blocked"
+            detail="Any backend a team can reach is a backend they can register, as long as it is outside the denied network ranges in the integrations file. Add a rule when there is a host this estate should not reach."
+            action={
+              <button type="button" className="btn primary" onClick={() => setCreating(true)}>
+                Block a host
+              </button>
+            }
+          />
+        )) : (
+          <>
+            <table>
+              <thead>
+                <tr>
+                  <th>Host pattern</th>
+                  <th>Applies to</th>
+                  <th>Reason</th>
+                  <th>Blocking</th>
+                  <th>Added by</th>
+                  <th />
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((rule) => (
+                  <DenyRuleRowView key={rule.id} rule={rule} reload={rules.reload} />
+                ))}
+              </tbody>
+            </table>
+            <p className="muted small">
+              {items.length} of {rules.data.maxRules} rules used
+            </p>
+          </>
+        )}
       </Panel>
 
       {/* Listed, and visibly not removable. An administrator who cannot see this rule will one day
           spend an afternoon working out why a backend pointed at the portal will not save. */}
       <Panel
         title="Stated by the platform"
-        hint="Not an administrator's rule and not removable: a route pointed back at the control plane would let a gateway proxy to this API, which is neither a backend nor something a subscription should reach."
+        hint="Not an administrator's rule and not removable: a route pointed back at the portal would let a gateway proxy to the control plane, which is neither a backend nor something a subscription should reach."
       >
         <ul className="plain">
           {rules.data.platformRules.map((rule) => (
             <li key={rule.id}>
               <span className="mono">{rule.hostPattern}</span>{" "}
-              <span className="muted">every environment</span>
+              <span className="muted">every environment</span>{" "}
               {rule.blocking.length > 0 && (
-                <span className="badge warn" style={{ marginLeft: 8 }}>
-                  blocking {rule.blocking.length}
-                </span>
+                <span className="chip warn">blocking {rule.blocking.length}</span>
               )}
             </li>
           ))}
@@ -457,8 +533,23 @@ function DenyRules({ meta, environment }: { meta: Meta; environment: string }) {
   );
 }
 
+/** Where a blocked route lives: the API, its environment, and the backend the rule matched. */
+function BlockedRouteLine({ route }: { route: BlockedRoute }) {
+  return (
+    <li>
+      <Link to={`/apis/${route.resourceId}`}>{route.resourceName}</Link>{" "}
+      <span className="muted">{envLabel(route.environment)} ·</span>{" "}
+      <Link to={`/applications/${route.applicationId}`}>
+        <span className="mono small">{route.applicationId}</span>
+      </Link>{" "}
+      <span className="mono small">{route.backendUrl}</span>
+    </li>
+  );
+}
+
 function DenyRuleRowView({ rule, reload }: { rule: DenyRuleRow; reload: () => void }) {
   const [showing, setShowing] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const action = useAction();
   const ports = rule.ports?.join(", ") ?? (rule.portRange ? `${rule.portRange[0]}–${rule.portRange[1]}` : null);
 
@@ -472,13 +563,13 @@ function DenyRuleRowView({ rule, reload }: { rule: DenyRuleRow; reload: () => vo
             {ports ? ` · ports ${ports}` : " · every port"}
           </div>
         </td>
-        <td>{rule.environment ?? <span className="muted">every environment</span>}</td>
+        <td>{rule.environment ? envLabel(rule.environment) : <span className="muted">every environment</span>}</td>
         <td className="small">{rule.reason}</td>
         <td>
           {rule.blocking.length === 0 ? (
             <span className="muted">nothing</span>
           ) : (
-            <button className="ghost small" aria-expanded={showing} onClick={() => setShowing(!showing)}>
+            <button type="button" className="btn ghost sm" aria-expanded={showing} onClick={() => setShowing(!showing)}>
               {rule.blocking.length} route{rule.blocking.length === 1 ? "" : "s"}
             </button>
           )}
@@ -488,22 +579,35 @@ function DenyRuleRowView({ rule, reload }: { rule: DenyRuleRow; reload: () => vo
           <div>{formatDate(rule.createdAt)}</div>
         </td>
         <td>
-          <DangerZone
-            what={`Remove the rule for ${rule.hostPattern}`}
-            name={rule.hostPattern}
-            consequence={
-              rule.blocking.length === 0
-                ? "Nothing is being blocked by it today, so nothing starts serving. Backends under this pattern become registrable again at the next write."
-                : `${rule.blocking.length} route${rule.blocking.length === 1 ? "" : "s"} start${rule.blocking.length === 1 ? "s" : ""} serving again at the fleet's next configuration, within a poll or two.`
-            }
-            permission={ALLOWED}
-            busy={action.busy}
-            error={action.error}
-            onConfirm={async () => {
-              const ok = await action.run(() => api.del(`/api/trust/deny-rules/${rule.id}`));
-              if (ok) reload();
-            }}
-          />
+          <button type="button" className="btn danger sm" onClick={() => setDeleting(true)}>
+            Delete…
+          </button>
+          {/* In a dialog rather than a collapsed box in the row: open inline, a typed confirmation
+              stretched its table cell to the width of a form and pushed every other row aside. */}
+          {deleting && (
+            <Modal title={`Delete the rule for ${rule.hostPattern}?`} close={() => setDeleting(false)}>
+              <DangerZone
+                open
+                what="Delete this rule"
+                name={rule.hostPattern}
+                consequence={
+                  rule.blocking.length === 0
+                    ? "Nothing is being blocked by it today, so nothing starts serving. Backends under this pattern become registrable again at the next write."
+                    : `${rule.blocking.length} route${rule.blocking.length === 1 ? "" : "s"} start${rule.blocking.length === 1 ? "s" : ""} serving again at the fleet's next configuration, within a poll or two.`
+                }
+                permission={ALLOWED}
+                busy={action.busy}
+                error={action.error}
+                onConfirm={async () => {
+                  const ok = await action.run(() => api.del(`/api/trust/deny-rules/${rule.id}`));
+                  if (ok) {
+                    setDeleting(false);
+                    reload();
+                  }
+                }}
+              />
+            </Modal>
+          )}
         </td>
       </tr>
       {showing && (
@@ -511,13 +615,7 @@ function DenyRuleRowView({ rule, reload }: { rule: DenyRuleRow; reload: () => vo
           <td colSpan={6}>
             <ul className="plain">
               {rule.blocking.map((route) => (
-                <li key={`${route.resourceId}:${route.environment}`}>
-                  <Link to={`/apis/${route.resourceId}`}>{route.resourceName}</Link>{" "}
-                  <span className="muted">
-                    {route.environment} · {route.applicationId}
-                  </span>{" "}
-                  <span className="mono small">{route.backendUrl}</span>
-                </li>
+                <BlockedRouteLine key={`${route.resourceId}:${route.environment}`} route={route} />
               ))}
             </ul>
           </td>
@@ -571,7 +669,6 @@ function NewDenyRule({
   return (
     <div className="subform">
       <Notice kind="error">{action.error ?? dry.error}</Notice>
-      <Notice kind="ok">{action.message}</Notice>
       <div className="row">
         <TextField
           label="Host pattern"
@@ -584,10 +681,8 @@ function NewDenyRule({
           }}
           placeholder="*.internal.example.com"
         />
-        <div className="field">
-          <label htmlFor="deny-scope">Applies to</label>
+        <Field label="Applies to">
           <select
-            id="deny-scope"
             value={scope}
             onChange={(event) => {
               setScope(event.target.value);
@@ -597,15 +692,13 @@ function NewDenyRule({
             <option value="">Every environment</option>
             {meta.chain.map((name) => (
               <option key={name} value={name}>
-                {name} only
+                {envLabel(name)} only
               </option>
             ))}
           </select>
-        </div>
-        <div className="field">
-          <label htmlFor="deny-scheme">Scheme</label>
+        </Field>
+        <Field label="Scheme">
           <select
-            id="deny-scheme"
             value={scheme}
             onChange={(event) => {
               setScheme(event.target.value as "" | "http" | "https");
@@ -616,7 +709,7 @@ function NewDenyRule({
             <option value="http">http only</option>
             <option value="https">https only</option>
           </select>
-        </div>
+        </Field>
         <TextField
           label="Ports (optional)"
           hint="Comma-separated. Empty means every port."
@@ -630,26 +723,16 @@ function NewDenyRule({
         />
       </div>
 
-      <div className="field">
-        <label htmlFor="deny-reason">
-          Reason{" "}
-          <span className="muted">
-            at least 20 characters — name the ticket, and what would have to be true to remove this
-          </span>
-        </label>
-        <textarea
-          id="deny-reason"
-          minLength={20}
-          value={reason}
-          onChange={(event) => setReason(event.target.value)}
-        />
-      </div>
+      <Field label="Reason" hint="At least 20 characters — name the ticket, and what would have to be true to remove this.">
+        <textarea minLength={20} value={reason} onChange={(event) => setReason(event.target.value)} />
+      </Field>
 
       {/* Before saving, not after. A rule here stops routes across the fleet within a poll or two,
           and this is the only moment where that is still a question rather than an incident. */}
-      <div className="inline">
+      <div className="native-actions">
         <button
-          className="btn ghost"
+          type="button"
+          className="btn"
           disabled={dry.busy || !hostPattern.trim() || Boolean(patternError || portsError)}
           onClick={() =>
             dry.run(async () => {
@@ -676,13 +759,7 @@ function NewDenyRule({
       {preview && preview.count > 0 && (
         <ul className="plain">
           {preview.blocking.map((route) => (
-            <li key={`${route.resourceId}:${route.environment}`}>
-              <Link to={`/apis/${route.resourceId}`}>{route.resourceName}</Link>{" "}
-              <span className="muted">
-                {route.environment} · {route.applicationId}
-              </span>{" "}
-              <span className="mono small">{route.backendUrl}</span>
-            </li>
+            <BlockedRouteLine key={`${route.resourceId}:${route.environment}`} route={route} />
           ))}
         </ul>
       )}
@@ -693,20 +770,18 @@ function NewDenyRule({
         </p>
       )}
       <button
+        type="button"
         className="btn primary"
         disabled={action.busy || invalid}
         onClick={async () => {
           if (invalid) return;
-          const ok = await action.run(
-            () => api.post("/api/trust/deny-rules", draft()),
-            "blocked — the fleet stops serving any route on this host at its next poll",
-          );
+          const ok = await action.run(() => api.post("/api/trust/deny-rules", draft()));
           if (ok) onDone();
         }}
       >
         Block this host
       </button>
-      <p className="muted" style={{ marginBottom: 0 }}>
+      <p className="muted small">
         Rules match the backend URL as written. A hostname no rule matches may still resolve to the
         same address as one that does — the denied ranges in the integrations file catch that only
         when the address falls inside one. This is governance, not a firewall.
@@ -724,7 +799,6 @@ function Report() {
 
   return (
     <>
-      <Notice kind="error">{report.error}</Notice>
       <Panel
         title="Every backend we are not fully verifying"
         hint="Asked about the estate rather than about an API, because asking it per API means never asking it."
@@ -742,22 +816,24 @@ function Report() {
             </tr>
           </thead>
           <tbody>
-            {(report.data?.tlsExceptions ?? []).map((row) => (
+            {report.data.tlsExceptions.map((row) => (
               <tr key={row.id}>
                 <td>
                   <Link to={`/apis/${row.resourceId}`}>{row.resourceName}</Link>
                 </td>
-                <td>{row.environment}</td>
-                <td className="mono small">{row.backendUrl}</td>
+                <td>{envLabel(row.environment)}</td>
+                <td className="mono small">{row.backendUrl ?? <span className="muted">every backend in the pool</span>}</td>
                 <td>
-                  <span className={`badge ${row.mode === "insecure" ? "bad" : "warn"}`}>{row.mode}</span>
+                  <StatusChip chip={tlsModeChip(row.mode)} />
                 </td>
-                <td>{row.expiresInDays} days</td>
+                <td>
+                  <StatusChip chip={tlsExceptionChip({ live: true, revokedAt: null, expiresInDays: row.expiresInDays })} />
+                </td>
                 <td className="small">{row.reason}</td>
                 <td className="muted small">{row.createdBy}</td>
               </tr>
             ))}
-            {(report.data?.tlsExceptions.length ?? 0) === 0 && (
+            {report.data.tlsExceptions.length === 0 && (
               <tr>
                 <td colSpan={7} className="muted">
                   None anywhere in the estate.
@@ -772,7 +848,7 @@ function Report() {
           refusing to reach" are the same auditor's visit. */}
       <Panel
         title="Routes a deny rule is keeping off the air"
-        hint="A route whose backend an administrator has blocked is omitted from its environment's configuration, so no instance serves it. This is the estate-wide list, including the rule that stops each one."
+        hint="A route whose backend an administrator has blocked is left out of its environment's configuration, so no replica serves it."
       >
         <table>
           <thead>
@@ -785,19 +861,19 @@ function Report() {
             </tr>
           </thead>
           <tbody>
-            {(report.data?.blockedRoutes ?? []).map((row) => (
+            {report.data.blockedRoutes.map((row) => (
               <tr key={`${row.resourceId}:${row.environment}:${row.hostPattern}`}>
                 <td>
                   <Link to={`/apis/${row.resourceId}`}>{row.resourceName}</Link>
-                  <div className="muted small">{row.applicationId}</div>
+                  <div className="muted small mono">{row.applicationId}</div>
                 </td>
-                <td>{row.environment}</td>
+                <td>{envLabel(row.environment)}</td>
                 <td className="mono small">{row.backendUrl}</td>
                 <td className="mono small">{row.hostPattern}</td>
                 <td className="small">{row.reason}</td>
               </tr>
             ))}
-            {(report.data?.blockedRoutes.length ?? 0) === 0 && (
+            {report.data.blockedRoutes.length === 0 && (
               <tr>
                 <td colSpan={5} className="muted">
                   None — every released route's backend is one this estate is willing to reach.
@@ -810,26 +886,25 @@ function Report() {
 
       <Panel
         title="Routes that identify callers by CN alone"
-        hint="Accepted with acknowledgeCnOnly, which is the point: a common name is unique only within one issuer, so the blast radius is the breadth of the reverse proxy's client-CA bundle."
+        hint="Their owners acknowledged the risk when they chose it: a common name is unique only within one issuer, so how far this reaches is decided by how many issuers the reverse proxy trusts."
       >
         <ul className="plain">
-          {(report.data?.cnOnlyRoutes ?? []).map((row) => (
+          {report.data.cnOnlyRoutes.map((row) => (
             <li key={`${row.resourceId}:${row.environment}`}>
               <Link to={`/apis/${row.resourceId}`}>{row.resourceName}</Link>{" "}
-              <span className="muted">{row.environment}</span>
+              <span className="muted">{envLabel(row.environment)}</span>
             </li>
           ))}
-          {(report.data?.cnOnlyRoutes.length ?? 0) === 0 && <li className="muted">None.</li>}
+          {report.data.cnOnlyRoutes.length === 0 && <li className="muted">None.</li>}
         </ul>
-        {report.data?.clientCaBundle && (
+        {report.data.clientCaBundle ? (
           <>
             <p className="muted">
-              The bundle the reverse proxy trusts, as declared in the integrations file:
+              The issuers the reverse proxy trusts, as declared in the integrations file:
             </p>
             <pre className="pre">{JSON.stringify(report.data.clientCaBundle, null, 2)}</pre>
           </>
-        )}
-        {report.data && !report.data.clientCaBundle && (
+        ) : (
           <p className="muted">
             No client-CA bundle is declared in the integrations file, so how wide CN-only actually is
             cannot be answered from here.

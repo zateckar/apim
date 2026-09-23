@@ -310,3 +310,6 @@ The document SHALL be derived from the database, never assembled incrementally o
 - WHEN they call `GET /api/audit`
 - THEN they SHALL see who changed what, when, and what happened as a result
 - AND the log SHALL be readable by administrators only
+- AND each row SHALL carry `actorName`, the principal's display name or the stored id when nobody by
+  that id exists, and `subjectName`, the name of a `resource:`, `application:`, `product:` or
+  `user:` subject that still exists, or `null` — resolved in one query per kind for the page

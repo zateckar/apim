@@ -101,8 +101,55 @@ export function registerAdminRoutes(router: Router): void {
       ctx.app.db,
       items.map((row) => row.actor),
     );
+    const subjects = subjectNames(
+      ctx.app.db,
+      items.map((row) => (row as { subject?: string }).subject ?? ""),
+    );
     return json({
-      items: items.map((row) => ({ ...row, actorName: names.get(row.actor) ?? row.actor })),
+      items: items.map((row) => {
+        const subject = (row as { subject?: string }).subject ?? "";
+        return {
+          ...row,
+          actorName: names.get(row.actor) ?? row.actor,
+          subjectName: subjects.get(subject) ?? null,
+        };
+      }),
     });
   });
+}
+
+/**
+ * The subject's name, for the kinds a reader can go and look at — `platform-administration`,
+ * *Make audit events easy to scan*. The same reasoning as `actorName` `[P2-03]`: `resource:res_8f2…`
+ * answers "what was changed" for nobody. One query per kind for the page, and a subject whose row is
+ * gone (or whose kind has no name, like `environment:prod`) resolves to nothing, so the screen shows
+ * the stored id rather than a name that is no longer true.
+ */
+function subjectNames(db: Parameters<typeof displayNames>[0], subjects: string[]): Map<string, string> {
+  const byKind = new Map<string, Set<string>>();
+  for (const subject of subjects) {
+    const at = subject.indexOf(":");
+    if (at <= 0) continue;
+    const kind = subject.slice(0, at);
+    if (!byKind.has(kind)) byKind.set(kind, new Set());
+    byKind.get(kind)!.add(subject.slice(at + 1));
+  }
+  const out = new Map<string, string>();
+  const lookup = (kind: string, sql: (placeholders: string) => string) => {
+    const ids = [...(byKind.get(kind) ?? [])];
+    if (ids.length === 0) return;
+    const rows = db
+      .query<{ id: string; name: string }, string[]>(sql(ids.map(() => "?").join(",")))
+      .all(...ids);
+    for (const row of rows) out.set(`${kind}:${row.id}`, row.name);
+  };
+  lookup("resource", (p) => `SELECT id, name || ' ' || api_version AS name FROM resource WHERE id IN (${p})`);
+  lookup("application", (p) => `SELECT id, name FROM application WHERE id IN (${p})`);
+  lookup("product", (p) => `SELECT id, name FROM product WHERE id IN (${p})`);
+  const users = [...(byKind.get("user") ?? [])];
+  if (users.length > 0) {
+    // `displayNames` answers an unknown id with the id itself; only a real name is a name here.
+    for (const [id, name] of displayNames(db, users)) if (name !== id) out.set(`user:${id}`, name);
+  }
+  return out;
 }

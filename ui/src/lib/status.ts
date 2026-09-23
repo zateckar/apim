@@ -394,6 +394,105 @@ export const PAUSED_CHIP: Chip = {
 
 // ==================================================================== phase-2: governance
 // Chips for the governance screens. Add below this line only; the anchor keeps parallel additions apart.
+
+/**
+ * How far a TLS exception relaxes verification. Named by what is still checked, because that is the
+ * question the governance report exists to answer: a pin is the one mode that is not a downgrade.
+ */
+export function tlsModeChip(mode: string): Chip {
+  switch (mode) {
+    case "pin":
+      return { label: "Pinned", tone: "live", title: "pin — the chain is verified and the certificate must be exactly this one" };
+    case "skip-hostname":
+      return { label: "No hostname check", tone: "warn", title: "skip-hostname — the chain is verified; the name in the certificate is ignored" };
+    case "insecure":
+      return { label: "Not verified", tone: "stop", title: "insecure — nothing about the backend's certificate is checked" };
+    default:
+      return { label: mode, tone: "neutral", title: mode };
+  }
+}
+
+/**
+ * Where a TLS exception stands in time. A week is the warning line because the attention row for an
+ * expiring exception is raised on the same horizon (`trust-store`, *An exception is nearing its
+ * expiry*), and the chip should not disagree with the dashboard about what "soon" is.
+ */
+export function tlsExceptionChip(row: { live: boolean; revokedAt: string | null; expiresInDays: number }): Chip {
+  if (row.revokedAt) return { label: "Revoked", tone: "past", title: "revoked — the gateways no longer honour it" };
+  if (!row.live) return { label: "Expired", tone: "past", title: "expired — the gateways stopped honouring it on their own clock" };
+  const days = `${row.expiresInDays} day${row.expiresInDays === 1 ? "" : "s"} left`;
+  return row.expiresInDays <= 7
+    ? { label: days, tone: "warn", title: "live, and expires within a week — renew it or remove the need for it" }
+    : { label: days, tone: "neutral", title: "live — the gateways honour it until it expires" };
+}
+
+/** A trusted certificate authority by its remaining life; thirty days is the renewal warning. */
+export function anchorExpiryChip(row: { expired: boolean; expiresInDays: number }, notAfter: string): Chip {
+  if (row.expired) return { label: "Expired", tone: "stop", title: `expired on ${notAfter} — no gateway trusts it any more` };
+  const days = `${row.expiresInDays} day${row.expiresInDays === 1 ? "" : "s"}`;
+  return row.expiresInDays <= 30
+    ? { label: days, tone: "warn", title: `expires on ${notAfter} — register the replacement before then` }
+    : { label: days, tone: "live", title: `trusted until ${notAfter}` };
+}
+
+/** What a route's `validate` unit does with a request or response that does not match. */
+export function validationChip(state: string): Chip {
+  switch (state) {
+    case "blocking":
+      return { label: "Blocking", tone: "live", title: "blocking — an invalid message is refused" };
+    case "warning":
+      return { label: "Warning only", tone: "warn", title: "warning — an invalid message is logged and passed through" };
+    case "disabled":
+      return { label: "Off", tone: "stop", title: "disabled — nothing is checked" };
+    default:
+      return { label: state, tone: "neutral", title: state };
+  }
+}
+
+/** Why an operation cannot be validated at all: the fix is to the definition, not the policy. */
+export function schemaStateChip(state: string): Chip {
+  switch (state) {
+    case "no-schema":
+      return { label: "No schema", tone: "warn", title: "no-schema — the definition declares nothing to validate against" };
+    case "unsupported-schema":
+      return { label: "Unsupported schema", tone: "warn", title: "unsupported-schema — the schema uses a construct outside the implemented subset" };
+    default:
+      return { label: state, tone: "warn", title: state };
+  }
+}
+
+/** One global policy unit in one environment. */
+export function globalUnitChip(attached: boolean): Chip {
+  return attached
+    ? { label: "Attached", tone: "live", title: "applied under every API in this environment that does not set it itself" }
+    : { label: "Not attached", tone: "neutral", title: "not set for this environment; each API decides for itself" };
+}
+
+/** How an audited action ended — the three outcomes `writeAudit` records. */
+export function auditOutcomeChip(outcome: string): Chip {
+  switch (outcome) {
+    case "ok":
+      return { label: "Succeeded", tone: "live", title: "ok — the change was made" };
+    case "denied":
+      return { label: "Refused", tone: "stop", title: "denied — the caller was not allowed to do this, and nothing changed" };
+    case "failed":
+      return { label: "Failed", tone: "stop", title: "failed — it was attempted and did not complete" };
+    default:
+      return { label: outcome, tone: "neutral", title: outcome };
+  }
+}
+
+/**
+ * How a request ended, as Telemetry counts it. The served outcomes mirror `shared/telemetry.ts`'s
+ * `SERVED_OUTCOMES`; duplicated because the bundle talks to the control plane only over the API, and
+ * the cost of the copy is one chip's tone.
+ */
+const SERVED_OUTCOMES = new Set(["ok", "cache-hit", "stream-closed", "rpc-error"]);
+export function telemetryOutcomeChip(outcome: string, count: number): Chip {
+  return SERVED_OUTCOMES.has(outcome)
+    ? { label: `${outcome} · ${count.toLocaleString()}`, tone: "live", title: `${outcome} — the request got an answer` }
+    : { label: `${outcome} · ${count.toLocaleString()}`, tone: "warn", title: `${outcome} — the request did not get the answer it asked for` };
+}
 // end phase-2: governance
 
 

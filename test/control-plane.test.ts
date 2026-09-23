@@ -355,6 +355,25 @@ describe("authorization, CSRF and concurrency", () => {
     expect(published.resourceId).toBeTruthy();
   });
 
+  test("an audit row names its subject where the subject has a name", async () => {
+    const published = await publishApi(cp, { backendUrl: "http://127.0.0.1:9999" });
+    const alice = await cp.login("alice");
+    const audit = await (await cp.call("GET", "/api/audit?limit=200", { cookie: alice })).json();
+    const created = audit.items.find(
+      (row: { action: string; subject: string }) =>
+        row.action === "resource.create" && row.subject === `resource:${published.resourceId}`,
+    );
+    const name = cp.app.db
+      .query<{ name: string }, [string]>("SELECT name || ' ' || api_version AS name FROM resource WHERE id = ?")
+      .get(published.resourceId)!.name;
+    expect(created.subjectName).toBe(name);
+    // A subject with no row to name — an environment, the retention job — stays unnamed, so the
+    // screen shows what was stored rather than a guess.
+    for (const row of audit.items as Array<{ subject: string; subjectName: string | null }>) {
+      if (!/^(resource|application|product|user):/.test(row.subject)) expect(row.subjectName).toBeNull();
+    }
+  });
+
   test("the audit log is admin-only", async () => {
     const pavel = await cp.login("pavel");
     expect((await cp.call("GET", "/api/audit", { cookie: pavel })).status).toBe(403);

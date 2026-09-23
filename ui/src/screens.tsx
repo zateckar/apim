@@ -135,18 +135,31 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   application: ({ match, session }) => (
     <ApplicationView applicationId={match.params.applicationId!} user={session.user} />
   ),
-  users: ({ session }) => (
-    <UsersView user={session.user} canCreate={session.meta.authProviders.includes("local")} />
-  ),
-  user: ({ match, session }) => <UserView userId={match.params.userId!} me={session.user} />,
-  telemetry: ({ session }) => <TelemetryView meta={session.meta} environment={session.environment} />,
+  users: ({ session }) =>
+    session.user.isAdmin ? (
+      <UsersView user={session.user} canCreate={session.meta.authProviders.includes("local")} />
+    ) : (
+      <AdministratorsOnly answer="people" />
+    ),
+  user: ({ match, session }) =>
+    session.user.isAdmin || match.params.userId === session.user.id ? (
+      <UserView userId={match.params.userId!} me={session.user} />
+    ) : (
+      <AdministratorsOnly answer="people" />
+    ),
+  telemetry: ({ session }) =>
+    session.user.isAdmin ? (
+      <TelemetryView meta={session.meta} environment={session.environment} />
+    ) : (
+      <AdministratorsOnly answer="traffic" />
+    ),
   "global-policy": ({ session }) => (
     <GlobalPolicyView meta={session.meta} user={session.user} environment={session.environment} />
   ),
   trust: ({ session }) => (
     <TrustView meta={session.meta} user={session.user} environment={session.environment} />
   ),
-  audit: () => <AuditView />,
+  audit: ({ session }) => (session.user.isAdmin ? <AuditView /> : <AdministratorsOnly answer="audit" />),
 
   // ------------------------------------------------------------------ and the address that is not
   "not-found": () => (
@@ -156,13 +169,44 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   ),
 };
 
-function AdministratorsOnly() {
+/**
+ * What a member meets at an administrator's address (platform-administration, "A member deep-links
+ * into any other administration screen"): whose screen it is, and the open screen that answers the
+ * question a member arrives with. People, Telemetry and Audit used to render their chrome around a
+ * raw "403 Forbidden" banner — "0 people", an empty chart — which read as an estate with nothing
+ * in it rather than as a screen that is not theirs.
+ */
+const MEMBER_ANSWER = {
+  gateways: {
+    detail: "Whether each environment's gateways are serving what was published is on Health Status, which is open to everybody.",
+    to: "/fleet",
+    label: "Open Health Status",
+  },
+  traffic: {
+    detail: "Your own application's traffic — served, refused and failed — is on its dashboard.",
+    to: "/dashboard",
+    label: "Open the dashboard",
+  },
+  audit: {
+    detail: "What your application changed, and how far each change has reached the gateways, is on Activity.",
+    to: "/activity",
+    label: "Open Activity",
+  },
+  people: {
+    detail: "Who is in your applications, and how you got there, is on your account.",
+    to: "/account",
+    label: "Open your account",
+  },
+} as const;
+
+function AdministratorsOnly({ answer = "gateways" }: { answer?: keyof typeof MEMBER_ANSWER }) {
+  const { detail, to, label } = MEMBER_ANSWER[answer];
   return (
     <Panel>
       <EmptyState
         title="This screen is for administrators"
-        detail="Whether each environment's gateways are serving what was published is on Health Status, which is open to everybody."
-        action={<Link className="btn primary" to="/fleet">Open Health Status</Link>}
+        detail={detail}
+        action={<Link className="btn primary" to={to}>{label}</Link>}
       />
     </Panel>
   );

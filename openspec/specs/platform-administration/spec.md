@@ -41,17 +41,32 @@ Administration group.
 - WHEN the page renders
 - THEN it SHALL show the failure without claiming the directory or audit is empty
 
-### Requirement: Administration screens are readable by everybody and writable by administrators
+### Requirement: A member at an administration address is either shown the state or sent to their own
 
-#### Scenario: A member deep-links into an administration screen
+The Administration group is offered only to administrators. A member still reaches its addresses
+through an old link or a typed address, and what they meet depends on whether the state behind the
+screen explains something about their own APIs.
 
-- GIVEN a member who opens Gateways, Gateway settings, Trust, Global policy, People, Applications,
-  Telemetry or Audit
+#### Scenario: A member deep-links into Trust, Global policy or Applications
+
+- GIVEN a member who opens Trust, Global policy or Applications
 - WHEN it renders
-- THEN the current state SHALL be shown
+- THEN the current state the control plane lets them read SHALL be shown
 - AND every control SHALL be disabled with one sentence saying only a platform administrator can
   change it and that the current state is readable here
-- AND nothing SHALL be hidden
+- AND the reason SHALL be that these explain why a member's own API behaves as it does — which
+  authorities its backend is checked against, which units every API inherits, who owns what
+
+#### Scenario: A member deep-links into any other administration screen
+
+- GIVEN a member who opens Gateways, Gateway settings, External systems, People, one other person's
+  account, Telemetry or Audit
+- WHEN it renders
+- THEN the screen SHALL say it is for administrators, and SHALL link to the open screen that
+  answers a member's version of the question: Health Status for the gateway screens, the dashboard
+  for traffic, Activity for what changed, and their own account for people
+- AND it SHALL NOT render the screen's chrome around a refusal — "0 people", an empty chart and a
+  `403` banner read as an estate with nothing in it rather than as a screen that is not theirs
 
 #### Scenario: The Audit log is read
 

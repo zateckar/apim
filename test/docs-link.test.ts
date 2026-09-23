@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { runOperations } from "../control-plane/src/operations.ts";
 import { makeCp, MINI_SPEC, type TestCp } from "./helpers.ts";
 
 /**
@@ -59,6 +60,18 @@ describe("the documentation link", () => {
     expect(response.status).toBe(202);
     const d = await workspace(resourceIdOf("docs-api"));
     expect(d.resource.docsUrl).toBe("https://wiki.example/teams/platform/docs-api");
+  });
+
+  test("the workspace is told which of the definition's operations are validated", async () => {
+    // Not about the link: this is the file that already reads the workspace payload. Every
+    // operation of the definition in force comes back with its schemaState, so "not validated" is
+    // on the screen rather than assumed (api-edit-properties).
+    expect((await publish("checked-api")).status).toBe(202);
+    runOperations(cp.app);
+    const d = await workspace(resourceIdOf("checked-api"));
+    const inventory = d.validation.find((op: { id: string }) => op.id === "getInventory");
+    expect(inventory).toMatchObject({ method: "GET", template: "/store/inventory", schemaState: "no-schema" });
+    expect(d.validation).toHaveLength(8);
   });
 
   test("is null rather than empty when nobody set one", async () => {

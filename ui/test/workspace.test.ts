@@ -9,7 +9,8 @@ import {
 import { humanDuration, MILLISECOND_UNITS, SECOND_UNITS, unitFor } from "../src/portal/PolicyForm.tsx";
 import { curlFor, formatBytes } from "../src/views/PlaygroundPanel.tsx";
 import { initialMinutes, rangeOf } from "../src/views/LogsPanel.tsx";
-import { diagnosticChip, diffChangeChip, httpStatusChip, localityChip } from "../src/lib/status.ts";
+import { diagnosticChip, diffChangeChip, httpStatusChip, localityChip, schemaStateChip } from "../src/lib/status.ts";
+import { skillsOf, toolsOf, validationStateOf } from "../src/portal/components/OperationsCard.tsx";
 
 /**
  * The API workspace's decisions, as opposed to its markup: what Save would write, what stops it,
@@ -221,5 +222,42 @@ describe("the workspace's chips", () => {
     expect(diagnosticChip("info").tone).toBe("neutral");
     expect(localityChip({ paused: false })).toBeNull();
     expect(localityChip({ paused: true })?.label).toBe("Paused");
+  });
+});
+
+describe("what the definition declares, beside it", () => {
+  const saved = [
+    { id: "listPets", method: "GET", template: "/pets", schemaState: "ok" },
+    { id: "addPet", method: "POST", template: "/pets", schemaState: "no-schema" },
+    { id: "GetQuote", method: "POST", template: "/", schemaState: "unsupported-schema" },
+    { id: "tools/call:search", method: "POST", template: "/", selector: "tools/call:search", schemaState: "ok" },
+  ];
+
+  test("a REST operation is found by method and path template, the way the gateway routes it", () => {
+    expect(validationStateOf(saved, { method: "get", path: "/pets" })).toBe("ok");
+    expect(validationStateOf(saved, { method: "POST", path: "/pets" })).toBe("no-schema");
+  });
+
+  test("a SOAP operation by its name and an MCP tool by its selector", () => {
+    expect(validationStateOf(saved, { id: "GetQuote" })).toBe("unsupported-schema");
+    expect(validationStateOf(saved, { selector: "tools/call:search" })).toBe("ok");
+  });
+
+  test("an operation the saved definition does not have yet has no state rather than a guessed one", () => {
+    expect(validationStateOf(saved, { method: "DELETE", path: "/pets/{id}" })).toBeNull();
+    expect(validationStateOf(saved, { selector: "tools/call:new-tool" })).toBeNull();
+  });
+
+  test("tools and skills are read from the draft on screen, and a malformed entry is skipped", () => {
+    expect(toolsOf({ tools: [{ name: "search" }, { description: "no name" }] }).map((t) => t.name)).toEqual(["search"]);
+    expect(toolsOf(null)).toEqual([]);
+    expect(skillsOf({ skills: [{ id: "summarise", name: "Summarise" }, { name: "no id" }] }).map((s) => s.id)).toEqual([
+      "summarise",
+    ]);
+  });
+
+  test("a validated operation says so in words, like the ones that are not", () => {
+    expect(schemaStateChip("ok").label).toBe("Validated");
+    expect(schemaStateChip("no-schema").label).toBe("No schema");
   });
 });

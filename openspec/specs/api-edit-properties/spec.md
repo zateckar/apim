@@ -129,7 +129,13 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
   a narrow one, so the two readings of one document can be compared without scrolling past a
   thousand lines to reach the second
 - AND for a SOAP resource this SHALL be the WSDL's operations
-- AND for an MCP or A2A resource it SHALL be the discovered tools or skills
+- AND for an MCP resource it SHALL be the manifest's tools — each with its title or description,
+  and, opened, its input schema or a sentence saying it declares none, so its arguments are not
+  checked
+- AND for an A2A resource it SHALL be the agent card's skills — name, id, description, tags and
+  examples
+- AND each of these SHALL be read from the draft on screen, so an edit to the manifest or the card
+  is reflected beside it before it is saved, as the OpenAPI operations already are
 - AND the reason for the cap SHALL be that an uncapped editor put the operation list off the end of
   a page that took a minute to scroll
 
@@ -162,6 +168,14 @@ an edit becomes a revision. See *Published Path Derivation* and *The Authorizati
 - AND each SHALL show whether it is validated, and when it is not, whether that is because it has
   no schema or an unsupported one
 - AND "not validated" SHALL therefore be visible rather than assumed
+- AND the state SHALL be the saved revision's, from its operation index, which the workspace payload
+  carries as `validation`; it is matched by method and path template for REST, by operation name for
+  SOAP and by `tools/call:<name>` for an MCP tool
+- AND an operation the saved revision does not have SHALL say "not saved yet" rather than show a
+  guessed state, and while the definition has unsaved edits one sentence under the list SHALL say
+  the states describe what is saved
+- AND an A2A skill SHALL carry no state, because a skill is not something a caller selects: every
+  call is one of the A2A methods, and those are what is validated
 
 ### Requirement: Edit the description as Markdown, with a preview
 

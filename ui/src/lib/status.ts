@@ -573,6 +573,8 @@ export function validationChip(state: string): Chip {
 /** Why an operation cannot be validated at all: the fix is to the definition, not the policy. */
 export function schemaStateChip(state: string): Chip {
   switch (state) {
+    case "ok":
+      return { label: "Validated", tone: "live", title: "ok — requests are checked against the declared schema" };
     case "no-schema":
       return { label: "No schema", tone: "warn", title: "no-schema — the definition declares nothing to validate against" };
     case "unsupported-schema":

@@ -3,7 +3,9 @@
 // same operation surface for the same API.
 
 import { useMemo, useState } from 'react';
-import { Panel, Skeleton } from '../../components';
+import { toolSelector } from '../../../../shared/mcp';
+import { Panel, Skeleton, StatusChip } from '../../components';
+import { schemaStateChip } from '../../lib/status';
 import * as I from '../icons';
 import {
   extractOperations,
@@ -32,11 +34,73 @@ function OperationsShell({ state, onRetry }: { state: 'loading' | 'error'; onRet
 }
 
 /** "3 operations", drawn at the far end of the panel's head. */
-function Count({ n }: { n: number }) {
-  return <span className="op-count">{n} {n === 1 ? 'operation' : 'operations'}</span>;
+function Count({ n, noun = 'operation' }: { n: number; noun?: string }) {
+  return <span className="op-count">{n} {n === 1 ? noun : `${noun}s`}</span>;
 }
 
-export function OperationsCard({ doc, loading, error, onRetry }: { doc: unknown; loading: boolean; error?: boolean; onRetry?: () => void }) {
+/**
+ * Whether one operation of the saved revision is validated — the operation index's `schemaState`,
+ * which the editor payload carries (api-edit-properties, "Show the operations the definition
+ * declares"). "Not validated" has to be visible rather than assumed, and it is a fact about the
+ * definition in force, so it comes from the server rather than from re-reading the draft.
+ */
+export interface OperationValidation {
+  id: string;
+  method: string;
+  template: string;
+  selector?: string;
+  schemaState: string;
+}
+
+/**
+ * The saved state of one declared operation, found the way the gateway finds it: by method and path
+ * template for REST, by operation name for SOAP, by selector for an MCP tool. `null` when the saved
+ * revision has no such operation — it was added in this edit, or nothing is saved here yet.
+ */
+export function validationStateOf(
+  validation: readonly OperationValidation[],
+  match: { method?: string; path?: string; id?: string; selector?: string },
+): string | null {
+  const row = validation.find((entry) =>
+    match.selector !== undefined
+      ? entry.selector === match.selector
+      : match.id !== undefined
+        ? entry.id === match.id
+        : entry.method.toUpperCase() === match.method?.toUpperCase() && entry.template === match.path,
+  );
+  return row?.schemaState ?? null;
+}
+
+/** The chip for one row, or a quiet word when the saved revision does not know the operation yet. */
+function ValidationCell({ state, known }: { state: string | null; known: boolean }) {
+  if (!known) return null;
+  if (state === null) return <span className="op-faint">not saved yet</span>;
+  return <StatusChip chip={schemaStateChip(state)} />;
+}
+
+/** Under the list, once: the chips describe what is saved, and an unsaved edit is not that. */
+function ValidationNote({ known, edited }: { known: boolean; edited?: boolean }) {
+  if (!known || !edited) return null;
+  return <p className="op-note">Validation is shown for the definition as saved. Save to see it for this edit.</p>;
+}
+
+export function OperationsCard({
+  doc,
+  loading,
+  error,
+  onRetry,
+  validation,
+  edited,
+}: {
+  doc: unknown;
+  loading: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  /** The saved revision's states. Absent where nothing is saved (the publish wizard). */
+  validation?: readonly OperationValidation[];
+  edited?: boolean;
+}) {
+  const known = (validation?.length ?? 0) > 0;
   const ops = useMemo(() => extractOperations(doc), [doc]);
   // One row may be expanded at a time; clicking the same row collapses it.
   const [expandedKey, setExpandedKey] = useState<string | null>(null);
@@ -78,12 +142,168 @@ export function OperationsCard({ doc, loading, error, onRetry }: { doc: unknown;
                     <div className="op-row-summary">{op.summary || op.description}</div>
                   )}
                 </div>
+                <ValidationCell
+                  known={known}
+                  state={validationStateOf(validation ?? [], { method: op.method, path: op.path })}
+                />
                 <I.ChevDown size={14} className={`op-row-chev ${expanded ? 'rot' : ''}`} />
               </button>
               {expanded && <OperationDetail op={op} />}
             </li>
           );
         })}
+      </ul>
+      <ValidationNote known={known} edited={edited} />
+    </Panel>
+  );
+}
+
+interface ManifestTool {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: unknown;
+}
+
+/** The tools an MCP manifest declares, from the draft on screen; nothing when it does not parse. */
+export function toolsOf(doc: unknown): ManifestTool[] {
+  const tools = (doc as { tools?: unknown } | null)?.tools;
+  if (!Array.isArray(tools)) return [];
+  return tools.filter((tool): tool is ManifestTool => typeof (tool as ManifestTool)?.name === 'string');
+}
+
+/**
+ * An MCP server's tools, beside its manifest — what `OperationsCard` is for an OpenAPI document
+ * (api-edit-properties, "The definition panel renders"). A tool is an operation to the gateway, one
+ * `tools/call` selector each, so each carries the same validation chip; its input schema is what the
+ * arguments are checked against, and a tool without one says so.
+ */
+export function ToolsCard({
+  doc,
+  validation,
+  edited,
+}: {
+  doc: unknown;
+  validation?: readonly OperationValidation[];
+  edited?: boolean;
+}) {
+  const tools = useMemo(() => toolsOf(doc), [doc]);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const known = (validation?.length ?? 0) > 0;
+  if (!doc) return null;
+  if (tools.length === 0) {
+    return (
+      <Panel title="Tools">
+        <p className="op-note">This server declares no tools.</p>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Tools" flush actions={<Count n={tools.length} noun="tool" />}>
+      <ul className="op-list">
+        {tools.map((tool) => {
+          const open = expanded === tool.name;
+          return (
+            <li key={tool.name}>
+              <button
+                type="button"
+                className="op-row-toggle"
+                aria-expanded={open}
+                onClick={() => setExpanded(open ? null : tool.name)}
+              >
+                <div className="op-row-copy">
+                  <div className="mono op-row-path">{tool.name}</div>
+                  {(tool.title || tool.description) && (
+                    <div className="op-row-summary">{tool.title || tool.description}</div>
+                  )}
+                </div>
+                <ValidationCell
+                  known={known}
+                  state={validationStateOf(validation ?? [], { selector: toolSelector(tool.name) })}
+                />
+                <I.ChevDown size={14} className={`op-row-chev ${open ? 'rot' : ''}`} />
+              </button>
+              {open && (
+                <div className="op-detail">
+                  {tool.title && tool.description && (
+                    <div className="op-detail-section">
+                      <div className="op-detail-text">{tool.description}</div>
+                    </div>
+                  )}
+                  <div className="op-detail-section">
+                    <div className="op-detail-label">Input schema</div>
+                    {tool.inputSchema ? (
+                      <pre className="pre">{JSON.stringify(tool.inputSchema, null, 2)}</pre>
+                    ) : (
+                      <div className="op-detail-text op-faint">
+                        This tool declares no input schema, so its arguments are not checked.
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+      </ul>
+      <ValidationNote known={known} edited={edited} />
+    </Panel>
+  );
+}
+
+interface CardSkill {
+  id: string;
+  name?: string;
+  description?: string;
+  tags?: string[];
+  examples?: string[];
+}
+
+/** The skills an A2A agent card declares, from the draft on screen. */
+export function skillsOf(doc: unknown): CardSkill[] {
+  const skills = (doc as { skills?: unknown } | null)?.skills;
+  if (!Array.isArray(skills)) return [];
+  return skills.filter((skill): skill is CardSkill => typeof (skill as CardSkill)?.id === 'string');
+}
+
+/**
+ * An A2A agent's skills, beside its card. No validation chip: a skill is what the card says the
+ * agent can do, not something a caller selects — every call is one of the A2A methods, and those
+ * are validated whichever skill the agent uses to answer.
+ */
+export function SkillsCard({ doc }: { doc: unknown }) {
+  const skills = useMemo(() => skillsOf(doc), [doc]);
+  if (!doc) return null;
+  if (skills.length === 0) {
+    return (
+      <Panel title="Skills">
+        <p className="op-note">This agent's card declares no skills.</p>
+      </Panel>
+    );
+  }
+  return (
+    <Panel title="Skills" flush actions={<Count n={skills.length} noun="skill" />}>
+      <ul className="op-list">
+        {skills.map((skill) => (
+          <li key={skill.id} className="op-row-toggle op-row-static">
+            <div className="op-row-copy">
+              <div className="op-row-path">
+                {skill.name ?? skill.id} <span className="mono op-faint">{skill.id}</span>
+              </div>
+              {skill.description && <div className="op-row-summary">{skill.description}</div>}
+              {(skill.tags ?? []).length > 0 && (
+                <div className="op-detail-chips">
+                  {skill.tags!.map((tag) => (
+                    <span key={tag} className="chip op-chip">{tag}</span>
+                  ))}
+                </div>
+              )}
+              {(skill.examples ?? []).length > 0 && (
+                <div className="op-faint">For example: {skill.examples!.join(' · ')}</div>
+              )}
+            </div>
+          </li>
+        ))}
       </ul>
     </Panel>
   );
@@ -202,7 +422,22 @@ export function MethodBadge({ method }: { method: string | undefined }) {
  * topology the WSDL also carries is left out — the operation name is what a consumer calls, and the
  * rest is plumbing the SOAP client library hides.
  */
-export function SoapOperationsCard({ wsdl, loading, error, onRetry }: { wsdl: WsdlParseResult | null; loading: boolean; error?: boolean; onRetry?: () => void }) {
+export function SoapOperationsCard({
+  wsdl,
+  loading,
+  error,
+  onRetry,
+  validation,
+  edited,
+}: {
+  wsdl: WsdlParseResult | null;
+  loading: boolean;
+  error?: boolean;
+  onRetry?: () => void;
+  validation?: readonly OperationValidation[];
+  edited?: boolean;
+}) {
+  const known = (validation?.length ?? 0) > 0;
   if (loading) return <OperationsShell state="loading" />;
   if (error && !wsdl) return <OperationsShell state="error" onRetry={onRetry} />;
   if (!wsdl || !wsdl.ok) return null;
@@ -216,9 +451,11 @@ export function SoapOperationsCard({ wsdl, loading, error, onRetry }: { wsdl: Ws
             <div className="op-row-copy">
               <div className="mono op-row-path">{op.name}</div>
             </div>
+            <ValidationCell known={known} state={validationStateOf(validation ?? [], { id: op.name })} />
           </li>
         ))}
       </ul>
+      <ValidationNote known={known} edited={edited} />
     </Panel>
   );
 }

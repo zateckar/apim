@@ -1,4 +1,5 @@
 import { API_VERSION_PATTERN } from "../../shared/types.ts";
+import type { ConfigOperation } from "../../shared/config-doc.ts";
 import type { App, Ctx } from "./router.ts";
 import {
   Router,
@@ -714,13 +715,30 @@ export function registerOperationRoutes(router: Router) {
       );
     const snapshot = currentSnapshot(ctx, row.id, environment);
     const canEdit = can(ctx.user, row.application_id);
-    const definition = snapshot
+    const revision = snapshot
       ? ctx.app.db
-          .query<{ original: string }, [string]>(
-            "SELECT original FROM revision WHERE id=?",
+          .query<{ original: string; index_json: string | null }, [string]>(
+            "SELECT original, index_json FROM revision WHERE id=?",
           )
-          .get(snapshot.revisionId)?.original
+          .get(snapshot.revisionId)
       : null;
+    const definition = revision?.original ?? null;
+    // Whether each operation of the definition in force is validated, and when not, why
+    // (api-edit-properties, "Show the operations the definition declares"). The index already
+    // carries it — computed once, when the revision was compiled — so this is a read, not a
+    // recompile. Routing fields only; the schemas stay in the artifact.
+    let validation: Array<{ id: string; method: string; template: string; selector?: string; schemaState: string }> = [];
+    try {
+      validation = (JSON.parse(revision?.index_json ?? "[]") as ConfigOperation[]).map((op) => ({
+        id: op.id,
+        method: op.method,
+        template: op.template,
+        ...(op.selector ? { selector: op.selector } : {}),
+        schemaState: op.schemaState,
+      }));
+    } catch {
+      validation = [];
+    }
     const owner = ctx.app.db
       .query<{ name: string }, [string]>("SELECT name FROM application WHERE id=?")
       .get(row.application_id);
@@ -782,6 +800,7 @@ export function registerOperationRoutes(router: Router) {
        */
       globalUnits: [...inheritedUnits(ctx.app.db, environment).keys()],
       definition,
+      validation,
       products: ctx.app.db
         .query(
           "SELECT p.id,p.name FROM product p JOIN product_member pm ON pm.product_id=p.id WHERE pm.resource_id=?",

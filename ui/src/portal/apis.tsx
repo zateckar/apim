@@ -39,7 +39,7 @@ import { yaml } from "@codemirror/lang-yaml";
 import { command, listAll } from "./client";
 import { SubscribeDialog, Subscriptions } from "./processes";
 import { parseWsdl } from "./lib/wsdl";
-import { OperationsCard, SoapOperationsCard } from "./components/OperationsCard";
+import { OperationsCard, SkillsCard, SoapOperationsCard, ToolsCard } from "./components/OperationsCard";
 import { DefinitionDiagnostics } from "./components/DefinitionDiagnostics";
 import { MarkdownEditor } from "./components/MarkdownEditor";
 import { MAX_POOL_SIZE, MAX_WEIGHT } from "../../../shared/backend";
@@ -1300,19 +1300,30 @@ function EditorForm({
           </Notice>
         )}
         {tab === "definition" &&
-          (d.resource.kind === "rest" || d.resource.kind === "soap" ? (
+          (["rest", "soap", "mcp", "a2a"].includes(d.resource.kind) ? (
             /* Two columns, because they are two readings of one document and the question this
                tab answers is whether they agree. Stacked, the operation list began below a
                definition that is routinely a thousand lines long. The editor is capped and
                scrolls within itself instead; the columns collapse below 1100px. Two panels side
-               by side rather than one holding the other. */
+               by side rather than one holding the other. An MCP manifest's reading is its tools
+               and an agent card's is its skills (api-edit-properties, "The definition panel
+               renders"); each row says whether the saved definition validates it. */
             <div className="definition-split">
               <div className="definition-source">{definitionPanel}</div>
               <div className="definition-shape">
                 {d.resource.kind === "rest" ? (
-                  <OperationsCard doc={doc} loading={false} />
+                  <OperationsCard doc={doc} loading={false} validation={d.validation} edited={definitionEdited} />
+                ) : d.resource.kind === "soap" ? (
+                  <SoapOperationsCard
+                    wsdl={parseWsdl(spec)}
+                    loading={false}
+                    validation={d.validation}
+                    edited={definitionEdited}
+                  />
+                ) : d.resource.kind === "mcp" ? (
+                  <ToolsCard doc={doc} validation={d.validation} edited={definitionEdited} />
                 ) : (
-                  <SoapOperationsCard wsdl={parseWsdl(spec)} loading={false} />
+                  <SkillsCard doc={doc} />
                 )}
               </div>
             </div>

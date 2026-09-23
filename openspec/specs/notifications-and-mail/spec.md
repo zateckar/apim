@@ -33,8 +33,8 @@ acts on each; the mailbox shows the message.
 - GIVEN one of the known kinds
 - WHEN its title is composed
 - THEN it SHALL read as a sentence about the reader — "You requested access to X", "Someone is
-  asking for access to X", "Your access to X was approved", "Your request for X was turned down",
-  "Access to X is active", "Access to X was withdrawn"
+  asking for access to X", "Your access to X was approved", "Your request for X was rejected",
+  "Access to X is active", "Access to X was revoked"
 - AND the subject SHALL be resolved to the thing's real name rather than shown as an id
 
 #### Scenario: A tone is assigned

@@ -47,6 +47,9 @@ export interface ScreenContext {
   session: Session;
   /** Operations for the selected application, polled once by the shell and shared. */
   operations: any[];
+  /** True until the shell's first read of those operations has answered, so a screen can tell
+   *  "nothing yet" from "not asked yet". */
+  operationsLoading: boolean;
   /** The shell's clock. A screen that has to re-read after somebody's action depends on it. */
   tick: number;
 }
@@ -83,7 +86,9 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
     <CredentialsView key={`${session.application}:${session.environment}`} session={session} />
   ),
   mail: ({ session, tick }) => <Mailbox session={session} tick={tick} />,
-  activity: ({ operations }) => <Activity items={operations} />,
+  activity: ({ operations, operationsLoading }) => (
+    <Activity items={operations} loading={operationsLoading} />
+  ),
 
   // ------------------------------------------------------------------ the same for everybody
   catalog: ({ session }) => (

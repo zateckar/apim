@@ -34,7 +34,7 @@ import {
 import { SubscriptionKeys } from "../views/SubscriptionKeys";
 import { DomainPicker } from "./apis";
 
-export function Activity({ items }: { items: any[] }) {
+export function Activity({ items, loading = false }: { items: any[]; loading?: boolean }) {
   const [scope, setScope] = useState<"all" | "active">("all");
   // The same definition as the topbar's count (portal-shell-navigation, "Activity is opened").
   const active = items.filter(item => !["complete", "superseded"].includes(item.state));
@@ -51,7 +51,9 @@ export function Activity({ items }: { items: any[] }) {
       ]}
     />
   }>
-    {scope === "active" && active.length === 0
+    {/* The shell's first read of the operations is still in flight: "No changes yet" here would be
+        a claim about the application, made before anything had been asked. */}
+    {loading ? <Skeleton rows={4} /> : scope === "active" && active.length === 0
       ? <EmptyState title="No changes in progress" detail="Every change has reached the gateways." action={<button className="btn sm" onClick={() => setScope("all")}>Show all changes</button>} />
       : <OperationList items={scope === "active" ? active : items} />}
   </Panel>;

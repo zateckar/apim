@@ -335,10 +335,10 @@ export function Portal({ session: s, path }: { session: Session; path: string })
             <Fragment key={`${path}:${applicationId}:${route.environmentScoped ? s.environment : ""}`}>
             {route.plainChrome ? (
               <div className="native-legacy">
-                {screenFor({ match, session: effective, operations: items, tick })}
+                {screenFor({ match, session: effective, operations: items, operationsLoading: operations.loading && !operations.data, tick })}
               </div>
             ) : (
-              screenFor({ match, session: effective, operations: items, tick })
+              screenFor({ match, session: effective, operations: items, operationsLoading: operations.loading && !operations.data, tick })
             )}
             </Fragment>
           </PageTitleProvider>

@@ -66,6 +66,13 @@ interface Subject {
   href: string | null;
 }
 
+/** An operation's kind as a reader says it; the same words as Activity (notifications-and-mail). */
+const OPERATION_LABEL: Record<string, string> = {
+  publish: "Published",
+  configure: "Settings changed",
+  promote: "Promoted",
+};
+
 /**
  * Titles, by outbox kind. `%s` is the resolved subject.
  *
@@ -77,13 +84,13 @@ const TITLES: Record<string, { title: string; tone: NotificationTone; act: boole
   "subscription.requested": { title: "You requested access to %s", tone: "info", act: false },
   "subscription.approval-needed": { title: "Someone is asking for access to %s", tone: "warn", act: true },
   "subscription.request.approved": { title: "Your access to %s was approved", tone: "ok", act: false },
-  "subscription.request.rejected": { title: "Your request for %s was turned down", tone: "err", act: false },
+  "subscription.request.rejected": { title: "Your request for %s was rejected", tone: "err", act: false },
   "subscription.approved": { title: "Access to %s is active", tone: "ok", act: false },
-  "subscription.revoked": { title: "Access to %s was withdrawn", tone: "warn", act: false },
+  "subscription.revoked": { title: "Access to %s was revoked", tone: "warn", act: false },
   "kafka.requested": { title: "You requested access to %s", tone: "info", act: false },
   "kafka.approval-needed": { title: "Someone is asking for access to %s", tone: "warn", act: true },
   "kafka.request.approved": { title: "Your access to %s was approved", tone: "ok", act: false },
-  "kafka.request.rejected": { title: "Your request for %s was turned down", tone: "err", act: false },
+  "kafka.request.rejected": { title: "Your request for %s was rejected", tone: "err", act: false },
   "operation.complete": { title: "%s", tone: "ok", act: false },
 };
 
@@ -129,9 +136,13 @@ function subjectsOf(app: App, rows: Row[]): Map<string, Subject> {
         WHERE o.id IN (${marks})`,
     )
     .all(...ids)) {
+    // In the words Activity uses for the same row (`operationKindLabel` in the UI) — the bell used
+    // to say "publish of checkout v2 finished in DEV", the raw kind, beside a screen that said
+    // "Published".
+    const label = OPERATION_LABEL[row.kind] ?? row.kind;
     const what = row.name
-      ? `${row.kind} of ${row.name} ${row.api_version} finished in ${row.environment.toUpperCase()}`
-      : `${row.kind} finished in ${row.environment.toUpperCase()}`;
+      ? `${label}: ${row.name} ${row.api_version} is live in ${row.environment.toUpperCase()}`
+      : `${label}: live in ${row.environment.toUpperCase()}`;
     out.set(row.id, {
       what,
       environment: row.environment,

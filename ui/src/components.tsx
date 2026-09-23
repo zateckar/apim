@@ -694,7 +694,7 @@ export function AttentionList({
                 <li key={`${row.code}-${row.subject.id}-${row.environment ?? ""}-${index}`}>
                   <span className={`chip-status tone-${severityTone(row.severity)}`}>{label.title}</span>{" "}
                   <strong>{row.subject.name}</strong>
-                  {row.environment && <span className="pill muted">{row.environment}</span>}
+                  {row.environment && <span className="chip">{envLabel(row.environment)}</span>}
                   <div className="attention-detail">
                     {row.detail} <Link to={row.href}>{label.action}</Link>
                   </div>

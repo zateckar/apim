@@ -76,21 +76,23 @@ describe("Telemetry", () => {
 });
 
 describe("Global policy", () => {
-  test("a draft that does not parse cannot be saved, and says why", () => {
-    expect(unitDraftError("{ nope", {})).toMatch(/^Not valid JSON/);
-  });
-
   test("a draft of the wrong shape is caught before the control plane is asked", () => {
-    expect(unitDraftError("[1]", { perMinute: 60 })).toMatch(/takes an object/);
-    expect(unitDraftError('"30s"', 30000)).toMatch(/takes a number/);
-    expect(unitDraftError("{}", [])).toMatch(/takes a list/);
+    expect(unitDraftError([1], { perMinute: 60 })).toMatch(/takes an object/);
+    expect(unitDraftError("30s", 30000)).toMatch(/takes a number/);
+    expect(unitDraftError({}, [])).toMatch(/takes a list/);
   });
 
   test("a draft of the right shape is left to the control plane", () => {
-    expect(unitDraftError('{ "perMinute": 5 }', { perMinute: 60 })).toBeNull();
-    expect(unitDraftError("2500", 30000)).toBeNull();
+    expect(unitDraftError({ perMinute: 5 }, { perMinute: 60 })).toBeNull();
+    expect(unitDraftError(2500, 30000)).toBeNull();
     // A unit without a meaningful default has no shape to hold a draft to.
-    expect(unitDraftError('{"a":1}', null)).toBeNull();
+    expect(unitDraftError({ a: 1 }, null)).toBeNull();
+  });
+
+  test("a unit is edited with the per-API workspace's own form, not a JSON box", () => {
+    const source = readFileSync(join(SRC, "views", "GlobalPolicyView.tsx"), "utf8");
+    expect(source).toContain("<UnitForm");
+    expect(source).not.toContain("<textarea");
   });
 
   test("the screen draws no environment picker of its own", () => {

@@ -21,6 +21,7 @@ import {
   useLeaveGuard,
 } from "../components";
 import { globalUnitChip, schemaStateChip, validationChip } from "../lib/status";
+import { EMPTY_CATALOGUE, summarize, UnitForm, type CredentialCatalogue } from "../portal/PolicyForm";
 
 /**
  * The global policy tier (goal G2, deviation D18) — one environment's defaults, applied under
@@ -56,6 +57,17 @@ export function GlobalPolicyView({
     [environment],
     environment,
   );
+  // The names an administrator registered, for the issuer and secret pickers. A refusal leaves the
+  // pickers empty rather than the page broken, and says so above the units.
+  const registered = useAsync(
+    () => api.get<{ registered: CredentialCatalogue["registered"] }>(`/api/credentials?environment=${environment}`),
+    [environment],
+    environment,
+  );
+  const credentials: CredentialCatalogue = registered.data
+    ? { ...EMPTY_CATALOGUE, registered: registered.data.registered }
+    : EMPTY_CATALOGUE;
+  const instances = meta.environments.find((row) => row.environment === environment)?.liveInstances ?? 1;
 
   if (policy.error) return <Notice kind="error">{policy.error}</Notice>;
   if (!policy.data) return <Skeleton rows={4} />;
@@ -122,12 +134,18 @@ export function GlobalPolicyView({
       </Panel>
 
       <Panel title={`Global units in ${env}`} className="global-policy-units">
+        {registered.error && (
+          <Notice kind="warn">
+            The registered credential names could not be read, so the pickers below offer none:{" "}
+            {registered.error}
+          </Notice>
+        )}
         {attachable.map((unitKey) => {
           const catalogue = meta.policyUnits.find((unit) => unit.key === unitKey);
           return (
             <GlobalUnit
               // Keyed by environment as well as unit: without it, switching dev → prod would keep
-              // the editor's in-progress JSON and the next Save would write dev's value to prod.
+              // the editor's in-progress draft and the next Save would write dev's value to prod.
               key={`${environment}:${unitKey}`}
               unitKey={unitKey}
               title={catalogue?.title ?? unitKey}
@@ -138,6 +156,8 @@ export function GlobalPolicyView({
               affected={policy.data!.affectedResources}
               canEdit={canEdit}
               reload={policy.reload}
+              instances={instances}
+              catalogue={credentials}
             />
           );
         })}
@@ -230,18 +250,12 @@ export function GlobalPolicyView({
 /**
  * Whether a draft can be sent, said before Save rather than after.
  *
- * Only what the browser can know for certain: that it parses, and that it is the same *shape* as the
- * unit's default — a number where a number goes, an object where an object goes. Everything past
- * that (bounds, field names, the kind rules) is the control plane's, and its refusal is rendered on
- * the same card.
+ * Only what the browser can know for certain: that it is the same *shape* as the unit's default — a
+ * number where a number goes, an object where an object goes. The per-unit forms cannot produce
+ * anything else; the JSON fallback some units still use can. Everything past that (bounds, field
+ * names, the kind rules) is the control plane's, and its refusal is rendered on the same card.
  */
-export function unitDraftError(json: string, defaultValue: unknown): string | null {
-  let value: unknown;
-  try {
-    value = JSON.parse(json);
-  } catch (err) {
-    return `Not valid JSON: ${(err as Error).message}`;
-  }
+export function unitDraftError(value: unknown, defaultValue: unknown): string | null {
   const shape = (v: unknown) => (v === null ? "null" : Array.isArray(v) ? "list" : typeof v);
   const expected = shape(defaultValue);
   const actual = shape(value);
@@ -266,6 +280,8 @@ function GlobalUnit({
   affected,
   canEdit,
   reload,
+  instances,
+  catalogue,
 }: {
   unitKey: string;
   title: string;
@@ -276,9 +292,14 @@ function GlobalUnit({
   affected: number;
   canEdit: boolean;
   reload: () => void;
+  instances: number;
+  catalogue: CredentialCatalogue;
 }) {
-  const initial = JSON.stringify(attached?.value ?? defaultValue, null, 2);
-  const [json, setJson] = useState(initial);
+  const start = attached?.value ?? defaultValue;
+  const [draft, setDraft] = useState<unknown>(start);
+  // Remounts the form on Cancel, so a unit whose form holds text of its own (the JSON fallback, the
+  // header rows) starts again from the stored value rather than from what was half-typed.
+  const [round, setRound] = useState(0);
   const [open, setOpen] = useState(false);
   const [detaching, setDetaching] = useState(false);
   const action = useAction();
@@ -286,11 +307,13 @@ function GlobalUnit({
   // behind it.
   const detach = useAction();
   const env = envLabel(environment);
-  const draftError = open ? unitDraftError(json, defaultValue) : null;
+  const draftError = open ? unitDraftError(draft, defaultValue) : null;
+  const changed = JSON.stringify(draft) !== JSON.stringify(start);
   // A half-written global value is the most expensive thing on this page to lose, and the most
   // expensive to save by accident — so leaving asks first, as the per-API editor does
   // (`api-policy-controls`, *Do not lose an unsaved policy edit*).
-  useLeaveGuard(open && json !== initial, `the ${title} global policy in ${env}`);
+  useLeaveGuard(open && changed, `the ${title} global policy in ${env}`);
+  const summary = attached ? summarize(unitKey, attached.value) : null;
   const endpoint = `/api/policy/global/units/${encodeURIComponent(unitKey)}?environment=${environment}`;
   const relying = attached ? Math.max(0, affected - attached.overriddenBy) : 0;
 
@@ -320,7 +343,10 @@ function GlobalUnit({
             disabled={!canEdit}
             title={canEdit ? undefined : "Only a platform administrator can change the global tier."}
             onClick={() => {
-              if (open) setJson(initial);
+              if (open) {
+                setDraft(start);
+                setRound(round + 1);
+              }
               setOpen(!open);
             }}
           >
@@ -330,37 +356,49 @@ function GlobalUnit({
       </header>
       <p className="desc">{description}</p>
 
+      {/* The value in the sentence the per-API editor uses for it, so the same unit reads the same
+          on both tiers; the document itself only when the unit has no sentence. */}
       {attached && !open && (
-        <details className="policy-value">
-          <summary>Current configuration</summary>
-          <pre className="pre">{JSON.stringify(attached.value, null, 2)}</pre>
-        </details>
+        summary ? (
+          <p className="policy-value">{summary}</p>
+        ) : (
+          <details className="policy-value">
+            <summary>Current configuration</summary>
+            <pre className="pre">{JSON.stringify(attached.value, null, 2)}</pre>
+          </details>
+        )
       )}
 
-      {/* Raw JSON for one unit, not the structured per-unit form the API workspace draws: that form
-          lives inside `PolicyForm`, which edits a whole document with add, remove and switch-off
-          controls this tier does not have. The draft is checked as it is typed instead, so a Save
-          that would be refused is disabled with the reason beside it. */}
+      {/* The per-API workspace's own form for this one unit, so an administrator sets a rate limit
+          here with the same number-and-period controls a publisher does. This used to be a JSON box
+          for every unit, because the forms lived inside `PolicyForm`; `UnitForm` is the half of it
+          that edits one value. Only registered credential names are offered — no application's own
+          credential can be the whole environment's default. */}
       {open && (
         <>
           <Notice kind="error">{action.error}</Notice>
-          <Field label={`${title} configuration (JSON)`}>
-            <textarea
-              value={json}
-              aria-invalid={Boolean(draftError)}
-              disabled={action.busy}
-              onChange={(event) => setJson(event.target.value)}
+          <fieldset className="unit-form" disabled={action.busy} key={round}>
+            <UnitForm
+              unitKey={unitKey}
+              value={draft}
+              onChange={setDraft}
+              instances={instances}
+              certificates={[]}
+              certificate=""
+              onCertificate={() => {}}
+              catalogue={catalogue}
             />
-          </Field>
+          </fieldset>
           {draftError && <span className="field-error">{draftError}</span>}
           <div className="native-actions">
             <button
               type="button"
               className="btn primary sm"
-              disabled={action.busy || Boolean(draftError)}
+              disabled={action.busy || Boolean(draftError) || (Boolean(attached) && !changed)}
+              title={attached && !changed ? "Nothing has changed yet." : undefined}
               onClick={async () => {
                 const ok = await action.run(
-                  () => api.put(endpoint, { value: JSON.parse(json) }),
+                  () => api.put(endpoint, { value: draft }),
                   attached ? `Saved for every API in ${env}.` : `Attached to every API in ${env}.`,
                 );
                 if (ok) {

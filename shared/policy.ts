@@ -829,7 +829,7 @@ function validateMtls(value: unknown): string[] {
     errors.push(
       'auth.mtls: allowedSubjectCns without allowedIssuers requires "acknowledgeCnOnly": true. ' +
         "CN alone means anyone holding a certificate with that CN from any CA the reverse proxy " +
-        "trusts for client authentication (design section 5.6).",
+        "trusts for client authentication.", // design section 5.6
     );
   }
   return errors;
@@ -1055,8 +1055,7 @@ function validateValidate(value: unknown, opts: { operationScoped?: boolean } = 
     if (typeof value.downgradeReason !== "string" || value.downgradeReason.trim().length < 8) {
       errors.push(
         "validate.downgradeReason: required whenever request is not blocking, and long enough to " +
-          "be a reason (design section 5.1). It is recorded in the audit log and listed in " +
-          "GET /api/validation/downgrades.",
+          "be a reason. It is recorded in the audit log and listed in the governance report.", // design section 5.1
       );
     }
   } else if (value.downgradeReason !== undefined) {
@@ -1112,7 +1111,7 @@ function validateValidate(value: unknown, opts: { operationScoped?: boolean } = 
     if (request === "blocking" && response === "blocking") {
       errors.push(
         "validate.sample: sampling exists only in warning mode. Sampling plus rejecting would make " +
-          "the same payload succeed or fail depending on where a counter landed (design section 5.1).",
+          "the same payload succeed or fail depending on where a counter landed.", // design section 5.1
       );
     }
     if (!isPlainObject(value.sample)) errors.push("validate.sample: expected an object");
@@ -1210,7 +1209,7 @@ function validateTransform(value: unknown): string[] {
   errors.push(...unknownKeys(value, ["request", "response"], "transform"));
   if (value.request !== undefined && value.request !== "none") {
     errors.push(
-      'transform.request: only "none" is implemented (deviation D21). Turning JSON into a SOAP ' +
+      'transform.request: only "none" is implemented. Turning JSON into a SOAP ' + // deviation D21
         "envelope requires generating XML from the XSD — a writer, not a reader.",
     );
   }
@@ -1258,7 +1257,7 @@ function validateRateLimit(value: unknown): string[] {
   intField(value.periodSec, "rateLimit.periodSec", 1, 86_400, errors);
   if (value.periodSec === undefined) errors.push("rateLimit.periodSec: required");
   if (value.per !== "instance") {
-    errors.push('rateLimit.per: only "instance" is implemented (design section 5.7)');
+    errors.push('rateLimit.per: only "instance" is implemented'); // design section 5.7
   }
   if (value.by !== "subscription") errors.push('rateLimit.by: only "subscription" is implemented');
   if (value.scope !== "route" && value.scope !== "product") {
@@ -1279,8 +1278,7 @@ function validateQuota(value: unknown): string[] {
   if (value.periodSec === undefined) errors.push("quota.periodSec: required (at least 60 seconds)");
   if (value.per !== "fleet") {
     errors.push(
-      'quota.per: only "fleet" is implemented — a per-instance monthly quota is not a quota ' +
-        "(design section 5.7)",
+      'quota.per: only "fleet" is implemented — a per-instance monthly quota is not a quota', // design section 5.7
     );
   }
   if (value.by !== "subscription") errors.push('quota.by: only "subscription" is implemented');
@@ -1864,7 +1862,8 @@ export const UNIT_CATALOGUE: Array<{
     title: "Preconditions",
     group: "identity",
     description:
-      "Ordered deny rules evaluated after authentication and the limits (design section 5.2, step 10).",
+      // Design section 5.2, step 10.
+      "Ordered requirements on the request, checked after authentication and the limits. The first one a request fails refuses it.",
     defaultValue: [
       {
         requireHeader: { name: "X-Request-Origin", equals: "skoda-portal" },
@@ -1926,8 +1925,9 @@ export const UNIT_CATALOGUE: Array<{
     title: "Transform",
     group: "shape",
     description:
-      "Convert a SOAP response body to JSON. The request direction is 'none' only: generating XML " +
-      "from an XSD is a writer, not a reader (deviation D21).",
+      // Deviation D21.
+      "Convert a SOAP response body to JSON. A JSON request is not turned into SOAP: that would mean " +
+      "writing XML from the XSD, which the gateway does not do.",
     defaultValue: { request: "none", response: "soap-to-json" },
     appliesToKinds: ["soap"],
     global: false,
@@ -1947,8 +1947,9 @@ export const UNIT_CATALOGUE: Array<{
     title: "Rate limit",
     group: "traffic",
     description:
-      "Fixed window, per instance, per subscription. The fleet ceiling is calls x instances " +
-      "(design section 5.7).",
+      // Design section 5.7.
+      "A fixed window of calls per subscription, counted by each gateway on its own — so with N " +
+      "gateways running, up to N times the limit gets through in total.",
     defaultValue: {
       calls: 5,
       periodSec: 60,
@@ -1964,8 +1965,8 @@ export const UNIT_CATALOGUE: Array<{
     title: "Quota",
     group: "traffic",
     description:
-      "Fleet-wide, aggregated on the config poll. Enforcement is the last fleet aggregate plus " +
-      "this instance's delta since, so the worst-case overshoot is one poll interval of traffic.",
+      "Counted across every gateway in the environment. Each gateway adds up its own calls and " +
+      "reports them every few seconds, so a caller can go over by at most a few seconds of traffic.",
     defaultValue: {
       calls: 100_000,
       periodSec: 2_592_000,
@@ -1991,7 +1992,7 @@ export const UNIT_CATALOGUE: Array<{
     title: "Retries",
     group: "backend",
     description:
-      "Additional attempts, each on the NEXT backend in the pool. A request whose body was already " +
+      "Additional attempts, each on the next backend in the pool. A request whose body was already " +
       "streamed cannot be retried, so this applies with no body or with a buffered one.",
     defaultValue: { attempts: 1, on: ["502", "503", "504", "timeout", "connect"], idempotentOnly: true },
     global: true,
@@ -2002,7 +2003,7 @@ export const UNIT_CATALOGUE: Array<{
     group: "backend",
     description:
       "Per instance, per backend. A backend that fails repeatedly is taken out and probed back in " +
-      "after openSec, so one instance's connectivity fault cannot trip the fleet.",
+      "after openSec, so one gateway's connectivity fault does not take the backend away from the others.",
     defaultValue: { failures: 5, windowSec: 60, openSec: 30, halfOpenProbes: 1 },
     global: true,
   },

@@ -258,15 +258,18 @@ has never served.
 
 - GIVEN an attached global unit whose editor is closed
 - WHEN the global policy page renders
-- THEN its current configuration SHALL be available in a disclosure, keeping the list of units scannable
-- AND opening the editor SHALL show a labelled configuration field
-- AND the draft SHALL be checked as it is typed — that it parses, and that it has the shape of the
-  unit's default — with the reason shown under the field and Save disabled until it passes, so a
-  write that would be refused is not sent; everything past that stays the control plane's to refuse
+- THEN its current configuration SHALL be said in the same one-line summary the API workspace uses
+  for that unit, and only a unit with no summary SHALL show its document, in a disclosure, keeping
+  the list of units scannable
+- AND opening the editor SHALL show the API workspace's own form for that one unit — the same
+  number-and-period, choice and picker controls — without the add, remove and switch-off controls
+  of the whole-document editor, which the global tier does not have
+- AND its credential and issuer pickers SHALL offer only the names an administrator registered,
+  because no one application's credential can be a whole environment's default
+- AND the draft SHALL be checked before Save — that it has the shape of the unit's default — with
+  the reason shown under the form and Save disabled until it passes, and disabled while nothing has
+  changed; everything past that stays the control plane's to refuse
 - AND an unsaved draft SHALL be guarded against navigating away, as the per-API editor is
-- AND the field SHALL be one unit's JSON rather than the structured form the API workspace draws,
-  because that form edits a whole document with add, remove and switch-off controls the global tier
-  does not have
 - AND a reader who may not change the tier SHALL see the editor controls disabled, with one sentence
   at the top of the page saying so, rather than hidden
 

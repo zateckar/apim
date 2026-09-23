@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative } from "node:path";
+import { UNIT_CATALOGUE } from "../../shared/policy.ts";
 
 /**
  * Keyboard and contrast basics (plan §9.4).
@@ -315,6 +316,16 @@ describe("interaction hygiene", () => {
         for (const match of text.matchAll(pattern)) {
           const line = text.slice(0, match.index!).split("\n").length;
           offenders.push(`${relative(SRC, file)}:${line} "${match[0]}" — ${why}`);
+        }
+      }
+    }
+    // The unit vocabulary's descriptions are served, not bundled, and both policy tiers print them
+    // under every unit — "(design section 5.7)" sat under Rate limit on both after the screens were
+    // clean.
+    for (const unit of UNIT_CATALOGUE) {
+      for (const { pattern, why } of BANNED) {
+        for (const match of unit.description.matchAll(pattern)) {
+          offenders.push(`UNIT_CATALOGUE ${unit.key} "${match[0]}" — ${why}`);
         }
       }
     }

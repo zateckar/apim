@@ -387,12 +387,15 @@ function CredentialPicker({
       </Field>
       {dangling && (
         <Notice kind="warn">
-          Nothing in {catalogue.applicationId || "this application"}, and nothing an administrator
-          registered, answers to <span className="mono">{value}</span>. Every request through this
-          route is refused with 503 until it does — choose another, or add it on Credentials.
+          {catalogue.applicationId ? `Nothing in ${catalogue.applicationId}, and nothing` : "Nothing"} an
+          administrator registered, answers to <span className="mono">{value}</span>. Every request
+          through this route is refused with 503 until it does —{" "}
+          {catalogue.applicationId ? "choose another, or add it on Credentials." : "choose another."}
         </Notice>
       )}
-      {own.length === 0 && (
+      {/* No application on the global tier: a whole environment's default can name only what an
+          administrator registered, so there is no Credentials screen to send anybody to. */}
+      {own.length === 0 && catalogue.applicationId && (
         <p className="muted">
           This application has no credential of this kind in this environment.{" "}
           <Link to={`/${catalogue.applicationId}/credentials`}>Add one on Credentials</Link> — it

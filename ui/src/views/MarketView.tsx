@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, type Application, type MarketCard, type MarketFacets, type Meta, type User } from "../api";
-import { Panel, Link, Notice, StatusChip, useAsync } from "../components";
-import { lifecycleChip } from "../lib/status";
+import { EmptyState, Panel, Link, Notice, Segmented, Skeleton, StatusChip, envLabel, useAsync } from "../components";
+import { catalogAccessChip, lifecycleChip, unpublishedChip } from "../lib/status";
 import * as I from "../portal/icons";
 import { KindBadge, type Kind } from "../portal/components/KindBadge";
 
@@ -22,10 +22,67 @@ const SORTS: Array<{ value: string; label: string }> = [
   { value: "name", label: "Name" },
 ];
 
+/**
+ * The most the browse view asks for in one read — the endpoint's own ceiling. When the whole
+ * visible estate fits, every domain opens with its resources already in hand; when it does not,
+ * the domains stay folded and each reads its own on the way open.
+ */
+const BROWSE_LIMIT = 200;
+
 type ApplicationOption = Pick<Application, "id" | "name">;
 
+/** What the catalogue is showing, which is also what its address says. */
+export interface CatalogState {
+  q: string;
+  kind: string | null;
+  tag: string | null;
+  /** A publisher's application id. `publisher` in the address, because that is the control's name. */
+  application: string;
+  environment: string;
+  sort: string;
+}
+
+/**
+ * The address for a catalogue state: only what differs from the default, so an unfiltered catalogue
+ * is plain `/catalog` and a link somebody pastes into a ticket carries exactly the filters they set.
+ *
+ * The state lived in component memory only, so a reload, the back button from a listing, or a link
+ * sent to a colleague all landed on an empty search — the reader had to rebuild the question that
+ * found the thing they wanted to show somebody.
+ */
+export function catalogSearch(state: CatalogState): string {
+  const params = new URLSearchParams();
+  if (state.q.trim()) params.set("q", state.q.trim());
+  if (state.kind) params.set("kind", state.kind);
+  if (state.tag) params.set("tag", state.tag);
+  if (state.application) params.set("publisher", state.application);
+  if (state.environment) params.set("environment", state.environment);
+  if (state.sort !== "relevance") params.set("sort", state.sort);
+  const text = params.toString();
+  return text ? `?${text}` : "";
+}
+
+/**
+ * The inverse, forgiving of an address somebody edited: a kind, environment or sort the portal does
+ * not know is dropped rather than sent, because the search endpoint would refuse it with a 400 and
+ * the reader would see an error for a typo in a bookmark.
+ */
+export function readCatalogSearch(search: string, meta: Pick<Meta, "chain" | "kinds">): CatalogState {
+  const params = new URLSearchParams(search);
+  const kind = params.get("kind");
+  const environment = params.get("environment") ?? "";
+  const sort = params.get("sort") ?? "relevance";
+  return {
+    q: params.get("q") ?? "",
+    kind: kind && meta.kinds.includes(kind) ? kind : null,
+    tag: params.get("tag") || null,
+    application: params.get("publisher") ?? "",
+    environment: meta.chain.includes(environment) ? environment : "",
+    sort: SORTS.some((option) => option.value === sort) ? sort : "relevance",
+  };
+}
+
 export function MarketView({
-  user,
   meta,
   applications = [],
 }: {
@@ -34,12 +91,27 @@ export function MarketView({
   /** Names make the publisher filter readable; ids remain the values sent to the API. */
   applications?: ApplicationOption[];
 }) {
-  const [q, setQ] = useState("");
-  const [kind, setKind] = useState<string | null>(null);
-  const [tag, setTag] = useState<string | null>(null);
-  const [application, setApplication] = useState("");
-  const [environment, setEnvironment] = useState("");
-  const [sort, setSort] = useState("relevance");
+  const [initial] = useState(() => readCatalogSearch(window.location.search, meta));
+  const [q, setQ] = useState(initial.q);
+  const [kind, setKind] = useState<string | null>(initial.kind);
+  const [tag, setTag] = useState<string | null>(initial.tag);
+  const [application, setApplication] = useState(initial.application);
+  const [environment, setEnvironment] = useState(initial.environment);
+  const [sort, setSort] = useState(initial.sort);
+
+  // Replaced rather than pushed: a history entry per keystroke would make Back walk through every
+  // prefix of a query. What Back is for is returning here from a listing, and it does, filters kept.
+  useEffect(() => {
+    const next = window.location.pathname + catalogSearch({ q, kind, tag, application, environment, sort });
+    if (next !== window.location.pathname + window.location.search) {
+      window.history.replaceState(window.history.state, "", next);
+    }
+  }, [q, kind, tag, application, environment, sort]);
+
+  const activeFilters = [q.trim(), kind, tag, application, environment].filter(Boolean).length;
+  // A non-default sort is also a deliberate discovery mode, so it should show the ranked answer
+  // directly rather than leaving the reader to open every domain to see the ordering.
+  const browsing = activeFilters === 0 && sort === "relevance";
 
   const query = new URLSearchParams();
   if (q.trim()) query.set("q", q.trim());
@@ -47,8 +119,10 @@ export function MarketView({
   if (tag) query.set("tag", tag);
   if (application) query.set("application", application);
   if (environment) query.set("environment", environment);
-  query.set("sort", sort);
-  query.set("limit", "60");
+  // Browsing reads as much of the estate as one request may, by name, so the domains below can be
+  // drawn open from it without one request each.
+  query.set("sort", browsing ? "name" : sort);
+  query.set("limit", browsing ? String(BROWSE_LIMIT) : "60");
 
   // The index is local and small enough that immediate feedback is more useful than a debounce.
   const listing = useAsync(
@@ -59,12 +133,15 @@ export function MarketView({
   const facets = useAsync(() => api.get<MarketFacets>("/api/catalog/facets"), []);
 
   const items = listing.data?.items ?? [];
-  const activeFilters = [q.trim(), kind, tag, application, environment].filter(Boolean).length;
-  // A non-default sort is also a deliberate discovery mode, so it should show the ranked answer
-  // directly rather than leaving the reader to open every domain to see the ordering.
-  const browsing = activeFilters === 0 && sort === "relevance";
   const applicationName = (id: string) => applications.find((entry) => entry.id === id)?.name ?? id;
   const total = listing.data?.total;
+  // Everything visible is in hand, so every domain can be drawn from it.
+  const complete = Boolean(listing.data && !listing.data.truncated && items.length >= listing.data.total);
+  const byDomain = new Map<string, MarketCard[]>();
+  for (const item of items) {
+    const key = item.domain ?? "other";
+    byDomain.set(key, [...(byDomain.get(key) ?? []), item]);
+  }
 
   const clearFilters = () => {
     setQ("");
@@ -74,6 +151,9 @@ export function MarketView({
     setEnvironment("");
     setSort("relevance");
   };
+
+  const populated = (facets.data?.domains ?? []).filter((entry) => entry.count + entry.topics > 0);
+  const unused = (facets.data?.domains ?? []).filter((entry) => entry.count + entry.topics === 0);
 
   return (
     <div className="catalog-page">
@@ -106,26 +186,41 @@ export function MarketView({
         </div>
 
         <div className="catalog-filter-row">
-          <FacetRow
-            label="Type"
-            options={(facets.data?.kinds ?? []).map((entry) => ({
-              ...entry,
-              label: kindLabel(entry.value),
-            }))}
-            value={kind}
-            onChange={setKind}
-          />
-          <label className="catalog-select">
-            <span>Environment</span>
-            <select aria-label="Environment" value={environment} onChange={(event) => setEnvironment(event.target.value)}>
-              <option value="">All environments</option>
-              {(facets.data?.environments ?? meta.chain.map((value) => ({ value, count: 0 }))).map((entry) => (
-                <option key={entry.value} value={entry.value}>
-                  {entry.value.toUpperCase()}{entry.count ? ` · ${entry.count}` : ""}
-                </option>
-              ))}
-            </select>
-          </label>
+          {/* One value each, so the one segmented control — they were rows of chip buttons and a
+              select, three shapes for the same act on one panel. Tags stay chips below: there can
+              be a dozen, and a segmented control that wraps onto three lines is not one. */}
+          {(facets.data?.kinds.length ?? 0) > 0 && (
+            <div className="catalog-segment">
+              <span aria-hidden="true">Type</span>
+              <Segmented
+                label="Type"
+                value={kind ?? ""}
+                onChange={(next) => setKind(next || null)}
+                options={[
+                  { value: "", label: "All" },
+                  ...(facets.data?.kinds ?? []).map((entry) => ({
+                    value: entry.value,
+                    label: <>{kindLabel(entry.value)} <span className="chip-count">{entry.count}</span></>,
+                  })),
+                ]}
+              />
+            </div>
+          )}
+          <div className="catalog-segment">
+            <span aria-hidden="true">Environment</span>
+            <Segmented
+              label="Environment"
+              value={environment}
+              onChange={setEnvironment}
+              options={[
+                { value: "", label: "All" },
+                ...(facets.data?.environments ?? meta.chain.map((value) => ({ value, count: 0 }))).map((entry) => ({
+                  value: entry.value,
+                  label: <>{envLabel(entry.value)}{entry.count ? <> <span className="chip-count">{entry.count}</span></> : null}</>,
+                })),
+              ]}
+            />
+          </div>
           <label className="catalog-select catalog-sort">
             <span>Sort</span>
             <select aria-label="Sort by" value={sort} onChange={(event) => setSort(event.target.value)}>
@@ -137,7 +232,7 @@ export function MarketView({
             </select>
           </label>
           {activeFilters > 0 && (
-            <button className="ghost catalog-clear" type="button" onClick={clearFilters}>
+            <button className="btn ghost sm" type="button" onClick={clearFilters}>
               Clear {activeFilters} filter{activeFilters === 1 ? "" : "s"}
             </button>
           )}
@@ -170,32 +265,29 @@ export function MarketView({
             )}
           </div>
         </details>
-        <p className="catalog-guidance">
-          {browsing
-            ? "Browse by domain, or search when you know what you need."
-            : "Showing the resources that match your filters."}
-        </p>
+        {browsing && <p className="catalog-guidance">Browse by domain, or search when you know what you need.</p>}
       </Panel>
 
       <Notice kind="error">{listing.error}</Notice>
       {facets.error && <Notice kind="warn">Filters unavailable: {facets.error}</Notice>}
+      {/* Words rather than a skeleton: the count above already holds its place, and "Searching…" is
+          what tells a reader the list they are looking at is not yet the answer to what they typed. */}
       {listing.loading && items.length === 0 && <p className="catalog-loading muted">Searching…</p>}
 
       {!listing.loading && !listing.error && items.length === 0 && (
         <Panel className="catalog-no-results">
           {activeFilters > 0 ? (
-            <>
-              <h3>Nothing matches that</h3>
-              <p className="muted">Try a broader search or clear the filters. Search also covers operation ids and MCP tool names.</p>
-              <button className="ghost small" type="button" onClick={clearFilters}>Clear filters</button>
-            </>
+            <EmptyState
+              title="Nothing matches that"
+              detail="Try a broader search or clear the filters. Search also covers operation ids and MCP tool names."
+              action={<button className="btn" type="button" onClick={clearFilters}>Clear filters</button>}
+            />
           ) : (
-            <>
-              <h3>Nothing is published yet</h3>
-              <p className="muted">
-                A resource appears here after it is released into an environment. Publish an API from <Link to="/apis">APIs</Link>, add it to a product, and release it into {meta.chain[0] ?? "DEV"}.
-              </p>
-            </>
+            <EmptyState
+              title="Nothing is published yet"
+              detail={`A resource appears here once it is released into an environment. Publish an API, add it to a product and release it into ${envLabel(meta.chain[0] ?? "dev")}.`}
+              action={<Link className="btn primary" to="/apis">Publish an API</Link>}
+            />
           )}
         </Panel>
       )}
@@ -203,14 +295,20 @@ export function MarketView({
       {browsing && facets.data ? (
         items.length > 0 && (
           <div className="domain-list">
-            {(facets.data.domains ?? []).filter((entry) => entry.count + entry.topics > 0).map((entry) => (
-              <DomainSection key={entry.value} entry={entry} onTag={setTag} publisherName={applicationName} />
+            {populated.map((entry) => (
+              <DomainSection
+                key={entry.value}
+                entry={entry}
+                preloaded={complete ? byDomain.get(entry.value) ?? [] : null}
+                onTag={setTag}
+                publisherName={applicationName}
+              />
             ))}
-            {(facets.data.domains ?? []).some((entry) => entry.count + entry.topics === 0) && (
+            {unused.length > 0 && (
               <details className="catalog-unused-domains">
-                <summary>Domains with no resources <span>{facets.data.domains.filter((entry) => entry.count + entry.topics === 0).length}</span></summary>
-                {facets.data.domains.filter((entry) => entry.count + entry.topics === 0).map((entry) => (
-                  <DomainSection key={entry.value} entry={entry} onTag={setTag} publisherName={applicationName} />
+                <summary>Domains with no resources <span>{unused.length}</span></summary>
+                {unused.map((entry) => (
+                  <DomainSection key={entry.value} entry={entry} preloaded={null} onTag={setTag} publisherName={applicationName} />
                 ))}
               </details>
             )}
@@ -226,31 +324,43 @@ export function MarketView({
 
       {(listing.data?.truncated || facets.data?.truncated) && (
         <Notice kind="warn">
-          The estate is larger than one ranking pass reads. These results and filter counts are a floor; narrow the search to see more.
+          There are more resources than one search reads, so these results and counts may be incomplete. Narrow the search to see the rest.
         </Notice>
-      )}
-      {user.isAdmin && items.some((item) => item.unpublished) && (
-        <p className="catalog-admin-note muted">Listings marked <span className="badge warn">not published</span> are visible because you own them.</p>
       )}
     </div>
   );
 }
 
+/**
+ * One domain. It started folded, every time — so the first thing the catalogue asked of a visitor
+ * was to open each domain in turn to learn what was in it. It now opens with its resources when the
+ * browse read already holds them (`preloaded`), and folds only when the estate is too large for one
+ * read, where opening is what fetches.
+ */
 function DomainSection({
   entry,
+  preloaded,
   onTag,
   publisherName,
 }: {
   entry: { value: string; count: number; topics: number };
+  /** This domain's resources, when the browse read holds the whole estate; `null` when it does not. */
+  preloaded: MarketCard[] | null;
   onTag: (tag: string) => void;
   publisherName: (id: string) => string;
 }) {
-  const [open, setOpen] = useState(false);
-  const listing = useAsync(
-    () => open ? api.get<{ items: MarketCard[] }>(`/api/catalog?domain=${encodeURIComponent(entry.value)}&sort=name&limit=200`) : Promise.resolve({ items: [] as MarketCard[] }),
-    [open, entry.value],
-  );
   const empty = entry.count === 0 && entry.topics === 0;
+  const [open, setOpen] = useState(preloaded !== null && !empty);
+  // Keyed on whether there is anything preloaded rather than on the array, which is a new one on
+  // every render of the parent and would re-run this read in a loop.
+  const fetches = open && preloaded === null;
+  const listing = useAsync(
+    () => fetches
+      ? api.get<{ items: MarketCard[] }>(`/api/catalog?domain=${encodeURIComponent(entry.value)}&sort=name&limit=${BROWSE_LIMIT}`)
+      : Promise.resolve({ items: [] as MarketCard[] }),
+    [fetches, entry.value],
+  );
+  const shown = preloaded ?? listing.data?.items ?? [];
   const noun = entry.count === 1 ? "resource" : "resources";
 
   return (
@@ -265,17 +375,22 @@ function DomainSection({
       </button>
       {open && (
         <div className="domain-body">
-          {entry.value === "other" && <p className="catalog-domain-note muted small">Published before the taxonomy existed.</p>}
+          {entry.value === "other" && <p className="catalog-domain-note muted small">Published before domains existed.</p>}
           {entry.topics > 0 && (
             <p className="catalog-domain-note muted small">
               {entry.topics} Kafka topic{entry.topics === 1 ? "" : "s"} also filed here. <Link to="/kafka">Open Kafka</Link>
             </p>
           )}
           <Notice kind="error">{listing.error}</Notice>
-          {listing.loading && <p className="muted">Loading resources…</p>}
-          <div className="catalog-results-list">
-            {(listing.data?.items ?? []).map((item) => <ListingCard key={item.id} item={item} onTag={onTag} publisherName={publisherName(item.applicationId)} />)}
-          </div>
+          {fetches && listing.loading ? (
+            <Skeleton rows={Math.min(entry.count, 4) || 1} />
+          ) : (
+            shown.length > 0 && (
+              <div className="catalog-results-list">
+                {shown.map((item) => <ListingCard key={item.id} item={item} onTag={onTag} publisherName={publisherName(item.applicationId)} />)}
+              </div>
+            )
+          )}
         </div>
       )}
     </section>
@@ -325,9 +440,8 @@ function ListingCard({
           <div className="catalog-result-title">
             <Link to={`/catalog/${item.id}`}><strong>{item.title}</strong></Link>
             <KindBadge kind={item.kind as Kind} />
-            {item.unpublished && <span className="badge warn">not published</span>}
-            {item.subscribed && <span className="badge ok">subscribed</span>}
-            {!item.subscribed && item.products.length > 0 && <span className="catalog-available">Available to subscribe</span>}
+            {item.unpublished && <StatusChip chip={unpublishedChip()} />}
+            <StatusChip chip={catalogAccessChip(item)} />
             {lifecycle && <StatusChip chip={lifecycle} />}
           </div>
           <div className="catalog-result-meta">
@@ -339,18 +453,20 @@ function ListingCard({
           <p className="catalog-result-summary">{item.summary?.trim() || "No summary provided."}</p>
           {item.tags.length > 0 && (
             <div className="listing-tags">
-              {item.tags.slice(0, 3).map((tag) => <button key={tag} type="button" className="chip small" onClick={() => onTag(tag)}>{tag}</button>)}
+              {item.tags.slice(0, 3).map((tag) => <button key={tag} type="button" className="chip small" aria-label={`Filter by tag ${tag}`} onClick={() => onTag(tag)}>{tag}</button>)}
               {item.tags.length > 3 && <span className="muted small">+{item.tags.length - 3}</span>}
             </div>
           )}
         </div>
       </div>
       <div className="catalog-result-facts">
-        <div className="listing-envs" aria-label="Live environments">
-          {item.environments.length > 0
-            ? item.environments.map((env) => <span key={env} className="pill ok">{env.toUpperCase()}</span>)
-            : <span className="badge warn">not live</span>}
-        </div>
+        {/* The environments only. "Not live" beside them repeated the Not published chip in the
+            title, which is the same fact about the same row. */}
+        {item.environments.length > 0 && (
+          <div className="listing-envs" aria-label="Live in">
+            {item.environments.map((env) => <span key={env} className="chip">{envLabel(env)}</span>)}
+          </div>
+        )}
         <span className="catalog-result-stats">
           {item.operationCount} {countNoun(item.kind, item.operationCount)}
           {item.products.length > 0 && <><span aria-hidden> · </span>{item.products.length} product{item.products.length === 1 ? "" : "s"}</>}

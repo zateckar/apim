@@ -16,14 +16,37 @@ They are two lists because they answer two questions, and each is exactly one sc
 
 - GIVEN an empty filtered result
 - WHEN Clear filters is used
-- THEN search text, kind, tag and application SHALL all be cleared
+- THEN search text, kind, tag, publisher and environment SHALL all be cleared, and the sort SHALL
+  return to best match
 - AND a failed search SHALL NOT be described as no matches
 
 #### Scenario: A calling example is unavailable
 
-- GIVEN a listing without an example
+- GIVEN a listing with no environment where it is live at a published gateway address, and no
+  example from the control plane
 - WHEN Getting started renders
 - THEN it SHALL direct the reader to addresses and release status in Overview rather than infer that no route exists
+
+### Requirement: Keep the catalogue's question in its address
+
+#### Scenario: A search or filter is changed
+
+- GIVEN the Catalog
+- WHEN the search text, type, tag, publisher, environment or sort changes
+- THEN the address SHALL carry it as `?q=`, `?kind=`, `?tag=`, `?publisher=`, `?environment=` and
+  `?sort=`, each only when it differs from the default, so an unfiltered catalogue is `/catalog`
+- AND the address SHALL be replaced rather than pushed, so Back leaves the catalogue instead of
+  stepping through every prefix of a query
+- AND the reason SHALL be that the state lived in memory only: a reload, Back from a listing, or a
+  link sent to a colleague all landed on an empty search
+
+#### Scenario: A catalogue address is opened
+
+- GIVEN an address carrying those parameters
+- WHEN the Catalog opens
+- THEN it SHALL open with them applied
+- AND a type, environment or sort the portal does not know SHALL be dropped rather than sent, so a
+  mistyped bookmark opens the catalogue instead of an error
 
 ### Requirement: List what an application publishes and what it may call
 
@@ -173,6 +196,16 @@ They are two lists because they answer two questions, and each is exactly one sc
 - AND empty domains SHALL remain available, in taxonomy order, under a collapsed "Domains with no resources" disclosure with its count
 - AND the reason SHALL be that browsing starts with resources somebody can use while retaining the full taxonomy
 
+#### Scenario: A domain is drawn open or folded
+
+- GIVEN the browse view, which reads up to 200 resources by name in one request
+- WHEN that read holds every visible resource
+- THEN every domain with resources SHALL start open, drawn from that read without a request of its own
+- AND when it does not, the domains SHALL start folded and each SHALL read its own resources when opened
+- AND either way the reader SHALL be able to fold and unfold each one
+- AND the reason SHALL be that every domain started folded, so the first thing the catalogue asked
+  of a visitor was to open each domain in turn to find out what was in it
+
 #### Scenario: Facet counts are computed
 
 - GIVEN the facets endpoint
@@ -213,6 +246,10 @@ They are two lists because they answer two questions, and each is exactly one sc
   SHALL show one directly scannable result list
 - AND publisher and tag filters SHALL be tucked behind one secondary filter disclosure so the common
   search and kind controls remain easy to find
+- AND type and environment SHALL each be one segmented control with an "All" choice, and the
+  environments SHALL be written `DEV`, `TEST`, `PROD`
+- AND a card SHALL say "Subscribed", "Available to subscribe" or "Not in a product" as a status
+  chip, and a card only its owners can see SHALL say "Not published" the same way
 
 #### Scenario: The result set is very large
 
@@ -257,6 +294,56 @@ They are two lists because they answer two questions, and each is exactly one sc
 - AND the reason SHALL be that "where it is live" carried three lines about release convergence
   above a list that is usually one line long, with the part a caller needs — which of two names
   they can reach — at the end of it
+
+#### Scenario: A listing is named
+
+- GIVEN a listing that has loaded
+- WHEN the page head renders
+- THEN its title SHALL be the resource's name and version, and the header beneath it SHALL carry
+  the kind, the lifecycle, the publisher and the summary without repeating the name
+- AND the shell's trail SHALL be the only link back to the Catalog
+
+#### Scenario: A listing tab is chosen or linked to
+
+- GIVEN a listing's tabs — Overview, Operations (Tools, Skills), Getting started, Try it, Versions
+- WHEN one is chosen
+- THEN the address SHALL carry it as `?tab=overview|operations|start|try|versions`, replaced rather
+  than pushed, and a listing opened with one SHALL open on that tab
+- AND an unknown tab SHALL open Overview
+- AND Versions SHALL be offered only when the resource has more than one version, because a table
+  with one row offers nothing to choose between
+- AND the tabs SHALL be a keyboard-operable tab list, the same control the API workspace uses
+
+#### Scenario: The reader already has access
+
+- GIVEN a listing reached through a product the reader's own applications subscribe to
+- WHEN the header renders
+- THEN it SHALL say where, as "Subscribed in DEV, TEST" for active subscriptions and "Requested in
+  PROD" for ones not yet active, naming the applications in the chip's title
+- AND only the reader's own applications SHALL count, not every application an administrator may act for
+- AND the reason SHALL be that it said "You subscribe", which named neither the application nor the
+  environment — and a key works in one environment only
+
+#### Scenario: The subscribe action is offered
+
+- GIVEN a listing
+- WHEN its primary action renders
+- THEN it SHALL be a link named **New subscription** to the subscription form
+- AND when the resource is in no product it SHALL be a disabled button with the reason written
+  beside it
+
+#### Scenario: An address or a call is copied
+
+- GIVEN a published gateway address in Where it is live, or the call in Getting started
+- WHEN it renders
+- THEN it SHALL have a copy button beside it
+- AND the Getting started call SHALL be built from a published address in an environment where the
+  resource is live, with the key placed as that environment's effective `auth.subscriptionKey` unit
+  says, or no key when there is none — the same construction as the subscription's own page
+- AND when the resource is live in more than one such environment, the reader SHALL choose which
+  one with the environment control
+- AND the control plane's own example SHALL be shown only when no environment has a published
+  address, saying that the host has to be substituted
 
 ### Requirement: Reassign an API's owning application
 

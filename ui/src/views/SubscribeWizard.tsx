@@ -8,14 +8,20 @@ import {
 } from "../api";
 import {
   Panel,
+  CopyButton,
   EmptyState,
+  Field,
   Link,
   Notice,
+  Segmented,
   Skeleton,
   Term,
+  envLabel,
   useAction,
   useAsync,
+  usePageTitle,
 } from "../components";
+import { perPeriod } from "./SubscriptionView";
 
 /**
  * The shell supplies the consumer application (api-subscription-management, "Subscribe from
@@ -26,6 +32,10 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
   const listing = useAsync(() => api.get<MarketListingDetail>(`/api/catalog/${resourceId}`), [resourceId]);
   const application = session.applications.find((app) => app.id === session.application
     && (session.user.isAdmin || session.user.applications.includes(app.id)));
+  // "New subscription", not "Subscribe to …": what is subscribed to is a product carrying this
+  // resource, never the resource itself (api-subscription-management, "A control that starts a
+  // subscription is labelled"). The title names the resource because that is what the reader came from.
+  usePageTitle(listing.data ? `New subscription for ${listing.data.title}` : null);
 
   const [done, setDone] = useState<{ id: string; state: string; warnings: string[]; environment: string } | null>(null);
 
@@ -46,7 +56,7 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
     return (
       <EmptyState
         title={`${api_.title} is not in any product yet`}
-        detail="Consumers subscribe to a product, never to a resource directly — so until its owner puts it in one, there is nothing to ask for."
+        detail="A subscription is to a product, never to a resource directly — so until its owner puts it in one, there is nothing to ask for."
         action={<Link to={`/catalog/${resourceId}`}>Back to the resource →</Link>}
       />
     );
@@ -54,18 +64,10 @@ export function SubscribeWizard({ resourceId, session }: { resourceId: string; s
 
   return (
     <>
-      <div className="page-toolbar"><Link to={`/catalog/${resourceId}`}>← Back to resource</Link></div>
-      <div className="object-head subscription-resource-head">
-        <div>
-          <h3>
-            {api_.icon && <span className="listing-icon">{api_.icon}</span>} {api_.title}{" "}
-            <span className="mono muted">{api_.apiVersion}</span>
-          </h3>
-          <p className="muted small">{api_.summary?.trim() || "No summary provided."}</p>
-        </div>
-      </div>
-
-      <p className="muted">Subscribing as <strong>{application.name}</strong>.</p>
+      <p className="muted">
+        Subscribing as <strong>{application.name}</strong> to a product containing{" "}
+        <Link to={`/catalog/${resourceId}`}>{api_.title} {api_.apiVersion}</Link>.
+      </p>
 
       {done ? (
         <Requested
@@ -123,29 +125,34 @@ function SubscriptionForm({
   const document = (policy.data?.document ?? {}) as Record<string, unknown>;
   const rateLimit = document.rateLimit as { calls: number; periodSec: number; per?: string } | undefined;
   const quota = document.quota as { calls: number; periodSec: number } | undefined;
+  const trimmed = purpose.trim().length;
+  const blocked = !live.includes(environment)
+    ? "Choose an environment where this resource is live."
+    : trimmed < 3
+      ? "Say what you will use it for first."
+      : trimmed > 500
+        ? "Shorten the purpose to 500 characters."
+        : null;
 
   return (
     <Panel>
-      <fieldset className="choice-field" disabled={action.busy}>
-        <legend>Environment</legend>
-        <p className="muted small">Keys work only in the selected environment.</p>
-        <div className="row wrap">
-          {session.meta.chain.map((candidate) => (
-            <button
-              key={candidate}
-              className={candidate === environment ? "environment-choice active" : "environment-choice"}
-              aria-pressed={candidate === environment}
-              disabled={!live.includes(candidate)}
-              title={
-                live.includes(candidate)
-                  ? undefined
-                  : `${api_.title} is not published in ${candidate.toUpperCase()}, so there is nothing to call there.`
-              }
-              onClick={() => setEnvironment(candidate)}
-            >
-              {candidate.toUpperCase()}
-            </button>
-          ))}
+      <fieldset className="subscribe-form" disabled={action.busy}>
+        {/* A `div`, not `Field`: `Field` is a `<label>`, and a label around a row of buttons makes
+            a click on the word "Environment" press the first of them. */}
+        <div className="native-field">
+          <span className="lbl" aria-hidden="true">Environment</span>
+          <Segmented
+            label="Environment"
+            value={environment}
+            onChange={setEnvironment}
+            options={session.meta.chain.map((candidate) => ({
+              value: candidate,
+              label: envLabel(candidate),
+              disabled: !live.includes(candidate),
+              reason: live.includes(candidate) ? undefined : `Not released in ${envLabel(candidate)}.`,
+            }))}
+          />
+          <span className="hint">A key works only in the environment it was issued for.</span>
         </div>
         {live.length === 0 && (
           <Notice kind="warn">
@@ -154,16 +161,13 @@ function SubscriptionForm({
           </Notice>
         )}
 
-        {api_.products.length > 1 && (
-          <div className="field" style={{ marginTop: 14 }}>
-            <label htmlFor="sw-product">
-              <Term name="product" />
-            </label>
-            <select
-              id="sw-product"
-              value={product.id}
-              onChange={(event) => setProductId(event.target.value)}
-            >
+        {/* One product is a fact, not a choice (api-subscription-management, "A draft is edited"). */}
+        {api_.products.length > 1 ? (
+          <Field
+            label="Product"
+            hint="This resource is in more than one product. The key works for every resource in the one you pick."
+          >
+            <select value={product.id} onChange={(event) => setProductId(event.target.value)}>
               {api_.products.map((product) => (
                 <option key={product.id} value={product.id}>
                   {product.name}
@@ -171,12 +175,26 @@ function SubscriptionForm({
                 </option>
               ))}
             </select>
-            <p className="muted small">
-              This resource is in more than one bundle. The key you get works for every resource in the
-              one you pick.
-            </p>
-          </div>
+          </Field>
+        ) : (
+          <p className="small">
+            Through the <Term name="product" /> <strong>{product.name}</strong>, which the key will
+            work for as a whole.
+          </p>
         )}
+
+        <Field
+          label="What will you use it for?"
+          hint={`The owner of ${product.name} decides by reading this. Say which system is calling and what it needs — 3 to 500 characters.`}
+        >
+          <textarea
+            rows={3}
+            minLength={3}
+            maxLength={500}
+            value={purpose}
+            onChange={(event) => setPurpose(event.target.value)}
+          />
+        </Field>
 
         <Notice kind="error">{action.error}</Notice>
         {/* Without the effective policy the limits below would read "None set here", which is a
@@ -189,39 +207,19 @@ function SubscriptionForm({
           </Notice>
         )}
 
-        <div className="field" style={{ marginTop: 14 }}>
-          <label htmlFor="sw-purpose">What will you use it for?</label>
-          <textarea
-            id="sw-purpose"
-            rows={3}
-            minLength={3}
-            maxLength={500}
-            value={purpose}
-            onChange={(event) => setPurpose(event.target.value)}
-          />
-          <p className="muted small">
-            {product.name} belongs to somebody, and they decide by reading this. Say which system is
-            calling and what it needs — 3 to 500 characters.
-          </p>
-        </div>
-
         <details>
-          <summary>Product and limits</summary>
-          <p className="muted small">Limits for this resource in the selected environment. Other resources in the product may have different limits.</p>
+          <summary>Limits in {envLabel(environment)}</summary>
+          <p className="muted small">These are this resource's limits. Other resources in the product may have different ones.</p>
           <dl className="kv">
-            <dt>
-              <Term name="product" />
-            </dt>
-            <dd>{product.name}</dd>
             <dt>
               <Term name="rate limit" />
             </dt>
             <dd>
               {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : rateLimit ? (
                 <>
-                  {rateLimit.calls} calls every {rateLimit.periodSec} seconds
+                  {rateLimit.calls.toLocaleString()} calls {perPeriod(rateLimit.periodSec)}
                   {rateLimit.per === "instance" && (
-                    <span className="muted"> — counted per replica, so the fleet total is higher</span>
+                    <span className="muted"> — counted on each gateway instance separately, so the total across instances is higher</span>
                   )}
                 </>
               ) : (
@@ -234,8 +232,7 @@ function SubscriptionForm({
             <dd>
               {policy.loading ? <span className="muted">Loading limits…</span> : policy.error ? <span className="muted">Unknown — limits could not be read.</span> : quota ? (
                 <>
-                  {quota.calls.toLocaleString()} calls per {quota.periodSec} seconds,
-                  counted across the whole fleet
+                  {quota.calls.toLocaleString()} calls {perPeriod(quota.periodSec)}, counted across all gateways
                 </>
               ) : (
                 <span className="muted">None set here.</span>
@@ -244,9 +241,11 @@ function SubscriptionForm({
           </dl>
         </details>
 
-        <div className="inline">
+        <div className="inline subscribe-actions">
           <button
-            disabled={action.busy || !live.includes(environment) || purpose.trim().length < 3 || purpose.trim().length > 500}
+            type="button"
+            className="btn primary"
+            disabled={action.busy || blocked !== null}
             onClick={async () => {
               await action.run(async () => {
                 // No key comes back. The subscription is `pending` or `activating` at this point and
@@ -262,12 +261,7 @@ function SubscriptionForm({
           >
             Subscribe
           </button>
-          {!live.includes(environment) && (
-            <span className="action-reason">Choose an environment where this resource is live.</span>
-          )}
-          {purpose.trim().length < 3 && (
-            <span className="action-reason">Say what you will use it for first.</span>
-          )}
+          {blocked && <span className="action-reason">{blocked}</span>}
         </div>
       </fieldset>
     </Panel>
@@ -310,7 +304,7 @@ export function Requested({
     <Panel title={own ? "Access approved" : "Request sent"}>
       <Notice kind="info">
         {own
-          ? "This is your own application's product, so there was nobody to ask. Access is activating across the gateways now."
+          ? "This is your own application's product, so there was nobody to ask. The gateways are switching the access on now."
           : "The publisher decides. They have the purpose you wrote, and you will be notified either way."}
       </Notice>
       {warnings.map((warning) => (
@@ -319,21 +313,20 @@ export function Requested({
         </Notice>
       ))}
       <p className="muted small">
-        The key is minted and encrypted already, but it is only revealable once the subscription is
-        active — so there is nothing to copy from this page. Reveal it on the subscription when it
-        is, and every reveal is audited.
+        The key can be revealed once the subscription is active, on the subscription's own page —
+        there is nothing to copy here yet.
       </p>
       {endpoint?.live && endpoint.urls.length > 0 ? <>
-        <p className="muted small">Published addresses in {environment.toUpperCase()}:</p>
+        <p className="muted small">Published addresses in {envLabel(environment)}:</p>
         <ul className="url-list">{endpoint.urls.map(entry => <li key={`${entry.gateway}:${entry.url}`}>
-          <span className="badge">{entry.network === "intranet" ? "Intranet" : "Internet"}</span>
-          <span className="mono">{entry.url}</span><span className="muted small">{entry.gateway}</span>
+          <span className="chip">{entry.network === "intranet" ? "Intranet" : "Internet"}</span>
+          <div className="copy-row"><code>{entry.url}</code><CopyButton value={entry.url} what={`the ${entry.network} address`} /></div>
         </li>)}</ul>
-      </> : <p className="muted small">No live gateway address is published in {environment.toUpperCase()} yet.</p>}
-      <div className="inline" style={{ marginTop: 14 }}>
-        <Link to={`/subscriptions/${subscriptionId}`}>Open the subscription and reveal the key →</Link>
-        <Link to={`/catalog/${resourceId}`}>View calling instructions and Try it →</Link>
-        <Link to="/catalog">Find another resource</Link>
+      </> : <p className="muted small">No live gateway address is published in {envLabel(environment)} yet.</p>}
+      <div className="inline subscribe-actions">
+        <Link className="btn primary" to={`/subscriptions/${subscriptionId}`}>Open the subscription</Link>
+        <Link className="btn" to={`/catalog/${resourceId}?tab=start`}>How to call it</Link>
+        <Link className="btn ghost" to="/catalog">Find another resource</Link>
       </div>
     </Panel>
   );

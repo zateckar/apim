@@ -46,7 +46,9 @@ test("one subscription's address opens that subscription, not the list", async (
 
   // The singular title is the whole point: "Subscriptions" here would mean the id was dropped and
   // the reader is looking at the list of everything instead of the one thing they asked for.
-  await expect(screenTitle(page)).toHaveText("Subscription");
+  // The subscription names itself once loaded — its product and environment.
+  await expect(screenTitle(page)).toContainText(subscription.productName);
+  await expect(screenTitle(page)).not.toHaveText("Subscriptions");
   await expect(page.locator("main.native-content")).not.toBeEmpty();
 
   expectNoErrors(errors);

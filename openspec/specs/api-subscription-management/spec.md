@@ -15,15 +15,18 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - WHEN effective policy is loading or unavailable
 - THEN each limit SHALL say loading or unknown rather than absent
 - AND loaded limits SHALL be described as this API's configured limits in the selected environment, not guarantees about other APIs in the product or gateway activation
-- AND quota periods SHALL retain their exact duration, and per-instance rate limits SHALL name replicas
+- AND quota periods SHALL retain their exact duration, written in the largest unit that divides
+  them exactly ("30 days", "90 seconds"), and per-instance rate limits SHALL say they are counted on
+  each gateway instance separately
 
 #### Scenario: A subscription request completes
 
 - GIVEN a pending or activating subscription
 - WHEN its completion panel renders
-- THEN it SHALL show the selected environment's live published gateway addresses, with their networks, when available
+- THEN it SHALL show the selected environment's live published gateway addresses, with their networks and a copy button each, when available
 - AND it SHALL NOT invent a hostname, scheme or credential header
-- AND calling guidance SHALL link to the consumer listing
+- AND its primary action SHALL open the subscription, and calling guidance SHALL link to the
+  consumer listing's Getting started tab
 
 #### Scenario: Products are displayed before subscriptions load
 
@@ -220,6 +223,24 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - AND the reason SHALL be that none of those three are on the list, so falling back to the list
   reads as "there is nothing here" to a reader who followed a link to a specific thing
 
+#### Scenario: One subscription is named
+
+- GIVEN a subscription's own screen that has loaded
+- WHEN its head renders
+- THEN the page title SHALL be its product and environment, as "orders in DEV"
+- AND the header SHALL list its state, the application holding it, the product, the environment,
+  the purpose and when it was requested
+
+#### Scenario: What a subscription may call is shown
+
+- GIVEN a subscription's own screen
+- WHEN it renders
+- THEN it SHALL list every API in the product, each linking to its catalogue listing, with whether
+  it is live in the subscription's environment
+- AND an API that cannot be read SHALL say so on its own line without hiding the others
+- AND the reason SHALL be that the route's purpose promised "what it may call" and the screen did
+  not show it, so a reader holding a key still had to go and find where it worked
+
 ### Requirement: Keys belong to the consumer alone
 
 #### Scenario: A key is revealed
@@ -275,6 +296,11 @@ who may see a key, and what each side of the relationship is allowed to do to th
   deleted
 - AND the panel SHALL state the sequence — rotate the idle slot, move the callers, then rotate the
   other — because doing it in the other order is an outage
+- AND the controls SHALL read **Reveal**, **Rotate** and **Issue**, and the confirmation **Rotate
+  primary key** (or secondary) beside **Cancel**
+- AND a revealed or newly minted key SHALL have a copy button beside it
+- AND while the subscription is not active the panel SHALL say, in words on the screen, that keys
+  can be revealed, rotated or issued only while it is
 - AND the reason SHALL be that rotation is irreversible and stops every caller holding the old key
   at once, and that this is the panel people open in order to *read* a key — so a single unguarded
   click sat beside the value they came for
@@ -394,20 +420,34 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - WHEN its usage is read
 - THEN it SHALL show what has been used in the current window, against the limit, and when the
   window resets
-- AND the figure SHALL be the fleet's aggregate rather than one instance's count
-- AND where a rate limit applies, the screen SHALL state that the fleet ceiling is
-  `calls × instances` rather than hide it
+- AND the limit SHALL be the `quota` unit of the API's effective policy in that environment whose
+  scope and period match the window, and SHALL be left out rather than guessed when none does
+- AND each window SHALL name what it is counted for — the API by name, the whole product, or one
+  operation — rather than an id
+- AND the figure SHALL be the aggregate across every gateway instance rather than one instance's count
+- AND where a rate limit applies, the screen SHALL state that it is counted on each gateway
+  instance separately, so the total across instances is that many times higher, rather than hide it
+- AND the usage panel SHALL be shown to the consuming side only, because the usage endpoint answers
+  nobody else
 
 ### Requirement: Show a consumer how to use the key
 
 #### Scenario: A subscription page renders
 
-- GIVEN an active subscription
+- GIVEN a subscription that is pending, activating or active, seen by the consuming side
 - WHEN its page renders
-- THEN it SHALL show the header name and location the API's policy expects, the published URL per
-  environment, and a copyable example
-- AND the example SHALL be derived from the API's own `auth.subscriptionKey` unit rather than
-  assumed
+- THEN for every API in the product it SHALL show each published gateway address in the
+  subscription's environment with a copy button, where the key goes — the header or query
+  parameter name — and a copyable example call against that address
+- AND the key's place SHALL be read from the API's effective `auth.subscriptionKey` unit in that
+  environment rather than assumed, and an API with no such unit SHALL be said to ask for no key and
+  be given an example without one
+- AND when the effective policy cannot be read, it SHALL say where the key goes is unknown and show
+  no example, rather than one with a guessed header
+- AND the example SHALL reference the key as `$SUBSCRIPTION_KEY` inside double quotes, so a shell
+  expands it, and the panel SHALL say to set it to one of the keys above
+- AND an API not released in the environment, or with no published address there, SHALL say so
+  instead of offering a call
 
 ### Requirement: Offer meaningful creation and subscription choices
 
@@ -428,6 +468,10 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN the form SHALL use that application automatically and display its name
 - AND one form SHALL show the environment choices and purpose field with a Subscribe action, without wizard steps
 - AND the environment SHALL default to the current session environment, with unpublished environments disabled and submission blocked until a live environment is selected
+- AND the environment choice SHALL be the portal's segmented control, each disabled environment
+  carrying its reason as a line on the screen, and the reason the Subscribe action is disabled
+  SHALL be written beside it
+- AND the page title SHALL read "New subscription for <resource>" once the resource has loaded
 - AND a product picker SHALL appear only when there is more than one product
 - AND product and effective limits SHALL be available in an expandable disclosure
 - AND inputs SHALL be disabled while the request is being submitted

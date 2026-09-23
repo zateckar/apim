@@ -259,13 +259,16 @@ describe("what a journey ends with", () => {
     const html = state("pending");
     // The key is not on this page and the panel must not imply it was.
     expect(html).not.toContain("only time the key is shown");
-    expect(html).toContain("revealable once the subscription is");
+    expect(html).toContain("revealed once the subscription is active");
     expect(html).toContain("http://gw.dev.internal/petstore/v1");
     expect(html).toContain("Intranet");
+    // An address is a thing somebody pastes elsewhere, so it has a copy button beside it.
+    expect(html).toContain("Copy the intranet address");
     expect(html).not.toContain("X-Api-Key");
     expect(html).not.toContain("gateway-host");
-    expect(html).toContain('href="/subscriptions/sub_1"');
-    expect(html).toContain('href="/catalog/res_1"');
+    // Links that navigate are links, drawn as the house buttons — one of them the primary.
+    expect(html).toMatch(/<a href="\/subscriptions\/sub_1" class="btn primary"/);
+    expect(html).toContain('href="/catalog/res_1?tab=start"');
   });
 
   test("it names which of the two waits this is", () => {

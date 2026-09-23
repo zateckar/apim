@@ -272,6 +272,67 @@ export const STATUS_DOMAINS = {
 
 // ==================================================================== phase-2: catalog
 // Chips for the catalog screens. Add below this line only; the anchor keeps parallel additions apart.
+
+/**
+ * Visible to the reader only because they may change it. The card used to say this with a raw
+ * `badge warn` and a separate admin-only sentence under the list; the chip's title carries it now,
+ * on every row it applies to and for every owner rather than only for administrators.
+ */
+export function unpublishedChip(): Chip {
+  return {
+    label: "Not published",
+    tone: "warn",
+    title: "not released in any environment yet — you see it because you can change it, and nobody else does until it is released",
+  };
+}
+
+/**
+ * Whether a catalogue card can be asked for, from the reader's side (workspace-api-catalog, "The
+ * catalog is scanned": a row says whether it is available or already subscribed).
+ *
+ * Three answers, because "not in a product" is the one a consumer otherwise discovers only after
+ * opening the listing: there is nothing to subscribe to until its owner puts it in one.
+ */
+export function catalogAccessChip(card: { subscribed: boolean; products: ReadonlyArray<unknown> }): Chip {
+  if (card.subscribed) {
+    return { label: "Subscribed", tone: "live", title: "one of your applications holds an active subscription that reaches this" };
+  }
+  if (card.products.length > 0) {
+    return { label: "Available to subscribe", tone: "neutral", title: "it is in at least one product, so any application can ask for access" };
+  }
+  return { label: "Not in a product", tone: "neutral", title: "nothing to subscribe to yet — its owner has not added it to a product" };
+}
+
+/**
+ * One listing, and the reader's own access to it, named by where it works.
+ *
+ * It said "You subscribe", which is neither a sentence nor an answer: *which* application, and in
+ * which environment — a key is per environment, so "subscribed" without one is half a fact. The
+ * caller passes environments already written the way a reader sees them (`envLabel`), because this
+ * module has no business importing a component.
+ */
+export function listingAccessChip(
+  state: "active" | "waiting",
+  environments: ReadonlyArray<string>,
+  applications: ReadonlyArray<string>,
+): Chip {
+  const where = environments.join(", ");
+  const who = applications.join(", ");
+  return state === "active"
+    ? { label: `Subscribed in ${where}`, tone: "live", title: `${who} can call this in ${where} with the keys on its subscription` }
+    : { label: `Requested in ${where}`, tone: "wait", title: `${who} asked for access in ${where}; the keys work once it is approved and active` };
+}
+
+/**
+ * One environment on a listing's "Where it is live". A route with nothing released behind it is the
+ * state a caller trips on — the address exists and every call to it fails — so it is a chip of its
+ * own rather than the absence of the Live one.
+ */
+export function endpointChip(live: boolean): Chip {
+  return live
+    ? { label: "Live", tone: "live", title: "released here — calls to these addresses reach it" }
+    : { label: "Not released", tone: "neutral", title: "a route exists here but nothing has been released behind it, so calls to it fail" };
+}
 // end phase-2: catalog
 
 

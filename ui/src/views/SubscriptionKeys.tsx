@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type Subscription, type SubscriptionKey } from "../api";
-import { Notice, StatusChip, useAction } from "../components";
+import { CopyButton, Notice, StatusChip, useAction } from "../components";
+import { formatDate } from "../lib/datetime";
 import { subscriptionKeyChip } from "../lib/status";
 
 /**
@@ -25,6 +26,8 @@ const UNDATED: SubscriptionKey[] = [
   { which: "secondary", mintedAt: null, ageDays: null, expiresAt: null, expiredAt: null, status: "absent" },
 ];
 
+const SLOT = { primary: "Primary", secondary: "Secondary" } as const;
+
 export function SubscriptionKeys({
   subscription,
   onChanged,
@@ -39,7 +42,6 @@ export function SubscriptionKeys({
   const [confirming, setConfirming] = useState<"primary" | "secondary" | null>(null);
   const active = subscription.state === "active";
   const keys = subscription.keys ?? UNDATED;
-  const why = active ? undefined : "Keys exist only while access is active.";
 
   async function rotate(which: "primary" | "secondary") {
     const ok = await action.run(async () => {
@@ -65,10 +67,15 @@ export function SubscriptionKeys({
   return (
     <>
       <Notice kind="error">{action.error}</Notice>
+      {/* Said once, in words, rather than only as a tooltip on six dead buttons (a keyboard and a
+          touch screen never see a title). */}
+      {!active && (
+        <p className="hint">Keys can be revealed, rotated or issued only while the subscription is active.</p>
+      )}
       {Object.keys(values).length > 0 && (
         <Notice kind="warn">
-          Copy what you need now. Keys are encrypted at rest, every reveal is recorded against your
-          name, and closing this screen puts them away.
+          Copy what you need now. Every reveal is recorded against your name, and leaving this screen
+          hides the keys again.
         </Notice>
       )}
       <table>
@@ -87,12 +94,17 @@ export function SubscriptionKeys({
             return (
               <tr key={key.which}>
                 <td>
-                  {key.which}
-                  {value && <div className="pre">{value}</div>}
+                  {SLOT[key.which]}
+                  {value && (
+                    <div className="copy-row">
+                      <code>{value}</code>
+                      <CopyButton value={value} what={`the ${key.which} key`} />
+                    </div>
+                  )}
                 </td>
                 <td>
                   {absent ? (
-                    <span className="muted">not issued</span>
+                    <span className="muted">Not issued</span>
                   ) : (
                     <StatusChip chip={subscriptionKeyChip(key)} />
                   )}
@@ -101,9 +113,7 @@ export function SubscriptionKeys({
                   {absent || !key.expiresAt ? (
                     <span className="muted">—</span>
                   ) : (
-                    <span className="mono">
-                      {(key.status === "expired" ? key.expiredAt : key.expiresAt)?.slice(0, 10)}
-                    </span>
+                    formatDate(key.status === "expired" ? key.expiredAt : key.expiresAt)
                   )}
                 </td>
                 <td className="right">
@@ -116,43 +126,45 @@ export function SubscriptionKeys({
                   {confirming === key.which ? (
                     <span className="inline">
                       <span className="muted small">
-                        Every caller holding the current {key.which} key stops working at the next
-                        gateway poll.
+                        Every caller using the current {key.which} key stops working once the
+                        gateways apply the change.
                       </span>
                       <button
-                        className="ghost small"
+                        type="button"
+                        className="btn sm ghost"
                         disabled={action.busy}
                         onClick={() => setConfirming(null)}
                       >
-                        Keep it
+                        Cancel
                       </button>
                       <button
-                        className="danger small"
+                        type="button"
+                        className="btn sm danger"
                         disabled={action.busy}
                         onClick={() => void rotate(key.which)}
                       >
-                        Rotate it
+                        Rotate {key.which} key
                       </button>
                     </span>
                   ) : (
                     <span className="inline">
                       {!absent && !value && (
                         <button
-                          className="ghost small"
+                          type="button"
+                          className="btn sm"
                           disabled={!active || action.busy}
-                          title={why}
                           onClick={() => void reveal()}
                         >
                           Reveal
                         </button>
                       )}
                       <button
-                        className="ghost small"
+                        type="button"
+                        className="btn sm ghost"
                         disabled={!active || action.busy}
-                        title={why}
                         onClick={() => (absent ? void rotate(key.which) : setConfirming(key.which))}
                       >
-                        {absent ? "Issue it" : "Rotate it"}
+                        {absent ? "Issue" : "Rotate"}
                       </button>
                     </span>
                   )}

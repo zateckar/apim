@@ -4638,6 +4638,36 @@ dialog.native-modal { margin: auto; }
 /* ==================================================================== phase-2: catalog
    Screen-specific rules for the catalog screens. Add below this line only.
    (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* Type and environment are segmented controls now, labelled the way the selects beside them are. */
+.native-portal .catalog-segment { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.native-portal .catalog-segment > span { color: var(--fg-muted); font-size: 11px; font-weight: 600; }
+.native-portal .catalog-segment .seg { flex-wrap: wrap; }
+.native-portal .catalog-segment .seg .chip-count { margin-left: 4px; color: var(--fg-subtle); font-size: 11px; }
+.native-portal .catalog-result-facts .chip { margin: 0; padding: 1px 7px; font-size: 10px; }
+/* The listing head: the name is the page title, so the head carries the facts beside it. */
+.native-portal .listing-head { display: flex; align-items: flex-start; gap: 14px; min-width: 0; }
+.native-portal .listing-head p { margin: 0 0 6px; }
+.native-portal .listing-head-facts { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; }
+.native-portal .consumer-resource-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 16px; }
+.native-portal .listing-env-choice { margin-bottom: 12px; }
+.native-portal .listing-spark { height: 40px; }
+.native-portal .listing-traffic { margin-bottom: 0; }
+/* An address with its copy button, on one line of a URL list. */
+.native-portal .url-list li > .copy-row, .native-modal .url-list li > .copy-row { flex: 1 1 280px; }
+/* A block of shell beside its copy button: the button stays at the top rather than centring on a
+   three-line command. */
+.native-portal .copy-block, .native-modal .copy-block { align-items: flex-start; }
+.native-portal .copy-block > pre { flex: 1 1 auto; min-width: 0; margin: 0; overflow-x: auto; }
+/* One API a subscription reaches: its name, its addresses, and how to call it. */
+.native-portal .call-target { padding: 12px 0; border-bottom: 1px solid var(--divider); }
+.native-portal .call-target:first-of-type { padding-top: 0; }
+.native-portal .call-target:last-child { border-bottom: 0; padding-bottom: 0; }
+.native-portal .call-target > h4 { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin: 0 0 6px; }
+.native-portal .subscription-resource-head .kv { margin: 0; }
+.native-portal .subscribe-form { border: 0; padding: 0; margin: 0; min-width: 0; }
+.native-portal .subscribe-form > details { margin: 4px 0 16px; border-top: 1px solid var(--border); }
+.native-portal .subscribe-form > details > summary { padding: 10px 0 4px; color: var(--fg-muted); cursor: pointer; font-size: 12px; font-weight: 600; }
+.native-portal .subscribe-actions { gap: 10px 14px; margin-top: 14px; }
 /* end phase-2: catalog */
 
 

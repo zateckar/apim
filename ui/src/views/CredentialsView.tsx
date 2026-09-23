@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { api, type CertificateRow, type User } from "../api";
 import {
+  Action,
   DangerZone,
   EmptyState,
   Field,
@@ -8,13 +9,16 @@ import {
   Notice,
   Panel,
   Skeleton,
+  StatusChip,
   TextField,
   Link,
+  envLabel,
   useAction,
   useAsync,
 } from "../components";
-import { ALLOWED } from "../lib/capabilities";
+import { ALLOWED, type Permission } from "../lib/capabilities";
 import { formatDate, formatDateTime } from "../lib/datetime";
+import { certificateExpiryChip, type Chip } from "../lib/status";
 import * as I from "../portal/icons";
 import type { Session } from "../App";
 
@@ -94,6 +98,10 @@ export const KINDS = [
   },
 ];
 
+/** Where the two URL-shaped references live, and why they are not an owner's to add. */
+const NOT_HERE =
+  "JWT issuers and OAuth 2 token endpoints are not kept here: the gateway fetches from their URLs, so an administrator registers them.";
+
 export function shapeOf(kind: string) {
   return KINDS.find((entry) => entry.kind === kind) ?? KINDS[1]!;
 }
@@ -114,7 +122,8 @@ interface Held {
   usedBy: string[];
   /** Why deleting is refused, or null. */
   pinned: string | null;
-  expiry: { label: string; tone: "ok" | "warn" | "bad"; on: string } | null;
+  /** A certificate's remaining validity; null for a secret, which does not expire. */
+  expiry: { chip: Chip; on: string } | null;
   secret: SecretRow | null;
   certificate: CertificateRow | null;
 }
@@ -162,11 +171,7 @@ function heldCertificate(row: CertificateRow): Held {
       row.usedBy.length > 0
         ? `${row.usedBy.length} binding${row.usedBy.length === 1 ? " names" : "s name"} this certificate; change ${row.usedBy.length === 1 ? "it" : "them"} first.`
         : null,
-    expiry: {
-      label: row.expired ? "expired" : `${row.expiresInDays} days`,
-      tone: row.expired ? "bad" : row.expiresInDays <= 30 ? "warn" : "ok",
-      on: formatDate(row.notAfter),
-    },
+    expiry: { chip: certificateExpiryChip(row), on: formatDate(row.notAfter) },
     secret: null,
     certificate: row,
   };
@@ -197,9 +202,12 @@ function useHeld(environment: string, applicationId?: string) {
   const mine = <T extends { applicationId: string }>(rows: T[]) =>
     applicationId ? rows.filter((row) => row.applicationId === applicationId) : rows;
 
+  const error = secrets.error ?? certificates.error;
   return {
-    loading: !secrets.data || !certificates.data,
-    error: secrets.error ?? certificates.error,
+    // Not loading once either read has failed: the failure is the answer, and a skeleton under it
+    // said the list was still coming (app-certificates, "unread certificate list from an empty one").
+    loading: !error && (!secrets.data || !certificates.data),
+    error,
     certificates: mine(certificates.data?.items ?? []),
     // Certificates first and soonest-to-expire first within them: an expired one is an outage on
     // every request through its binding, and nothing else on this platform warns about it.
@@ -228,36 +236,37 @@ export function CredentialsView({ session: s }: { session: Session }) {
 
   return (
     <>
-      <Notice kind="error">{held.error}</Notice>
       {expired.length > 0 && (
         <Notice kind="error">
-          {expired.length} certificate{expired.length === 1 ? " has" : "s have"} expired. Every
-          request through a binding that uses one is failing its TLS handshake right now.
+          {expired.length} certificate{expired.length === 1 ? " has" : "s have"} expired. Requests
+          through a binding that uses one are failing now. Rotate it below.
         </Notice>
       )}
       {expiring.length > 0 && (
         <Notice kind="warn">
-          {expiring.length} certificate{expiring.length === 1 ? "" : "s"} expire within 30 days.
-          Rotating one keeps its name, so nothing that uses it has to be re-saved.
+          {expiring.length} certificate{expiring.length === 1 ? " expires" : "s expire"} within 30
+          days. Rotating keeps the name, so nothing that uses it has to be re-saved.
         </Notice>
       )}
       <Panel
-        title={`${held.items.length} in ${s.environment.toUpperCase()}`}
-        hint="Held encrypted under the platform key and handed only to a gateway building its configuration. Nobody can read one back — not you, not an administrator."
+        title={`${held.items.length} in ${envLabel(s.environment)}`}
+        hint="Held encrypted and never shown again — not to you, not to an administrator."
         actions={
           <button className="btn primary" onClick={() => setAdding(true)}>
             <I.Plus /> Add
           </button>
         }
       >
-        {held.loading ? (
+        <Notice kind="error">{held.error}</Notice>
+        {held.error ? null : held.loading ? (
           <Skeleton rows={3} />
         ) : held.items.length === 0 ? (
           <EmptyState
-            title={`Nothing held in ${s.environment.toUpperCase()}`}
-            detail="A credential is per environment, because a test backend and a production backend do not share a password. Add one here and it appears in the policy editor's picker, on every API this application owns."
+            title={`Nothing held in ${envLabel(s.environment)}`}
+            detail="Credentials are per environment. One added here appears in the policy editor's picker on every API this application owns."
             action={
-              <button className="btn primary" onClick={() => setAdding(true)}>
+              // Not a second primary: the head's Add is the one, and this is the same action.
+              <button className="btn" onClick={() => setAdding(true)}>
                 Add a credential
               </button>
             }
@@ -274,14 +283,10 @@ export function CredentialsView({ session: s }: { session: Session }) {
         )}
       </Panel>
 
-      <p className="muted">
-        A <strong>JWT issuer</strong> and an <strong>OAuth 2 token endpoint</strong> are not here,
-        and are not oversights. Both resolve to a URL the gateway itself fetches — one to decide
-        whose tokens this estate believes, the other to send a client secret to — so both stay in
-        the administrator-registered integrations file, where nothing clickable can widen them.
-        Everything on this screen is only a secret: it is compared, or presented, and never fetched
-        from.
-      </p>
+      {/* One sentence where there was a paragraph: the spec asks the screen to say where these two
+          are and why (app-credentials, "Show what an application holds"), and the reason fits in a
+          clause. The add dialog repeats it on the field somebody would look for them in. */}
+      <p className="muted small">{NOT_HERE}</p>
 
       {adding && (
         <AddCredential
@@ -322,16 +327,16 @@ export function CertificateList({ environment, user }: { environment: string; us
 
   return (
     <>
-      <Notice kind="error">{held.error}</Notice>
       <Panel
-        title={`Client certificates in ${environment.toUpperCase()}`}
-        hint="Uploaded by the owning application on its Credentials screen, held encrypted under the KEK, and handed only to a live gateway instance over its own channel."
+        title={`Client certificates in ${envLabel(environment)}`}
+        hint="Each application uploads its own on its Credentials screen. Held encrypted and never shown again."
       >
-        {held.loading ? (
+        <Notice kind="error">{held.error}</Notice>
+        {held.error ? null : held.loading ? (
           <Skeleton rows={4} />
         ) : held.items.length === 0 ? (
           <EmptyState
-            title={`No client certificates in ${environment.toUpperCase()}`}
+            title={`No client certificates in ${envLabel(environment)}`}
             detail="A binding only needs one if its backend asks for mutual TLS. An application uploads its own on Credentials, and it becomes available to choose on a backend."
             action={<Link to="/catalog">Browse the catalog →</Link>}
           />
@@ -377,15 +382,16 @@ function HeldRow({
 }) {
   const w = useAction();
   const endpoint = row.certificate ? "certificates" : "credentials";
+  const writable: Permission = canWrite
+    ? ALLOWED
+    : { enabled: false, reason: "Only the owning application, or an administrator, can change this." };
   return (
-    <div className={row.expiry?.tone === "bad" ? "native-row row-bad" : "native-row"}>
+    <div className="native-row">
       <div>
-        <strong>{row.name}</strong>
-        {row.expiry && (
-          <span className={`badge ${row.expiry.tone}`}>
-            {row.expiry.label}
-          </span>
-        )}
+        <span className="held-name">
+          <strong>{row.name}</strong>
+          {row.expiry && <StatusChip chip={row.expiry.chip} />}
+        </span>
         <small>
           {row.detail}
           {showOwner ? ` · ${row.applicationId}` : ""}
@@ -397,33 +403,28 @@ function HeldRow({
           {" · "}
           {row.usedBy.length === 0 ? "not named by any policy" : row.usedBy.join(", ")}
         </small>
-        <Notice kind="error">{w.error}</Notice>
       </div>
       <div className="native-actions">
         {/* Rotation before deletion, and on the same row: replacing the material is what somebody
             arriving at an expiry warning has come to do, and every policy naming this keeps
             working through it. Deleting and adding again was the only path there was, and it is
-            the one that takes the route down in between. */}
-        <button className="btn" disabled={!canWrite} onClick={onRotate}>
+            the one that takes the route down in between. An `Action`, so a reader who may not
+            rotate is told why rather than handed a greyed button. */}
+        <Action permission={writable} onClick={onRotate}>
           <I.Refresh /> Rotate
-        </button>
+        </Action>
+        {/* The delete's failure is drawn once, inside the confirmation that caused it — it used to
+            be drawn there and again under the row. */}
         <DangerZone
           what={`Delete ${row.name}`}
           name={row.name}
           consequence={
             row.certificate
-              ? "The private key is destroyed with it. Any binding that later needs this identity has to have the certificate uploaded again."
-              : "The secret is destroyed with it. A gateway refuses any request whose credential it cannot resolve, so a policy that still names this would start answering 503 at its next configuration build."
+              ? "The private key is destroyed with it. A binding that needs this identity later needs the certificate uploaded again."
+              : "The secret is destroyed with it and cannot be recovered."
           }
           permission={
-            !canWrite
-              ? {
-                  enabled: false,
-                  reason: "Only the owning application, or an administrator, can delete this.",
-                }
-              : row.pinned
-                ? { enabled: false, reason: row.pinned }
-                : ALLOWED
+            !writable.enabled ? writable : row.pinned ? { enabled: false, reason: row.pinned } : ALLOWED
           }
           busy={w.busy}
           error={w.error}
@@ -470,7 +471,7 @@ function PemFields({
       </Field>
       <Field
         label="Private key (PEM)"
-        hint="Encrypted on arrival and never returned. The pair is checked before it is stored, so a mismatched one fails here rather than at 3 a.m. on the first handshake."
+        hint="Encrypted on arrival and never returned. It must match the certificate; a mismatch is refused here."
       >
         <textarea
           value={keyPem}
@@ -512,7 +513,7 @@ function AddCredential({
   const nameProblem = !name
     ? null
     : clash
-      ? `This application already holds something called ${name.trim().toLowerCase()} in ${s.environment.toUpperCase()}.`
+      ? `This application already holds ${name.trim().toLowerCase()} in ${envLabel(s.environment)}. To replace its secret, rotate it instead.`
       : /^[a-z0-9][a-z0-9-]{1,60}$/.test(name)
         ? null
         : "2–61 lowercase letters, digits or hyphens.";
@@ -524,7 +525,7 @@ function AddCredential({
       : !secret || (shape.principal !== null && !principal.trim()));
 
   return (
-    <Modal title={`Add to ${s.environment.toUpperCase()}`} close={close}>
+    <Modal title={`Add to ${envLabel(s.environment)}`} close={close}>
       <form
         onSubmit={(e) => {
           e.preventDefault();
@@ -562,9 +563,11 @@ function AddCredential({
           required
           maxLength={61}
           error={nameProblem}
-          hint="How you will recognise it in the policy editor's picker. It is not the secret and it is not sensitive."
+          hint="Shown in the policy editor's picker. Not secret."
         />
-        <Field label="What kind" hint={shape.detail}>
+        {/* The field somebody scans for "JWT" or "OAuth" is this one, so the reason neither is in
+            the list is said here as well as under the screen. */}
+        <Field label="What kind" hint={`${shape.detail} ${NOT_HERE}`}>
           <select
             value={kind}
             onChange={(e) => {
@@ -598,7 +601,7 @@ function AddCredential({
                 required
                 maxLength={256}
                 autoComplete="off"
-                hint="Kept in the clear, so a list can say which account this is without decrypting anything."
+                hint="Stored in the clear, so the list can show which account this is."
               />
             )}
             <TextField
@@ -609,14 +612,14 @@ function AddCredential({
               required
               maxLength={4096}
               autoComplete="new-password"
-              hint="Encrypted on arrival. This is the last time it is readable anywhere in the portal."
+              hint="Encrypted on arrival and never shown again."
             />
             <TextField
               label="What it opens (optional)"
               value={note}
               onChange={setNote}
               maxLength={500}
-              hint="One line for whoever inherits this — which backend, which account, who to ask."
+              hint="Which backend, which account, who to ask."
             />
           </>
         )}
@@ -673,13 +676,13 @@ function RotateCredential({
         }}
       >
         <p>
-          The name {isCertificate ? "and the identity " : "and the reference "}do not change, so{" "}
+          The name stays the same, so{" "}
           {row.usedBy.length === 0
             ? "nothing has to be re-saved"
-            : `${row.usedBy.join(", ")} keep${row.usedBy.length === 1 ? "s" : ""} working`}{" "}
-          — the new material reaches the gateways at the next configuration build.
-          {isCertificate &&
-            " A certificate for a different subject is not a rotation: add that one separately and move each backend to it deliberately."}
+            : `${row.usedBy.join(", ")} keep${row.usedBy.length === 1 ? "s" : ""} working`}
+          . The gateways pick up the new {isCertificate ? "key pair" : "secret"} at their next
+          configuration build.
+          {isCertificate && " A certificate for a different subject is not a rotation: add it separately."}
         </p>
         <Notice kind="error">{w.error}</Notice>
         {isCertificate ? (

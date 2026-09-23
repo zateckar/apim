@@ -499,6 +499,67 @@ export function telemetryOutcomeChip(outcome: string, count: number): Chip {
 
 // ==================================================================== phase-2: identity
 // Chips for the identity screens. Add below this line only; the anchor keeps parallel additions apart.
+
+// Imported here rather than at the head of the file so this section merges on its own; an import
+// is hoisted wherever it is written.
+import { formatDate, formatDateTime } from "./datetime";
+
+/**
+ * How long a client certificate has left, on the Credentials list.
+ *
+ * It was a bare `badge ok|warn|bad` beside the name, and the row under an expired one carried a
+ * `row-bad` class whose only rule was for table rows — the list is not a table, so the one state on
+ * that screen that is an outage looked like every other row. The chip says the remaining days,
+ * because that is the number somebody plans a renewal around; the date is in the title
+ * (app-certificates, "Warn before a certificate expires").
+ */
+export function certificateExpiryChip(certificate: {
+  expired: boolean;
+  expiresInDays: number;
+  notAfter: string;
+}): Chip {
+  const on = formatDate(certificate.notAfter);
+  if (certificate.expired) {
+    return {
+      label: "Expired",
+      tone: "stop",
+      title: `expired on ${on} — every request through a binding that uses it fails its TLS handshake. Rotate it to replace the key pair in place.`,
+    };
+  }
+  const days = `${certificate.expiresInDays} day${certificate.expiresInDays === 1 ? "" : "s"} left`;
+  if (certificate.expiresInDays <= 30) {
+    return {
+      label: days,
+      tone: "warn",
+      title: `expires on ${on}. Rotating it keeps its name, so nothing that uses it has to be re-saved.`,
+    };
+  }
+  return { label: days, tone: "live", title: `valid until ${on}` };
+}
+
+/**
+ * What stands in the way of an account signing in, worst first — the People list and one person's
+ * page. Each used to be a `pill` of its own colour class, so "disabled" on the list and "disabled"
+ * anywhere else in the portal were two different reds. An account with nothing in the way has no
+ * chip: "can sign in" is the absence of news.
+ */
+export function accountChips(account: {
+  disabled: boolean;
+  lockedUntil: string | null;
+  mustChangePassword: boolean;
+}): Chip[] {
+  const chips: Chip[] = [];
+  if (account.disabled) {
+    chips.push({ label: "Disabled", tone: "stop", title: "disabled — they cannot sign in, whatever the identity provider says, and every session they had was ended" });
+  }
+  if (account.lockedUntil) {
+    chips.push({ label: "Locked", tone: "warn", title: `locked until ${formatDateTime(account.lockedUntil)} after repeated failed sign-ins` });
+  }
+  if (account.mustChangePassword) {
+    chips.push({ label: "Must change password", tone: "warn", title: "somebody else set their password, so they choose their own at the next sign-in" });
+  }
+  return chips;
+}
 // end phase-2: identity
 
 

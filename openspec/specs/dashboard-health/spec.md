@@ -242,14 +242,26 @@ there has been. Plus the telemetry both read from.
 - WHEN a row is activated
 - THEN it SHALL open that API's workspace on the Logs panel, filtered to the same environment and
   window
+- AND the row SHALL be a link whose address carries both, as
+  `/{application}/apis/{resourceId}?tab=logs&sinceMin={window}`, so the window survives a new tab
+  and a copied address as well as a click
 
 #### Scenario: The window is changed
 
 - GIVEN the dashboard's window control
 - WHEN it changes
 - THEN every figure, trend and list on the page SHALL be recomputed against the same window
-- AND `DASHBOARD_DEFAULT_SINCE_MIN` SHALL be the default
+- AND `DASHBOARD_DEFAULT_SINCE_MIN` SHALL be the default: until a reader chooses a window the
+  request SHALL name none, and the control SHALL show the window the response reports
+- AND a chosen window SHALL be remembered in the browser as a display preference
 - AND the time-range control SHALL sit above the dashboard figures, since it governs the whole page rather than only the traffic table
+
+#### Scenario: Attention is listed on the dashboard
+
+- GIVEN attention rows for the reader, or a first-run *Start here* list
+- WHEN the dashboard renders them
+- THEN both SHALL use the portal's one attention list, grouped by severity with each row's call to
+  action, rather than a second rendering of the same rows
 
 ### Requirement: Aggregate telemetry on the control plane, bounded
 

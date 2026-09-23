@@ -100,7 +100,7 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   subscribe: ({ match, session }) => (
     <SubscribeWizard resourceId={match.params.resourceId!} session={session} />
   ),
-  how: () => <HowView />,
+  how: ({ session }) => <HowView user={session.user} />,
   account: ({ session }) => <AccountView me={session.me} reload={session.reload} />,
 
   // ------------------------------------------------------------------ running the estate

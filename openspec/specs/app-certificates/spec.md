@@ -28,6 +28,9 @@ authenticates me with" depend on what kind of thing it was.
 - THEN that application's client certificates SHALL appear in the same list as its passwords, keys
   and HMAC pairs, each row saying which kind it is
 - AND a certificate row SHALL additionally carry its remaining validity and the date it expires
+- AND the remaining validity SHALL be a status chip in the tone vocabulary — `stop` once expired,
+  `warn` within 30 days, `live` otherwise — because the row is not a table row and a row-level tint
+  had no effect on it
 - AND certificates SHALL be ordered before the rest, soonest expiry first, because an expired one
   is an outage and nothing else on the screen can become one by the passage of time
 

@@ -5,6 +5,7 @@ import type { Session } from "../App";
 import { api, type Product, type Resource, type Subscription } from "../api";
 import {
   Action,
+  DangerZone,
   Panel,
   EmptyState,
   TextField,
@@ -15,8 +16,9 @@ import {
   Term,
   useAction,
   useAsync,
+  envLabel,
 } from "../components";
-import { permit } from "../lib/capabilities";
+import { blockedBecause, first, permit } from "../lib/capabilities";
 import { subscriptionChip } from "../lib/status";
 
 /**
@@ -113,7 +115,7 @@ export function ProductsView({ session }: { session: Session }) {
   return (
     <>
       <div className="page-toolbar">
-        <span className="muted">{shown.length} products · bundle APIs for consumers</span>
+        <span className="muted">{shown.length} {shown.length === 1 ? "product" : "products"}</span>
         <button className={creating ? "btn" : "btn primary"} onClick={() => setCreating(!creating)}>{creating ? "Cancel" : "+ Create a product"}</button>
       </div>
       {creating && <div id="new-product">
@@ -136,9 +138,8 @@ export function ProductsView({ session }: { session: Session }) {
         shown.some((product) => product.id === row.productId),
       ) && (
         <p className="muted small">
-          You publish these products, so you can withdraw anybody's access to them — an abusive or
-          compromised caller is yours to stop, without finding an administrator first. You cannot see
-          or replace their keys: those belong to the application that holds the subscription.
+          You can withdraw anybody's access to these products. Their keys stay theirs: you cannot see
+          or replace them.
         </p>
       )}
       {shown.length === 0 ? (
@@ -193,9 +194,20 @@ function ProductCard({
   const canEdit = permit("members", product.capabilities, { application: product.applicationId });
   const [members, setMembers] = useState(product.members.map((member) => member.id));
   const action = useAction();
+  const removal = useAction();
   const dirty =
     members.length !== product.members.length ||
     members.some((id) => !product.members.some((member) => member.id === id));
+  // The control plane refuses a product with active subscriptions (api-subscription-management,
+  // "A product is deleted"); said on the control before the attempt rather than as a 409 after it.
+  const active = subscriptions.filter((row) => row.state === "active").length;
+  const canDelete = first(
+    permit("delete", product.capabilities, { application: product.applicationId }),
+    blockedBecause(
+      active > 0,
+      `${active} active subscription${active === 1 ? "" : "s"} still use${active === 1 ? "s" : ""} it. Revoke ${active === 1 ? "it" : "them"} first — their next call would become an unexplained 404.`,
+    ),
+  );
 
   return (
     <Panel
@@ -265,7 +277,7 @@ function ProductCard({
                 <tr key={subscription.id}>
                   <td>{subscription.applicationName ?? subscription.applicationId}</td>
                   <td>
-                    <span className="pill">{subscription.environment}</span>
+                    <span className="chip">{envLabel(subscription.environment)}</span>
                   </td>
                   <td>
                     <StatusChip chip={subscriptionChip(subscription.state)} />
@@ -282,6 +294,21 @@ function ProductCard({
           </table>
         </>
       )}
+
+      {/* The endpoint existed and nothing offered it, so an empty bundle could only be left lying
+          in the catalogue. Typed, like every other delete of a named object. */}
+      <DangerZone
+        what={`Delete ${product.name}`}
+        name={product.name}
+        consequence="It disappears from the catalogue. The APIs in it are not affected."
+        permission={canDelete}
+        busy={removal.busy}
+        error={removal.error}
+        onConfirm={async () => {
+          const ok = await removal.run(() => api.del(`/api/products/${product.id}`));
+          if (ok) onChanged();
+        }}
+      />
     </Panel>
   );
 }

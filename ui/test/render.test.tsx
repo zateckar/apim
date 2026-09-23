@@ -279,19 +279,34 @@ describe("what a journey ends with", () => {
 });
 
 describe("how this works", () => {
-  const html = renderToStaticMarkup(<HowView />);
+  const html = renderToStaticMarkup(<HowView user={{ ...user, isAdmin: true }} />);
+  const asMember = renderToStaticMarkup(<HowView user={user} />);
+  const MEMBER_JOURNEYS = [
+    "Publish an API",
+    "Promote it to the next environment",
+    "Publish a new version",
+    "Subscribe to a resource",
+    "Call it from here",
+  ];
+  const ADMIN_JOURNEYS = ["Run the platform", "Let somebody in"];
 
-  test("carries all six journeys", () => {
-    for (const journey of [
-      "Publish an API",
-      "Promote it to the next environment",
-      "Publish a new version",
-      "Subscribe to a resource",
-      "Call it from here",
-      "Run the platform",
-    ]) {
+  test("carries every journey for an administrator, and says how many", () => {
+    for (const journey of [...MEMBER_JOURNEYS, ...ADMIN_JOURNEYS]) {
       expect(html, journey).toContain(journey);
     }
+    expect(html).toContain(`${MEMBER_JOURNEYS.length + ADMIN_JOURNEYS.length} things you can do here`);
+  });
+
+  test("shows a member only the journeys a member can finish, and counts only those", () => {
+    // Two Start buttons into screens that would then say "this is for administrators" were two of
+    // seven promises the page could not keep.
+    for (const journey of MEMBER_JOURNEYS) expect(asMember, journey).toContain(journey);
+    for (const journey of ADMIN_JOURNEYS) expect(asMember, journey).not.toContain(journey);
+    expect(asMember).toContain(`${MEMBER_JOURNEYS.length} things you can do here`);
+  });
+
+  test("writes no inline style", () => {
+    expect(html).not.toContain("style=");
   });
 
   test("describes the actual publishing and access sequence", () => {

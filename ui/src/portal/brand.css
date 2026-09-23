@@ -4684,6 +4684,21 @@ dialog.native-modal { margin: auto; }
 /* ==================================================================== phase-2: identity
    Screen-specific rules for the identity screens. Add below this line only.
    (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* A KPI value that has not arrived: the size of the number it stands in for, so the grid does not
+   jump. It was an inline style on every card. */
+.native-portal .kpi-skl { width: 64px; height: 28px; }
+/* How this works: a journey's steps and its outcome, and the glossary's group headings — all three
+   were inline styles in the view. */
+.native-portal .journey-steps { margin: 0 0 8px; padding-left: 20px; line-height: 1.6; }
+.native-portal .journey-ends { margin: 0; }
+.native-portal .glossary-group + .glossary-group { margin-top: 18px; }
+.native-portal .glossary-group-title { margin: 0 0 8px; font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--fg-muted); }
+/* The picker with nothing to pick: a sentence and the link to the account page, in the slot the
+   button would have filled, rather than a disabled button that said "No application" and why nowhere. */
+.native-portal .sidebar .app-picker-none { margin: 0; padding: 8px 10px; border: 1px dashed var(--border); border-radius: var(--r-md); font-size: 12.5px; line-height: 1.45; color: var(--fg-muted); }
+.native-portal .sidebar .app-picker-none a { display: inline-block; margin-top: 2px; color: var(--accent); font-weight: 600; }
+/* A credential's kind, state and name on one line, however many of them a row has. */
+.native-portal .held-name { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
 /* end phase-2: identity */
 
 

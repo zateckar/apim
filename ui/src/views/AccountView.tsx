@@ -1,7 +1,7 @@
 import { formatDate, formatDateTime } from "../lib/datetime";
 import { useState } from "react";
 import { api, type AuthProviders, type Me, type SessionView } from "../api";
-import { Panel, EmptyState, Link, Notice, Term, useAction, useAsync } from "../components";
+import { Panel, EmptyState, Link, Notice, Skeleton, Term, TextField, useAction, useAsync } from "../components";
 
 /**
  * Your own account (v5 plan §8).
@@ -49,13 +49,12 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
 
       <Panel
         title="Your applications"
-        hint="Being in an application is what lets you publish and change what it owns. It is not a label."
+        hint="Membership is what lets you publish and change what an application owns."
       >
         {me.claimsStale && (
           <Notice kind="warn">
-            These are the applications your identity provider reported when you signed in. This deployment
-            has no way to re-read them without a new sign-in, so a change made there since will not
-            show until you sign out and back in.
+            These are the applications your identity provider reported when you signed in. A change
+            made there since shows after you sign out and back in.
           </Notice>
         )}
         {(me.applications ?? []).length === 0 ? (
@@ -113,10 +112,9 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
         {me.noGroupsInToken && (
           <Notice kind="warn">
             Your <Term name="identity provider">identity provider</Term> sent no groups at all, so
-            there is nothing for this portal to map to a <Term name="application">application</Term>. That is a
-            configuration question rather than something you or an administrator can fix from a
-            screen here: whoever set the portal up needs to check which claim carries group
-            membership in your realm, and that the portal is reading that one.
+            there is nothing to map to an <Term name="application">application</Term>. No screen here
+            can fix that: whoever set the portal up needs to check which claim carries group
+            membership in your realm.
           </Notice>
         )}
       </Panel>
@@ -125,16 +123,22 @@ export function AccountView({ me, reload }: { me: Me; reload: () => void }) {
 
       <Panel
         title="Where you are signed in"
-        hint="One row per browser. If you do not recognise one, end it — and then change your password."
+        hint="One row per browser. Revoke any you do not recognise, then change your password."
       >
         <Notice kind="error">{sessions.error}</Notice>
-        <SessionList
-          items={sessions.data?.items ?? []}
-          onChanged={() => {
-            sessions.reload();
-            reload();
-          }}
-        />
+        {/* A skeleton until the list arrives. The table used to render straight away with no rows,
+            which for a moment said "signed in nowhere" — including not here. */}
+        {sessions.data ? (
+          <SessionList
+            items={sessions.data.items}
+            onChanged={() => {
+              sessions.reload();
+              reload();
+            }}
+          />
+        ) : (
+          !sessions.error && <Skeleton rows={2} />
+        )}
       </Panel>
     </>
   );
@@ -167,24 +171,26 @@ function SessionList({ items, onChanged }: { items: SessionView[]; onChanged: ()
           {items.map((session) => (
             <tr key={session.id}>
               <td>
-                {shortAgent(session.userAgent)}
-                {session.current && <span className="pill ok"> this one</span>}
+                {shortAgent(session.userAgent)}{" "}
+                {session.current && <span className="chip">This browser</span>}
               </td>
               <td className="muted">{formatDateTime(session.createdAt)}</td>
               <td className="muted">
                 {session.lastSeenAt ? formatDateTime(session.lastSeenAt) : "—"}
               </td>
-              <td>
+              <td className="right">
+                {/* "Revoke", the word the portal uses for ending a session or a credential; it said
+                    "End it" here and "Sign them out" on a person's page for the same act. */}
                 {!session.current && (
                   <button
-                    className="ghost small"
+                    className="btn sm"
                     disabled={action.busy}
                     onClick={async () => {
                       const ok = await action.run(() => api.del(`/api/my/sessions/${session.id}`));
                       if (ok) onChanged();
                     }}
                   >
-                    End it
+                    Revoke
                   </button>
                 )}
               </td>
@@ -193,18 +199,19 @@ function SessionList({ items, onChanged }: { items: SessionView[]; onChanged: ()
         </tbody>
       </table>
       {others.length > 0 && (
-        <button
-          className="ghost"
-          disabled={action.busy}
-          onClick={async () => {
-            const ok = await action.run(() => api.post("/api/my/sessions/revoke-all"));
-            if (ok) onChanged();
-          }}
-        >
-          Sign out everywhere else ({others.length})
-        </button>
+        <div className="native-actions">
+          <button
+            className="btn"
+            disabled={action.busy}
+            onClick={async () => {
+              const ok = await action.run(() => api.post("/api/my/sessions/revoke-all"));
+              if (ok) onChanged();
+            }}
+          >
+            Revoke every other session ({others.length})
+          </button>
+        </div>
       )}
-      {action.message && <Notice kind="ok">{action.message}</Notice>}
     </>
   );
 }
@@ -263,41 +270,36 @@ function ChangePassword({ onChanged }: { onChanged: () => void }) {
           }
         }}
       >
-        <div className="field">
-          <label htmlFor="current-password">Current password</label>
-          <input
-            id="current-password"
-            type="password"
-            autoComplete="current-password"
-            value={current}
-            onChange={(event) => setCurrent(event.target.value)}
-          />
-        </div>
-        <div className="field">
-          <label htmlFor="account-new-password">New password</label>
-          <input
-            id="account-new-password"
-            minLength={minLength} maxLength={200}
-            aria-describedby="password-length"
-            aria-invalid={next.length > 0 && next.length < minLength}
-            type="password"
-            autoComplete="new-password"
-            value={next}
-            onChange={(event) => setNext(event.target.value)}
-          />
-        </div>
-        <p id="password-length" className={next.length > 0 && next.length < minLength ? "field-error" : "hint"}>Use {minLength}–200 characters.</p>
-        <div className="field">
-          <label htmlFor="account-new-password-again">And again</label>
-          <input
-            id="account-new-password-again"
-            type="password"
-            autoComplete="new-password"
-            value={again}
-            onChange={(event) => setAgain(event.target.value)}
-          />
-        </div>
-        {again.length > 0 && next !== again && <p className="muted small">The two do not match.</p>}
+        {/* The shared field, so the length rule and the mismatch are each the field's own error
+            line rather than a loose paragraph under it — one of which was muted and read as a hint. */}
+        <TextField
+          inputId="current-password"
+          label="Current password"
+          type="password"
+          autoComplete="current-password"
+          value={current}
+          onChange={setCurrent}
+        />
+        <TextField
+          inputId="account-new-password"
+          label="New password"
+          type="password"
+          autoComplete="new-password"
+          maxLength={200}
+          value={next}
+          onChange={setNext}
+          hint={`Use ${minLength}–200 characters.`}
+          error={next.length > 0 && next.length < minLength ? `Use ${minLength}–200 characters.` : null}
+        />
+        <TextField
+          inputId="account-new-password-again"
+          label="And again"
+          type="password"
+          autoComplete="new-password"
+          value={again}
+          onChange={setAgain}
+          error={again.length > 0 && next !== again ? "The two do not match." : null}
+        />
         <button className="btn primary" type="submit" disabled={!ready || action.busy}>
           {action.busy ? "Saving…" : "Change password"}
         </button>

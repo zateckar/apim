@@ -2,11 +2,15 @@ import { useState, type ReactNode } from "react";
 import type { Session } from "../App";
 import { api, type AttentionRow, type Dashboard } from "../api";
 import {
+  AttentionList,
   EmptyState,
+  Link,
   Notice,
   OperationList,
   Panel,
+  Segmented,
   Skeleton,
+  envLabel,
   go,
   useAsync,
 } from "../components";
@@ -29,12 +33,31 @@ import { formatDuration } from "../lib/datetime";
  *    answer it is decoration; each card here either navigates or explains why it does not.
  */
 
-/** The window the KPIs describe. Anything wider is the Telemetry screen's job. */
+/**
+ * The windows the KPIs can describe. Anything wider is the Telemetry screen's job. The labels are
+ * also how the choice is written in a drill-down link, which is why they are words and not indices.
+ */
 const WINDOWS = [
   { label: "1h", sinceMin: 60 },
   { label: "6h", sinceMin: 360 },
   { label: "24h", sinceMin: 1440 },
 ] as const;
+
+/**
+ * Where a traffic row leads: that API's Logs panel, for the window the dashboard is showing
+ * (dashboard-health, "Make traffic drillable"). The link used to carry the tab and drop the window,
+ * so a reader looking at a spike in the last six hours landed on the last hour.
+ */
+export function trafficDrillHref(applicationId: string, resourceId: string, sinceMin: number): string {
+  return `/${applicationId}/apis/${encodeURIComponent(resourceId)}?tab=logs&sinceMin=${sinceMin}`;
+}
+
+/** "last 6h" for a window the control plane may have chosen itself, which need not be one of ours. */
+function windowLabel(sinceMin: number): string {
+  const known = WINDOWS.find((entry) => entry.sinceMin === sinceMin);
+  if (known) return known.label;
+  return sinceMin % 60 === 0 ? `${sinceMin / 60}h` : `${sinceMin}m`;
+}
 
 export function Dashboard({
   session: s,
@@ -45,20 +68,24 @@ export function Dashboard({
   operations: any[];
   tick: number;
 }) {
-  const [windowIndex, setWindowIndex] = useWindowChoice();
-  const sinceMin = WINDOWS[windowIndex]!.sinceMin;
+  const [chosen, choose] = useWindowChoice();
   const data = useAsync(
     () =>
       api.get<Dashboard>(
-        `/api/dashboard?applicationId=${encodeURIComponent(s.application)}&environment=${encodeURIComponent(s.environment)}&sinceMin=${sinceMin}`,
+        `/api/dashboard?applicationId=${encodeURIComponent(s.application)}&environment=${encodeURIComponent(s.environment)}${chosen === null ? "" : `&sinceMin=${chosen}`}`,
       ),
-    [s.environment, sinceMin, s.application, tick],
-    `${s.application}:${s.environment}:${sinceMin}`,
+    [s.environment, chosen, s.application, tick],
+    `${s.application}:${s.environment}:${chosen}`,
   );
   const d = data.data;
+  // Nothing chosen yet means the control plane's `DASHBOARD_DEFAULT_SINCE_MIN`, which the response
+  // echoes. The screen used to default to its own first button, an hour, whatever the deployment
+  // had configured (dashboard-health, "The window is changed").
+  const sinceMin = chosen ?? d?.sinceMin ?? null;
   const traffic = d?.owner.traffic;
   const previous = traffic?.previous ?? null;
   const inFlight = operations.filter((row) => !["complete", "superseded"].includes(row.state));
+  const env = envLabel(s.environment);
 
   // Every attention row the caller has, in one list. Splitting them by hat made a publisher who is
   // also a consumer read two lists to find out whether anything was wrong.
@@ -71,44 +98,37 @@ export function Dashboard({
     (d?.owner.attentionTruncated ?? 0) +
     (d?.consumer.attentionTruncated ?? 0) +
     (s.user.isAdmin ? (d?.platform.attentionTruncated ?? 0) : 0);
-
   return (
     <>
       <Notice kind="error">{data.error}</Notice>
 
+      {/* The same rows the attention list below draws, so the same component: this was a second
+          rendering with its own chip, its own button and the raw severity word as its label. */}
       {d?.startHere && d.startHere.length > 0 && (
         <Panel title="Start here">
-          <div className="native-list">
-            {d.startHere.map((row) => (
-              <AttentionRowView key={`${row.code}:${row.subject.id}`} row={row} />
-            ))}
-          </div>
+          <AttentionList rows={d.startHere} />
         </Panel>
       )}
 
+      {/* The window governs every figure below it, so it sits above them (dashboard-health, "The
+          window is changed") — the shared `Segmented`, not a third hand-drawn button group. */}
       <div className="page-toolbar">
         <h2>Traffic overview</h2>
-        <div className="uptime-range" role="group" aria-label="Window">
-          {WINDOWS.map((entry, index) => (
-            <button
-              key={entry.label}
-              className={`uptime-range-btn ${index === windowIndex ? "active" : ""}`}
-              aria-pressed={index === windowIndex}
-              onClick={() => setWindowIndex(index)}
-            >
-              {entry.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          label="Window"
+          value={sinceMin === null ? "" : String(sinceMin)}
+          onChange={(next) => choose(Number(next))}
+          options={WINDOWS.map((entry) => ({ value: String(entry.sinceMin), label: entry.label }))}
+        />
       </div>
       <div className="kpi-row">
         <Kpi
-          label={`Requests · last ${WINDOWS[windowIndex]!.label}`}
+          label={sinceMin === null ? "Requests" : `Requests · last ${windowLabel(sinceMin)}`}
           value={traffic ? traffic.requests.toLocaleString() : null}
           delta={delta(traffic?.requests, previous?.requests, "more")}
           spark={<Sparkline series={traffic?.series ?? []} />}
           onOpen={() => go(`/${s.application}/apis`)}
-          hint={`in ${s.environment.toUpperCase()}`}
+          hint={`in ${env}`}
         />
         <Kpi
           label="Refused by the gateway"
@@ -147,11 +167,7 @@ export function Dashboard({
           label="Published APIs"
           value={d ? String(d.owner.apis.total) : null}
           onOpen={() => go(`/${s.application}/apis`)}
-          hint={
-            d
-              ? `${d.owner.apis.liveByEnvironment[s.environment] ?? 0} live in ${s.environment.toUpperCase()}`
-              : undefined
-          }
+          hint={d ? `${d.owner.apis.liveByEnvironment[s.environment] ?? 0} live in ${env}` : undefined}
         />
         <Kpi
           label="Subscriptions"
@@ -176,15 +192,15 @@ export function Dashboard({
 
       <Panel title="Traffic by API">
         {!d ? (
-          <Skeleton rows={4} />
+          !data.error && <Skeleton rows={4} />
         ) : d.owner.topApis.length === 0 ? (
           <EmptyState
-            title={`No traffic in ${s.environment.toUpperCase()} over this window`}
-            detail="The gateways report what they served every minute, so an API that answered nothing in this window has no row. A longer window is one click above."
+            title={`No traffic in ${env} over this window`}
+            detail="An API that answered nothing in this window has no row. Try a longer window."
             action={
-              <button className="btn sm" onClick={() => go(`/${s.application}/apis`)}>
+              <Link className="btn sm" to={`/${s.application}/apis`}>
                 Open your APIs
-              </button>
+              </Link>
             }
           />
         ) : (
@@ -204,14 +220,12 @@ export function Dashboard({
                 <tr key={row.resourceId || "unmatched"}>
                   <td>
                     {/* The estate's unmatched traffic has no resource to open, so it is text.
-                        Everything else drills into that API's own log lines for this window. */}
+                        Everything else is a link — navigation, so an `<a>` that opens in a new tab
+                        like any other — into that API's log lines for this same window. */}
                     {row.resourceId ? (
-                      <button
-                        className="linklike"
-                        onClick={() => go(`/${s.application}/apis/${row.resourceId}?tab=logs`)}
-                      >
+                      <Link to={trafficDrillHref(s.application, row.resourceId, d.sinceMin)}>
                         {row.name}
-                      </button>
+                      </Link>
                     ) : (
                       <span className="muted">{row.name}</span>
                     )}
@@ -228,24 +242,19 @@ export function Dashboard({
         )}
         {d?.owner.traffic.truncated && (
           <p className="muted small">
-            More telemetry rows matched than this screen scans, so these figures are a floor.
-            Narrow the window for exact numbers.
+            These figures are a floor: more telemetry matched than this screen scans. Narrow the
+            window for exact numbers.
           </p>
         )}
       </Panel>
 
       {attention.length > 0 && (
         <Panel title="Needs attention">
-          <div className="native-list">
-            {attention.map((row) => (
-              <AttentionRowView key={`${row.code}:${row.subject.id}:${row.environment ?? ""}`} row={row} />
-            ))}
-          </div>
-          {truncated > 0 && (
-            <p className="muted small">
-              {truncated} more not listed. Fixing the ones above usually clears them.
-            </p>
-          )}
+          <AttentionList
+            rows={attention}
+            truncated={truncated}
+            more="Fixing the ones above usually clears them."
+          />
         </Panel>
       )}
 
@@ -257,25 +266,27 @@ export function Dashboard({
 }
 
 /**
- * The window choice, remembered.
+ * The window choice, remembered — or `null` until somebody makes one, so the deployment's default
+ * applies.
  *
  * Somebody who works in six-hour windows should not have to reset the control on every visit, and
  * this is a display preference rather than a fact about the estate — so it lives in the browser.
+ * Stored as minutes under a new key: the old one held an index into this list, and reading an old
+ * `0` as minutes would have asked for an empty window.
  */
-function useWindowChoice(): [number, (next: number) => void] {
-  const [index, setIndex] = useState(() => {
-    const stored = Number(localStorage.getItem("portal-dashboard-window"));
-    return Number.isInteger(stored) && stored >= 0 && stored < WINDOWS.length ? stored : 0;
+function useWindowChoice(): [number | null, (next: number) => void] {
+  const [sinceMin, setSinceMin] = useState<number | null>(() => {
+    const stored = Number(localStorage.getItem("portal-dashboard-since-min"));
+    return WINDOWS.some((entry) => entry.sinceMin === stored) ? stored : null;
   });
   return [
-    index,
+    sinceMin,
     (next) => {
-      localStorage.setItem("portal-dashboard-window", String(next));
-      setIndex(next);
+      localStorage.setItem("portal-dashboard-since-min", String(next));
+      setSinceMin(next);
     },
   ];
 }
-
 function Kpi({
   label,
   value,
@@ -299,7 +310,7 @@ function Kpi({
       <span className="kpi-label kpi-heading">{label}{onOpen && <span aria-hidden="true"><I.ChevRight size={16} /></span>}</span>
       <div className="kpi-value-row">
         {value === null ? (
-          <span className="skl" style={{ width: 64, height: 28 }} aria-hidden="true" />
+          <span className="skl kpi-skl" aria-hidden="true" />
         ) : (
           <span className="kpi-value">{value}</span>
         )}
@@ -369,27 +380,5 @@ function Sparkline({ series }: { series: Array<{ requests: number }> }) {
     <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       <polyline points={points} fill="none" stroke="currentColor" strokeWidth={1.5} opacity={0.55} />
     </svg>
-  );
-}
-
-function AttentionRowView({ row }: { row: AttentionRow }) {
-  const tone = row.severity === "blocker" ? "err" : row.severity === "warning" ? "warn" : "neutral";
-  return (
-    <div className="native-row">
-      <div>
-        <strong>
-          {row.subject.name}
-          {row.environment ? ` · ${row.environment.toUpperCase()}` : ""}
-        </strong>
-        <small>{row.detail}</small>
-      </div>
-      <div className="native-actions">
-        {/* A bare `chip` is the neutral variant; `info` has no colour of its own for a reason. */}
-        <span className={`chip ${tone === "neutral" ? "" : tone}`}>{row.severity}</span>
-        <button className="btn sm" onClick={() => go(row.href)}>
-          <I.ChevRight size={13} /> Fix
-        </button>
-      </div>
-    </div>
   );
 }

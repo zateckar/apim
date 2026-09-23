@@ -207,9 +207,13 @@ describe("applications", () => {
     expect(html).not.toContain("Granted by the group");
     expect(html).not.toContain("Create an application");
 
+    // The admin's group column is not asserted from this frame any more: it is the pre-fetch frame,
+    // and the table — header included — used to render there under the skeleton, which is the
+    // loading-versus-empty defect this screen no longer has.
     const asAdmin = renderToStaticMarkup(<ApplicationsView user={admin} unmappedGroups={[]} />);
-    expect(asAdmin).toContain("Granted by the group");
     expect(asAdmin).toContain("Create an application");
+    expect(asAdmin).toContain("skeleton");
+    expect(asAdmin).not.toContain("<table");
   });
 
   test("a group that could not be provisioned is offered to an admin, and says why it is rare", () => {

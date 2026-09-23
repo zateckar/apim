@@ -2,8 +2,9 @@ import { listAll } from "../portal/client";
 import * as I from "../portal/icons";
 import { formatDate } from "../lib/datetime";
 import { useState } from "react";
-import { api, type ApplicationDetail, type ApplicationRow, type User } from "../api";
+import { api, type ApplicationDetail, type ApplicationRow, type DirectoryUser, type User } from "../api";
 import {
+  Action,
   Panel,
   DangerZone,
   EmptyState,
@@ -15,8 +16,10 @@ import {
   Term,
   useAction,
   useAsync,
+  usePageTitle,
 } from "../components";
 import { ALLOWED, permitAdmin } from "../lib/capabilities";
+import { RemoveMembership } from "./UsersView";
 
 /**
  * Applications (v5 plan §8).
@@ -56,8 +59,11 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
             }}
           />
         )}
-        {list.loading && <Skeleton rows={3} />}
-        {!list.loading && !list.error && rows.length === 0 ? (
+        {/* Loading, failed, empty and listed are four states, and each is drawn alone: the empty
+            table used to render under the skeleton, and under the error. */}
+        {list.loading ? (
+          <Skeleton rows={3} />
+        ) : list.error ? null : rows.length === 0 ? (
           <EmptyState
             title={query ? "No matching applications" : "No applications yet"}
             detail={query ? "Try another name, ID or directory group." : "Nothing can be published until there is an application to own it."}
@@ -83,7 +89,7 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
                     <Link to={`/applications/${application.id}`}>
                       <strong>{application.name}</strong>
                     </Link>
-                    {application.mine && <span className="pill ok">yours</span>}
+                    {application.mine && <span className="chip">Yours</span>}
                   </td>
                   <td>{application.members}</td>
                   {user.isAdmin && (
@@ -101,22 +107,17 @@ export function ApplicationsView({ user, unmappedGroups }: { user: User; unmappe
       </Panel>
 
       {user.isAdmin && unmappedGroups.length > 0 && (
-        <Panel
-          title="Groups that could not be provisioned"
-          hint="Your identity provider put somebody in these. An application is normally created from a group automatically; these are the ones that could not be."
-        >
+        <Panel title="Groups that could not be provisioned">
           <p className="muted">
-            A group names an application and provisions one on sign-in, so this list is short by
-            design: a group reaches it only when the name it would take is already held by an
-            application bound to a <strong>different</strong> group, or when there is no usable name
-            in it at all. Map one to an existing application on its own page, or create an
-            application for it here.
+            A group names an application and provisions one on sign-in. These could not: the name each would take
+            is already held by an application bound to a <strong>different</strong> group, or there
+            is no usable name in it. Map one on an application's page, or create one for it here.
           </p>
           <ul className="plain">
             {unmappedGroups.map((group) => (
               <li key={group}>
                 <span className="mono">{group}</span>{" "}
-                <button className="ghost small" onClick={() => setCreating(group)}>
+                <button className="btn sm" onClick={() => setCreating(group)}>
                   Create an application for it
                 </button>
               </li>
@@ -155,9 +156,8 @@ function CreateApplication({
         />
       </div>
       <p className="muted small">
-        With a group set, anybody the directory puts in it is a member of this application at their next
-        sign-in — and stops being one when they are removed from it. Without one, membership is
-        granted here and only here.
+        With a group, its members join at their next sign-in and leave when removed from it. Without
+        one, membership is granted here only.
       </p>
       <div className="row">
         <button
@@ -176,7 +176,7 @@ function CreateApplication({
         >
           Create application
         </button>
-        <button className="ghost" onClick={() => onDone(false)}>
+        <button className="btn" onClick={() => onDone(false)}>
           Cancel
         </button>
       </div>
@@ -188,6 +188,11 @@ function CreateApplication({
 export function ApplicationView({ applicationId, user }: { applicationId: string; user: User }) {
   const detail = useAsync(() => api.get<ApplicationDetail>(`/api/applications/${applicationId}`), [applicationId]);
   const action = useAction();
+  const [removing, setRemoving] = useState<ApplicationDetail["members"][number] | null>(null);
+  const [removalNote, setRemovalNote] = useState<string | null>(null);
+  // The application's name as the page title, before the early returns because a hook runs on every
+  // render. "Application" over every one of them could not tell two open tabs apart.
+  usePageTitle(detail.data?.name);
 
   if (detail.loading) return <Skeleton rows={5} />;
   if (detail.error || !detail.data) return <Notice kind="error">{detail.error}</Notice>;
@@ -195,34 +200,37 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
   const application = detail.data;
   const total = Object.values(application.owns).reduce((sum, n) => sum + n, 0);
   const canManage = permitAdmin(user.isAdmin, "change or delete an application");
+  const canChangeMembers = permitAdmin(user.isAdmin, "change who is in an application");
 
   return (
     <>
-      <div className="page-toolbar"><Link to="/applications">← Applications</Link></div>
-      <Panel title={application.name}>
-        <Notice kind="error">{action.error}</Notice>
-        {action.message && <Notice kind="ok">{action.message}</Notice>}
+      {/* No "← Applications" link and no name in this panel's title: the shell draws the trail and
+          the page title. */}
+      <Panel title="What it owns">
         <div className="ownership-summary">{Object.entries(application.owns).map(([kind, count]) => <div key={kind}><strong>{count}</strong><span>{kind === "resources" ? "APIs" : kind === "processes" ? "Process records" : kind}</span></div>)}</div>
-        <dl className="kv">
-          {user.isAdmin && (
-            <>
-              <dt>Granted by the group</dt>
-              <dd className="mono">{application.sourceGroup ?? "—"}</dd>
-            </>
-          )}
-        </dl>
+        {user.isAdmin && (
+          <dl className="kv">
+            <dt>Granted by the group</dt>
+            <dd className="mono">{application.sourceGroup ?? "—"}</dd>
+          </dl>
+        )}
         {user.isAdmin && <EditApplication application={application} onSaved={detail.reload} />}
       </Panel>
 
+      {/* Membership is managed here as well as on each person's page. It could only be changed
+          from the person's side, so an administrator looking at an application with nobody in it
+          was sent to the People list to find somebody and add them from there. Same endpoints,
+          same removal dialog (`RemoveMembership`), so the two sides cannot disagree. */}
       <Panel
         title="Who is in it"
-        hint="A membership granted here survives a directory that has never heard of this application. One that came from a group comes back whenever that group still contains the person."
+        hint="Granted here, or from an identity provider group. One from a group returns while the person is still in that group."
       >
+        <Notice kind="warn">{removalNote}</Notice>
         {application.members.length === 0 ? (
           <EmptyState
             title="Nobody is in this application"
             detail="Nobody can publish or change what it owns until somebody is."
-            action={<Link to="/users">Find somebody to add →</Link>}
+            action={user.isAdmin ? <button className="btn" onClick={() => document.getElementById("add-member-search")?.focus()}>Add somebody</button> : <Link to="/account">View your memberships</Link>}
           />
         ) : (
           <table>
@@ -230,6 +238,7 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
               <tr>
                 <th>Person</th>
                 <th>How</th>
+                <th />
               </tr>
             </thead>
             <tbody>
@@ -258,10 +267,46 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
                       </>
                     )}
                   </td>
+                  <td className="right">
+                    {/* Disabled rather than absent for a member: the reason is drawn once, beside
+                        the Add control below, rather than on every row. */}
+                    <button
+                      className="btn sm"
+                      disabled={!canChangeMembers.enabled}
+                      title={canChangeMembers.reason ?? undefined}
+                      onClick={() => setRemoving(member)}
+                    >
+                      Remove
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
+        )}
+        <AddMember
+          applicationId={application.id}
+          members={application.members.map((member) => member.userId)}
+          permission={canChangeMembers}
+          onAdded={() => {
+            setRemovalNote(null);
+            detail.reload();
+          }}
+        />
+        {removing && (
+          <RemoveMembership
+            userId={removing.userId}
+            userName={removing.displayName}
+            applicationId={application.id}
+            applicationName={application.name}
+            fromIdp={removing.source === "idp"}
+            close={() => setRemoving(null)}
+            onRemoved={(note) => {
+              setRemoving(null);
+              setRemovalNote(note);
+              detail.reload();
+            }}
+          />
         )}
       </Panel>
 
@@ -269,8 +314,8 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
         <Panel title="Delete this application">
           {total > 0 ? (
             <p className="muted">
-              It still owns {total} thing(s). Move or withdraw those first — deleting an application must
-              not be a way to delete published APIs.
+              It still owns {total} {total === 1 ? "thing" : "things"}. Move or withdraw those first —
+              deleting an application is not a way to delete published APIs.
             </p>
           ) : (
             <DangerZone
@@ -292,6 +337,93 @@ export function ApplicationView({ applicationId, user }: { applicationId: string
   );
 }
 
+/**
+ * Finding somebody to add, from the application's side. A search rather than a list of everybody,
+ * because the directory is every account that ever signed in; at least two characters, because one
+ * matches half of it.
+ */
+function AddMember({
+  applicationId,
+  members,
+  permission,
+  onAdded,
+}: {
+  applicationId: string;
+  members: string[];
+  permission: ReturnType<typeof permitAdmin>;
+  onAdded: () => void;
+}) {
+  const [query, setQuery] = useState("");
+  const term = query.trim();
+  const searching = permission.enabled && term.length >= 2;
+  const found = useAsync(
+    () =>
+      searching
+        ? api.get<{ items: DirectoryUser[] }>(`/api/users?limit=10&q=${encodeURIComponent(term)}`)
+        : Promise.resolve(null),
+    [term, searching],
+    `${term}:${searching}`,
+  );
+  const action = useAction();
+  const candidates = (found.data?.items ?? []).filter(
+    (person) => !members.includes(person.id) && !person.disabled,
+  );
+
+  if (!permission.enabled) {
+    return (
+      <div className="native-actions">
+        <Action permission={permission} onClick={() => {}}>
+          Add somebody
+        </Action>
+      </div>
+    );
+  }
+  return (
+    <div className="subcard">
+      <TextField
+        inputId="add-member-search"
+        label="Add somebody"
+        value={query}
+        onChange={setQuery}
+        placeholder="Name, username or email"
+        hint="Type at least two characters."
+      />
+      <Notice kind="error">{found.error ?? action.error}</Notice>
+      {searching &&
+        (found.loading ? (
+          <Skeleton rows={2} />
+        ) : candidates.length === 0 ? (
+          <p className="muted small">Nobody else matches “{term}”.</p>
+        ) : (
+          <div className="native-list">
+            {candidates.map((person) => (
+              <div className="native-row" key={person.id}>
+                <div>
+                  <strong>{person.displayName}</strong>
+                  <small className="mono">{person.username}</small>
+                </div>
+                <button
+                  className="btn sm"
+                  disabled={action.busy}
+                  onClick={async () => {
+                    const ok = await action.run(() =>
+                      api.put(`/api/users/${person.id}/applications/${applicationId}`),
+                    );
+                    if (ok) {
+                      setQuery("");
+                      onAdded();
+                    }
+                  }}
+                >
+                  Add
+                </button>
+              </div>
+            ))}
+          </div>
+        ))}
+    </div>
+  );
+}
 function EditApplication({ application, onSaved }: { application: ApplicationDetail; onSaved: () => void }) {
   const [name, setName] = useState(application.name);
   const [group, setGroup] = useState(application.sourceGroup ?? "");
@@ -306,7 +438,7 @@ function EditApplication({ application, onSaved }: { application: ApplicationDet
         <TextField label="Identity provider group" value={group} onChange={setGroup} />
       </div>
       <button
-        className="ghost"
+        className="btn primary"
         disabled={action.busy || !changed || name.trim().length < 2}
         onClick={async () => {
           const ok = await action.run(() =>
@@ -319,8 +451,7 @@ function EditApplication({ application, onSaved }: { application: ApplicationDet
       </button>
       {group !== (application.sourceGroup ?? "") && (
         <p className="muted small">
-          Changing the group does not move anybody now. It takes effect at each person's next
-          sign-in or claim refresh.
+          Nobody moves now; it applies at each person's next sign-in or claim refresh.
         </p>
       )}
     </div>

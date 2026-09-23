@@ -36,7 +36,10 @@ registry says which component answers each of them. The shell resolves nothing o
 - AND promotion SHALL describe saved configuration, the target backend and deployment progress
 - AND new-version guidance SHALL explain the copied settings and product-based access
 - AND subscription guidance SHALL explain use of the application selected in the main menu, pending or activating access and later key reveal
-- AND the journey count SHALL be derived from the rendered journeys
+- AND the journeys that only an administrator can complete — running the platform, letting somebody
+  in — SHALL be shown only to an administrator
+- AND the journey count SHALL be derived from the rendered journeys, so a member is not promised a
+  journey the page does not show them
 
 ### Requirement: Render a two-column shell around every screen
 
@@ -215,6 +218,14 @@ The rule SHALL be enforced structurally rather than by review.
 - THEN it SHALL list the applications they are a member of, and every application for an
   administrator
 - AND applications SHALL come from the control plane, never from a hardcoded seed list
+
+#### Scenario: The user is in no application
+
+- GIVEN a signed-in member with no application memberships
+- WHEN the picker renders
+- THEN in its place the sidebar SHALL say "You are not in an application yet" with a link to their
+  account, which explains how membership is granted
+- AND it SHALL NOT render a disabled picker, which says nothing about why it cannot be opened
 
 #### Scenario: An address names an application the user is not in
 

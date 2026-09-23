@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Api } from "../portal/icons";
 import { api, type AuthProviders } from "../api";
-import { Panel, Notice, useAction, useAsync } from "../components";
+import { Panel, Notice, Skeleton, useAction, useAsync } from "../components";
 
 /**
  * Signing in (v5 plan §8).
@@ -30,7 +30,16 @@ export function LoginView({
 }) {
   const providers = useAsync(() => api.get<AuthProviders>("/api/auth/providers"), []);
 
-  if (providers.loading) return <div className="login">Loading…</div>;
+  // A skeleton the size of the card, not the word "Loading…" alone at the top of an empty page.
+  if (providers.loading) {
+    return (
+      <div className="login">
+        <Panel title="Sign in">
+          <Skeleton rows={3} />
+        </Panel>
+      </div>
+    );
+  }
   if (providers.error || !providers.data) {
     return (
       <div className="login">
@@ -111,7 +120,7 @@ function OidcButton({ label }: { label: string }) {
   const target = window.location.pathname + window.location.search;
   const href = `/auth/login?return=${encodeURIComponent(target === "/" ? "/" : target)}`;
   return (
-    <a className="button primary wide" href={href}>
+    <a className="btn button primary wide" href={href}>
       Continue with {label}
     </a>
   );
@@ -172,7 +181,7 @@ function LocalForm({
           onChange={(event) => setPassword(event.target.value)}
         />
       </div>
-      <button className="primary wide" type="submit" disabled={!ready || action.busy}>
+      <button className="btn primary wide" type="submit" disabled={!ready || action.busy}>
         {action.busy ? "Signing in…" : "Sign in"}
       </button>
       <p className="muted small">
@@ -206,7 +215,7 @@ function DevUsers({
       {users.map((user) => (
         <button
           key={user.id}
-          className="ghost wide dev-user"
+          className="btn wide dev-user"
           disabled={action.busy}
           onClick={async () => {
             const ok = await action.run(() => api.post("/api/auth/dev-login", { userId: user.id }));
@@ -216,7 +225,7 @@ function DevUsers({
           <strong>{user.name}</strong>
           <span className="muted">
             {" "}
-            — {user.role} · {user.applications.join(", ") || "no applications"}
+            — {user.role === "admin" ? "Administrator" : "Member"} · {user.applications.join(", ") || "no applications"}
           </span>
         </button>
       ))}
@@ -286,7 +295,7 @@ export function ForcedPasswordChange({
             <p className="muted small">At least {minLength} characters. Length is what makes it hard to guess.</p>
           )}
           {again.length > 0 && !matches && <p className="muted small">The two do not match.</p>}
-          <button className="primary wide" type="submit" disabled={!matches || !long || action.busy}>
+          <button className="btn primary wide" type="submit" disabled={!matches || !long || action.busy}>
             {action.busy ? "Saving…" : "Set my password"}
           </button>
         </form>

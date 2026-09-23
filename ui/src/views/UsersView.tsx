@@ -11,18 +11,23 @@ import {
   type User,
 } from "../api";
 import {
+  Action,
   Panel,
   DangerZone,
   EmptyState,
+  Modal,
   TextField,
   Link,
   Notice,
   Skeleton,
+  StatusChip,
   Term,
   useAction,
   useAsync,
+  usePageTitle,
 } from "../components";
 import { blockedBecause } from "../lib/capabilities";
+import { accountChips } from "../lib/status";
 
 /**
  * The directory (v5 plan §8).
@@ -74,7 +79,7 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
               <option value="">Any</option>
               {providers.map((name) => (
                 <option key={name} value={name}>
-                  {name}
+                  {providerName(name)}
                 </option>
               ))}
             </select>
@@ -91,13 +96,15 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
           />
         )}
 
-        {list.loading && <Skeleton rows={4} />}
-        {!list.loading && !list.error && rows.length === 0 ? (
+        {/* One state at a time: the empty table used to render under the skeleton and the error. */}
+        {list.loading ? (
+          <Skeleton rows={4} />
+        ) : list.error ? null : rows.length === 0 ? (
           <EmptyState
             title="Nobody matches"
-            detail="Either the search is too narrow, or nobody has signed in yet. An account appears the first time somebody does."
+            detail="The search may be too narrow. Directory accounts appear the first time somebody signs in."
             action={
-              <button className="ghost" onClick={() => { setQuery(""); setProvider(""); }}>
+              <button className="btn" onClick={() => { setQuery(""); setProvider(""); }}>
                 Clear the filters
               </button>
             }
@@ -121,13 +128,15 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
                       <strong>{row.displayName}</strong>
                     </Link>
                     <div className="muted small mono">{row.username}</div>
-                    {row.id === user.id && <span className="pill ok">you</span>}
+                    {row.id === user.id && <span className="chip">You</span>}
                   </td>
                   <td>
-                    <span className="pill muted">{row.provider}</span>
-                    {row.disabled && <span className="pill stop">disabled</span>}
-                    {row.lockedUntil && <span className="pill warn">locked</span>}
-                    {row.mustChangePassword && <span className="pill warn">must change password</span>}
+                    {/* The provider is a fact, so a neutral chip; what stops somebody signing in
+                        is a state, so the tone vocabulary's (lib/status.ts). */}
+                    <span className="chip">{providerName(row.provider)}</span>{" "}
+                    {accountChips(row).map((chip) => (
+                      <StatusChip key={chip.label} chip={chip} />
+                    ))}
                   </td>
                   <td>
                     {row.effectiveRole === "admin" ? (
@@ -151,6 +160,14 @@ export function UsersView({ user, canCreate }: { user: User; canCreate: boolean 
   );
 }
 
+/** A sign-in method in words: the ids are `AUTH_PROVIDERS` values, not something a reader says. */
+function providerName(provider: string): string {
+  if (provider === "local") return "Local account";
+  if (provider === "oidc") return "Identity provider";
+  if (provider === "dev") return "Development sign-in";
+  return provider;
+}
+
 function CreateUser({ onCreated }: { onCreated: () => void }) {
   const config = useAsync(() => api.get<AuthProviders>("/api/auth/providers"), []);
   const existing = useAsync(() => listAll<DirectoryUser>("/api/users?provider=local"), []);
@@ -170,14 +187,11 @@ function CreateUser({ onCreated }: { onCreated: () => void }) {
       <Notice kind="error">{action.error ?? config.error ?? existing.error}</Notice>
       <div className="row">
         <TextField error={username ? usernameProblem ?? (duplicate ? "A local account with this username already exists." : null) : null} hint="2–64 characters." maxLength={64} label="Username" value={username} onChange={setUsername} placeholder="dana" />
-        <TextField label="Name" value={displayName} onChange={setDisplayName} placeholder="Dana Developer" />
+        <TextField label="Name" value={displayName} onChange={setDisplayName} placeholder="Dana Novak" />
         <TextField type="email" error={emailProblem} label="Email (optional)" value={email} onChange={setEmail} placeholder="dana@example.com" />
         <TextField label="First password" type="password" autoComplete="new-password" value={password} onChange={setPassword} maxLength={200} hint={`At least ${config.data?.passwordMinLength ?? 12} characters.`} error={password ? passwordProblem : null} />
       </div>
-      <p className="muted small">
-        They will have to choose a different one the first time they sign in — this one passed
-        through you, so it cannot be the one they keep.
-      </p>
+      <p className="muted small">They choose their own password the first time they sign in.</p>
       <button
         className="btn primary"
         disabled={action.busy || invalid}
@@ -205,6 +219,18 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
   const detail = useAsync(() => api.get<DirectoryUserDetail>(`/api/users/${userId}`), [userId]);
   const applications = useAsync(() => api.get<{ items: ApplicationRow[] }>("/api/applications"), []);
   const action = useAction();
+  const [removing, setRemoving] = useState<{ applicationId: string; applicationName: string; fromIdp: boolean } | null>(null);
+  // What the control plane said about the last removal. It was typed `{ note }` and then thrown
+  // away, so the one sentence explaining that an identity-provider membership comes straight back
+  // (platform-administration, "A membership came from the identity provider") was never read.
+  const [removalNote, setRemovalNote] = useState<string | null>(null);
+  const [roleNote, setRoleNote] = useState<string | null>(null);
+  // Its own handle, so a refused disable is drawn once — inside the confirmation — rather than
+  // there and again at the top of the page.
+  const disabling = useAction();
+  // Before the early returns: a hook has to run on every render, and the name is what four open
+  // tabs of "Account" could not be told apart by.
+  usePageTitle(detail.data?.displayName);
 
   if (detail.loading) return <Skeleton rows={6} />;
   if (detail.error || !detail.data) return <Notice kind="error">{detail.error}</Notice>;
@@ -218,14 +244,25 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
   };
 
   const patch = async (payload: Record<string, unknown>, okMessage?: string) => {
-    const ok = await action.run(() => api.patch(`/api/users/${row.id}`, payload, "*"), okMessage);
-    if (ok) reload();
+    let note: string | null = null;
+    const ok = await action.run(async () => {
+      // The response says when a demotion changed nothing because the identity provider still
+      // grants the role `[P1-17]`; reading it is the difference between "done" and "done, but".
+      const result = await api.patch<{ note?: string | null }>(`/api/users/${row.id}`, payload, "*");
+      note = result?.note ?? null;
+    }, okMessage);
+    if (ok) {
+      setRoleNote(note);
+      reload();
+    }
   };
 
   return (
     <>
-      <div className="page-toolbar"><Link to="/users">← People</Link><span className="badge">{row.effectiveRole === "admin" ? "Administrator" : "Member"}</span></div>
-      <Panel title={row.displayName} className="person-profile">
+      {/* No "← People" link and no name as this panel's title: the shell draws the trail back to
+          People and, through `usePageTitle`, the name as the page's own title. Both were here
+          twice. */}
+      <Panel title="Profile" className="person-profile">
         <Notice kind="error">{action.error}</Notice>
         {action.message && <Notice kind="ok">{action.message}</Notice>}
         <dl className="kv">
@@ -233,13 +270,12 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           <dd className="mono">{row.username}</dd>
           <dt>Signs in with</dt>
           <dd>
-            <span className="pill muted">{row.provider}</span>
+            <span className="chip">{providerName(row.provider)}</span>{" "}
+            {accountChips(row).map((chip) => (
+              <StatusChip key={chip.label} chip={chip} />
+            ))}
             {managed && (
-              <span className="muted">
-                {" "}
-                — their name, email and password belong to that directory, so they are not editable
-                here.
-              </span>
+              <span className="muted"> — name, email and password belong to that directory.</span>
             )}
           </dd>
           {row.email && (
@@ -285,34 +321,40 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             </span>
           )}
         </p>
-        <div className="row">
-          <button
-            className="ghost"
-            disabled={action.busy || row.role === "admin"}
-            onClick={() => patch({ role: "admin" }, "They are an administrator now.")}
-          >
-            Make an administrator
-          </button>
-          <button
-            className="ghost"
-            disabled={action.busy || isSelf || row.role === "member"}
-            title={isSelf ? "You cannot remove your own administrator role" : undefined}
-            onClick={() => patch({ role: "member" }, "They are a member now.")}
-          >
-            Make a member
-          </button>
+        {/* Only the change that applies is offered: an administrator can be made a member and a
+            member an administrator. Self-demotion is disabled with its reason on screen, not in a
+            tooltip a keyboard never sees (platform-administration, "own account"). */}
+        <div className="native-actions">
+          {row.role === "admin" ? (
+            <Action
+              permission={blockedBecause(isSelf, "You cannot remove your own administrator role — ask another administrator.")}
+              busy={action.busy}
+              onClick={() => void patch({ role: "member" }, "They are a member now.")}
+            >
+              Make a member
+            </Action>
+          ) : (
+            <button
+              className="btn"
+              disabled={action.busy}
+              onClick={() => void patch({ role: "admin" }, "They are an administrator now.")}
+            >
+              Make an administrator
+            </button>
+          )}
         </div>
-        {row.note && <Notice kind="warn">{row.note}</Notice>}
+        <Notice kind="warn">{roleNote ?? row.note}</Notice>
       </Panel>
 
       <Panel
         title="Applications"
-        hint="An application granted here stays even when the identity provider has never heard of it. One that came from a group comes back at their next claim refresh."
+        hint="Granted here, or from an identity provider group. One from a group returns at their next claim refresh while they are still in it."
       >
+        <Notice kind="warn">{removalNote}</Notice>
         {row.memberships.length === 0 ? (
           <EmptyState
             title="Not in any application"
-            detail="They can read the catalog. Application membership is required to subscribe, publish or change anything; administrators can act for every application."
+            detail="They can read the catalog. A member needs an application to subscribe, publish or change anything; an administrator can act for every application."
             action={<Link to="/applications">See the applications →</Link>}
           />
         ) : (
@@ -342,18 +384,16 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
                       </>
                     )}
                   </td>
-                  <td>
+                  <td className="right">
                     <button
-                      className="ghost small"
-                      disabled={action.busy}
-                      onClick={async () => {
-                        const ok = await action.run(() =>
-                          api.del<{ note: string | null }>(
-                            `/api/users/${row.id}/applications/${membership.applicationId}`,
-                          ),
-                        );
-                        if (ok) reload();
-                      }}
+                      className="btn sm"
+                      onClick={() =>
+                        setRemoving({
+                          applicationId: membership.applicationId,
+                          applicationName: membership.applicationName,
+                          fromIdp: membership.source === "idp",
+                        })
+                      }
                     >
                       Remove
                     </button>
@@ -367,9 +407,27 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
           userId={row.id}
           already={row.memberships.map((m) => m.applicationId)}
           applications={applications.data?.items ?? []}
-          onGranted={reload}
+          onGranted={() => {
+            setRemovalNote(null);
+            reload();
+          }}
         />
         <Notice kind="error">{applications.error}</Notice>
+        {removing && (
+          <RemoveMembership
+            userId={row.id}
+            userName={row.displayName}
+            applicationId={removing.applicationId}
+            applicationName={removing.applicationName}
+            fromIdp={removing.fromIdp}
+            close={() => setRemoving(null)}
+            onRemoved={(note) => {
+              setRemoving(null);
+              setRemovalNote(note);
+              reload();
+            }}
+          />
+        )}
       </Panel>
 
       <Panel title="Where they are signed in">
@@ -380,20 +438,21 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
             <ul className="plain">
               {row.sessions.map((session) => (
                 <li key={session.id} className="muted">
-                  {session.provider} · started {formatDateTime(session.createdAt)} · last
-                  seen {session.lastSeenAt ? formatDateTime(session.lastSeenAt) : "—"}
+                  {providerName(session.provider)} · started {formatDateTime(session.createdAt)} ·
+                  last seen {session.lastSeenAt ? formatDateTime(session.lastSeenAt) : "—"}
                 </li>
               ))}
             </ul>
+            {/* "Revoke", as on your own account page: the same act had three names. */}
             <button
-              className="ghost"
+              className="btn"
               disabled={action.busy}
               onClick={async () => {
                 const ok = await action.run(() => api.del(`/api/users/${row.id}/sessions`));
                 if (ok) reload();
               }}
             >
-              Sign them out everywhere ({row.sessions.length})
+              Revoke every session ({row.sessions.length})
             </button>
           </>
         )}
@@ -403,17 +462,15 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
 
       <Panel
         title="Disable this account"
-        hint="Accounts are never deleted here: the audit log, every revision and every release name one, and history that points at nobody is worse than an account nobody uses."
+        hint="Accounts are disabled, never deleted: the audit log and every revision still name them."
       >
         {row.disabled ? (
           <>
-            <p className="muted">
-              Disabled. They cannot sign in and every session they had was ended.
-            </p>
+            <p className="muted">They cannot sign in, and every session they had was ended.</p>
             <button
-              className="ghost"
+              className="btn"
               disabled={action.busy}
-              onClick={() => patch({ disabled: false }, "They can sign in again.")}
+              onClick={() => void patch({ disabled: false }, "They can sign in again.")}
             >
               Let them back in
             </button>
@@ -427,9 +484,15 @@ export function UserView({ userId, me }: { userId: string; me: User }) {
               isSelf,
               "You cannot disable your own account — ask another administrator.",
             )}
-            busy={action.busy}
-            error={action.error}
-            onConfirm={() => patch({ disabled: true }, "Disabled, and signed out everywhere.")}
+            busy={disabling.busy}
+            error={disabling.error}
+            onConfirm={async () => {
+              const ok = await disabling.run(() => api.patch(`/api/users/${row.id}`, { disabled: true }, "*"));
+              if (ok) {
+                action.setMessage("Disabled, and signed out everywhere.");
+                detail.reload();
+              }
+            }}
           />
         )}
       </Panel>
@@ -456,7 +519,7 @@ function EditLocal({
         <TextField label="Email" value={email} onChange={setEmail} />
       </div>
       <button
-        className="ghost"
+        className="btn"
         disabled={busy || !changed}
         onClick={() => onSave({ displayName, email })}
       >
@@ -483,8 +546,9 @@ function GrantApplication({
   if (available.length === 0) return null;
 
   return (
+    <>
+    <Notice kind="error">{action.error}</Notice>
     <div className="row">
-      <Notice kind="error">{action.error}</Notice>
       <div className="field">
         <label htmlFor="grant-application">Add to an application</label>
         <select id="grant-application" value={applicationId} onChange={(event) => setApplicationId(event.target.value)}>
@@ -497,7 +561,7 @@ function GrantApplication({
         </select>
       </div>
       <button
-        className="ghost"
+        className="btn"
         disabled={!applicationId || action.busy}
         onClick={async () => {
           const ok = await action.run(() => api.put(`/api/users/${userId}/applications/${applicationId}`));
@@ -510,6 +574,7 @@ function GrantApplication({
         Add
       </button>
     </div>
+    </>
   );
 }
 
@@ -534,7 +599,7 @@ function ResetPassword({
       <div className="row">
         <TextField label={`A new password for ${name}`} type="password" autoComplete="new-password" value={password} onChange={setPassword} />
         <button
-          className="ghost"
+          className="btn"
           disabled={action.busy || password.length === 0}
           onClick={async () => {
             const ok = await action.run(
@@ -551,5 +616,73 @@ function ResetPassword({
         </button>
       </div>
     </Panel>
+  );
+}
+
+/**
+ * Removing somebody from an application — from their page or from the application's, so it is one
+ * component and one request rather than two that could say different things.
+ *
+ * A dialog that names both sides and asks once, and deliberately **not** a typed confirmation
+ * (platform-administration, "A membership came from the identity provider"): nothing is deleted, and
+ * the Add control beside the list grants it back. What the dialog adds over the bare button it
+ * replaces is the consequence, said before the click, and — for a membership that came from a group
+ * — that it will simply come back. After the click, the control plane's own sentence about that is
+ * handed to `onRemoved` for the caller to show; it used to be typed and then discarded.
+ *
+ * The only place that calls this endpoint, which is why `hygiene.test.ts` can exempt it by file.
+ */
+export function RemoveMembership({
+  userId,
+  userName,
+  applicationId,
+  applicationName,
+  fromIdp,
+  close,
+  onRemoved,
+}: {
+  userId: string;
+  userName: string;
+  applicationId: string;
+  applicationName: string;
+  fromIdp: boolean;
+  close: () => void;
+  onRemoved: (note: string | null) => void;
+}) {
+  const action = useAction();
+  return (
+    <Modal title={`Remove ${userName} from ${applicationName}?`} close={close}>
+      <p>
+        From their next request, {userName} can no longer publish or change what {applicationName} owns.
+      </p>
+      {fromIdp && (
+        <Notice kind="warn">
+          This membership came from an identity provider group. If they are still in that group, it
+          returns at their next claim refresh — remove them from the group instead.
+        </Notice>
+      )}
+      <Notice kind="error">{action.error}</Notice>
+      <div className="native-actions">
+        <button
+          className="btn danger"
+          disabled={action.busy}
+          onClick={async () => {
+            let note: string | null = null;
+            const ok = await action.run(async () => {
+              const result = await api.del<{ note: string | null }>(
+                `/api/users/${userId}/applications/${applicationId}`,
+              );
+              note = result?.note ?? null;
+            });
+            if (ok) onRemoved(note);
+          }}
+        >
+          {action.busy ? "Removing…" : "Remove"}
+        </button>
+        <button className="btn" onClick={close}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
   );
 }

@@ -193,4 +193,9 @@ estate believes.
   its passwords, single secrets, HMAC pairs and client certificates — rather than splitting them
   across screens by what kind of secret they are
 - AND the screen SHALL state that a token issuer and a token endpoint are administrator-registered
-  and why, rather than leaving their absence unexplained
+  and why, rather than leaving their absence unexplained — in one sentence under the list, and again
+  as the hint on the add dialog's kind field, where somebody looking for them would look
+- AND the screen SHALL carry one primary action, Add, with the empty state offering the same action
+  as a secondary button
+- AND a read that failed SHALL be shown as the failure alone, without a loading placeholder or an
+  empty state under it

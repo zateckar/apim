@@ -36,7 +36,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   revision: {
     term: "revision",
     definition:
-      "One upload of an API's definition. Revisions are numbered, immutable once released, and are what gets promoted from one environment to the next.",
+      "One saved state of an API's definition. Every save writes a new, numbered revision and none is changed afterwards; a revision is what gets released, and promoted from one environment to the next.",
     see: ["release", "promote"],
     group: "publishing",
   },
@@ -92,7 +92,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   backend: {
     term: "backend",
     definition:
-      "The address the gateway forwards to once a request has passed every policy. One API can have several, and the gateway spreads traffic across them.",
+      "The address the gateway forwards to once a request has passed every policy. One API can have several: by default the gateway uses them in order, moving to the next when one fails, or it can take turns between them.",
     see: ["route", "trust anchor"],
     group: "publishing",
   },
@@ -106,7 +106,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   product: {
     term: "product",
     definition:
-      "A bundle of APIs that consumers subscribe to as one thing. Subscribing to a product grants a key that works for every API in it. Publishing an API makes one for it, so most products are a bundle of one and nobody has to think about them.",
+      "A bundle of APIs that consumers subscribe to as one thing. Subscribing to a product grants a key that works for every API in it. Publishing an API puts it in a product of its own — or, for a later version, in the one its earlier version is in — so most products are a bundle of one and nobody has to think about them.",
     see: ["subscription", "application"],
     group: "consuming",
   },
@@ -133,7 +133,7 @@ export const GLOSSARY: Record<string, GlossaryEntry> = {
   rotate: {
     term: "rotate",
     definition:
-      "Issue a second key beside the first, move callers across, then retire the old one. Nothing breaks in between, which is the point.",
+      "Replace the key in one of a subscription's two slots. Rotate the slot nobody uses, move callers to it, then rotate the other — nothing breaks in between, which is the point.",
     see: ["key"],
     group: "consuming",
   },

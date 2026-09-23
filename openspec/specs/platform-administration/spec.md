@@ -82,8 +82,37 @@ Administration group.
 - WHEN it is revoked locally
 - THEN the response SHALL explain that the directory will simply re-add it at the next claims
   refresh
+- AND the portal SHALL show that explanation after the removal, rather than discarding the response
 - AND the revocation SHALL not require a typed confirmation, because the button beside it grants it
   back
+
+#### Scenario: A membership is removed in the portal
+
+- GIVEN a membership on a person's page or on an application's page
+- WHEN Remove is chosen
+- THEN one dialog SHALL name the person and the application and say that they can no longer publish
+  or change what it owns from their next request, with a single Remove and a Cancel
+- AND when the membership came from an identity provider group, the dialog SHALL say before the
+  click that it returns at the next claim refresh while they are still in that group
+- AND both pages SHALL use the same dialog and the same request, so the two sides of a membership
+  cannot describe it differently
+
+#### Scenario: An administrator changes a role
+
+- GIVEN a person's page
+- WHEN the role controls render
+- THEN only the change that applies SHALL be offered — "Make an administrator" for a member, "Make a
+  member" for an administrator
+- AND when a demotion leaves the person an administrator because the identity provider grants it,
+  the response's explanation SHALL be shown beside the controls
+
+#### Scenario: One person or one application is opened
+
+- GIVEN a person's page or an application's page
+- WHEN it has loaded
+- THEN the page title SHALL be the person's display name or the application's name, rather than the
+  route's generic "Account" or "Application"
+- AND the page SHALL NOT draw its own link back to the list, because the shell's trail already does
 
 #### Scenario: Somebody is signed out
 
@@ -111,6 +140,18 @@ Administration group.
   it owns — APIs, products, certificates and Kafka topics
 - AND the loaded list SHALL be searchable by name, id and directory group, with a visible result count and a clear-search action when nothing matches
 - AND creation SHALL be offered in the section header, and application detail SHALL show ownership counts separately from editable identity fields
+
+#### Scenario: Membership is changed from the application's side
+
+- GIVEN an application's page
+- WHEN an administrator opens it
+- THEN it SHALL list the members with how each got there, offer to remove each, and offer to add
+  somebody by searching the directory by name, username or email — at least two characters, with
+  disabled accounts and existing members left out of the results
+- AND it SHALL use the same membership endpoints as the person's page
+- AND for a member reading their own application, the add and remove controls SHALL be shown
+  disabled, with the one sentence saying only a platform administrator can change who is in an
+  application
 
 #### Scenario: An application is created
 

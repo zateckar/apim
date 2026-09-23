@@ -225,6 +225,9 @@ The two bounds SHALL be distinct and both SHALL be enforced.
   seen time, expiry, a truncated user agent, and which one is the current session
 - AND they SHALL be able to revoke one (`DELETE /api/my/sessions/:id`) or all of them
   (`POST /api/my/sessions/revoke-all`)
+- AND on the account page the controls SHALL say **Revoke**, the word the portal uses for ending a
+  session wherever it is offered, and the list SHALL show a loading placeholder until it arrives
+  rather than an empty table, which reads as "signed in nowhere"
 
 #### Scenario: A password change signs the user out everywhere else
 

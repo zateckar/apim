@@ -1,3 +1,5 @@
+import { Fragment } from "react";
+import type { User } from "../api";
 import { Panel, Link, Term } from "../components";
 import { define, GLOSSARY, type GlossaryEntry } from "../lib/glossary";
 
@@ -10,7 +12,12 @@ import { define, GLOSSARY, type GlossaryEntry } from "../lib/glossary";
  * `glossary.ts` — the same table `<Term>` reads — so the page and the tooltips cannot drift.
  */
 
-const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: string; to?: string }> = [
+/**
+ * `adminOnly` journeys are drawn only for an administrator. "Run the platform" and "Let somebody in"
+ * were shown to every member, each with a Start button into a screen that would then tell them it
+ * was not theirs — two of seven "things you can do here" that the reader could not do.
+ */
+const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: string; to?: string; adminOnly?: boolean }> = [
   {
     title: "Publish an API",
     who: "You have a definition and you want other applications to be able to call it.",
@@ -76,6 +83,7 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     ],
     ends: "The change, and what it will do at the next poll of every gateway in that environment.",
     to: "/trust",
+    adminOnly: true,
   },
   {
     title: "Let somebody in",
@@ -87,6 +95,7 @@ const JOURNEYS: Array<{ title: string; who: string; steps: string[]; ends: strin
     ],
     ends: "They can act on that application's APIs at their very next request — nobody has to sign out and back in.",
     to: "/users",
+    adminOnly: true,
   },
 ];
 
@@ -98,34 +107,32 @@ const GROUP_LABEL: Record<GlossaryEntry["group"], string> = {
   identity: "Who you are",
 };
 
-export function HowView() {
+export function HowView({ user }: { user: User }) {
+  const journeys = JOURNEYS.filter((journey) => !journey.adminOnly || user.isAdmin);
   return (
     <>
-      <Panel
-        title="The one thing worth knowing first"
-        hint="Almost every surprise in this portal comes from getting this backwards."
-      >
+      <Panel title="The one thing worth knowing first">
         <p>
-          Publishing and promotion deploy an API. Subscriptions grant an application access to a product in one environment.
+          Publishing and promotion deploy an API. Subscriptions grant an application access to a
+          product in one environment.
         </p>
         <p>
-          When you <Term name="promote">promote</Term>, the saved API configuration is used to deploy
-          into the next <Term name="environment">environment</Term>. Review the target backend
-          carefully: it is required for the first promotion, and existing target backend settings
-          are retained unless replaced. Follow Activity to see when deployment finishes.
+          When you <Term name="promote">promote</Term>, the saved API configuration is deployed into
+          the next <Term name="environment">environment</Term>. The target backend is required the
+          first time and kept after that unless you replace it. Activity shows when the deployment
+          finishes.
         </p>
         <p className="muted">
-          The practical consequence: a key that works in DEV will not work in PROD, and a rate limit
-          configured in DEV does not prove what PROD is running. Check the target environment's settings.
+          So a key that works in DEV will not work in PROD, and a rate limit set in DEV says nothing
+          about PROD. Check the target environment's settings.
         </p>
       </Panel>
 
-      <Panel
-        title={`${JOURNEYS.length} things you can do here`}
-        hint="Each one is a guided flow that checks every step against the same rules the server would."
-      >
+      {/* The count is the rendered list's, so it cannot claim a journey the reader was not shown
+          (portal-shell-navigation, "How this works is opened"). */}
+      <Panel title={`${journeys.length} things you can do here`}>
         <div className="journey-grid">
-          {JOURNEYS.map((journey, index) => (
+          {journeys.map((journey, index) => (
             <div key={journey.title} className="unit journey">
               <header>
                 <h4><span className="journey-number">{index + 1}</span>{journey.title}</h4>
@@ -136,12 +143,12 @@ export function HowView() {
                 )}
               </header>
               <p className="desc">{journey.who}</p>
-              <ol className="small" style={{ margin: "0 0 8px", paddingLeft: 20, lineHeight: 1.6 }}>
+              <ol className="small journey-steps">
                 {journey.steps.map((step) => (
                   <li key={step}>{step}</li>
                 ))}
               </ol>
-              <p className="small muted" style={{ margin: 0 }}>
+              <p className="small muted journey-ends">
                 <strong>Ends with:</strong> {journey.ends}
               </p>
             </div>
@@ -158,13 +165,11 @@ export function HowView() {
             .filter(([, entry]) => entry.group === group)
             .sort(([a], [b]) => a.localeCompare(b));
           return (
-            <div key={group} style={{ marginBottom: 18 }}>
-              <h4 style={{ margin: "0 0 8px", fontSize: 12, textTransform: "uppercase", letterSpacing: ".06em", color: "var(--muted)" }}>
-                {GROUP_LABEL[group]}
-              </h4>
+            <div key={group} className="glossary-group">
+              <h4 className="glossary-group-title">{GROUP_LABEL[group]}</h4>
               <dl className="glossary">
                 {entries.map(([key, entry]) => (
-                  <div key={key} style={{ display: "contents" }}>
+                  <Fragment key={key}>
                     <dt id={`term-${key.replace(/\s+/g, "-")}`}>{entry.term}</dt>
                     <dd>
                       {entry.definition}
@@ -175,7 +180,7 @@ export function HowView() {
                         </span>
                       )}
                     </dd>
-                  </div>
+                  </Fragment>
                 ))}
               </dl>
             </div>

@@ -86,6 +86,14 @@ who may see a key, and what each side of the relationship is allowed to do to th
 - THEN it SHALL be refused with `409` naming the count
 - AND the reason SHALL be stated: their next call would become an unexplained `404`
 
+#### Scenario: A product is deleted from the Products screen
+
+- GIVEN a product on the owner's Products screen
+- WHEN deletion is offered
+- THEN it SHALL go through the typed confirmation with the product's name typed back
+- AND while the product has active subscriptions the control SHALL be disabled with the count and
+  the same reason, rather than offered and then refused
+
 ### Requirement: A subscription is per environment and carries a purpose
 
 #### Scenario: A subscription is created

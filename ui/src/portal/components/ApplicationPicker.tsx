@@ -64,6 +64,22 @@ export function ApplicationPicker({
       )
     : applications;
 
+  // Nothing to pick: say so where the picker would be, with the one place that explains it. It was a
+  // disabled button reading "No application", so a newcomer saw a control that did nothing and no
+  // reason why — and the empty state inside its menu could never be opened to read.
+  if (applications.length === 0) {
+    return (
+      <div className="app-picker">
+        <span className="app-picker-label">Application</span>
+        <p className="app-picker-none">
+          You are not in an application yet.
+          <br />
+          <Link to="/account">See your account →</Link>
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="app-picker" ref={box}>
       <span className="app-picker-label">Application</span>
@@ -73,7 +89,6 @@ export function ApplicationPicker({
         aria-haspopup="listbox"
         aria-expanded={open}
         aria-label="Application"
-        disabled={applications.length === 0}
         onClick={() => {
           setOpen(!open);
           setSearch("");
@@ -101,24 +116,17 @@ export function ApplicationPicker({
               />
             </div>
           )}
-          {matching.length === 0 &&
-            (applications.length === 0 ? (
-              <EmptyState
-                title="You are not a member of any application yet"
-                detail="An application is the identity that publishes and consumes here, and everything in the portal belongs to one. An administrator adds you to it."
-                action={<Link to="/how">What an application is →</Link>}
-              />
-            ) : (
-              <EmptyState
-                title={`Nothing matches “${search}”`}
-                detail="The search covers the applications you are a member of. An administrator sees all of them."
-                action={
-                  <button className="btn sm" onClick={() => setSearch("")}>
-                    Clear the search
-                  </button>
-                }
-              />
-            ))}
+          {matching.length === 0 && (
+            <EmptyState
+              title={`Nothing matches “${search}”`}
+              detail="The search covers the applications you are a member of."
+              action={
+                <button className="btn sm" onClick={() => setSearch("")}>
+                  Clear the search
+                </button>
+              }
+            />
+          )}
           {matching.map((application) => (
             <button
               key={application.id}

@@ -58,7 +58,7 @@ test("the bell opens, and marking everything read survives a reload", async ({ p
   expectNoErrors(errors);
 });
 
-test("the mailbox opens a message with its addressee and what it is about", async ({ page }) => {
+test("the mailbox opens a message with its addressee", async ({ page }) => {
   const errors = watchErrors(page);
   const application = await openPortal(page, "/");
   const loaded = page.waitForResponse(response => response.url().includes("/api/notifications?") && response.ok());
@@ -72,7 +72,8 @@ test("the mailbox opens a message with its addressee and what it is about", asyn
   const message = page.locator(".notif-message").first();
   await expect(message).toBeVisible();
   await expect(message.getByText("To", { exact: true })).toBeVisible();
-  await expect(message.getByText("About", { exact: true })).toBeVisible();
+  // The outbox kind is not shown: the subject line already says what the message is about.
+  await expect(message.getByText("About", { exact: true })).toHaveCount(0);
 
   // The transport is simulated in this phase, and the screen says so rather than implying that
   // somebody's inbox has this message in it.

@@ -4657,6 +4657,21 @@ dialog.native-modal { margin: auto; }
 /* ==================================================================== phase-2: processes
    Screen-specific rules for the processes screens. Add below this line only.
    (Anchor kept apart from its neighbours so parallel additions merge.) */
+/* A request waiting on a decision is marked by its row. It used to be marked by `:has(.primary)` —
+   by its button being the primary one — which put a primary on every waiting row. */
+.native-portal .approval-list .native-row.is-awaiting { border-left: 3px solid var(--warn); background: var(--bg-subtle); }
+/* A name and its chips on one line, wrapping: the approvals and proxy rows' head. */
+.native-portal .approval-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+/* Sub-sections of a panel read as the Topic access panel's already do. */
+.native-portal .kafka-topics h4,
+.native-portal .approval-list h4 { margin: 20px 0 12px; font-size: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
+.native-portal .kafka-topics h4:first-child,
+.native-portal .approval-list h4:first-child { margin-top: 0; }
+/* The proxy row holds an address and two commands, so its text takes the row's width. */
+.native-portal .kafka-proxy .native-row > div:first-child { flex: 1; }
+.native-portal .kafka-proxy .native-row strong { font-family: var(--font-mono); font-size: 14px; }
+.native-portal .kafka-proxy h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--fg-muted); }
+.native-portal .kafka-proxy .copy-row > code { font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--r-sm); }
 /* end phase-2: processes */
 
 

@@ -94,7 +94,8 @@ acts on each; the mailbox shows the message.
 - WHEN it is activated
 - THEN a popover SHALL list the most recent items, unread ones distinguished, each with its tone,
   its title, its age and its link
-- AND Escape and a click outside SHALL both close it
+- AND Escape and a click outside SHALL both close it, and so SHALL following a link inside it
+- AND opening the mailbox from it SHALL be a link, not a button that navigates
 - AND there SHALL be no parallel toast stack
 
 #### Scenario: The feed is polled
@@ -112,6 +113,10 @@ acts on each; the mailbox shows the message.
 - WHEN Mail is opened
 - THEN every message for the selected application SHALL be listed with its recipients, its subject,
   its body, when it was sent and whether it has been sent yet
+- AND the section's head SHALL say how many are unread rather than repeat the application's name,
+  which the picker and the page head already show
+- AND a message SHALL NOT show its outbox `kind`, because the subject already says it in words
+- AND a message with a related screen SHALL link to it
 - AND the reason it is navigable SHALL be that "what was that mail about" is a question people
   arrive with, not one they only ever reach by opening a popover first
 
@@ -119,7 +124,15 @@ acts on each; the mailbox shows the message.
 
 - GIVEN an event in `queued` or `retrying`
 - WHEN it renders
-- THEN it SHALL be shown as not sent yet, distinguishable from `delivered`
+- THEN it SHALL be shown as not sent yet, distinguishable from `delivered`, which SHALL read *Sent*
+
+#### Scenario: The feed has not answered yet
+
+- GIVEN the bell's popover or the Mail section, before the first read of the feed has returned
+- WHEN it renders
+- THEN it SHALL show a loading placeholder rather than the empty state
+- AND the reason SHALL be that "No mail yet" for as long as the request took was a false answer to
+  somebody who had mail
 
 ### Requirement: Scope the feed to what the caller may read
 

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "../api";
-import { EmptyState, Link, Notice, Panel, go, useAsync } from "../components";
+import { EmptyState, Link, Notice, Panel, Skeleton, StatusChip, envLabel, go, useAsync } from "../components";
 import { formatAgo, formatDateTime } from "../lib/datetime";
+import { mailChip } from "../lib/status";
 import * as I from "./icons";
 import type { Session } from "../App";
 
@@ -136,11 +137,21 @@ export function NotificationsBell({
         button.current?.focus();
       }
     }
+    // A link inside the popover goes somewhere else, and the popover has no reason to follow. The
+    // links are real `<a>`s — so they open in a new tab like any other — and this is how a plain
+    // `Link`, which takes no handler of its own, still closes what it was opened from. Enter on a
+    // focused link fires `click` too.
+    function followed(event: MouseEvent) {
+      const target = event.target as Element | null;
+      if (target?.closest?.(".notif-popover a[href]")) setOpen(false);
+    }
     document.addEventListener("mousedown", outside);
     document.addEventListener("keydown", escape);
+    document.addEventListener("click", followed);
     return () => {
       document.removeEventListener("mousedown", outside);
       document.removeEventListener("keydown", escape);
+      document.removeEventListener("click", followed);
     };
   }, [open]);
 
@@ -174,14 +185,19 @@ export function NotificationsBell({
           </div>
           <div className="notif-body">
             <Notice kind="error">{feed.error}</Notice>
-            {!feed.error && items.length === 0 && (
+            {/* The first read still in flight is not an empty feed: "Nothing yet" for the second it
+                took the request to land told somebody with mail that they had none. */}
+            {!feed.data && !feed.error && <Skeleton rows={3} />}
+            {feed.data && items.length === 0 && (
               <EmptyState
                 title="Nothing yet"
                 detail="Access requests, decisions and finished deployments arrive here."
-                action={<Link to="/mail">Open Mail →</Link>}
+                action={<Link className="btn sm" to={`/${applicationId}/mail`}>Open Mail</Link>}
               />
             )}
             {items.map((item) => (
+              // A button rather than a link even when there is somewhere to go: pressing it marks the
+              // item read *and* follows it, and an item with no page still has to be markable.
               <button
                 key={item.id}
                 type="button"
@@ -199,7 +215,7 @@ export function NotificationsBell({
                   <span className="notif-title">{item.title}</span>
                   <span className="notif-meta">
                     {item.environment && (
-                      <span className="chip">{item.environment.toUpperCase()}</span>
+                      <span className="chip">{envLabel(item.environment)}</span>
                     )}
                     <span className="notif-when">{formatAgo(item.at)}</span>
                   </span>
@@ -209,16 +225,9 @@ export function NotificationsBell({
           </div>
           <div className="notif-head">
             <span className="muted">Delivery is simulated.</span>
-            <button
-              type="button"
-              className="btn sm"
-              onClick={() => {
-                setOpen(false);
-                go(`/${applicationId}/mail`);
-              }}
-            >
+            <Link className="btn sm" to={`/${applicationId}/mail`}>
               Open mailbox
-            </button>
+            </Link>
           </div>
         </div>
       )}
@@ -239,29 +248,28 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
   return (
     <Panel
       className="mailbox-page"
-      title={`Mail for ${s.applicationName(s.application)}`}
+      // The count, not "Mail for <application>": the picker and the page head already name both.
+      title={feed.data ? `${unread.length} unread` : "Messages"}
+      hint="Simulated delivery: these messages were composed, but no email was sent."
       actions={
-        <div className="native-actions">
-          <span className="chip">{unread.length} unread</span>
-          <button
-            className="btn sm"
-            disabled={unread.length === 0}
-            onClick={() => mark(items.map((item) => item.id))}
-          >
-            Mark all read
-          </button>
-        </div>
+        <button
+          className="btn sm"
+          disabled={unread.length === 0}
+          onClick={() => mark(items.map((item) => item.id))}
+        >
+          Mark all read
+        </button>
       }
     >
-      <p className="muted">
-        Simulated delivery — these messages were composed but no email was sent.
-      </p>
       <Notice kind="error">{feed.error}</Notice>
-      {!feed.error && items.length === 0 && (
+      {/* Loading is not empty (the bell's rule too): "No mail yet" while the first read was still
+          on its way was a false answer for as long as the request took. */}
+      {!feed.data && !feed.error && <Skeleton rows={4} />}
+      {feed.data && items.length === 0 && (
         <EmptyState
           title="No mail yet"
           detail="Requesting access to a product, or answering somebody else's request, sends the first message."
-          action={<Link to="/catalog">Find a product to subscribe to →</Link>}
+          action={<Link className="btn sm" to="/catalog">Find a product to subscribe to</Link>}
         />
       )}
       <div className="notif-body">
@@ -284,11 +292,9 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
                   <span className="notif-title">{item.title}</span>
                   <span className="notif-meta">
                     {item.environment && (
-                      <span className="chip">{item.environment.toUpperCase()}</span>
+                      <span className="chip">{envLabel(item.environment)}</span>
                     )}
-                    <span className={`chip ${item.state === "delivered" ? "ok" : "warn"}`}>
-                      {item.state === "delivered" ? "sent" : item.state}
-                    </span>
+                    <StatusChip chip={mailChip(item.state)} />
                     <span className="notif-when">{formatDateTime(item.at)}</span>
                   </span>
                 </span>
@@ -296,6 +302,8 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
               </button>
               {expanded && (
                 <div className="notif-message">
+                  {/* No "About" row: it printed the outbox kind (`subscription.request.approved`),
+                      which the subject line above already says in words. */}
                   <div className="kv-list">
                     <div className="kv">
                       <span className="k">To</span>
@@ -303,16 +311,12 @@ export function Mailbox({ session: s, tick }: { session: Session; tick: number }
                         {item.to.length ? item.to.join(", ") : "not addressed yet"}
                       </span>
                     </div>
-                    <div className="kv">
-                      <span className="k">About</span>
-                      <span className="v">{item.kind}</span>
-                    </div>
                   </div>
                   <p>{item.body || "This message carried no body beyond its subject line."}</p>
                   {item.href && (
-                    <button className="btn primary sm" onClick={() => go(item.href!)}>
+                    <Link className="btn primary sm" to={item.href}>
                       Open related page <I.ChevRight />
-                    </button>
+                    </Link>
                   )}
                 </div>
               )}

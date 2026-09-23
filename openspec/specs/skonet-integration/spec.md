@@ -18,10 +18,16 @@ decision surface real.
 
 #### Scenario: An approval is reviewed
 
-- GIVEN the selected application and environment
+- GIVEN the selected application
 - WHEN Approvals renders
-- THEN it SHALL show only approvals in that environment and name the product or topic, consumer and environment in the review dialog
+- THEN it SHALL show approvals from every environment, each naming its environment, and SHALL NOT
+  narrow itself to the shell's selected environment
+- AND it SHALL offer an environment filter — All and each stage of the promotion chain — each option
+  carrying how many requests it would show
+- AND the review dialog SHALL name the product or topic, the consumer and the environment
 - AND cancelled or otherwise resolved access SHALL NOT offer a decision even if its outbox event still says awaiting-decision
+- AND the reason SHALL be that a request waiting in PROD was invisible to a publisher whose switcher
+  was on DEV, and a queue that hides part of itself is not a queue
 
 ### Requirement: An approval request is an outbox event, not a synchronous call
 
@@ -100,8 +106,13 @@ decision surface real.
 
 - GIVEN a member of a publishing application
 - WHEN the Approvals section renders
-- THEN every request for that application's products and Kafka topics SHALL be listed with the
-  requesting application, the purpose and the state
+- THEN every request for that application's products and Kafka topics SHALL be listed with what is
+  asked for and whether it is a product or a topic, the requesting application, when it was asked,
+  the environment, the purpose and the state
+- AND the requests awaiting a decision SHALL be listed first and apart from the decided ones, with
+  their count
+- AND the decision SHALL be offered as *Approve* and *Reject*, with an optional reason recorded
+  with it
 - AND the screen SHALL say the approvals are simulated
 - AND it SHALL say that approved access is provisioned automatically
 

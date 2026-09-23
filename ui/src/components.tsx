@@ -964,33 +964,50 @@ export function useTicker(busy = false) {
   return tick;
 }
 
-/** Changes in flight, and how far each has reached the gateways. */
-export function OperationList({ items }: { items: any[] }) {
+// Beside its one user rather than in the block above, so the processes pass edits one hunk here.
+import { operationKindLabel } from "./lib/status";
+
+/**
+ * Changes in flight, and how far each has reached the gateways.
+ *
+ * A row names what happened to what — "Published orders" — and the API is the link, because the
+ * question after "what changed" is "show me it". It used to be `publish · DEV` over a line that put
+ * the date first and the API last, with nothing to follow. `linked={false}` is for the API's own
+ * history tab, where the link would be to the page already open.
+ */
+export function OperationList({ items, linked = true }: { items: any[]; linked?: boolean }) {
   if (items.length === 0) {
     return (
       <EmptyState
         title="No changes yet"
-        detail="Publishing an API, editing its policy or promoting it into the next environment records a change here, with how far it has reached the gateways."
-        action={<Link to="/publish">Publish an API →</Link>}
+        detail="Publishing, configuring or promoting an API records a change here, with how far it has reached the gateways."
+        action={<Link className="btn sm" to="/publish">Publish an API</Link>}
       />
     );
   }
   return (
     <div className="native-list">
-      {items.map((operation) => (
-        <div className="native-row" key={operation.id}>
-          <div>
-            <strong>
-              {operation.kind} · {operation.environment?.toUpperCase()}
-            </strong>
-            <small>
-              {operation.error ??
-                `${formatDateTime(operation.createdAt)} · ${operation.resourceName ?? ""}`}
-            </small>
+      {items.map((operation) => {
+        const name = operation.resourceName ?? "an API that no longer exists";
+        return (
+          <div className="native-row" key={operation.id}>
+            <div>
+              <strong>
+                {operationKindLabel(operation.kind)}{" "}
+                {linked && operation.resourceId && operation.resourceName ? (
+                  <Link to={`/${operation.applicationId}/apis/${operation.resourceId}`}>{name}</Link>
+                ) : (
+                  name
+                )}
+              </strong>{" "}
+              <span className="chip">{envLabel(operation.environment)}</span>
+              <small>{formatDateTime(operation.createdAt)}</small>
+              {operation.error && <small className="field-error">{operation.error}</small>}
+            </div>
+            <StatusChip chip={operationChip(operation.state)} />
           </div>
-          <StatusChip chip={operationChip(operation.state)} />
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }

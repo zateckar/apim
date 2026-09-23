@@ -274,9 +274,13 @@ The rule SHALL be enforced structurally rather than by review.
 
 - GIVEN the selected application's operations
 - WHEN Activity renders
-- THEN it SHALL offer All changes and In progress filters, each with a count
+- THEN it SHALL offer All changes and In progress filters, each with a count, as one segmented
+  control
 - AND In progress SHALL use the same state definition as the topbar count, excluding complete and superseded operations
 - AND an empty In progress view SHALL offer a return to All changes
+- AND each change SHALL say what happened in words — *Published*, *Settings changed*, *Promoted* —
+  rather than the operation's `kind`, with its environment, when, its state and any error
+- AND the API it changed SHALL link to that API's workspace wherever the API still exists
 
 #### Scenario: The topbar renders
 

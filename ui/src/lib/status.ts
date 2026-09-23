@@ -278,6 +278,59 @@ export const STATUS_DOMAINS = {
 
 // ==================================================================== phase-2: processes
 // Chips for the processes screens. Add below this line only; the anchor keeps parallel additions apart.
+
+/**
+ * What an operation did, as a reader says it: "Published", not `publish`.
+ *
+ * Activity, the dashboard and an API's history all printed the column value, so a list of changes
+ * read `publish · DEV`, `configure · DEV` — the verbs of the endpoint that queued them. `configure`
+ * is the one that needed more than a tense: it is a policy, route or backend edited in place, which
+ * nobody calls "configuring". A kind the portal has no word for yet is still shown, spaced out and
+ * capitalised, rather than dropped (the rule notifications-and-mail keeps for an unknown outbox kind).
+ */
+export function operationKindLabel(kind: string): string {
+  switch (kind) {
+    case "publish":
+      return "Published";
+    case "configure":
+      return "Settings changed";
+    case "promote":
+      return "Promoted";
+    default: {
+      const words = kind.replace(/[._-]+/g, " ").trim();
+      return words ? words[0]!.toUpperCase() + words.slice(1) : "Change";
+    }
+  }
+}
+
+/**
+ * Whether one message has left the outbox (notifications-and-mail, "A message has not been sent
+ * yet"). The mailbox wrote the column value in a hand-picked chip colour, and "sent" beside
+ * "queued" did not say which of them was the one still waiting.
+ */
+export function mailChip(state: string): Chip {
+  switch (state) {
+    case "delivered":
+      return { label: "Sent", tone: "live", title: "delivered — handed to the simulated mail transport" };
+    case "retrying":
+      return { label: "Retrying", tone: "wait", title: "retrying — the simulated transport failed and it is being tried again" };
+    case "queued":
+      return { label: "Not sent yet", tone: "wait", title: "queued — composed, and waiting for the simulated transport to run" };
+    default:
+      return { label: "Not sent", tone: "neutral", title: `${state} — this message has not been handed to the transport` };
+  }
+}
+
+/**
+ * A topic's HTTP proxy. Off is not a fault — it is the default (kafka-workspace, "Offer an HTTP
+ * proxy per topic, off by default") — so it is `neutral`, never `stop`.
+ */
+export function kafkaProxyChip(enabled: boolean): Chip {
+  return enabled
+    ? { label: "Proxy on", tone: "live", title: "proxy_enabled — this topic can be produced to and read over HTTP" }
+    : { label: "Proxy off", tone: "neutral", title: "proxy disabled — the topic's owner has not turned the HTTP proxy on" };
+}
+
 // end phase-2: processes
 
 

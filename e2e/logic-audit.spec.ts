@@ -113,11 +113,17 @@ test("approval review names its scope and excludes resolved access", async ({ pa
     payload: { consumer: "consumer", purpose: "Process orders" }, approval: entry,
   })) } }));
   await openPortal(page, "/approvals");
-  await page.locator('.native-page-head [aria-label="Environment"]').getByRole("button", { name: "DEV", exact: true }).click();
-  await expect(page.getByRole("button", { name: "Review request" })).toHaveCount(1);
+  // Every environment at once, whatever the shell's switcher says; the cancelled one offers nothing.
+  await expect(page.getByRole("button", { name: "Review" })).toHaveCount(2);
+  const filter = page.getByRole("group", { name: "Environment filter" });
+  await expect(filter.getByRole("button", { name: "All · 3", exact: true })).toBeVisible();
+  await filter.getByRole("button", { name: "DEV · 2", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Review" })).toHaveCount(1);
   await expect(page.getByText("Test topic", { exact: false })).toHaveCount(0);
-  await page.getByRole("button", { name: "Review request" }).click();
-  await expect(page.getByRole("dialog")).toContainText("Dev product · consumer · DEV");
+  await page.getByRole("button", { name: "Review" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toContainText("Dev product");
+  await expect(dialog).toContainText("DEV");
 });
 
 test("a changed search cannot display results from the previous query", async ({ page }) => {

@@ -178,6 +178,10 @@ who may see a key, and what each side of the relationship is allowed to do to th
   it rather than one below another
 - AND the purpose SHALL be the field that is clipped when there is no room, with the whole of it
   available on hover and on the subscription's own screen
+- AND the product's name SHALL link to the subscription's own screen
+- AND the holder SHALL be named only where it can be another application — on an API's workspace —
+  and not on the Subscriptions screen, which lists the selected application's own
+- AND ending an active subscription SHALL be worded *Revoke*, in the row and in its confirmation
 - AND the reason SHALL be that a subscription is four short facts, and giving each of them its own
   line meant three of them filled a screen
 

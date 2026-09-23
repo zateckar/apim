@@ -69,15 +69,22 @@ broker itself is simulated in this phase, and every response says so.
   what may be done to each
 - AND every row SHALL carry whether the reader may edit it
 - AND the list SHALL be readable by anybody, because reading everything is the one rule
+- AND the selected application's own topics SHALL be listed apart from other applications', because
+  what may be done differs — an owner edits, anybody else asks for access
+- AND a topic's state SHALL be shown only when it is not `ready`, and the selected application's
+  own access to it SHALL be shown when it holds any
+- AND an empty environment SHALL offer creating a topic from its empty state, with no second
+  creation control in the panel head
 
 #### Scenario: A topic is opened
 
 - GIVEN a topic row
 - WHEN it is opened
-- THEN the topic's description, partition count, domain, proxy setting and access list SHALL be
-  shown
-- AND the editing controls SHALL be disabled with a reason for anybody who is not a member of the
-  owning application
+- THEN the topic's owner, environment, description, partition count, domain and proxy setting
+  SHALL be shown, with the selected application's access to it
+- AND the proxy setting SHALL link to the Kafka REST Proxy section, which is where it is changed
+- AND for anybody who is not a member of the owning application the facts SHALL be shown read-only
+  with a sentence naming who can change them, rather than as a form of disabled fields
 
 ### Requirement: Consuming a topic is requested and approved
 
@@ -101,6 +108,11 @@ broker itself is simulated in this phase, and every response says so.
 - GIVEN an active access grant
 - WHEN it is revoked
 - THEN it SHALL stop applying, and the revocation SHALL be audited
+- AND in the portal the row SHALL offer *Revoke* — or *Cancel request* for the requester's own
+  pending request — opening a dialog that holds only the typed confirmation, the same shape as a
+  subscription's
+- AND a request pending on the owner's own topic SHALL link to Approvals instead, because a request
+  is decided there with Approve or Reject, not cancelled on the requester's behalf
 
 ### Requirement: Delete a topic only when nothing is consuming it
 
@@ -130,8 +142,26 @@ broker itself is simulated in this phase, and every response says so.
 
 - GIVEN the sidebar's Kafka group
 - WHEN the Kafka REST Proxy section opens
-- THEN it SHALL list the topics whose proxy is enabled and the caller may use
+- THEN it SHALL list every topic in the selected environment that the selected application owns or
+  holds active access to, each with whether its proxy is on
 - AND a topic without the proxy enabled SHALL say so rather than be absent
+- AND the owner SHALL be able to turn the proxy on and off there, and anybody else SHALL be told
+  who can
+- AND a topic whose proxy is on and which the application may use SHALL show the HTTP endpoint and
+  a produce and a consume command, each with a copy control
+- AND a topic whose proxy is on but which the application holds no active access to SHALL say that
+  access is needed first, and link to Kafka Topics
+- AND the section SHALL NOT offer creating a topic, because that belongs to Kafka Topics
+
+#### Scenario: The proxy's address is given
+
+- GIVEN the simulated broker of this phase
+- WHEN the endpoint and commands are composed
+- THEN they SHALL name the portal's own Kafka console endpoint at the portal's public origin, with
+  the portal session and a matching `Origin` header, because that is what answers
+- AND the section SHALL say that the portal answers for the proxy and that a call uses the portal
+  sign-in rather than a subscription key
+- AND the reason SHALL be that an invented proxy host would be an address that answers nothing
 
 ### Requirement: Say that Kafka is simulated
 

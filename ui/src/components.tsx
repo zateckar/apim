@@ -1,4 +1,5 @@
 import { Children, cloneElement, createContext, isValidElement, type ReactElement, useCallback, useContext, useEffect, useId, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
 import { ApiError } from "./api";
 import { bySeverity, labelFor, severityTone, SEVERITY_LABEL, type AttentionRow } from "./lib/attention";
 import { define } from "./lib/glossary";
@@ -521,6 +522,21 @@ export function usePageTitle(title: string | null | undefined) {
     set(title ?? null);
     return () => set(null);
   }, [title, set]);
+}
+
+/**
+ * A detail screen's own controls, drawn in the page head beside the environment switcher.
+ *
+ * The head belongs to the shell, so a screen could not put anything in it: a topic's "Stage to
+ * PROD" sat under the title in a second bar, a card's height below the switcher it depends on. The
+ * shell hands down the slot and the screen portals into it; the head stays drawn in one place, and a
+ * screen that says nothing here leaves it as it was.
+ */
+const ActionsContext = createContext<HTMLElement | null>(null);
+export const PageActionsProvider = ActionsContext.Provider;
+export function PageActions({ children }: { children: ReactNode }) {
+  const slot = useContext(ActionsContext);
+  return slot ? createPortal(children, slot) : null;
 }
 
 export function Pill({ kind, children }: { kind: string; children: ReactNode }) {

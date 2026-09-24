@@ -185,6 +185,15 @@ export interface CpConfig {
   /** When a subscription key is complained about, and when the gateway stops accepting it. */
   subscriptionKeyWarnDays: number;
   subscriptionKeyExpireDays: number;
+  /**
+   * Kafka's own stages and where a consumer connects to each (kafka-workspace, "Kafka has its own
+   * stages", "The connection is shown"). `environments` is an ordered part of the promotion chain:
+   * there is no DEV cluster, so a topic starts in TEST and is staged to PROD while an API still
+   * starts in DEV. The bootstrap is the public host — never a broker's internal name — per stage,
+   * and the two listener ports, one per way of authenticating. A stage with no host shows "not
+   * configured" rather than an address that would not answer.
+   */
+  kafka: { environments: string[]; bootstrap: Record<string, string>; mtlsPort: number; oauthPort: number };
   maxSpecBytes: number;
   integrations: Integrations;
   targets: TargetDef[];
@@ -234,6 +243,30 @@ export interface CpConfig {
   dashboardDefaultSinceMin: number;
   /** Where per-request access logs are read from. The control plane never stores them. */
   logs: LogsConfig;
+}
+
+/**
+ * `KAFKA_ENVIRONMENTS`: the stages that have a Kafka cluster, in chain order. Unset, it is TEST and
+ * PROD — the clusters there are — narrowed to the ones this chain has, and the whole chain when it
+ * has neither, so a one-stage test estate still has somewhere to put a topic. Set, every stage must
+ * be in the chain and in its order, because staging walks this list and a list that went backwards
+ * would stage a topic out of PROD.
+ */
+function readKafkaEnvironments(chain: readonly string[]): string[] {
+  const raw = process.env.KAFKA_ENVIRONMENTS;
+  if (raw === undefined || raw.trim() === "") {
+    const known = ["test", "prod"].filter((environment) => chain.includes(environment));
+    return known.length ? known : [...chain];
+  }
+  const named = raw.split(",").map((s) => s.trim()).filter(Boolean);
+  if (named.length === 0) throw new Error("KAFKA_ENVIRONMENTS: expected at least one environment");
+  for (const environment of named)
+    if (!chain.includes(environment))
+      throw new Error(`KAFKA_ENVIRONMENTS: "${environment}" is not in PROMOTION_CHAIN (${chain.join(",")})`);
+  const order = named.map((environment) => chain.indexOf(environment));
+  if (order.some((index, i) => i > 0 && index <= order[i - 1]!))
+    throw new Error("KAFKA_ENVIRONMENTS: list the stages once each, in PROMOTION_CHAIN's order");
+  return named;
 }
 
 function intFromEnv(name: string, fallback: number): number {
@@ -461,16 +494,20 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
   // missing OIDC_ISSUER, and `...overrides` further down would be too late to prevent that.
   const authProviders = overrides.authProviders ?? parseAuthProviders(process.env.AUTH_PROVIDERS);
   const oidc = overrides.oidc !== undefined ? overrides.oidc : readOidc(authProviders);
+  const promotionChain =
+    overrides.promotionChain ??
+    (process.env.PROMOTION_CHAIN ?? "dev,test,prod")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+  const kafkaEnvironments = readKafkaEnvironments(promotionChain);
 
   const config: CpConfig = {
     port: intFromEnv("PORT", 8080),
     dbPath: process.env.DB_PATH ?? ".data/apim.sqlite",
     publicUrl: process.env.PUBLIC_URL ?? "http://localhost:8080",
     kekPath: process.env.KEK_PATH ?? ".data/kek.key",
-    promotionChain: (process.env.PROMOTION_CHAIN ?? "dev,test,prod")
-      .split(",")
-      .map((s) => s.trim())
-      .filter(Boolean),
+    promotionChain,
     authProviders,
     oidc,
     sessionIdleMin: intFromEnv("SESSION_IDLE_MIN", 60),
@@ -500,6 +537,18 @@ export function loadConfig(overrides: Partial<CpConfig> = {}): CpConfig {
       intFromEnv("SUBSCRIPTION_KEY_WARN_DAYS", SUBSCRIPTION_KEY_DEFAULTS.warnDays),
       intFromEnv("SUBSCRIPTION_KEY_EXPIRE_DAYS", SUBSCRIPTION_KEY_DEFAULTS.expireDays),
     ),
+    kafka: {
+      environments: kafkaEnvironments,
+      // `KAFKA_BOOTSTRAP_TEST=kafka-test.example.com`: one variable per stage, named after it, so a
+      // chain with a stage nobody expected still has an obvious place to put its address.
+      bootstrap: Object.fromEntries(
+        kafkaEnvironments
+          .map((environment) => [environment, (process.env[`KAFKA_BOOTSTRAP_${environment.toUpperCase()}`] ?? "").trim()])
+          .filter(([, host]) => host),
+      ),
+      mtlsPort: intFromEnv("KAFKA_MTLS_PORT", 9400),
+      oauthPort: intFromEnv("KAFKA_OAUTH_PORT", 9800),
+    },
     maxSpecBytes: intFromEnv("MAX_SPEC_BYTES", 5 * 1024 * 1024),
     integrations: readIntegrations(integrationsFile),
     targets: readTargets(targetsFile),

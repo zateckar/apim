@@ -46,6 +46,7 @@ export const ATTENTION_CODES = [
   "gateway-stale",
   "gateway-activation-blocked",
   "job-failed",
+  "job-retrying",
   // the empty-estate branch of the same evaluator, and the only three that never appear in an
   // `attention[]` block: "publish your first API" on an application that has fifty is nonsense `[P2-09]`
   "start-here-publish",
@@ -83,6 +84,7 @@ export const ATTENTION_SEVERITY: Record<AttentionCode, AttentionSeverity> = {
   "gateway-stale": "warning",
   "gateway-activation-blocked": "blocker",
   "job-failed": "warning",
+  "job-retrying": "warning",
   "start-here-publish": "info",
   "start-here-subscribe": "info",
   "start-here-operate": "info",

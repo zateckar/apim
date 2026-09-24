@@ -26,6 +26,18 @@ The topic's schema, type and certificate are `kafka-workspace`'s; the `kafkaProd
 
 ## Requirements
 
+### Requirement: Kafka's stages bound the proxy
+
+#### Scenario: A stage is named for the shared proxy or a topic's API
+
+- GIVEN Kafka's stages (`kafka-workspace`, "Kafka has its own stages") — TEST and PROD
+- WHEN the shared proxy or a topic's API is published, promoted or listed
+- THEN both SHALL exist only in those stages: each SHALL start in TEST, not the API chain's DEV, and
+  be promoted to PROD, and any other stage SHALL be refused with `400` saying Kafka has TEST and PROD
+  only
+- AND the reason SHALL be that there is no DEV cluster for either to produce to
+- AND promotion to PROD SHALL be the ordinary promotion from TEST, which is where the API is
+
 ### Requirement: The shared Kafka proxy is the portal's, and only an administrator changes it
 
 #### Scenario: The platform application exists
@@ -45,8 +57,8 @@ The topic's schema, type and certificate are `kafka-workspace`'s; the `kafkaProd
 - GIVEN an administrator, a Kafka REST Proxy URL and a cluster id (1–255 letters, digits, dots,
   underscores or hyphens, as `kafkaProduce` validates it)
 - WHEN `POST /api/kafka/proxy/shared` is called with an `Idempotency-Key` and an environment
-- THEN with no shared proxy yet it SHALL publish one in the chain's first environment and SHALL
-  refuse any other with `409`
+- THEN with no shared proxy yet it SHALL publish one in Kafka's first stage, TEST, and SHALL refuse
+  PROD with `409`
 - AND in a later environment it SHALL promote the shared proxy there, and in an environment it is
   already in it SHALL reconfigure its backend and `kafkaProduce.clusterId`, keeping its other units
 - AND the resource SHALL be a REST API named `kafka-rest-proxy`, version `v1`, owned by `platform`,
@@ -78,8 +90,8 @@ The topic's schema, type and certificate are `kafka-workspace`'s; the `kafkaProd
 
 #### Scenario: A topic's owner creates its API
 
-- GIVEN a member of the topic's application, a topic that can have an API, in the chain's first
-  environment, with the shared proxy published there
+- GIVEN a member of the topic's application, a topic that can have an API, in Kafka's first stage
+  (TEST), with the shared proxy published there
 - WHEN `POST /api/kafka/topics/:id/proxy` is called with an `Idempotency-Key`
 - THEN a REST API SHALL be published, owned by the topic's application, with `kafka_topic` set to
   the topic's name, named `kafka-` and the topic's name folded to `[a-z0-9-]` (cut to 61 characters
@@ -93,8 +105,20 @@ The topic's schema, type and certificate are `kafka-workspace`'s; the `kafkaProd
   refused at the first gateway and never reaches Kafka
 - AND its backend SHALL be every published address of the shared proxy in that environment, as a
   `failover` pool, and its client certificate the topic's
-- AND the same call in a later environment SHALL promote the API the topic already has, and in the
-  first environment with an API already there it SHALL be refused with `409`
+- AND the API SHALL be published in TEST itself — the one API that does not start in the chain's
+  first stage — so that DEV never holds an API with no topic behind it
+- AND the same call in PROD SHALL promote the API the topic already has, and in TEST with an API
+  already there it SHALL be refused with `409`
+
+#### Scenario: The API is created from the topic's page
+
+- GIVEN the owner on a JSON topic's page (`kafka-workspace`)
+- WHEN *Create HTTP Proxy* is chosen
+- THEN the portal SHALL ask for the client certificate from the application's usable certificates
+  in the topic's stage, save it on the topic, and then create the API as above, listing what still
+  blocks it
+- AND once the API exists the same control SHALL read *HTTP Proxy* and offer opening it, because the topic
+  page is where the certificate is chosen and the API is where its traffic is read
 
 #### Scenario: A topic's API reaches the shared proxy
 
@@ -191,6 +215,9 @@ The topic's schema, type and certificate are `kafka-workspace`'s; the `kafkaProd
   promote it here, or the first reason there is none with a link to Kafka Topics
 - AND it SHALL say that other applications' topic APIs are in the Catalog, and SHALL NOT offer
   creating a topic
+- AND its environment switcher SHALL offer Kafka's stages only, TEST and PROD
+- AND arriving with the shell on a stage Kafka does not have, it SHALL say so, with a control to open
+  TEST, rather than a form that could only be refused
 
 #### Scenario: A topic's API is in the Catalog
 

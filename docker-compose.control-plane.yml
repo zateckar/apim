@@ -216,6 +216,18 @@ services:
       ELK_MAX_RESULT_WINDOW: ${ELK_MAX_RESULT_WINDOW:-}
       LOGS_MAX_RANGE_HOURS: ${LOGS_MAX_RANGE_HOURS:-}
 
+      # The stages with a Kafka cluster, in PROMOTION_CHAIN's order. Empty is TEST and PROD: there
+      # is no DEV cluster, so a topic is created in TEST and staged to PROD while an API still starts
+      # in DEV.
+      KAFKA_ENVIRONMENTS: ${KAFKA_ENVIRONMENTS:-}
+      # Where a consumer connects to each of those stages, shown on a topic's Subscriptions tab. The
+      # broker host is one variable per stage, named after it — add
+      # `KAFKA_BOOTSTRAP_TEST: ${KAFKA_BOOTSTRAP_TEST:-}` and `KAFKA_BOOTSTRAP_PROD: ...` here. They
+      # are not listed because the names follow KAFKA_ENVIRONMENTS, and a stage without one says
+      # "not configured" rather than showing an invented address.
+      KAFKA_MTLS_PORT: ${KAFKA_MTLS_PORT:-}
+      KAFKA_OAUTH_PORT: ${KAFKA_OAUTH_PORT:-}
+
       # Set by the image and deliberately not repeated here: PORT, DB_PATH, KEK_PATH, UI_DIST,
       # INTEGRATIONS_FILE, TARGETS_FILE. Each names a path *inside* the container that the volume
       # and the mount below already fix, so a copy in this file could only ever disagree with them.

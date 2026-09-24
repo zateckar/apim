@@ -170,6 +170,12 @@ export interface SpineOptions {
   generated?: boolean;
   /** Columns a platform-created resource is born with (publish only). */
   columns?: { kafka_topic?: string; platform_role?: string; visibility?: "listed" | "unlisted" };
+  /**
+   * The stage a platform-created resource is first published in (publish only). Unset, the chain's
+   * first. A topic's API starts where its topic does — Kafka's first stage, TEST — because there is
+   * no DEV cluster for it to produce to (kafka-rest-proxy, "A topic's owner creates its API").
+   */
+  environment?: string;
 }
 
 function key(ctx: Ctx, options?: SpineOptions): string {
@@ -235,6 +241,14 @@ function queue(
       key(ctx, options),
     ],
   );
+  // Frozen when the command is accepted, not when it is applied — the same moment a release
+  // freezes it in `promotion.ts`. What somebody asked to publish is what gets published: a
+  // correction landing while the operation waits its turn would otherwise ship a definition
+  // nobody confirmed (design section 4; `formal/Formal/Revision.lean`).
+  ctx.app.db.run("UPDATE revision SET frozen_at = COALESCE(frozen_at, ?) WHERE id = ?", [
+    at,
+    snapshot.revisionId,
+  ]);
   writeAudit(ctx.app.db, {
     actor,
     action: `api.${kind}`,
@@ -634,7 +648,8 @@ export async function publishResource(
     throw notFound("application not found");
   const kind = body.kind ?? "rest",
     version = body.apiVersion ?? "v1",
-    environment = ctx.app.config.promotionChain[0]!;
+    environment = options?.environment ?? ctx.app.config.promotionChain[0]!;
+  if (!ctx.app.config.promotionChain.includes(environment)) throw badRequest("valid environment required");
   if (!["rest", "soap", "mcp", "a2a"].includes(kind))
     throw badRequest("kind: rest, soap, mcp or a2a");
   if (!body.name || !/^[a-z0-9][a-z0-9-]{1,60}$/.test(body.name))

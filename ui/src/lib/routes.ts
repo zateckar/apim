@@ -196,12 +196,32 @@ export const ROUTES: RouteDef[] = [
   },
   {
     id: "kafka",
-    environmentScoped: true,
+    // Not environment-scoped: each row says which stages its topic is in, the way the API list does,
+    // and a list filtered by the switcher hid a PROD topic from anybody looking at DEV.
     patterns: ["/kafka"],
     title: "Kafka Topics",
-    purpose: "The topics this application owns, and who is allowed to produce to or consume them.",
+    purpose: "The topics this application publishes or consumes, and where each version is.",
     scope: "application",
     nav: { group: "Kafka", label: "Kafka Topics", icon: "Kafka" },
+  },
+  {
+    id: "kafka-create",
+    patterns: ["/kafka/new"],
+    title: "Create Kafka Topic",
+    parent: "kafka",
+    purpose: "Give the topic its schema, name it by the convention and size it, then create it in TEST.",
+    scope: "application",
+  },
+  {
+    id: "kafka-topic",
+    environmentScoped: true,
+    // By name, not by row id: a topic is one row per stage under one name, and the switcher chooses
+    // the stage. The tab is in the address so a link can land on the subscriptions or the playground.
+    patterns: ["/kafka/:topic", "/kafka/:topic/:tab"],
+    title: "Kafka Topic",
+    parent: "kafka",
+    purpose: "One topic in one stage: its schema and size, who may read and write it, and a playground to try it.",
+    scope: "application",
   },
   {
     id: "kafka-proxy",

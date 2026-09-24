@@ -681,6 +681,21 @@ Playwright, read-only, against a stack that is already up. It needs a browser on
 (`bunx playwright install chromium`) and signs in through `dev` or `local` — never OIDC. Nothing in
 it publishes, promotes, subscribes or deletes, because the stack it runs against is usually shared.
 
+```bash
+cd formal && lake build
+```
+
+Machine-checked models, in Lean 4 with no Mathlib, of the six state machines whose mistakes do not
+show up in a single request: the subscription lifecycle, the operation spine, releases, a
+revision's freeze, correction and pruning, the gateway's config poll, and the circuit breaker. Each
+file's header names the statements it models, one step per writer. It needs
+[elan](https://github.com/leanprover/elan) once; `formal/lean-toolchain` pins the version.
+
+A green build does **not** mean every property holds. Some theorems prove that a property *fails*
+by exhibiting a reachable counterexample. The two `Breaker` scenarios are of that kind, and so are
+the `Unguarded` sections of `Release`, `Revision` and `ConfigClient`, which keep the code from
+before a fix as the proof that the fix was needed. Each one's comment says what it shows.
+
 ### Measuring it
 
 Two harnesses, answering two different questions. Neither is a substitute for the other.
@@ -756,6 +771,7 @@ scripts/        seed · stack · demo · mint-instance · schedule-perf
 test/           bun test — control plane, data plane, shared
 ui/test/        bun test — the parts of the interface that are decisions rather than markup
 e2e/            Playwright — read-only smoke tests against a running stack
+formal/         Lean 4 — the lifecycle state machines, modelled and proved
 reports/        generated measurements: perf and capacity
 openspec/       the behavioural source of truth
 CHANGELOG.md    the portal's version and what changed in it

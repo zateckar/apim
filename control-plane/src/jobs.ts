@@ -9,6 +9,7 @@ import { appliedDigest, buildRoutes, COMPILER_VERSION, limitsFor } from "./confi
 import { denyRulesFor } from "./deny-rules.ts";
 import { applySeededUnits, computePlan, planDigest, type ReleasePlan } from "./promotion.ts";
 import { pruneOldRows } from "./telemetry.ts";
+import { REACHED_FLEET_STATES } from "../../shared/types.ts";
 
 /**
  * One job table and one runner (design section 10). Jobs are durable, retried with backoff and
@@ -26,6 +27,8 @@ export interface ReconcilePayload {
   releaseId?: string;
   planId?: string;
   intent: "apply" | "remove";
+  /** The job's scope; `targetId` is only a handle into it. Absent on a job queued before it existed. */
+  environment?: string;
 }
 
 export function enqueueJob(
@@ -50,8 +53,24 @@ export function enqueueJob(
   return id;
 }
 
+/**
+ * A reconcile that can never succeed. Retrying it would only hide it, so it fails at once and is
+ * shown as a failed job — unlike everything else a reconcile throws, which is a condition that
+ * clears (a paused gateway, a missing route) and is retried until it does.
+ */
+export class Unrecoverable extends Error {}
+
+/**
+ * Who holds a lease: this process. It was the constant `"cp-inline-runner"`, shared by every runner,
+ * so the holder check below compared a string with itself and let a second control plane on the
+ * same database straight through the lease that exists to stop it (control-plane-surface, "Two
+ * runners reach the same target").
+ */
+const LEASE_HOLDER = `cp-${process.pid}-${newId("run")}`;
+
 /** Design section 7: one lease per target, taken in a transaction, so two runners cannot collide. */
-function withTargetLease<T>(db: DB, targetId: string, holder: string, fn: () => T): T {
+function withTargetLease<T>(db: DB, targetId: string, fn: () => T): T {
+  const holder = LEASE_HOLDER;
   const acquire = db.transaction(() => {
     const row = db
       .query<{ lease_holder: string | null; lease_expires_at: string | null }, [string]>(
@@ -77,30 +96,86 @@ function withTargetLease<T>(db: DB, targetId: string, holder: string, fn: () => 
   try {
     return fn();
   } finally {
-    db.run("UPDATE target SET lease_holder = NULL, lease_expires_at = NULL WHERE id = ?", [targetId]);
+    // Only our own: a lease that expired under a slow job and was taken by another runner is theirs.
+    db.run(
+      "UPDATE target SET lease_holder = NULL, lease_expires_at = NULL WHERE id = ? AND lease_holder = ?",
+      [targetId, holder],
+    );
   }
 }
 
 function reconcile(app: App, payload: ReconcilePayload): string {
   const { db } = app;
-  const target = db
-    .query<{ id: string; environment: string; paused: number }, [string]>(
-      "SELECT id, environment, paused FROM target WHERE id = ?",
-    )
-    .get(payload.targetId);
-  if (!target) throw new Error(`target ${payload.targetId} does not exist`);
+  const release = payload.releaseId
+    ? db
+        .query<{ environment: string }, [string]>("SELECT environment FROM release WHERE id = ?")
+        .get(payload.releaseId)
+    : null;
+  // Deleting the API cascades its releases away. Nothing is left to apply, and a job that retried
+  // "does not exist" every five minutes for ever would only bury the jobs that are really stuck.
+  if (payload.releaseId && !release) return "nothing to apply: the release no longer exists";
 
-  if (target.paused) {
-    // `paused` stops the reconciler from writing anything; the gateway keeps serving what it has.
-    throw new Error("environment is paused; waiting for automatic recovery");
+  // `targetId` is a handle, not the scope: the job's scope is the environment. The handle can be
+  // deleted while the job waits (a gateway with no route yet is removable), so the environment is
+  // carried on the payload, and read from the release for a job queued before it was.
+  const handle = db
+    .query<{ id: string; environment: string }, [string]>("SELECT id, environment FROM target WHERE id = ?")
+    .get(payload.targetId);
+  const environment = handle?.environment ?? payload.environment ?? release?.environment;
+  if (!environment) {
+    throw new Unrecoverable(
+      `gateway ${payload.targetId} no longer exists and this job does not say which environment it was for`,
+    );
   }
 
-  return withTargetLease(db, target.id, "cp-inline-runner", () => {
+  /**
+   * Every gateway the job will write for, and all of them must be taking changes. It used to ask
+   * only the handle, so a release onto `managed` and `onprem` with `onprem` paused went out to
+   * `onprem` too — the spine already refused that (control-plane-surface, "The environment cannot
+   * take the change"), and a release must not mean something the spine refuses.
+   */
+  const bound = db
+    .query<{ target_id: string }, [string, string]>(
+      "SELECT target_id FROM route_gateway WHERE resource_id = ? AND environment = ?",
+    )
+    .all(payload.resourceId, environment)
+    .map((r) => r.target_id);
+  const affected = db
+    .query<{ id: string; name: string; paused: number }, [string]>(
+      "SELECT id, name, paused FROM target WHERE environment = ? ORDER BY name",
+    )
+    .all(environment)
+    .filter((t) => payload.intent === "remove" || bound.length === 0 || bound.includes(t.id));
+  if (payload.intent === "apply" && affected.length === 0) {
+    throw new Error(`${environment.toUpperCase()} has no gateway to publish on; deployment will resume automatically`);
+  }
+  const paused = affected.filter((t) => t.paused);
+  if (paused.length > 0) {
+    // `paused` stops the reconciler from writing anything; the gateway keeps serving what it has.
+    throw new Error(
+      `${paused.map((t) => `${environment}/${t.name}`).join(", ")} ${paused.length === 1 ? "is" : "are"} ` +
+        "paused; deployment will resume automatically when resumed",
+    );
+  }
+  const target = { id: handle?.id ?? affected[0]?.id ?? payload.targetId, environment };
+
+  return withTargetLease(db, target.id, () => {
     const apply = db.transaction(() => {
       if (payload.intent === "remove") {
         db.run(
           "UPDATE release SET state = 'withdrawn' WHERE resource_id = ? AND environment = ? AND state = 'converged'",
           [payload.resourceId, target.environment],
+        );
+        // And every release of it here still waiting to apply: its job would otherwise converge it
+        // when its backoff expires and publish the API again after somebody withdrew it. The
+        // withdrawal is the later act, and it wins (api-versioning-and-stage).
+        db.run(
+          "UPDATE release SET state = 'stale', reason = ? WHERE resource_id = ? AND environment = ? AND state = 'pending'",
+          [
+            `withdrawn from ${target.environment.toUpperCase()} before it was applied; release it again to publish it`,
+            payload.resourceId,
+            target.environment,
+          ],
         );
         // Every gateway in the environment, not just the one that happened to be the job's handle:
         // "withdrawn from TEST" cannot mean "withdrawn from half of TEST".
@@ -128,10 +203,68 @@ function reconcile(app: App, payload: ReconcilePayload): string {
           "SELECT id, revision_id, state, released_by FROM release WHERE id = ?",
         )
         .get(payload.releaseId ?? "");
-      if (!release) throw new Error(`release ${payload.releaseId} does not exist`);
+      if (!release) return "nothing to apply: the release no longer exists";
 
-      // Design section 6.3: the job recomputes the plan and refuses to apply if the digest moved,
-      // so the diff someone approved is the diff that runs. `stale` is terminal, not a retry.
+      /**
+       * Only a `pending` release is applied. Anything else is one of two things, and both are
+       * no-ops:
+       *
+       *  - A replay. The job is marked `done` by `runDueJobs` after this transaction commits, and a
+       *    job left `running` is re-queued a minute later, so a process that died between the two
+       *    runs this again for a release it already applied. Everything the first run did committed
+       *    with it — and doing it again is harmful: it would converge a release since superseded or
+       *    withdrawn, or (below) mark one `stale` that reached the fleet, which the promotion gate
+       *    reads as "never got here".
+       *  - A release a withdrawal already made `stale` (the `remove` branch above).
+       *
+       * `formal/Formal/Release.lean` is the model of this function; its `reconcile` and `goStale`
+       * steps both require `pending`.
+       */
+      if (release.state !== "pending") return `nothing to apply: release is ${release.state}`;
+
+      /**
+       * A release whose job has been retrying — a paused environment, a missing route — is not
+       * cancelled when a release confirmed after it reaches the fleet here. Converging it when its
+       * backoff expires would supersede the newer one and roll the environment back without anyone
+       * having asked; a rollback is a *new* release of the older revision (api-versioning-and-stage,
+       * "Never let an earlier release overtake one that reached the fleet after it"). So it
+       * goes `stale`, which is terminal: the job is done, nothing is published and no policy is
+       * seeded, because this is checked before the plan is.
+       *
+       * "After it" is `rowid`, the insertion order both writers of `release` share (this job and
+       * the operation spine). `formal/Formal/Release.lean` proves that this guard is what keeps the
+       * live release the newest one to have reached the fleet, and shows the trace that broke it
+       * without the guard (`older_release_resurrects`).
+       */
+      const overtakenBy = db
+        .query<{ id: string }, string[]>(
+          `SELECT id FROM release
+            WHERE resource_id = ? AND environment = ?
+              AND state IN (${REACHED_FLEET_STATES.map(() => "?").join(", ")})
+              AND rowid > (SELECT rowid FROM release WHERE id = ?)
+            ORDER BY rowid LIMIT 1`,
+        )
+        .get(payload.resourceId, target.environment, ...REACHED_FLEET_STATES, release.id);
+      if (overtakenBy) {
+        db.run("UPDATE release SET state = 'stale', reason = ? WHERE id = ?", [
+          `release ${overtakenBy.id} was confirmed after this one and reached ` +
+            `${target.environment.toUpperCase()} first; release this revision again to roll back to it`,
+          release.id,
+        ]);
+        writeAudit(db, {
+          actor: "reconciler",
+          action: "reconcile.stale",
+          subject: `resource:${payload.resourceId}`,
+          outcome: "ok",
+          detail: { environment: target.environment, releaseId: release.id, overtakenBy: overtakenBy.id },
+        });
+        return "stale";
+      }
+
+      // The job recomputes the plan and applies the current one; a plan with blockers is retried.
+      // Design section 6.3 had a moved digest mark the release `stale` instead, which ae9a9ce
+      // dropped: a promotion is one business action, not a confirm the publisher has to repeat
+      // after their own edit (api-versioning-and-stage, "The plan changed between review and apply").
       const stored = payload.planId
         ? db
             .query<{ plan_json: string; plan_digest: string }, [string]>(
@@ -283,7 +416,12 @@ export function runDueJobs(app: App): number {
     } catch (err) {
       const message = (err as Error).message;
       const attempts = job.attempts + 1;
-      const finished = job.kind !== "reconcile" && attempts >= MAX_ATTEMPTS;
+      // A reconcile is retried until it applies, however long that takes (ae9a9ce: giving up would
+      // abandon desired state and hand a technical retry back to the publisher); it is shown as
+      // stuck from `MAX_ATTEMPTS` on instead (attention, `job-retrying`). Only one that can never
+      // succeed fails. Every other kind stops after `MAX_ATTEMPTS`.
+      const finished =
+        err instanceof Unrecoverable || (job.kind !== "reconcile" && attempts >= MAX_ATTEMPTS);
       db.run("UPDATE job SET next_attempt_at=? WHERE id=?", [new Date(Date.now()+Math.min(300000,1000*2**Math.min(attempts,8))).toISOString(),job.id]);
       db.run("UPDATE job SET state = ?, result = ?, updated_at = ? WHERE id = ?", [
         finished ? "failed" : "queued",
@@ -294,7 +432,10 @@ export function runDueJobs(app: App): number {
       if (finished) {
         const payload = JSON.parse(job.payload) as ReconcilePayload;
         if (payload.releaseId) {
-          db.run("UPDATE release SET state = 'failed', reason = ? WHERE id = ?", [
+          // Guarded: only a release still waiting can fail. Unguarded, a job that failed after its
+          // release converged would turn a revision that reached the fleet into one the promotion
+          // gate reads as "never got here" (formal/Formal/Release.lean, `reached_monotone`).
+          db.run("UPDATE release SET state = 'failed', reason = ? WHERE id = ? AND state = 'pending'", [
             message,
             payload.releaseId,
           ]);

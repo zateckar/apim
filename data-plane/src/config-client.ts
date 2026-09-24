@@ -90,6 +90,14 @@ export class ConfigClient {
    * so the fleet view names the reason rather than showing an instance silently one revision behind.
    */
   activationBlocked: string | null = null;
+  /**
+   * What stands in the way of the document being served *now*, as opposed to one that was offered:
+   * only a cached settings block this container refused. An `unchanged` answer means the offered
+   * digest is the served one, so this is all that can still be blocking.
+   */
+  private servingRefusal: string | null = null;
+  /** Set while a poll is between send and activation; see `pollOnce`. */
+  private inFlight = false;
   private timer: ReturnType<typeof setInterval> | null = null;
   private readonly startCpu = process.cpuUsage();
   /** What this build speaks. One place, so the poll body and every check cannot disagree. */
@@ -124,6 +132,7 @@ export class ConfigClient {
        * defaults stay in force until a document arrives that this container can apply.
        */
       const refused = this.options.settings?.blockerFor(config.settings);
+      this.servingRefusal = refused ?? null;
       if (refused) {
         this.activationBlocked = refused;
         console.error(`[dp] serving cached routes with default settings: ${refused}`);
@@ -172,7 +181,26 @@ export class ConfigClient {
     };
   }
 
-  async pollOnce(): Promise<"updated" | "unchanged" | "revoked" | "blocked" | "error"> {
+  /**
+   * One poll at a time. The timer fires every interval whether or not the last poll has finished,
+   * and a poll can outlast an interval — the fetch alone may take ten seconds, and fetching a new
+   * document's artifacts is unbounded. Two in flight would each apply what they were answered in
+   * the order they *finish*, so an answer sent earlier could land last: a superseded document
+   * activated over the current one, or a 200 that left the control plane before this instance was
+   * revoked putting its routes back after the 401 took them down. Skipping the tick keeps the
+   * answers in the order they were asked for (`formal/Formal/ConfigClient.lean`).
+   */
+  async pollOnce(): Promise<"updated" | "unchanged" | "revoked" | "blocked" | "error" | "skipped"> {
+    if (this.inFlight) return "skipped";
+    this.inFlight = true;
+    try {
+      return await this.pollExclusive();
+    } finally {
+      this.inFlight = false;
+    }
+  }
+
+  private async pollExclusive(): Promise<"updated" | "unchanged" | "revoked" | "blocked" | "error"> {
     /*
      * A delta handed to a poll that does not complete is lost on purpose: replaying it would
      * double-count a consumer into a 403, and this design chooses under-counting over that. No
@@ -259,7 +287,14 @@ export class ConfigClient {
     this.decommissioned = false;
     this.lastError = null;
 
-    if (payload.unchanged) return "unchanged";
+    if (payload.unchanged) {
+      // The document offered is the one serving, so a reason recorded against some *other* digest
+      // — one whose artifacts never arrived and that has since been rolled back, or a wire version
+      // since upgraded past — no longer describes anything. Left in place it would travel on every
+      // poll and `/healthz` until the next change, naming a blocker that does not exist.
+      this.activationBlocked = this.servingRefusal;
+      return "unchanged";
+    }
 
     const config = payload.config as GatewayConfig | undefined;
     if (!config || config.configVersion !== this.wireVersion) {
@@ -285,6 +320,7 @@ export class ConfigClient {
       throw new Error(`refusing to serve: ${blocker.reason}`);
     }
     this.activationBlocked = null;
+    this.servingRefusal = null;
 
     this.fromCache = false;
     this.table = this.tableFor(config);

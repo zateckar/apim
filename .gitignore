@@ -3,6 +3,7 @@
 # space. All of it is rebuilt by `bun run seed` and `scripts/stack.ps1 -Up`; none of it is input.
 .data/
 node_modules/
+formal/.lake/
 ui/dist/
 .env.local
 *.log

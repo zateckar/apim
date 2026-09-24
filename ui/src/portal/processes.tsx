@@ -1,10 +1,8 @@
-import { integerError } from "../lib/form-validation";
 import { useState } from "react";
 import * as I from "./icons";
 import type { Session } from "../App";
 import { api } from "../api";
 import {
-  Action,
   DangerZone,
   TextField,
   EmptyState,
@@ -26,15 +24,12 @@ import { formatDateTime } from "../lib/datetime";
 import {
   integrationEventChip,
   kafkaGrantChip,
-  kafkaTopicChip,
   operationChip,
   topicApiChip,
   subscriptionChip,
 } from "../lib/status";
 import { SubscriptionKeys } from "../views/SubscriptionKeys";
-import { DomainPicker } from "./apis";
 import { command } from "./client";
-import { topicSchemaError } from "../../../shared/kafka-proxy";
 import type { OperationState } from "../../../shared/types";
 
 export function Activity({ items, loading = false }: { items: any[]; loading?: boolean }) {
@@ -522,6 +517,20 @@ export function Approvals({
               <span className="k">Environment</span>
               <span className="v">{envLabel(selected.approval.environment)}</span>
             </div>
+            {/* Who the broker will bind the ACL to, and everything approving grants: a Kafka request
+                is one decision for all of its operations (kafka-workspace). */}
+            {selected.kind === "kafka.request" && selected.approval.principal && (
+              <>
+                <div className="kv">
+                  <span className="k">Principal</span>
+                  <span className="v mono">{selected.approval.principal} · {selected.approval.authType === "mtls" ? "mTLS" : "OAuth"}</span>
+                </div>
+                <div className="kv">
+                  <span className="k">Operations</span>
+                  <span className="v">{(selected.approval.operations ?? []).map((op: string) => op.toUpperCase()).join(", ")}</span>
+                </div>
+              </>
+            )}
           </div>
           <p>{selected.payload.purpose}</p>
           <Field label="Reason (optional)" hint="Recorded with the decision.">
@@ -558,630 +567,7 @@ export function Approvals({
   );
 }
 
-// ---------------------------------------------------------------------------------------- Kafka
-
-/** Access that is live or on its way — the states in which asking again is refused with `409`. */
-const LIVE_GRANT = ["pending", "activating", "active", "revoking"];
-
-/** This application's own grant on a topic, if it holds one that is not finished. */
-function grantFor(access: any[], topicId: string, applicationId: string) {
-  return access.find((a) => a.topic_id === topicId && a.application_id === applicationId && LIVE_GRANT.includes(a.state));
-}
-
-function domainOf(t: { domain: string | null; subdomain: string | null }): string {
-  return t.domain ? `${t.domain}${t.subdomain ? ` / ${t.subdomain}` : ""}` : "no domain yet";
-}
-
-export function Kafka({
-  session: s,
-  tick,
-}: {
-  session: Session;
-  tick: number;
-}) {
-  const topics = useAsync(
-      () => api.get<{ items: any[] }>("/api/kafka/topics"),
-      [tick, s.application],
-    ),
-    access = useAsync(
-      () => api.get<{ items: any[] }>("/api/kafka/access"),
-      [tick, s.application],
-    ),
-    certificates = useAsync(
-      () => api.get<{ items: any[] }>(`/api/certificates?environment=${encodeURIComponent(s.environment)}`),
-      [tick, s.environment],
-    ),
-    w = useAction();
-  const [create, setCreate] = useState(false),
-    [name, setName] = useState(""),
-    [selected, setSelected] = useState<any>(null),
-    [purpose, setPurpose] = useState(""),
-    [value, setValue] = useState(""),
-    // `null` until the console has been asked, so "nothing on the topic" is an answer and not the
-    // absence of one.
-    [messages, setMessages] = useState<any[] | null>(null),
-    [revoke, setRevoke] = useState<any>(null);
-  // The owner's fields, held apart from `selected` so an edit in progress is not overwritten by
-  // the refresh underneath it.
-  const [draft, setDraft] = useState({ partitions: 3, description: "" });
-  const [taxonomy, setTaxonomy] = useState({ domain: "", subdomain: "" });
-  const [contract, setContract] = useState<ContractDraft>(contractDraftOf());
-  const [note, setNote] = useState<string | null>(null);
-  const rows =
-    topics.data?.items.filter(
-      (t) => t.environment === s.environment && t.state !== "deleted",
-    ) ?? [];
-  // The application's own topics apart from everybody else's, because what may be done differs:
-  // an owner edits, anybody else asks for access (kafka-workspace, "The topic list mirrors the API
-  // list"). One run sorted by name made the reader work out which rows were theirs from a caption.
-  const own = rows.filter((t) => t.applicationId === s.application);
-  const others = rows.filter((t) => t.applicationId !== s.application);
-  const grants = access.data?.items ?? [];
-  const topicNameProblem = !/^[A-Za-z0-9][A-Za-z0-9._-]{1,100}$/.test(name) ? "Use 2–101 letters, digits, dots, underscores or hyphens." : topics.data?.items.some(topic => topic.environment === s.environment && topic.name === name) ? "This topic name already exists in this environment." : null;
-  const partitionProblem = integerError(draft.partitions, selected && !create ? selected.partitions : 1, 100);
-  const createBlocked = Boolean(topicNameProblem || partitionProblem || contractProblem(name, contract) || !taxonomy.domain || topics.loading || topics.error);
-  function startCreating() {
-    setSelected(null);
-    setName("");
-    setDraft({ partitions: 3, description: "" });
-    setTaxonomy({ domain: "", subdomain: "" });
-    setContract(contractDraftOf());
-    setCreate(true);
-  }
-  function openTopic(t: any) {
-    setSelected(t);
-    setMessages(null);
-    setPurpose("");
-    setValue("");
-    setDraft({ partitions: t.partitions, description: t.description ?? "" });
-    setTaxonomy({ domain: t.domain ?? "", subdomain: t.subdomain ?? "" });
-    setContract(contractDraftOf(t));
-    setNote(null);
-  }
-  const currentAccess = selected ? grantFor(grants, selected.id, s.application) : undefined;
-  if (topics.error || access.error) return <Notice kind="error">{topics.error ?? access.error}</Notice>;
-  if (!topics.data || !access.data) return <Skeleton rows={4} />;
-  const canCreate = { enabled: Boolean(s.application), reason: s.application ? null : "Choose an application first." };
-  const topicRow = (t: any) => {
-    const grant = grantFor(grants, t.id, s.application);
-    return (
-      <div className="native-row" key={t.id}>
-        <div>
-          <strong>{t.name}</strong>
-          <small>
-            {t.applicationId !== s.application && `${s.applicationName(t.applicationId)} · `}
-            {t.partitions} partitions · {domainOf(t)}
-          </small>
-          {/* Only when it is news: a ready topic is the normal case, and a "Ready" chip on every row
-              was a column of the same word (the rule `lifecycleChip` keeps for an active API). */}
-          {t.state !== "ready" && <StatusChip chip={kafkaTopicChip(t.state)} />}
-          {grant && (
-            <small>
-              Access for {s.applicationName(s.application)}: <StatusChip chip={kafkaGrantChip(grant.state)} />
-            </small>
-          )}
-        </div>
-        <button className="btn sm" onClick={() => openTopic(t)}>
-          Open <I.ChevRight />
-        </button>
-      </div>
-    );
-  };
-  return (
-    <>
-      <Panel
-        className="kafka-topics"
-        title={`Topics in ${envLabel(s.environment)}`}
-        hint="Simulated broker: topics and their messages exist only in this portal."
-        // As on Subscriptions: an empty list's action is its empty state's, not the head's as well.
-        actions={
-          rows.length === 0 ? undefined : (
-            <Action permission={canCreate} className="primary" onClick={startCreating}>
-              <I.Plus /> Create topic
-            </Action>
-          )
-        }
-      >
-        {rows.length === 0 ? (
-          <EmptyState
-            title={`No topics in ${envLabel(s.environment)}`}
-            detail="A topic belongs to one application and one environment, and carries a domain so it is found beside that application's APIs in the catalogue."
-            action={
-              <Action permission={canCreate} className="sm" onClick={startCreating}>
-                Create topic
-              </Action>
-            }
-          />
-        ) : (
-          <>
-            <h4>Owned by {s.applicationName(s.application)}</h4>
-            {own.length ? own.map(topicRow) : (
-              <p className="muted">{s.applicationName(s.application)} owns no topics in {envLabel(s.environment)}.</p>
-            )}
-            {others.length > 0 && (
-              <>
-                <h4>Other applications' topics</h4>
-                {others.map(topicRow)}
-              </>
-            )}
-          </>
-        )}
-      </Panel>
-      {/* Both sides of the relationship, because both are entitled to see it and a topic cannot be
-          deleted until every grant is withdrawn. Showing only this application's own grants left a
-          topic's owner told to "revoke topic subscriptions first" with no way to find, let alone
-          revoke, the one holding it up (finding 5). The server already returned both. */}
-      <Panel title="Topic access" className="kafka-access">
-        {(() => {
-          const granted = grants.filter((a) => a.environment === s.environment);
-          const held = granted.filter((a) => a.application_id === s.application);
-          const against = granted.filter(
-            (a) =>
-              a.publisher === s.application && a.application_id !== s.application,
-          );
-          const row = (a: any, mineRow: boolean) => (
-            <div className="native-row" key={a.id}>
-              <div>
-                <strong>{a.topicName}</strong>
-                <small>
-                  {mineRow
-                    ? a.purpose
-                    : `${s.applicationName(a.application_id)} · ${a.purpose}`}
-                </small>
-                <StatusChip chip={kafkaGrantChip(a.state)} />
-              </div>
-              {/* A request waiting on the owner is decided in Approvals, with Approve and Reject —
-                  not cancelled from here on the requester's behalf. */}
-              {!mineRow && a.state === "pending" ? (
-                <Link className="btn sm" to={`/${s.application}/approvals`}>Review</Link>
-              ) : ["active", "pending", "activating"].includes(a.state) && (
-                // The same shape as a subscription's: a row button, then a dialog holding only the
-                // typed confirmation. It was an open-able danger zone inside every row, so a list of
-                // five grants was five collapsed confirmation forms.
-                <button className="btn sm" disabled={w.busy} onClick={() => setRevoke({ ...a, mine: mineRow })}>
-                  {a.state === "pending" ? "Cancel request" : "Revoke"}
-                </button>
-              )}
-            </div>
-          );
-          return (
-            <>
-              <h4>Topics {s.applicationName(s.application)} can use</h4>
-              {/* Not empty states: the topics above are where access is asked for, and nobody using
-                  your topics is the normal, healthy answer for a topic nobody has asked for. */}
-              {held.length ? (
-                held.map((a) => row(a, true))
-              ) : (
-                <p className="muted">No access in {envLabel(s.environment)} yet. Open a topic above to request it.</p>
-              )}
-              <h4>Who else uses topics owned by {s.applicationName(s.application)}</h4>
-              {against.length ? (
-                against.map((a) => row(a, false))
-              ) : (
-                <p className="muted">Nobody else holds access to your topics here.</p>
-              )}
-            </>
-          );
-        })()}
-      </Panel>
-      {revoke && (
-        <Modal
-          title={revoke.state === "pending" ? "Cancel this request" : "Revoke topic access"}
-          close={() => setRevoke(null)}
-        >
-          <DangerZone
-            open
-            what={revoke.state === "pending" ? "Cancel this request" : "Revoke access"}
-            name={revoke.topicName}
-            consequence={
-              revoke.state === "pending"
-                ? "The request is withdrawn before the owner decides. Asking again means a new request."
-                : revoke.mine
-                  ? `${s.applicationName(s.application)} loses access to the topic. Revoked access cannot be restored.`
-                  : `${s.applicationName(revoke.application_id)} loses access to your topic. Revoked access cannot be restored.`
-            }
-            permission={ALLOWED}
-            busy={w.busy}
-            error={w.error}
-            onConfirm={() =>
-              w.run(async () => {
-                await api.del(`/api/kafka/access/${revoke.id}`);
-                setRevoke(null);
-                access.reload();
-              })
-            }
-          />
-        </Modal>
-      )}
-      {create && (
-        <Modal title="Create Kafka topic" close={() => setCreate(false)}>
-          <p>Owned by {s.applicationName(s.application)} in {envLabel(s.environment)}.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (createBlocked) return;
-              void w.run(async () => {
-                await api.post("/api/kafka/topics", {
-                  applicationId: s.application,
-                  environment: s.environment,
-                  name,
-                  partitions: draft.partitions,
-                  description: draft.description,
-                  domain: taxonomy.domain,
-                  subdomain: taxonomy.subdomain || null,
-                  ...contractBody(contract),
-                });
-                setCreate(false);
-                setName("");
-                setDraft({ partitions: 3, description: "" });
-                setTaxonomy({ domain: "", subdomain: "" });
-                topics.reload();
-              });
-            }}
-          >
-            <TextField label="Topic name" value={name} onChange={setName} required maxLength={101}
-              hint="2–101 letters, digits, dots, underscores or hyphens; unique in this environment." error={name ? topicNameProblem : null} />
-            {/* A topic is a catalog item, so it is classified like every other one: this is how
-                somebody browsing the estate by domain finds it. */}
-            <DomainPicker
-              domain={taxonomy.domain}
-              subdomain={taxonomy.subdomain}
-              onChange={setTaxonomy}
-            />
-            <TopicContract s={s} topic={name} draft={contract} onChange={setContract} certificates={certificates} />
-            <Field label="Partitions" hint="Whole numbers from 1 to 100. Partitions can only increase later.">
-              <input
-                type="number"
-                min={1}
-                max={100}
-                required
-                value={draft.partitions}
-                onChange={(e) =>
-                  setDraft({ ...draft, partitions: Number(e.target.value) })
-                }
-              />
-            </Field>
-            <Field label="Description">
-              <textarea
-                value={draft.description}
-                onChange={(e) =>
-                  setDraft({ ...draft, description: e.target.value })
-                }
-              />
-            </Field>
-            <Notice kind="error">{w.error}</Notice>
-            {partitionProblem && <p className="field-error">{partitionProblem}</p>}
-            {!taxonomy.domain && <p className="hint">Choose a domain before creating the topic.</p>}
-            <button className="btn primary" disabled={w.busy || createBlocked}>
-              Create topic
-            </button>
-          </form>
-        </Modal>
-      )}
-      {selected && (
-        <Modal title={selected.name} close={() => setSelected(null)}>
-          <p className="muted">
-            Owned by {s.applicationName(selected.applicationId)} in {envLabel(selected.environment)}. Simulated broker.
-          </p>
-          {selected.canEdit ? (
-            <>
-              <Field label="Description">
-                <textarea
-                  value={draft.description}
-                  onChange={(e) =>
-                    setDraft({ ...draft, description: e.target.value })
-                  }
-                />
-              </Field>
-              <Field label="Partitions" hint="A topic may only gain partitions.">
-                <input
-                  type="number"
-                  min={selected.partitions}
-                  max={100}
-                  value={draft.partitions}
-                  onChange={(e) =>
-                    setDraft({ ...draft, partitions: Number(e.target.value) })
-                  }
-                />
-              </Field>
-              {/* A topic has no path, so moving it between domains moves only where it is found. */}
-              <DomainPicker
-                domain={taxonomy.domain}
-                subdomain={taxonomy.subdomain}
-                onChange={setTaxonomy}
-              />
-              <TopicContract s={s} topic={selected.name} draft={contract} onChange={setContract} certificates={certificates} />
-              {selected.apiPublished && (
-                <p className="hint">
-                  This topic has an HTTP API here. Saving a new schema regenerates its definition, and a
-                  new certificate rebinds it; both reach the gateways as an ordinary change.
-                </p>
-              )}
-              {partitionProblem && <p className="field-error">{partitionProblem}</p>}
-              <div className="native-actions">
-                <button
-                  className="btn primary"
-                  disabled={w.busy || !taxonomy.domain || Boolean(partitionProblem) || Boolean(contractProblem(selected.name, contract))}
-                  onClick={() =>
-                    void w.run(async () => {
-                      const saved = await api.patch<{ operation: unknown }>(`/api/kafka/topics/${selected.id}`, {
-                        description: draft.description,
-                        partitions: draft.partitions,
-                        domain: taxonomy.domain,
-                        subdomain: taxonomy.subdomain || null,
-                        ...contractBody(contract),
-                      });
-                      setSelected({
-                        ...selected,
-                        ...draft,
-                        domain: taxonomy.domain,
-                        subdomain: taxonomy.subdomain || null,
-                        ...contractBody(contract),
-                      });
-                      topics.reload();
-                      setNote(
-                        saved.operation
-                          ? "Saved. The topic's API is being regenerated; Activity shows it reaching the gateways."
-                          : "Saved.",
-                      );
-                    })
-                  }
-                >
-                  Save topic
-                </button>
-              </div>
-              <Notice kind="ok">{note}</Notice>
-            </>
-          ) : (
-            // The facts, read-only, and who can change them. A form of disabled fields would be
-            // three boxes nobody can type in, to say what one sentence says.
-            <>
-              <div className="kv-list">
-                <div className="kv"><span className="k">Description</span><span className="v">{selected.description || "—"}</span></div>
-                <div className="kv"><span className="k">Partitions</span><span className="v">{selected.partitions}</span></div>
-                <div className="kv"><span className="k">Domain</span><span className="v">{domainOf(selected)}</span></div>
-              </div>
-              <p className="muted">Only members of {s.applicationName(selected.applicationId)} can change this topic.</p>
-            </>
-          )}
-          {/* Whether it has an HTTP API here, and where to go about it: the API itself when it has
-              one, the proxy screen — which says why not — when it does not. */}
-          <p>
-            <StatusChip chip={topicApiChip(Boolean(selected.apiPublished), selected.apiBlockers?.[0])} />{" "}
-            {selected.apiPublished && selected.apiResourceId ? (
-              <Link to={`/${selected.applicationId}/apis/${selected.apiResourceId}`}>Open its API</Link>
-            ) : (
-              <Link to={`/${s.application}/kafka-proxy`}>Kafka REST Proxy</Link>
-            )}
-          </p>
-          <Notice kind="error">{w.error}</Notice>
-          <h4>Access for {s.applicationName(s.application)}</h4>
-          {currentAccess?.state === "active" ? (
-            <>
-              <Field label="Message">
-                <textarea
-                  value={value}
-                  onChange={(e) => setValue(e.target.value)}
-                />
-              </Field>
-              <div className="native-actions">
-                {(["produce", "consume"] as const).map((action) => (
-                  <button
-                    className="btn"
-                    key={action}
-                    disabled={w.busy}
-                    onClick={() =>
-                      void w.run(async () =>
-                        setMessages(
-                          (
-                            await api.post<any>(
-                              `/api/kafka/topics/${selected.id}/playground`,
-                              { applicationId: s.application, action, value },
-                            )
-                          ).items,
-                        ),
-                      )
-                    }
-                  >
-                    {action === "produce" ? "Produce" : "Consume"}
-                  </button>
-                ))}
-              </div>
-              {messages && (
-                messages.length ? (
-                  <>
-                    <p className="muted small">The newest {messages.length} messages on the topic. Simulated.</p>
-                    <table className="tbl">
-                      <thead><tr><th>Offset</th><th>Written</th><th>Value</th></tr></thead>
-                      <tbody>
-                        {messages.map((message) => (
-                          <tr key={message.offset}>
-                            <td className="num">{message.offset}</td>
-                            <td>{formatDateTime(message.createdAt)}</td>
-                            <td className="mono">{message.value}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </>
-                ) : (
-                  <p className="muted small">No messages on this topic yet. Simulated.</p>
-                )
-              )}
-            </>
-          ) : currentAccess ? (
-            <p>
-              <StatusChip chip={kafkaGrantChip(currentAccess.state)} /> A request is already in progress; wait for it to finish before asking again.
-            </p>
-          ) : (
-            <form
-              onSubmit={(e) => {
-                e.preventDefault();
-                void w.run(async () => {
-                  await api.post(`/api/kafka/topics/${selected.id}/subscribe`, {
-                    applicationId: s.application,
-                    purpose,
-                  });
-                  setSelected(null);
-                  access.reload();
-                });
-              }}
-            >
-              <Field label="Purpose" hint="3–500 characters: what this application will produce or consume.">
-                <textarea
-                  required
-                  minLength={3}
-                  maxLength={500}
-                  value={purpose}
-                  onChange={(e) => setPurpose(e.target.value)}
-                />
-              </Field>
-              {selected.state !== "ready" && <p className="hint">The topic is still being created; access can be requested once it is ready.</p>}
-              <button
-                className="btn primary"
-                disabled={w.busy || selected.state !== "ready" || !s.application || access.loading || Boolean(access.error) || purpose.trim().length < 3}
-              >
-                Request access
-              </button>
-            </form>
-          )}
-          {selected.canEdit && (
-            <DangerZone
-              what="Delete this topic"
-              name={selected.name}
-              consequence="The topic and its messages go with it. Every application's access has to be revoked first."
-              permission={ALLOWED}
-              busy={w.busy}
-              error={w.error}
-              onConfirm={() =>
-                w.run(async () => {
-                  await api.del(`/api/kafka/topics/${selected.id}`);
-                  setSelected(null);
-                  topics.reload();
-                })
-              }
-            />
-          )}
-        </Modal>
-      )}
-    </>
-  );
-}
-
-/** What a topic is produced with, as the forms hold it: the schema as text, so a typo is not lost. */
-export interface ContractDraft {
-  schemaType: string;
-  schemaText: string;
-  certificateId: string;
-}
-
-export function contractDraftOf(t?: { schemaType?: string | null; schema?: unknown; certificateId?: string | null }): ContractDraft {
-  return {
-    schemaType: t?.schemaType ?? "",
-    schemaText: t?.schema ? JSON.stringify(t.schema, null, 2) : "",
-    certificateId: t?.certificateId ?? "",
-  };
-}
-
-/**
- * Why a draft cannot be saved, or `null` — the server's own check (`topicSchemaError`), run as the
- * owner types, so a schema the gateway could not enforce is refused here rather than after a round
- * trip. An empty schema on a JSON topic is allowed: the topic can exist before its contract does;
- * it just cannot have an HTTP API until it has one.
- */
-export function contractProblem(topic: string, draft: ContractDraft): string | null {
-  if (draft.schemaType !== "json" || !draft.schemaText.trim()) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(draft.schemaText);
-  } catch (error) {
-    return `schema: not valid JSON — ${(error as Error).message}`;
-  }
-  return topicSchemaError(topic || "topic", parsed);
-}
-
-/** The PATCH or POST fields for a draft. */
-function contractBody(draft: ContractDraft) {
-  return {
-    schemaType: draft.schemaType || null,
-    schema: draft.schemaType === "json" && draft.schemaText.trim() ? JSON.parse(draft.schemaText) : null,
-    certificateId: draft.certificateId || null,
-  };
-}
-
-/**
- * A topic's schema and certificate (kafka-rest-proxy, "A topic carries its schema and its
- * certificate"). One component for the create form and the owner's edit form, so the two cannot
- * come to ask for different things.
- */
-function TopicContract({
-  s,
-  topic,
-  draft,
-  onChange,
-  certificates,
-}: {
-  s: Session;
-  topic: string;
-  draft: ContractDraft;
-  onChange: (next: ContractDraft) => void;
-  certificates: { data: { items: any[] } | null; error: string | null };
-}) {
-  const usable = (certificates.data?.items ?? []).filter(
-    (c) => c.applicationId === s.application && !c.expired,
-  );
-  const problem = contractProblem(topic, draft);
-  return (
-    <>
-      <Field label="Schema type" hint="What the records on this topic are. Only a JSON topic can have an HTTP API.">
-        <select value={draft.schemaType} onChange={(e) => onChange({ ...draft, schemaType: e.target.value })}>
-          <option value="">Not recorded</option>
-          <option value="json">JSON</option>
-          <option value="avro">Avro</option>
-          <option value="protobuf">Protobuf</option>
-        </select>
-      </Field>
-      {draft.schemaType === "json" && (
-        <Field
-          label="JSON Schema"
-          hint="The record's shape. It becomes the request body of the topic's HTTP API, which refuses a record that does not match it."
-        >
-          <textarea
-            className="mono"
-            rows={10}
-            spellCheck={false}
-            value={draft.schemaText}
-            onChange={(e) => onChange({ ...draft, schemaText: e.target.value })}
-          />
-        </Field>
-      )}
-      {problem && <p className="field-error">{problem}</p>}
-      <Field
-        label="Client certificate"
-        hint={`Presented by the topic's HTTP API when it produces a record. One of the certificates ${s.applicationName(s.application)} holds in ${envLabel(s.environment)}.`}
-      >
-        <select value={draft.certificateId} onChange={(e) => onChange({ ...draft, certificateId: e.target.value })}>
-          <option value="">None</option>
-          {usable.map((c) => (
-            <option key={c.id} value={c.id}>{c.name}</option>
-          ))}
-          {/* The one it has, even when it has since expired: a select that silently showed "None"
-              would save the certificate off the topic. */}
-          {draft.certificateId && !usable.some((c) => c.id === draft.certificateId) && (
-            <option value={draft.certificateId}>{draft.certificateId} (expired or not yours)</option>
-          )}
-        </select>
-      </Field>
-      <Notice kind="warn">{certificates.error && `Certificates could not be read: ${certificates.error}`}</Notice>
-      {certificates.data && usable.length === 0 && (
-        <p className="hint">
-          {s.applicationName(s.application)} has no certificate in {envLabel(s.environment)}.{" "}
-          <Link to={`/${s.application}/credentials`}>Add one on Credentials</Link>
-        </p>
-      )}
-    </>
-  );
-}
+// ----------------------------------------------------------------------------- Kafka REST Proxy
 
 interface SharedStage {
   environment: string;
@@ -1252,7 +638,7 @@ export function topicApiAction(
   if (topic.apiResourceId) return { kind: "promote", reason: null };
   return stage.first
     ? { kind: "create", reason: null }
-    : { kind: "none", reason: "A topic's API starts where the chain does: create it there, then promote it here." };
+    : { kind: "none", reason: "A topic's API starts where Kafka's stages do: create it there, then promote it here." };
 }
 
 /**
@@ -1273,6 +659,21 @@ export function KafkaProxy({ session: s, tick }: { session: Session; tick: numbe
   if (status.error) return <Notice kind="error">{status.error}</Notice>;
   if (!status.data) return <Skeleton rows={4} />;
   const data = status.data;
+  // The shared proxy and every topic's API exist only where a Kafka cluster does.
+  if (!s.meta.kafkaChain.includes(s.environment))
+    return (
+      <Panel>
+        <EmptyState
+          title={`Kafka has no ${envLabel(s.environment)}`}
+          detail={`Topics, the shared proxy and their HTTP APIs live in ${s.meta.kafkaChain.map(envLabel).join(" and ")}.`}
+          action={
+            <button type="button" className="btn primary" onClick={() => s.setEnvironment(s.meta.kafkaChain[0]!)}>
+              Open {envLabel(s.meta.kafkaChain[0])}
+            </button>
+          }
+        />
+      </Panel>
+    );
   const index = data.environments.findIndex((e) => e.environment === s.environment);
   const here = data.environments[index];
   const form = draft ?? { backendUrl: here?.backendUrl ?? "", clusterId: here?.clusterId ?? "" };

@@ -158,6 +158,8 @@ export interface Meta {
     localities?: Locality[];
   }>;
   chain: string[];
+  /** The stages with a Kafka cluster, in chain order — TEST and PROD; there is no DEV one. */
+  kafkaChain: string[];
   kinds: string[];
   policyUnits: Array<{
     key: string;

@@ -57,6 +57,9 @@ export function registerAdminRoutes(router: Router): void {
     return json({
       environments,
       chain: ctx.app.config.promotionChain,
+      // The stages with a Kafka cluster — TEST and PROD — which the Kafka screens walk instead of
+      // the chain (kafka-workspace, "Kafka has its own stages").
+      kafkaChain: ctx.app.config.kafka.environments,
       kinds: RESOURCE_KINDS,
       policyUnits: UNIT_CATALOGUE,
       publicUrl: ctx.app.config.publicUrl,

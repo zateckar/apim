@@ -197,6 +197,16 @@ describe("the artifact channel", () => {
         "127.0.0.1",
       );
       expect(response.status).toBe(200);
+
+      // Rolled back to what the instance is serving: nothing is blocked any more, and the reason
+      // recorded against revision 2's digest stops being reported.
+      await cp.call("POST", `/api/resources/${api.resourceId}/releases`, {
+        cookie: api.pavel,
+        body: { revision: 1, environment: "dev" },
+      });
+      expect(await dp.client.pollOnce()).toBe("unchanged");
+      expect(dp.client.activationBlocked).toBeNull();
+      expect(dp.health().activationBlocked ?? null).toBeNull();
     } finally {
       dp.stop();
       cpServer.stop();

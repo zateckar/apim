@@ -159,15 +159,50 @@ Long-running work SHALL happen in a job table, retried with backoff, never insid
 
 - GIVEN a reconcile job for a target
 - WHEN a runner takes it
-- THEN it SHALL acquire a 30-second lease on that target inside a transaction
-- AND a runner that finds a live lease held by somebody else SHALL fail rather than proceed
-- AND the lease SHALL be released in a `finally`, whatever the outcome
+- THEN it SHALL acquire a 30-second lease on that target inside a transaction, as a holder that
+  names its own process
+- AND a runner that finds a live lease held by somebody else SHALL fail rather than proceed, and be
+  retried
+- AND the lease SHALL be released in a `finally`, whatever the outcome, and only if it is still
+  the runner's own
 
-#### Scenario: A job fails repeatedly
+#### Scenario: A job other than a reconcile fails repeatedly
 
-- GIVEN a job that throws
+- GIVEN a job that is not a reconcile, and throws
 - WHEN it has been attempted `MAX_ATTEMPTS` (3) times
 - THEN it SHALL stop being retried and its failure SHALL be readable at `GET /api/jobs/:id`
+
+#### Scenario: A reconcile fails repeatedly
+
+- GIVEN a reconcile job that throws — a paused gateway, a missing route, a live lease
+- WHEN it is retried
+- THEN it SHALL be retried with backoff capped at five minutes until it applies, however many
+  attempts that takes
+- AND the reason SHALL be that giving up would abandon desired state and hand a technical retry
+  back to the publisher, while every one of these conditions clears
+- AND from its `MAX_ATTEMPTS`th attempt on it SHALL be shown to administrators as attention, with
+  the reason it last gave and that it will keep trying, because a job that never fails is otherwise
+  a job nobody sees stuck
+
+#### Scenario: A reconcile has nothing left to do, or can never succeed
+
+- GIVEN a reconcile job whose release no longer exists, because its API was deleted
+- WHEN it runs
+- THEN it SHALL finish with nothing applied rather than throw
+- AND GIVEN a reconcile job whose gateway no longer exists and that does not say which environment
+  it was for, it SHALL fail at once, because no retry can succeed
+
+#### Scenario: A release is applied onto more than one gateway
+
+- GIVEN a release whose API is bound to several gateways in its environment
+- WHEN any of them is paused
+- THEN the release SHALL be held, naming every paused gateway, and SHALL write nothing to any of them
+- AND a withdrawal, which removes the API from every gateway in the environment, SHALL be held while
+  any gateway there is paused
+- AND the job's gateway SHALL be a handle only: its scope SHALL be the environment, carried on the
+  job, so deleting the handle while the job waits SHALL not strand it
+- AND the reason SHALL be the operation spine's: deploying to the half that is running would leave
+  the API answering in one locality and not the other
 
 #### Scenario: Work is kicked and swept
 
@@ -285,6 +320,8 @@ The document SHALL be derived from the database, never assembled incrementally o
 - AND retention SHALL keep the **tighter** of the two bounds
 - AND a revision that is currently released anywhere, that is a rollback target, or that a pending
   operation references SHALL never be pruned
+- AND "pending" SHALL mean any operation not yet `complete` or `superseded`, because every other
+  state is retried and will publish its revision when its turn comes
 
 ### Requirement: Never store what can be derived, and never store per-request logs
 

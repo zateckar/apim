@@ -5,7 +5,8 @@ import type { Match } from "./lib/routes";
 import { Publish, Editor } from "./portal/apis";
 import { Catalog } from "./portal/catalog";
 import { Dashboard } from "./portal/dashboard";
-import { Subscriptions, Approvals, Kafka, KafkaProxy, Activity } from "./portal/processes";
+import { Subscriptions, Approvals, KafkaProxy, Activity } from "./portal/processes";
+import { KafkaCreate, KafkaTopic, KafkaTopics } from "./portal/kafka";
 import { Mailbox } from "./portal/notifications";
 import { AccountView } from "./views/AccountView";
 import { ApplicationsView, ApplicationView } from "./views/ApplicationsView";
@@ -80,7 +81,11 @@ export const SCREENS: Record<string, (context: ScreenContext) => ReactNode> = {
   subscriptions: ({ session, tick }) => <Subscriptions session={session} tick={tick} />,
   subscription: ({ match }) => <SubscriptionView subscriptionId={match.params.subscriptionId!} />,
   approvals: ({ session, tick }) => <Approvals session={session} tick={tick} />,
-  kafka: ({ session, tick }) => <Kafka session={session} tick={tick} />,
+  kafka: ({ session, tick }) => <KafkaTopics session={session} tick={tick} />,
+  "kafka-create": ({ session }) => <KafkaCreate session={session} />,
+  "kafka-topic": ({ match, session, tick }) => (
+    <KafkaTopic name={match.params.topic!} tab={match.params.tab} session={session} tick={tick} />
+  ),
   "kafka-proxy": ({ session, tick }) => <KafkaProxy session={session} tick={tick} />,
   credentials: ({ session }) => (
     <CredentialsView key={`${session.application}:${session.environment}`} session={session} />

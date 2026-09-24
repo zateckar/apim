@@ -4350,10 +4350,6 @@ dialog.native-modal { margin: auto; }
 .native-portal .integration-action .integration-action-link { margin-top: auto; font-weight: 600; color: var(--accent); }
 .native-portal .native-event { border: 1px solid var(--border); border-radius: var(--r-sm); margin: 10px 0; padding: 12px 16px; }
 .native-portal .native-event summary { cursor: pointer; line-height: 1.7; }
-.native-portal .kafka-topics .native-row { padding: 18px 8px; }
-.native-portal .kafka-topics .native-row strong { font-family: var(--font-mono); font-size: 14px; }
-.native-portal .kafka-topics .native-row small { margin: 6px 0; }
-.native-portal .kafka-access h4 { margin: 20px 0 12px; font-size: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
 .native-portal .mailbox-page .notif-body { max-height: none; }
 .native-portal .mailbox-page .notif-item { padding: 18px 16px; border-radius: var(--r-sm); }
 .native-portal .mailbox-page .notif-item[aria-expanded=true] { background: var(--accent-soft); }
@@ -4755,16 +4751,61 @@ dialog.native-modal { margin: auto; }
 .native-portal .approval-list .native-row.is-awaiting { border-left: 3px solid var(--warn); background: var(--bg-subtle); }
 /* A name and its chips on one line, wrapping: the approvals and proxy rows' head. */
 .native-portal .approval-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
-/* Sub-sections of a panel read as the Topic access panel's already do. */
-.native-portal .kafka-topics h4,
+/* Sub-sections of a panel. */
 .native-portal .approval-list h4 { margin: 20px 0 12px; font-size: 15px; padding-bottom: 10px; border-bottom: 1px solid var(--border); }
-.native-portal .kafka-topics h4:first-child,
 .native-portal .approval-list h4:first-child { margin-top: 0; }
 /* The proxy row holds an address and two commands, so its text takes the row's width. */
 .native-portal .kafka-proxy .native-row > div:first-child { flex: 1; }
 .native-portal .kafka-proxy .native-row strong { font-family: var(--font-mono); font-size: 14px; }
 .native-portal .kafka-proxy h4 { margin: 14px 0 6px; font-size: 12px; font-weight: 600; color: var(--fg-muted); }
 .native-portal .kafka-proxy .copy-row > code { font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--r-sm); }
+
+/* Kafka Topics (kafka-workspace). The list is the predecessor's table: badge, title, the mono name
+   and the size on the left; the version and the stage chevrons on the right. */
+.native-portal .kafka-topic-list .card-head { flex-wrap: wrap; gap: 10px; justify-content: flex-start; }
+.native-portal .kafka-topic-list .card-head .catalog-search { flex: 0 1 360px; width: auto; margin-left: 0; margin-right: auto; }
+.native-portal .kafka-topic-list .catalog-search > span { position: absolute; top: 50%; left: 12px; transform: translateY(-50%); display: flex; color: var(--fg-subtle); pointer-events: none; }
+.native-portal .kafka-topic-list .catalog-search input[type="search"] { min-height: 38px; padding-left: 36px; }
+.native-portal .kafka-topic-table td { padding-block: 14px; }
+/* The body scrolls the table sideways on a phone; positioned, so the header's absolutely placed
+   screen-reader label scrolls with it instead of widening the page (e2e/layout.spec.ts). */
+.native-portal .kafka-topic-list .card-body { position: relative; }
+.native-portal .kafka-topic-table th.kafka-topic-where,
+.native-portal .kafka-topic-table td.kafka-topic-where { width: 1%; white-space: nowrap; text-align: right; }
+.native-portal .kafka-topic-name { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.native-portal .kafka-topic-name .di-name { font-weight: 600; font-size: 14px; color: var(--fg); }
+.native-portal .kafka-topic-name .mono { overflow-wrap: anywhere; color: var(--fg-muted); }
+.native-portal .kafka-row-playground { margin-left: 8px; white-space: nowrap; }
+/* A screen's own head controls, portalled into the shell's page head (components.tsx, PageActions). */
+.native-portal .page-actions-slot { display: contents; }
+/* The wizard's and the schema card's editor head: the label, and whether the text is valid. */
+.native-portal .kafka-schema-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 4px 0 8px; }
+.native-portal .kafka-schema-head .lbl { font-size: 14px; font-weight: 500; }
+.native-portal .kafka-schema-head .chip { gap: 4px; }
+.native-portal .kafka-create .cm-editor,
+.native-portal .kafka-workspace .cm-editor { border: 1px solid var(--border); border-radius: var(--r-sm); font-size: 12.5px; }
+.native-portal .kafka-built-name { display: block; font-family: var(--font-mono); font-size: 13px; padding: 8px 10px; background: var(--bg-subtle); border: 1px solid var(--border); border-radius: var(--r-sm); overflow-wrap: anywhere; }
+.native-portal .kafka-side-card .card { position: sticky; top: calc(var(--topbar-h) + 16px); }
+.native-portal .kafka-schema-tab > div { display: flex; flex-direction: column; gap: 20px; min-width: 0; }
+.native-portal .kafka-schema-tab { align-items: start; }
+.native-portal .kafka-workspace .workspace-panel > .card + .card { margin-top: 20px; }
+/* The grant sections: a heading per operation, a flush table under each. */
+.native-portal .kafka-grant-head { margin: 0; padding: 14px 16px 6px; font-size: 12px; font-weight: 600; color: var(--fg-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.native-portal .kafka-grant-none { margin: 0; padding: 4px 16px 14px; }
+.native-portal .kafka-workspace .card-body.flush > .hint { margin: 0; padding: 12px 16px 0; }
+/* Why the stage button is disabled sits under it, not beside it, so the head row keeps its height
+   for the version, the wiki link and the proxy. */
+.native-portal .kafka-workspace .workspace-head .action { flex-direction: column; align-items: flex-end; gap: 4px; }
+.native-portal .kafka-workspace .workspace-head .action-reason { text-align: right; max-width: 28ch; }
+.native-portal .tbl td.row-end { width: 1%; white-space: nowrap; text-align: right; }
+/* The playground: the grants as the operation list, a grant's principal over its auth and operation. */
+.native-portal .kafka-playground { margin-bottom: 20px; }
+.native-portal .kafka-playground .pg-op { align-items: flex-start; }
+.native-portal .kafka-playground .pg-op:disabled { opacity: 0.55; cursor: not-allowed; }
+.native-portal .kafka-playground .pg-op-label { display: flex; flex-direction: column; gap: 2px; white-space: normal; overflow-wrap: anywhere; }
+.native-portal .kafka-playground .pg-main { border: 0; padding: 0; gap: 20px; }
+.native-portal .kafka-prod-confirm { margin: 4px 0 12px; }
+.native-portal .kafka-record-value { overflow-wrap: anywhere; max-width: 48ch; }
 /* end phase-2: processes */
 
 

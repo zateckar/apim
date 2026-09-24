@@ -51,6 +51,15 @@ export interface TopicRow {
   schema_json: string | null;
   certificate_id: string | null;
   created_at: string;
+  // schema-017: the topic as a published thing (kafka-workspace).
+  display_name: string | null;
+  replication: number;
+  retention_days: number | null;
+  min_insync_replicas: number | null;
+  compatibility: string | null;
+  schema_text: string | null;
+  schema_version: number;
+  wiki_link: string | null;
 }
 
 /** The shared proxy's resource, if an administrator has published it. */

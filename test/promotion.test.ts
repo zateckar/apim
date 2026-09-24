@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 import { makeCp, poll, prepareEnvironment, promote, publishApi, type TestCp } from "./helpers.ts";
+import { runDueJobs } from "../control-plane/src/jobs.ts";
 
 /**
  * Design section 6: the contract is promoted along the chain, everything else is edited in place.
@@ -149,6 +150,150 @@ describe("the promotion gate (design section 6.2)", () => {
     const entry = audit.items.find((a: { action: string }) => a.action === "release.skipChain");
     expect(entry).toBeDefined();
     expect(JSON.parse(entry.detail).reason).toBe("incident 42");
+  });
+});
+
+describe("release order", () => {
+  function revisionSpec(path: string) {
+    return {
+      swagger: "2.0",
+      info: { title: "mini", version: path },
+      host: "example.test",
+      basePath: "/v1",
+      paths: { [path]: { get: { operationId: path.slice(1), responses: { "200": { description: "ok" } } } } },
+    };
+  }
+  function releasesIn(resourceId: string) {
+    return cp.app.db
+      .query<{ rev: number; state: string; reason: string | null }, [string]>(
+        `SELECT v.rev, rel.state, rel.reason FROM release rel JOIN revision v ON v.id = rel.revision_id
+          WHERE rel.resource_id = ? AND rel.environment = 'dev' ORDER BY rel.rowid`,
+      )
+      .all(resourceId);
+  }
+
+  // formal/Formal/Release.lean `older_release_resurrects`: the trace that used to roll DEV back.
+  test("a retried release confirmed earlier never overtakes one that reached the fleet after it", async () => {
+    const api = await published();
+    for (const path of ["/two", "/three"]) {
+      await cp.call("POST", `/api/resources/${api.resourceId}/revisions`, {
+        cookie: api.pavel,
+        body: { spec: revisionSpec(path) },
+      });
+    }
+    const release = async (revision: number) =>
+      (
+        await cp.call("POST", `/api/resources/${api.resourceId}/releases`, {
+          cookie: api.pavel,
+          body: { revision, environment: "dev" },
+        })
+      ).json();
+
+    // Revision 2 is confirmed while DEV is paused, so its job fails and backs off.
+    cp.app.db.run("UPDATE target SET paused = 1 WHERE environment = 'dev'");
+    expect((await release(2)).state).toBe("pending");
+    cp.app.db.run("UPDATE target SET paused = 0 WHERE environment = 'dev'");
+
+    // Revision 3 is confirmed after it and goes live straight away.
+    expect((await release(3)).state).toBe("converged");
+    expect((await poll(cp)).config!.routes[0]!.rev).toBe(3);
+
+    // Revision 2's backoff expires. It must not take DEV back to revision 2.
+    cp.app.db.run("UPDATE job SET next_attempt_at = NULL WHERE state = 'queued'");
+    runDueJobs(cp.app);
+
+    expect((await poll(cp)).config!.routes[0]!.rev).toBe(3);
+    const rows = releasesIn(api.resourceId);
+    expect(rows.map((r) => [r.rev, r.state])).toEqual([
+      [1, "superseded"],
+      [2, "stale"],
+      [3, "converged"],
+    ]);
+    expect(rows[1]!.reason).toContain("reached DEV first");
+    // Terminal, not retried: the job is done.
+    const jobs = cp.app.db
+      .query<{ state: string; result: string }, []>(
+        "SELECT state, result FROM job WHERE kind = 'reconcile' ORDER BY created_at",
+      )
+      .all();
+    expect(jobs.every((j) => j.state === "done")).toBe(true);
+    expect(jobs.some((j) => j.result === "stale")).toBe(true);
+
+    // Rolling back is still one deliberate act away: a new release of the older revision.
+    expect((await release(2)).state).toBe("converged");
+    expect((await poll(cp)).config!.routes[0]!.rev).toBe(2);
+  });
+
+  // formal/Formal/Release.lean `Unguarded.withdrawn_then_applied`, and `withdrawal_wins`.
+  test("a release still waiting to apply is not published after the API is withdrawn", async () => {
+    const api = await published();
+    await cp.call("POST", `/api/resources/${api.resourceId}/revisions`, {
+      cookie: api.pavel,
+      body: { spec: revisionSpec("/two") },
+    });
+    cp.app.db.run("UPDATE target SET paused = 1 WHERE environment = 'dev'");
+    const pending = await (
+      await cp.call("POST", `/api/resources/${api.resourceId}/releases`, {
+        cookie: api.pavel,
+        body: { revision: 2, environment: "dev" },
+      })
+    ).json();
+    expect(pending.state).toBe("pending");
+    cp.app.db.run("UPDATE target SET paused = 0 WHERE environment = 'dev'");
+
+    await cp.call("DELETE", `/api/resources/${api.resourceId}/releases?environment=dev`, { cookie: api.pavel });
+    expect((await poll(cp)).config!.routes).toHaveLength(0);
+
+    // Revision 2's backoff expires after the withdrawal. The API stays withdrawn.
+    cp.app.db.run("UPDATE job SET next_attempt_at = NULL WHERE state = 'queued'");
+    runDueJobs(cp.app);
+    expect((await poll(cp)).config!.routes).toHaveLength(0);
+    const rows = releasesIn(api.resourceId);
+    expect(rows.map((r) => [r.rev, r.state])).toEqual([
+      [1, "withdrawn"],
+      [2, "stale"],
+    ]);
+    expect(rows[1]!.reason).toContain("withdrawn from DEV before it was applied");
+  });
+
+  // A process that dies after the apply transaction commits but before the job is marked `done`
+  // leaves it `running`, and the runner re-queues it a minute later. The replay must be a no-op.
+  test("a replayed reconcile of a release that already reached the fleet changes nothing", async () => {
+    const api = await published();
+    await cp.call("POST", `/api/resources/${api.resourceId}/revisions`, {
+      cookie: api.pavel,
+      body: { spec: revisionSpec("/two") },
+    });
+    const second = await (
+      await cp.call("POST", `/api/resources/${api.resourceId}/releases`, {
+        cookie: api.pavel,
+        body: { revision: 2, environment: "dev" },
+      })
+    ).json();
+    expect(second.state).toBe("converged");
+    const replay = (releaseId: string) => {
+      cp.app.db.run(
+        "UPDATE job SET state = 'queued', next_attempt_at = NULL WHERE json_extract(payload, '$.releaseId') = ?",
+        [releaseId],
+      );
+      runDueJobs(cp.app);
+    };
+
+    // Replaying revision 1's apply must neither bring it back nor mark it `stale`: it did reach
+    // DEV, and the promotion gate reads `stale` as "never got here".
+    replay(api.release.releaseId);
+    expect(releasesIn(api.resourceId).map((r) => [r.rev, r.state])).toEqual([
+      [1, "superseded"],
+      [2, "converged"],
+    ]);
+    expect((await poll(cp)).config!.routes[0]!.rev).toBe(2);
+
+    // And replaying a withdrawn release's apply must not publish it again.
+    await cp.call("DELETE", `/api/resources/${api.resourceId}/releases?environment=dev`, { cookie: api.pavel });
+    expect((await poll(cp)).config!.routes).toHaveLength(0);
+    replay(second.releaseId);
+    expect(releasesIn(api.resourceId).map((r) => r.state)).toEqual(["superseded", "withdrawn"]);
+    expect((await poll(cp)).config!.routes).toHaveLength(0);
   });
 });
 

@@ -156,9 +156,9 @@ Modules named by more than one capability spec:
 | `app-credentials` | Everything an application holds to prove who it is, and which references stay an admin's |
 | `trust-store` | The CAs an environment trusts and the dated exceptions that relax them |
 | `dashboard-health` | Health Status (with FixMe's diagnose-and-repair section), uptime, telemetry, the application dashboard |
-| `kafka-workspace` | Topics, their schema and certificate, access requests |
+| `kafka-workspace` | Topics named by convention in Kafka's own stages, created in TEST and staged to PROD; their schema, size and per-principal grants |
 | `kafka-rest-proxy` | A topic produced to over HTTP: its generated API, the portal's shared proxy, the portal's own key |
-| `kafka-playground` | Producing one message and reading recent ones |
+| `kafka-playground` | One bounded write or one group-less read, as one of the application's grants |
 | `integrations-and-mocks` | The six surrounding systems and the durable outbox |
 | `skonet-integration` | Approval requests and the decision that comes back |
 | `leanix-integration` | Business metadata this portal quotes rather than owns |
@@ -215,6 +215,8 @@ already has, kept because losing one costs a working link.
 | `subscription` | `/subscriptions/:subscriptionId` | Subscription | application | — |
 | `approvals` | `/approvals` | Approvals | application | API |
 | `kafka` | `/kafka` | Kafka Topics | application | Kafka |
+| `kafka-create` | `/kafka/new` | Create Kafka Topic | application | — |
+| `kafka-topic` | `/kafka/:topic` · `/kafka/:topic/:tab` | Kafka Topic *(the topic's display name once loaded)* | application | — |
 | `kafka-proxy` | `/kafka-proxy` | Kafka REST Proxy | application | Kafka |
 | `credentials` | `/credentials` · `/certificates` | Credentials | application | API |
 | `mail` | `/mail` | Mail | application | Overview |
@@ -406,6 +408,8 @@ defines — see *Policy Vocabulary* and `api-policy-controls`.
 | DELETE | `/api/playground/history/:id` | ses |
 | GET · POST | `/api/kafka/topics` | ses |
 | PATCH · DELETE | `/api/kafka/topics/:id` | ses |
+| POST | `/api/kafka/topics/:id/stage` | ses |
+| GET | `/api/kafka/connection` | ses |
 | POST | `/api/kafka/topics/:id/subscribe` | ses |
 | POST | `/api/kafka/topics/:id/playground` | ses |
 | POST | `/api/kafka/topics/:id/proxy` | ses |
@@ -460,7 +464,13 @@ Tables, by the capability that owns them:
   `principal` — the username, the client id — is deliberately in the clear, so a listing can say
   which account a credential is without the key.
 - **Kafka** — `kafka_topic`, `kafka_access`, `kafka_message`. A topic carries `schema_type`,
-  `schema_json` and `certificate_id` (schema-016); `proxy_enabled` is no longer read. A resource
+  `schema_json` and `certificate_id` (schema-016); `proxy_enabled` is no longer read. Schema-017
+  gives a topic its `display_name`, `replication`, `retention_days`, `min_insync_replicas`,
+  `compatibility`, `schema_text` (an Avro or Protobuf definition; JSON stays in `schema_json`),
+  `schema_version` and `wiki_link`; gives a grant its `principal`, `auth_type`, `operation`,
+  `group_id` and `request_id` — one row per operation, the rows of one request sharing its id — and
+  gives a playground record its `partition_no`, `msg_offset`, `msg_key` and `headers_json`
+  (`kafka-workspace`, `kafka-playground`). A resource
   generated from a topic names it by `resource.kafka_topic`, and the portal's shared Kafka proxy is
   the resource whose `platform_role` is `kafka-proxy`, owned by the reserved application `platform`,
   which has no members (`kafka-rest-proxy`).
@@ -556,6 +566,23 @@ domainPrefix(domain, subdomain)         = '/' + [slugify(domain), slugifyPath(su
 because the same table has to constrain the publish form, validate the write on the control plane
 and bucket the catalogue. `domainError(domain, subdomain)` returns the one sentence both surfaces
 say.
+
+### Kafka Topic Names And Limits
+
+`shared/kafka.ts` holds what the create form, the control plane and the playground all check, so
+they say the same sentence:
+
+- A topic's name is `buildTopicName({ domain, subdomain, application, displayName, version })` —
+  `domain _ sub-domain _ application _ name _ version`, each part slugified, the sub-domain omitted
+  when there is none. `TOPIC_NAME_PATTERN` is looser, because a name written before the convention
+  still has to be addressable. A version is `v<n>`; a new version is a new topic.
+- Sizes: `S` 8 partitions · 2 replicas · 1 day, `M` 16 · 2 · 3, `L` 32 · 2 · 5 (`TOPIC_SIZES`).
+- Operations `read · write · describe · delete`; authentication `mtls · oauth`; compatibility
+  `BACKWARD · FORWARD · FULL · NONE` or the registry's default.
+- A READ grant's consumer group is `groupIdFor(topic, application, random)` — the topic, the
+  application's slug in upper case and a six-character random suffix.
+- The playground returns at most `PLAYGROUND_MAX_MESSAGES` (100) records and writes a value of at
+  most `PLAYGROUND_MAX_VALUE` (32768) characters with at most `PLAYGROUND_MAX_HEADERS` (20) headers.
 
 ### Base Path Matching
 
@@ -760,6 +787,12 @@ LIFECYCLES            = active · deprecated · retired
 which is what lets the promotion gate read "has this revision ever reached the fleet here" from
 `release.state` alone.
 
+`stale` is terminal and publishes nothing. A release goes `stale` when a release of the same API
+into the same environment, confirmed after it, has already reached the fleet
+(`api-versioning-and-stage`). A plan that changed before apply is re-computed, not staled. "Confirmed after" means release insertion
+order, which promotion and the operation spine share. `formal/Formal/Release.lean` models every
+writer of `release.state` and proves these rules.
+
 ### The Status Vocabulary
 
 Every chip in the portal comes from `ui/src/lib/status.ts`, and **a state is named by what it
@@ -935,6 +968,10 @@ variable, never a silent downgrade.
 | `ELK_TIMEOUT_MS` | `10_000` | |
 | `ELK_MAX_RESULT_WINDOW` | `10_000` | |
 | `LOGS_MAX_RANGE_HOURS` | `720` | |
+| `KAFKA_ENVIRONMENTS` | `test,prod` | the stages with a Kafka cluster, a part of `PROMOTION_CHAIN` in its order; there is no DEV cluster, so topics, the shared Kafka proxy and topic APIs start in TEST (`kafka-workspace`, `kafka-rest-proxy`) |
+| `KAFKA_BOOTSTRAP_<ENV>` | *(none)* | one Kafka stage's broker host, e.g. `KAFKA_BOOTSTRAP_PROD`; absent means the topic's Connection card says it is not configured rather than inventing an address |
+| `KAFKA_MTLS_PORT` | `9400` | the listener an mTLS grant connects to |
+| `KAFKA_OAUTH_PORT` | `9800` | the listener an OAuth grant connects to |
 
 Refusals checked at boot, before anything serves:
 
@@ -950,6 +987,8 @@ Refusals checked at boot, before anything serves:
   consulted here: these three are operator-set, and a rule created in the portal must not be able to
   prevent the next restart.
 - Every target's environment must be in `PROMOTION_CHAIN`.
+- `KAFKA_ENVIRONMENTS`, when set, must name stages of `PROMOTION_CHAIN` once each and in its order:
+  staging a topic walks it, and a list out of order would stage one out of PROD.
 - `REVISION_KEEP_COUNT`, `MAX_TRUST_ANCHORS`, `MAX_EGRESS_DENY_RULES` and
   `DASHBOARD_DEFAULT_SINCE_MIN` refuse `0` by name: zero is a legal integer and a destructive value
   for all four.

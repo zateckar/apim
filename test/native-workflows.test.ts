@@ -427,7 +427,7 @@ describe("native application workflows", () => {
     setup();
     const response = await call("POST", "/api/kafka/topics", "pavel", {
       applicationId: "application_platform",
-      environment: "dev",
+      environment: "test",
       name: "orders.events",
       domain: "Sales",
       subdomain: "Orders",
@@ -439,19 +439,32 @@ describe("native application workflows", () => {
       await call("POST", `/api/kafka/topics/${topic.id}/subscribe`, "pavel", {
         applicationId: "application_platform",
         purpose: "Test events",
+        authType: "oauth",
+        principal: "orders-service",
+        operations: ["read", "write"],
       })
     ).json();
     expect(sub.state).toBe("activating");
     runDueJobs(cp.app);
-    const result = await (
+    const [read, write] = sub.items;
+    const produced = await (
       await call("POST", `/api/kafka/topics/${topic.id}/playground`, "pavel", {
         applicationId: "application_platform",
+        accessId: write.id,
         action: "produce",
         value: "hello",
       })
     ).json();
-    expect(result.simulated).toBe(true);
-    expect(result.items[0].value).toBe("hello");
+    expect(produced.simulated).toBe(true);
+    expect(produced.record.offset).toBe(0);
+    const consumed = await (
+      await call("POST", `/api/kafka/topics/${topic.id}/playground`, "pavel", {
+        applicationId: "application_platform",
+        accessId: read.id,
+        action: "consume",
+      })
+    ).json();
+    expect(consumed.items[0].value).toBe("hello");
   });
   test("all mocked integrations are reachable and failures retry without disappearing", async () => {
     setup();

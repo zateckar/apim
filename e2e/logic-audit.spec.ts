@@ -88,18 +88,18 @@ test("gateway inheritance previews the parent and a separate switch preserves dr
   await expect(page.getByRole("button", { name: "Save 1 change", exact: true })).toBeEnabled();
 });
 
-test("changing environment closes a Kafka creation draft", async ({ page }) => {
-  await openPortal(page, "/kafka");
-  await page.getByRole("button", { name: "Create topic", exact: true }).first().click();
-  await page.getByRole("textbox", { name: "Topic name", exact: true }).fill("unsaved-topic");
-  // The shell is outside the modal's focus trap; a programmatic click exercises its context update.
-  const environments = page.locator('.native-page-head [aria-label="Environment"] button');
-  test.skip(await environments.count() < 2, "multiple environments required");
-  await environments.nth(1).evaluate((button: HTMLButtonElement) => button.click());
-  await expect(page.getByRole("dialog")).toHaveCount(0);
-  await page.getByRole("button", { name: "Create topic", exact: true }).first().click();
-  await expect(page.getByRole("textbox", { name: "Topic name", exact: true })).toHaveValue("");
-  await expect(page.getByRole("spinbutton", { name: /^Partitions/ })).toHaveValue("3");
+test("a started Kafka topic draft asks before it is left", async ({ page }) => {
+  // kafka-workspace, "The wizard is opened": created in the first stage, whatever the switcher says,
+  // and a started draft is not dropped by a link.
+  await openPortal(page, "/kafka/new");
+  await expect(page.getByRole("heading", { name: /^Create a Kafka topic in / })).toBeVisible();
+  await page.getByRole("button", { name: "Blank JSON template", exact: true }).click();
+  await expect(page.getByText("Valid JSON", { exact: true })).toBeVisible();
+  await page.getByRole("link", { name: "Back to Topics", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText(/the topic you were creating/)).toBeVisible();
+  await dialog.getByRole("button", { name: "Stay and keep editing", exact: true }).click();
+  await expect(page.getByText("Valid JSON", { exact: true })).toBeVisible();
 });
 
 test("approval review names its scope and excludes resolved access", async ({ page }) => {

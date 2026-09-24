@@ -163,7 +163,7 @@ describe("classification at a Kafka topic", () => {
       cookie,
       body: {
         applicationId: "application_platform",
-        environment: "dev",
+        environment: "test",
         name: `t.${Math.random().toString(36).slice(2, 8)}`,
         ...over,
       },
@@ -182,20 +182,37 @@ describe("classification at a Kafka topic", () => {
     expect(created.status).toBe(202);
   });
 
-  test("a topic can be reclassified freely: it has a name on a broker, not a path", async () => {
+  test("a topic's domain is fixed once it exists: its name carries it", async () => {
     const pavel = await cp.login("pavel");
     const created = await (await topic(pavel, { domain: "Sales", subdomain: "Orders" })).json();
     const moved = await cp.call("PATCH", `/api/kafka/topics/${created.id}`, {
       cookie: pavel,
       body: { domain: "IT", subdomain: "Solution" },
     });
-    expect(moved.status).toBe(200);
+    expect(moved.status).toBe(400);
+    expect((await moved.json()).detail).toContain("its name carries it");
     const row = cp.app.db
       .query<{ domain: string; subdomain: string }, [string]>(
         "SELECT domain, subdomain FROM kafka_topic WHERE id = ?",
       )
       .get(created.id)!;
-    expect(row).toEqual({ domain: "IT", subdomain: "Solution" });
+    expect(row).toEqual({ domain: "Sales", subdomain: "Orders" });
+  });
+
+  test("a topic named by the convention carries its domain, application, name and version", async () => {
+    const pavel = await cp.login("pavel");
+    const response = await cp.call("POST", "/api/kafka/topics", {
+      cookie: pavel,
+      body: {
+        applicationId: "application_platform",
+        displayName: "Order Created",
+        version: "v2",
+        domain: "Sales",
+        subdomain: "Orders",
+      },
+    });
+    expect(response.status).toBe(202);
+    expect((await response.json()).name).toBe("sales_orders_platform-apis_order-created_v2");
   });
 
   test("an unrelated PATCH does not silently drop the classification", async () => {

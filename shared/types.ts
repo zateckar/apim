@@ -19,7 +19,9 @@ export type Lifecycle = (typeof LIFECYCLES)[number];
  * Enumerable, not just a union: the UI's status vocabulary is asserted **total** over these
  * lists (plan §9.4), and a list you cannot iterate cannot be checked for totality.
  *
- * `stale` is the plan digest moving between dry run and confirmation (design section 6.3).
+ * `stale` is a release overtaken before it was applied: one confirmed after it has already reached
+ * the fleet in that environment (api-versioning-and-stage). Design section 6.3's other meaning, a
+ * plan digest that moved, no longer produces it; a changed plan is re-computed instead.
  */
 export const RELEASE_STATES = [
   "pending",

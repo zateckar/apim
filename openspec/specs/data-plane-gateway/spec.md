@@ -45,6 +45,18 @@ where that line is drawn and why. Its own bounds arrive in the document like eve
 - AND the response SHALL carry either `unchanged: true` or a configuration document, plus the
   telemetry windows the control plane accepted and the fleet's quota aggregates
 
+#### Scenario: A poll outlasts the interval
+
+- GIVEN a poll still waiting on its answer, or still fetching the artifacts its answer named
+- WHEN the next interval comes round
+- THEN the instance SHALL skip that tick rather than send a second poll
+- AND the reason SHALL be that two polls in flight are applied in the order they finish, not the
+  order they were sent: an answer sent earlier could land last, activating a superseded document
+  over the current one, or putting the routes back after a later poll's `401` took them down
+- AND with one poll at a time, the table SHALL always be the newest document answered and a
+  processed `401` SHALL never be undone by an answer sent before it
+  (`formal/Formal/ConfigClient.lean`)
+
 #### Scenario: A process restarts
 
 - GIVEN an instance that restarts
@@ -136,6 +148,16 @@ A configuration SHALL NOT be activated unless everything it needs is already hel
 - THEN the instance SHALL refuse it, keep serving what it has, and report the refusal as
   `activationBlocked`
 - AND a mixed-version fleet SHALL keep serving and say so
+
+#### Scenario: The blocked document is no longer the one offered
+
+- GIVEN an instance reporting `activationBlocked` for a document it could not activate
+- WHEN a later poll answers `unchanged: true` — the document offered is the one already serving,
+  because the blocked change was rolled back or the refusing side upgraded
+- THEN `activationBlocked` SHALL be cleared, unless the served document is itself held back: a
+  cached `settings` block this container refused at restart stays reported
+- AND the reason SHALL be that a blocker recorded against a digest nobody is offering any more
+  would otherwise be reported on every poll and `/healthz` until the next change
 
 ### Requirement: Serve exactly two paths of its own
 

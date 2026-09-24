@@ -245,6 +245,28 @@ export function requestApproval(
   emitIntegration(app, publisher, "leanix", "metadata", publisher, {});
 }
 
+/**
+ * What a publisher decides on a Kafka request: the topic, and who is asking for what — the
+ * principal the broker will bind the ACL to and every operation of the request, since approving
+ * approves them all (kafka-workspace). The request id is its first row's id.
+ */
+function kafkaApprovalContext(ctx: Ctx, requestId: string) {
+  const row = ctx.app.db
+    .query<
+      { environment: string; name: string; state: string; principal: string | null; authType: string | null },
+      [string]
+    >(
+      "SELECT t.environment,t.name,a.state,a.principal,a.auth_type AS authType FROM kafka_access a JOIN kafka_topic t ON t.id=a.topic_id WHERE a.id=?",
+    )
+    .get(requestId);
+  if (!row) return null;
+  const operations = ctx.app.db
+    .query<{ operation: string }, [string]>("SELECT operation FROM kafka_access WHERE request_id=? ORDER BY rowid")
+    .all(requestId)
+    .map((r) => r.operation);
+  return { ...row, operations };
+}
+
 export function registerIntegrationRoutes(router: Router): void {
   router.add("GET", "/api/integrations", "session", (ctx) =>
     json({
@@ -305,9 +327,7 @@ export function registerIntegrationRoutes(router: Router): void {
           ? ctx.app.db.query<{ environment: string; name: string; state: string }, [string]>(
               "SELECT s.environment,p.name,s.state FROM subscription s JOIN product p ON p.id=s.product_id WHERE s.id=?",
             ).get(e.subject)
-          : e.kind === "kafka.request" ? ctx.app.db.query<{ environment: string; name: string; state: string }, [string]>(
-              "SELECT t.environment,t.name,a.state FROM kafka_access a JOIN kafka_topic t ON t.id=a.topic_id WHERE a.id=?",
-            ).get(e.subject) : null;
+          : e.kind === "kafka.request" ? kafkaApprovalContext(ctx, e.subject) : null;
         return {
           ...e,
           approval,
@@ -415,27 +435,32 @@ export function registerIntegrationRoutes(router: Router): void {
             ],
           );
         } else if (event.kind === "kafka.request") {
-          const row = db
-            .query<{ state: string; application_id: string }, [string]>(
-              "SELECT state,application_id FROM kafka_access WHERE id=?",
+          // The subject is the request, which may hold several operations for one principal; they
+          // were asked for as one and are decided as one (kafka-workspace). A request written before
+          // requests had rows of their own is its one row, whose request id is its own id.
+          const rows = db
+            .query<{ id: string; application_id: string }, [string]>(
+              "SELECT id,application_id FROM kafka_access WHERE request_id=? AND state='pending'",
             )
-            .get(event.subject);
-          if (!row || row.state !== "pending")
+            .all(event.subject);
+          if (rows.length === 0)
             throw conflict("Kafka request is no longer pending");
-          db.run("UPDATE kafka_access SET state=?,decision_by=? WHERE id=?", [
-            decision === "approved" ? "activating" : "rejected",
-            user.id,
-            event.subject,
-          ]);
-          if (decision === "approved")
-            emitIntegration(
-              ctx.app,
-              row.application_id,
-              "kafka",
-              "access.grant",
-              event.subject,
-              {},
-            );
+          for (const row of rows) {
+            db.run("UPDATE kafka_access SET state=?,decision_by=? WHERE id=?", [
+              decision === "approved" ? "activating" : "rejected",
+              user.id,
+              row.id,
+            ]);
+            if (decision === "approved")
+              emitIntegration(
+                ctx.app,
+                row.application_id,
+                "kafka",
+                "access.grant",
+                row.id,
+                {},
+              );
+          }
         } else throw badRequest("unsupported approval process");
         const payload = JSON.parse(event.payload_json);
         db.run(

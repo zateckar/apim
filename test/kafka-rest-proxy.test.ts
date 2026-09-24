@@ -50,7 +50,7 @@ afterEach(() => {
   cp.close();
 });
 
-async function certificate(cookie: string, environment = "dev") {
+async function certificate(cookie: string, environment = "test") {
   const generated = generateCertificate({ cn: "orders-producer" });
   const response = await cp.call("POST", "/api/certificates", {
     cookie,
@@ -71,7 +71,7 @@ async function topic(cookie: string, body: Record<string, unknown> = {}) {
     cookie,
     body: {
       applicationId: "application_platform",
-      environment: "dev",
+      environment: "test",
       name: TOPIC,
       domain: "Sales",
       subdomain: "Orders",
@@ -86,7 +86,7 @@ async function topic(cookie: string, body: Record<string, unknown> = {}) {
   return created.id as string;
 }
 
-async function sharedProxy(alice: string, backendUrl: string, environment = "dev") {
+async function sharedProxy(alice: string, backendUrl: string, environment = "test") {
   const response = await cp.call("POST", "/api/kafka/proxy/shared", {
     cookie: alice,
     headers: idem(),
@@ -156,12 +156,14 @@ describe("a record through two hops", () => {
     const kafka = new KafkaRest({ port: 0, quiet: true });
     const kafkaServer = startKafkaRest(kafka);
     const cpServer = serveCp(cp);
-    const dp = makeDp(cpServer.url, cp.token, cp.dir, { name: "kafka-1" });
+    // TEST, where Kafka starts: there is no DEV cluster, so no DEV topic or shared proxy either.
+    const testToken = cp.instances.find((i) => i.environment === "test")!.token;
+    const dp = makeDp(cpServer.url, testToken, cp.dir, { name: "kafka-1" });
     const gateway = startDataPlane(dp);
     try {
       const gatewayUrl = `http://127.0.0.1:${gateway.port}`;
       // The shared proxy's address is the gateway's own: the second hop calls it like a consumer.
-      cp.app.db.run("UPDATE target SET public_url = ?, intranet_url = NULL WHERE environment = 'dev'", [gatewayUrl]);
+      cp.app.db.run("UPDATE target SET public_url = ?, intranet_url = NULL WHERE environment = 'test'", [gatewayUrl]);
       await dp.start();
 
       const alice = await cp.login("alice");
@@ -172,12 +174,20 @@ describe("a record through two hops", () => {
       const refused = await cp.call("POST", "/api/kafka/proxy/shared", {
         cookie: pavel,
         headers: idem(),
-        body: { environment: "dev", backendUrl: `http://127.0.0.1:${kafkaServer.port}`, clusterId: "local-cluster" },
+        body: { environment: "test", backendUrl: `http://127.0.0.1:${kafkaServer.port}`, clusterId: "local-cluster" },
       });
       expect(refused.status).toBe(403);
+      // Kafka has no DEV, so neither does the proxy in front of it; it starts in TEST.
+      const inDev = await cp.call("POST", "/api/kafka/proxy/shared", {
+        cookie: alice,
+        headers: idem(),
+        body: { environment: "dev", backendUrl: `http://127.0.0.1:${kafkaServer.port}`, clusterId: "local-cluster" },
+      });
+      expect(inDev.status).toBe(400);
+      expect((await inDev.json()).detail).toContain("TEST and PROD only");
 
       await sharedProxy(alice, `http://127.0.0.1:${kafkaServer.port}`);
-      expect(platformKafkaKey(cp.app.db, cp.app.kek, "dev")).toMatch(/^sk_dev_/);
+      expect(platformKafkaKey(cp.app.db, cp.app.kek, "test")).toMatch(/^sk_test_/);
 
       const certificateId = await certificate(pavel);
       const topicId = await topic(pavel, { certificateId });
@@ -204,9 +214,9 @@ describe("a record through two hops", () => {
       const product = cp.app.db
         .query<{ product_id: string }, [string]>("SELECT product_id FROM product_member WHERE resource_id = ?")
         .get(resourceId)!.product_id;
-      const subscription = await activeSubscription(cp, clara, product);
+      const subscription = await activeSubscription(cp, clara, product, "application_orders", "test");
       const basePath = cp.app.db
-        .query<{ base_path: string }, [string]>("SELECT base_path FROM route WHERE resource_id = ? AND environment = 'dev'")
+        .query<{ base_path: string }, [string]>("SELECT base_path FROM route WHERE resource_id = ? AND environment = 'test'")
         .get(resourceId)!.base_path;
 
       const produce = (body: unknown, key: string | null = subscription.primaryKey) =>
@@ -280,7 +290,7 @@ describe("what only the platform writes", () => {
   async function world() {
     const kafka = new KafkaRest({ port: 0, quiet: true });
     const kafkaServer = startKafkaRest(kafka);
-    cp.app.db.run("UPDATE target SET public_url = 'http://127.0.0.1:18081', intranet_url = NULL WHERE environment = 'dev'");
+    cp.app.db.run("UPDATE target SET public_url = 'http://127.0.0.1:18081', intranet_url = NULL WHERE environment = 'test'");
     const alice = await cp.login("alice");
     const pavel = await cp.login("pavel");
     await sharedProxy(alice, `http://127.0.0.1:${kafkaServer.port}`);
@@ -288,7 +298,7 @@ describe("what only the platform writes", () => {
     const topicId = await topic(pavel, { certificateId });
     const resourceId = await topicApi(pavel, topicId);
     const etag = async () =>
-      (await cp.call("GET", `/api/resources/${resourceId}/editor?environment=dev`, { cookie: pavel })).json();
+      (await cp.call("GET", `/api/resources/${resourceId}/editor?environment=test`, { cookie: pavel })).json();
     return { alice, pavel, topicId, resourceId, certificateId, etag, stop: () => kafkaServer.stop(true) };
   }
 
@@ -337,14 +347,14 @@ describe("what only the platform writes", () => {
       const spec = await cp.call("POST", `/api/resources/${w.resourceId}/configure`, {
         cookie: w.pavel,
         headers,
-        body: { environment: "dev", spec: { openapi: "3.1.0", info: { title: "x", version: "1" }, paths: {} } },
+        body: { environment: "test", spec: { openapi: "3.1.0", info: { title: "x", version: "1" }, paths: {} } },
       });
       expect(spec.status).toBe(409);
       expect((await spec.json()).detail).toContain("generated from the Kafka topic");
       const backend = await cp.call("POST", `/api/resources/${w.resourceId}/configure`, {
         cookie: w.pavel,
         headers: { ...idem(), "if-match": editor.resource.etag },
-        body: { environment: "dev", backendUrl: "https://elsewhere.example" },
+        body: { environment: "test", backendUrl: "https://elsewhere.example" },
       });
       expect(backend.status).toBe(409);
 
@@ -353,7 +363,7 @@ describe("what only the platform writes", () => {
         cookie: w.pavel,
         headers: { ...idem(), "if-match": editor.resource.etag },
         body: {
-          environment: "dev",
+          environment: "test",
           policy: { "auth.subscriptionKey": { in: "header", name: "X-Api-Key" }, rateLimit: RATE_LIMIT },
         },
       });
@@ -399,10 +409,10 @@ describe("what only the platform writes", () => {
       const refused = await cp.call("POST", `/api/resources/${w.resourceId}/promote`, {
         cookie: w.pavel,
         headers: idem(),
-        body: { environment: "test", backendUrl: "https://whatever.example" },
+        body: { environment: "prod", backendUrl: "https://whatever.example" },
       });
       expect(refused.status).toBe(409);
-      expect((await refused.json()).detail).toContain("TEST has no Kafka topic named orders.created");
+      expect((await refused.json()).detail).toContain("PROD has no Kafka topic named orders.created");
     } finally {
       w.stop();
     }
@@ -411,10 +421,10 @@ describe("what only the platform writes", () => {
   test("the platform's key is rotated at the warning age rather than retired", async () => {
     const w = await world();
     try {
-      const before = platformKafkaKey(cp.app.db, cp.app.kek, "dev");
+      const before = platformKafkaKey(cp.app.db, cp.app.kek, "test");
       const later = Date.now() + (cp.app.config.subscriptionKeyExpireDays + 1) * 86_400_000;
       runKeyExpiry(cp.app, later);
-      const after = platformKafkaKey(cp.app.db, cp.app.kek, "dev");
+      const after = platformKafkaKey(cp.app.db, cp.app.kek, "test");
       expect(after).not.toBeNull();
       expect(after).not.toBe(before);
       // And a second pass the same day leaves the fresh key alone.

@@ -55,6 +55,7 @@ export const MIGRATIONS: Migration[] = [
   { version: 14, name: "the gateway's own latency, below a millisecond", file: "schema-014.sql" },
   { version: 15, name: "an application keeps its own credentials", file: "schema-015.sql" },
   { version: 16, name: "a Kafka topic is produced to through a generated API", file: "schema-016.sql" },
+  { version: 17, name: "a Kafka topic is sized and described, and access is granted to a principal", file: "schema-017.sql" },
 ];
 
 /**

@@ -65,6 +65,7 @@ scripts/        seed · stack · demo · mint-instance · schedule-perf
 test/           bun test — control plane, data plane, shared
 ui/test/        bun test — the parts of the interface that are decisions rather than markup
 e2e/            Playwright — read-only smoke tests against a running stack
+formal/         Lean 4 — the lifecycle state machines, modelled and proved (`lake build`)
 reports/        generated measurements: perf and capacity
 openspec/       the behavioural source of truth (see above)
 README.md       the operator's half — running, deploying, sizing, backup, upgrade, CI
@@ -122,6 +123,17 @@ the test owns. Point it elsewhere with `E2E_BASE_URL`, `E2E_USER` and `E2E_PASSW
 - **No Azure.** No ARM shapes, no policy XML, no APIM revision semantics, no Key Vault. The six
   external systems (Kafka, SkoNET, email, LdapWS, FixMe, LeanIX) and ELK log search are native
   interfaces with mock implementations behind them; the UI marks simulated results as simulated.
+- **A state-changing statement and its formal model change together.** `formal/` models, one step
+  per writer, the subscription and Kafka-access lifecycle, the operation spine, releases, a
+  revision's freeze, correction and pruning, the gateway's config poll and the circuit breaker;
+  each file's header names the statements it covers. Adding, removing or changing one of those
+  statements — an `UPDATE … SET state`, its `WHERE` guard, an insert with an initial state, the
+  order of statements inside the transaction that does it, an `await` between a check and the write
+  it guards, or a method of `CircuitBreaker` or `ConfigClient.pollOnce` — means updating the model
+  in the same change and running `cd formal && lake
+  build`. A proof that no longer goes through is a finding: fix the code, or say in the model why
+  the property changed. A new state machine whose mistakes would not show up in a single request
+  gets a model of its own. `lake build` is deliberately not in CI; running it is part of the change.
 - **One authorization rule.** You may change what your applications own, you may read everything,
   an administrator may change anything. Enforce it on the server on every request; the application
   picker in the browser is context, not proof.

@@ -10,6 +10,7 @@ import type { User } from "./auth.ts";
 import { buildRoutes, limitsFor } from "./config-build.ts";
 import { denyRulesFor } from "./deny-rules.ts";
 import type { DB } from "./db.ts";
+import { MAX_ATTEMPTS } from "./jobs.ts";
 import type { App } from "./router.ts";
 
 /**
@@ -274,7 +275,7 @@ export function ownerAttention(app: App, scope: Scope): AttentionRow[] {
         { kind: "resource", id: r.id, name: apiName(r.name, r.api_version) },
         r.state === "failed"
           ? `Publishing revision ${r.rev} to ${r.environment.toUpperCase()} failed: ${r.reason ?? "no reason was recorded"}.`
-          : `The plan for revision ${r.rev} in ${r.environment.toUpperCase()} changed before it was applied, so nothing was published. Review it and confirm again.`,
+          : `Revision ${r.rev} was overtaken in ${r.environment.toUpperCase()} before it was applied, so nothing was published: ${r.reason ?? "a release confirmed after it reached the fleet first"}.`,
         `/apis/${r.id}/publish?environment=${r.environment}`,
         r.environment,
       ),
@@ -929,6 +930,28 @@ export function platformAttention(app: App, scope: Scope, options: { jobs: boole
         { kind: "job", id: job.id, name: job.kind },
         `A background ${job.kind} job gave up after ${job.attempts} attempt(s): ${job.result ?? "no reason was recorded"}`,
         // The fleet screen: the reconciler's work belongs beside the gateways it is reconciling.
+        "/fleet",
+      ),
+    );
+  }
+
+  // A reconcile never gives up (jobs.ts), so "failed" alone never shows the one that is stuck —
+  // a paused gateway nobody resumed, a route nobody added. From `MAX_ATTEMPTS` on it is shown here,
+  // with the reason it last gave, while it goes on trying.
+  const retrying = options.jobs
+    ? db
+        .query<{ id: string; kind: string; attempts: number; result: string | null }, [number]>(
+          `SELECT id, kind, attempts, result FROM job
+            WHERE state = 'queued' AND attempts >= ? ORDER BY updated_at DESC LIMIT ${RULE_LIMIT}`,
+        )
+        .all(MAX_ATTEMPTS)
+    : [];
+  for (const job of retrying) {
+    rows.push(
+      row(
+        "job-retrying",
+        { kind: "job", id: job.id, name: job.kind },
+        `A background ${job.kind} job has been tried ${job.attempts} times and will keep trying: ${job.result ?? "no reason was recorded"}`,
         "/fleet",
       ),
     );

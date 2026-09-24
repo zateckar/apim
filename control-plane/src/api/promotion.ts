@@ -245,7 +245,7 @@ export function registerPromotionRoutes(router: Router): void {
     const jobId = enqueueJob(
       db,
       "reconcile",
-      { targetId: target.id, resourceId: row.id, releaseId, planId, intent: "apply" },
+      { targetId: target.id, resourceId: row.id, releaseId, planId, intent: "apply", environment },
       `reconcile:apply:${target.id}:${releaseId}`,
     );
     writeAudit(db, {

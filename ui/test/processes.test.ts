@@ -5,8 +5,6 @@ import { mailChip, operationKindLabel, topicApiChip } from "../src/lib/status.ts
 import {
   approvalFilterOptions,
   awaitingDecision,
-  contractDraftOf,
-  contractProblem,
   sharedProxyAction,
   topicApiAction,
 } from "../src/portal/processes.tsx";
@@ -66,7 +64,7 @@ describe("the approvals queue", () => {
 
   test("the screen no longer narrows itself to the shell's environment", () => {
     // Approvals is not environment-scoped (routes.ts); a PROD request was invisible from DEV.
-    const approvals = source("portal", "processes.tsx").split("export function Approvals")[1]!.split("export function Kafka")[0]!;
+    const approvals = source("portal", "processes.tsx").split("export function Approvals")[1]!.split("interface SharedStage")[0]!;
     expect(approvals).not.toContain("s.environment");
   });
 });
@@ -96,21 +94,10 @@ describe("the Kafka REST Proxy", () => {
     expect(topicApiAction({ ...ready, published: true, apiResourceId: "r" }, { published: true, first: true }).kind).toBe("open");
     expect(topicApiAction(ready, { published: true, first: true }).kind).toBe("create");
     expect(topicApiAction({ ...ready, apiResourceId: "r" }, { published: true, first: false }).kind).toBe("promote");
-    expect(topicApiAction(ready, { published: true, first: false }).reason).toContain("starts where the chain does");
+    expect(topicApiAction(ready, { published: true, first: false }).reason).toContain("starts where Kafka's stages do");
     expect(topicApiAction(ready, { published: false, first: true }).reason).toContain("not published here");
     expect(topicApiAction({ ...ready, blockers: ["no schema"] }, { published: true, first: true })).toEqual({ kind: "none", reason: "no schema" });
     expect(topicApiAction({ ...ready, canEdit: false }, { published: true, first: true }).reason).toContain("owner");
-  });
-
-  test("a topic's schema is checked as it is typed, the way the gateway will compile it", () => {
-    const draft = contractDraftOf({ schemaType: "json", schema: { type: "object" }, certificateId: "c1" });
-    expect(draft.schemaText).toContain('"type": "object"');
-    expect(contractProblem("orders", draft)).toBeNull();
-    expect(contractProblem("orders", { ...draft, schemaText: "{" })).toContain("not valid JSON");
-    expect(contractProblem("orders", { ...draft, schemaText: '{"unevaluatedProperties":false}' })).toContain("unevaluatedProperties");
-    // Not a JSON topic, or no schema yet: nothing to check, and the topic can still be saved.
-    expect(contractProblem("orders", { ...draft, schemaType: "avro", schemaText: "{" })).toBeNull();
-    expect(contractProblem("orders", { ...draft, schemaText: "" })).toBeNull();
   });
 
   test("the proxy screen offers no topic creation — that is Kafka Topics'", () => {

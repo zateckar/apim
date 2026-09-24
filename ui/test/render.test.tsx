@@ -42,6 +42,7 @@ Object.defineProperty(globalThis, "location", {
 const meta: Meta = {
   environments: [{ environment: "dev", instances: 1, liveInstances: 1 }],
   chain: ["dev", "test", "prod"],
+  kafkaChain: ["test", "prod"],
   kinds: ["rest", "soap", "mcp", "a2a"],
   policyUnits: [],
   authProviders: ["dev"],

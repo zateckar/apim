@@ -119,6 +119,27 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN leaving the workspace SHALL ask first, because the pasted document is an unsaved edit
 - AND its submit control SHALL say why it is disabled while nothing has been pasted
 
+#### Scenario: A revision freezes when its publishing is accepted
+
+- GIVEN a revision
+- WHEN a release of it is confirmed, or an operation that will publish it is queued
+- THEN it SHALL be frozen at that moment, not when the release or operation is later applied
+- AND a correction of a frozen revision SHALL be refused with `409`, saying where it was released
+  or that it is queued for publishing, and offering a new revision instead
+- AND the reason SHALL be that what somebody confirmed is what gets published: a correction landing
+  while the work waits its turn would otherwise ship a definition nobody confirmed
+
+#### Scenario: A revision is released while a correction of it is in flight
+
+- GIVEN a correction that has passed its checks and is still reading its body or fetching its
+  `specUrl`
+- WHEN the revision is released, queued for publishing, pruned or corrected by someone else in the
+  meantime
+- THEN the correction SHALL write nothing and answer `409`, naming what happened
+- AND the reason SHALL be that the config build reads a released revision's definition on every
+  poll, so a correction written after the release would be served under the same `rev` with no
+  release at all (`formal/Formal/Revision.lean`)
+
 ### Requirement: Promote only along the chain, and only what has already reached the fleet
 
 #### Scenario: A promotion is planned
@@ -188,18 +209,29 @@ an order. See *Release States* in `openspec/project.md`.
 
 - GIVEN a dry-run plan
 - WHEN the promotion is confirmed
-- THEN the plan SHALL be re-computed, and its digest compared with the one that was shown
-- AND the digest SHALL cover only the plan's decided content — the resource, the revision, the two
-  environments, the created, kept and local-only units, and the blocker codes — so a second dry run
-  a minute later matches while a real change does not
+- THEN the confirmation SHALL name the plan, and a plan SHALL be confirmable once
+- AND the dry run SHALL return the plan's digest, covering only its decided content — the resource,
+  the revision, the two environments, the created, kept and local-only units, and the blocker codes
+  — so a second dry run a minute later matches while a real change does not
 
-#### Scenario: The plan changed between review and confirmation
+#### Scenario: The plan changed between review and apply
 
-- GIVEN a digest that no longer matches
-- WHEN the promotion is confirmed
-- THEN the release SHALL be marked `stale` and **nothing** SHALL be published
-- AND the chip SHALL read *Needs confirming*, with the underlying state and its meaning in the
+- GIVEN a confirmed plan whose inputs changed before it was applied — a policy edit in the
+  predecessor, say
+- WHEN the release is applied
+- THEN the plan SHALL be re-computed and the current one applied, so the release carries the
+  environment's validated policy as it is at apply time
+- AND a re-computed plan with blockers SHALL be retried rather than applied
+- AND the reason SHALL be that a promotion is one business action: asking the publisher to
+  re-confirm a plan for an edit they made themselves is a second action nobody wanted
+
+#### Scenario: A release that will never be applied is shown as such
+
+- GIVEN a `stale` release
+- WHEN it is shown
+- THEN the chip SHALL read *Needs confirming*, with the underlying state and its meaning in the
   tooltip
+- AND its reason SHALL say which release overtook it
 
 #### Scenario: A release fails or goes stale
 
@@ -231,6 +263,57 @@ an order. See *Release States* in `openspec/project.md`.
 - THEN it SHALL be a new release pointing at the older revision
 - AND the superseded release SHALL remain readable, because a rollback that erased its own cause is
   a rollback nobody can explain
+
+### Requirement: Never let an earlier release overtake one that reached the fleet after it
+
+#### Scenario: An earlier release's retry comes due after a later one went live
+
+- GIVEN a release whose reconcile failed and is waiting to retry — a paused environment, a missing
+  route
+- AND a release of the same API into the same environment, confirmed after it, that has since
+  reached the fleet (`converged`, `superseded` or `withdrawn`)
+- WHEN the earlier release's retry runs
+- THEN it SHALL be marked `stale`, with a reason naming the release that overtook it
+- AND nothing SHALL be published and no policy SHALL be seeded, so the environment keeps serving
+  what it served
+- AND it SHALL NOT be retried again
+- AND the reason SHALL be that converging it would supersede the later release and roll the
+  environment back with nobody having asked; a rollback is a new release of the older revision
+
+#### Scenario: A release's apply runs again after it already reached the fleet
+
+- GIVEN a release that is `converged`, `superseded` or `withdrawn`
+- WHEN its reconcile runs again — a job re-queued because the process stopped between committing
+  the apply and marking the job done
+- THEN nothing SHALL be written: the release SHALL keep its state and the environment SHALL keep
+  serving what it served
+- AND in particular a superseded or withdrawn release SHALL NOT be converged again, and none of the
+  three SHALL become `stale`, because the promotion gate would then read a revision that reached the
+  fleet as one that never did
+
+#### Scenario: A withdrawal overtakes a release still waiting to apply
+
+- GIVEN a release whose reconcile failed and is waiting to retry
+- WHEN the API is withdrawn from that environment
+- THEN that release SHALL be marked `stale` in the same transaction as the withdrawal, with a reason
+  saying it was withdrawn before it was applied
+- AND when its retry runs, nothing SHALL be written, so the API SHALL stay withdrawn
+- AND the reason SHALL be that the withdrawal is the later act; publishing the API again when an
+  earlier confirmation's backoff expires would undo it with nobody having asked
+
+#### Scenario: Only a pending release is applied
+
+- GIVEN a release that is not `pending`
+- WHEN its reconcile runs
+- THEN nothing SHALL be written
+
+#### Scenario: What "confirmed after" means
+
+- GIVEN two releases of one API into one environment
+- WHEN their order is decided
+- THEN it SHALL be the order the release rows were inserted, which is shared by releases confirmed
+  through promotion and releases the operation spine writes
+- AND it SHALL NOT be the release timestamps, which can be equal
 
 ### Requirement: Show the difference between two environments
 

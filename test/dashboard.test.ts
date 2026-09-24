@@ -493,7 +493,7 @@ describe("an API that cannot serve traffic yet", () => {
     expect(stale.href).toBe(`/apis/${api.resourceId}/revisions`);
   });
 
-  test("a release that failed, and a plan that went stale", async () => {
+  test("a release that failed, and one that was overtaken", async () => {
     const pavel = await cp.login("pavel");
     const id = makeResource("wobbly");
     const revisionId = addRevision(id);
@@ -518,7 +518,7 @@ describe("an API that cannot serve traffic yet", () => {
     const after = await dashboard(pavel);
     expect(codes(after)).toContain("release-stale");
     expect(codes(after)).not.toContain("release-failed");
-    expect(find(after, "release-stale")!.detail).toContain("changed before it was applied");
+    expect(find(after, "release-stale")!.detail).toContain("overtaken in DEV before it was applied");
   });
 
   test("a published route the gateway is not serving", async () => {
@@ -787,6 +787,24 @@ describe("the estate", () => {
 
     // It carries an internal message and needs an operator, so it is not shown to an owner.
     expect(codes(await dashboard(pavel))).not.toContain("job-failed");
+  });
+
+  test("a reconcile still retrying after MAX_ATTEMPTS is shown, because it never fails", async () => {
+    const alice = await cp.login("alice");
+    const pavel = await cp.login("pavel");
+    cp.app.db.run(
+      `INSERT INTO job (id, kind, state, payload, attempts, result, created_at, updated_at)
+       VALUES ('job_2', 'reconcile', 'queued', '{}', 2, 'dev/local is paused', ?, ?)`,
+      [iso(-1000), iso(0)],
+    );
+    // Two attempts is ordinary backoff, not attention.
+    expect(codes(await dashboard(alice))).not.toContain("job-retrying");
+
+    cp.app.db.run("UPDATE job SET attempts = 3 WHERE id = 'job_2'");
+    const row = find(await dashboard(alice), "job-retrying")!;
+    expect(row.subject).toEqual({ kind: "job", id: "job_2", name: "reconcile" });
+    expect(row.detail).toContain("will keep trying: dev/local is paused");
+    expect(codes(await dashboard(pavel))).not.toContain("job-retrying");
   });
 });
 

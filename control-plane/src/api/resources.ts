@@ -918,11 +918,11 @@ export function registerResourceRoutes(router: Router): void {
 
     // Withdraw from every target first, through the same job the withdraw endpoint uses, so the
     // projection has one writer; then the row goes and the rest cascades.
-    for (const target of ctx.app.db.query("SELECT id FROM target").all() as Array<{ id: string }>) {
+    for (const target of ctx.app.db.query("SELECT id, environment FROM target").all() as Array<{ id: string; environment: string }>) {
       enqueueJob(
         ctx.app.db,
         "reconcile",
-        { targetId: target.id, resourceId: row.id, intent: "remove" },
+        { targetId: target.id, resourceId: row.id, intent: "remove", environment: target.environment },
         `reconcile:remove:${target.id}:${row.id}:${Date.now()}`,
       );
     }
@@ -1389,50 +1389,59 @@ export function registerResourceRoutes(router: Router): void {
    */
   router.add("PUT", "/api/revisions/:id/spec", "session", async (ctx) => {
     const user = requireUser(ctx);
-    const revision = ctx.app.db
-      .query<
-        {
-          id: string;
-          resource_id: string;
-          rev: number;
-          version_digest: string;
-          artifact_digest: string | null;
-          frozen_at: string | null;
-          pruned_at: string | null;
-        },
-        [string]
-      >(
-        `SELECT id, resource_id, rev, version_digest, artifact_digest, frozen_at, pruned_at
-           FROM revision WHERE id = ?`,
-      )
-      .get(ctx.params.id!);
+    const read = () =>
+      ctx.app.db
+        .query<
+          {
+            id: string;
+            resource_id: string;
+            rev: number;
+            version_digest: string;
+            artifact_digest: string | null;
+            frozen_at: string | null;
+            pruned_at: string | null;
+          },
+          [string]
+        >(
+          `SELECT id, resource_id, rev, version_digest, artifact_digest, frozen_at, pruned_at
+             FROM revision WHERE id = ?`,
+        )
+        .get(ctx.params.id!);
+    const revision = read();
     if (!revision) throw notFound(`no revision ${ctx.params.id}`);
     const row = getResource(ctx, revision.resource_id);
     // The owning application or an admin, like every other write on a resource (review `[P2-08]`).
     assertCan(user, row.application_id, "correct this revision");
 
-    if (revision.pruned_at) {
-      throw conflict(
-        `revision ${revision.rev} was pruned on ${revision.pruned_at}: its definition is no longer ` +
-          "stored, so there is nothing to correct. Upload a new revision instead",
-      );
-    }
-    if (revision.frozen_at) {
+    /** Why this revision can no longer be corrected, if it cannot. Asked twice; see the write. */
+    const refuseIfFixed = (current: NonNullable<ReturnType<typeof read>>) => {
+      if (current.pruned_at) {
+        throw conflict(
+          `revision ${current.rev} was pruned on ${current.pruned_at}: its definition is no longer ` +
+            "stored, so there is nothing to correct. Upload a new revision instead",
+        );
+      }
+      if (!current.frozen_at) return;
       const released = ctx.app.db
         .query<{ environment: string; released_at: string }, [string]>(
           `SELECT environment, released_at FROM release
             WHERE revision_id = ? ORDER BY released_at LIMIT 1`,
         )
-        .get(revision.id);
+        .get(current.id);
+      // Frozen with no release yet: an operation queued to publish it froze it (`operations.ts`
+      // `queue`), and has not been applied.
+      const what = released
+        ? `was released to ${released.environment.toUpperCase()} on ${released.released_at}`
+        : "is queued for publishing";
       throw conflict(
-        `revision ${revision.rev} was released${released ? ` to ${released.environment.toUpperCase()} on ${released.released_at}` : ""} ` +
-          `and cannot change; create revision ${revision.rev + 1} instead`,
+        `revision ${current.rev} ${what} and cannot change; create revision ${current.rev + 1} instead`,
         {
-          revision: revision.rev,
+          revision: current.rev,
           nextAction: { method: "POST", href: `/api/resources/${row.id}/revisions` },
         },
       );
-    }
+    };
+    refuseIfFixed(revision);
     assertRevisionMatch(ctx, revision.version_digest);
 
     const body = await readJson<{ specUrl?: string; spec?: unknown; discoverUrl?: string }>(
@@ -1464,12 +1473,21 @@ export function registerResourceRoutes(router: Router): void {
       throw badRequest(`this definition could not be prepared for validation: ${(err as Error).message}`);
     }
 
+    /*
+     * Every check above was made before the body was read and the definition fetched, and either
+     * can take as long as a `specUrl` takes to answer. Meanwhile the operation spine may have
+     * released and frozen this revision, retention may have pruned it, or another correction may
+     * have landed. The write therefore re-states all three as its own condition: unguarded, it
+     * rewrote a revision the fleet was already serving, so the next config build shipped a
+     * different contract under the same rev with no release at all (spec
+     * `api-versioning-and-stage` "A revision is immutable"; `formal/Formal/Revision.lean`).
+     */
     const previousDigest = revision.version_digest;
-    ctx.app.db.run(
+    const written = ctx.app.db.run(
       `UPDATE revision
           SET model = ?, original = ?, original_format = ?, version_digest = ?, artifact_digest = ?,
               index_json = ?, source = 'corrected', source_detail = ?
-        WHERE id = ?`,
+        WHERE id = ? AND frozen_at IS NULL AND pruned_at IS NULL AND version_digest = ?`,
       [
         JSON.stringify(source.model),
         source.raw,
@@ -1479,8 +1497,20 @@ export function registerResourceRoutes(router: Router): void {
         JSON.stringify(compiled.index),
         `replaced ${previousDigest}`,
         revision.id,
+        previousDigest,
       ],
     );
+    if (written.changes === 0) {
+      const now = read();
+      if (!now) throw notFound(`no revision ${ctx.params.id}`);
+      refuseIfFixed(now);
+      // The artifact compiled above is left for retention, which drops any nothing references.
+      throw conflict(
+        `revision ${revision.rev} was corrected by someone else while this one was being read; ` +
+          "reload it and correct it again",
+        { revision: revision.rev, versionDigest: now.version_digest },
+      );
+    }
     touch(ctx, row.id);
     reindexResource(ctx.app.db, row.id);
     writeAudit(ctx.app.db, {
@@ -1886,7 +1916,7 @@ export function registerResourceRoutes(router: Router): void {
     const jobId = enqueueJob(
       ctx.app.db,
       "reconcile",
-      { targetId: target.id, resourceId: row.id, intent: "remove" },
+      { targetId: target.id, resourceId: row.id, intent: "remove", environment },
       `reconcile:remove:${target.id}:${row.id}:${Date.now()}`,
     );
     writeAudit(ctx.app.db, {

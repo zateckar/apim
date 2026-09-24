@@ -57,9 +57,15 @@ interface SharedInput {
   clusterId?: string;
 }
 
+/**
+ * Where a stage is along Kafka's stages, not the API chain: the shared proxy and every topic's API
+ * exist only where a cluster does, so both start in Kafka's first stage — TEST — and are promoted
+ * to the next (kafka-rest-proxy, "Kafka's stages bound the proxy").
+ */
 function chainIndex(ctx: Ctx, environment: string | undefined): number {
-  const index = environment ? ctx.app.config.promotionChain.indexOf(environment) : -1;
-  if (index < 0) throw badRequest("environment: one of " + ctx.app.config.promotionChain.join(", "));
+  const chain = ctx.app.config.kafka.environments;
+  const index = environment ? chain.indexOf(environment) : -1;
+  if (index < 0) throw badRequest("environment: Kafka has " + chain.map((e) => e.toUpperCase()).join(" and ") + " only");
   return index;
 }
 
@@ -74,7 +80,7 @@ export function registerKafkaProxyRoutes(router: Router) {
     const user = requireUser(ctx);
     const db = ctx.app.db;
     const shared = sharedProxy(db);
-    const environments = ctx.app.config.promotionChain.map((environment) => {
+    const environments = ctx.app.config.kafka.environments.map((environment) => {
       const snapshot = shared ? currentSnapshot(ctx, shared.id, environment) : null;
       const operation = shared
         ? db
@@ -106,6 +112,8 @@ export function registerKafkaProxyRoutes(router: Router) {
           ORDER BY t.name, t.environment`,
       )
       .all()
+      // As Kafka Topics lists them: a row in a stage with no cluster is not a topic anybody can use.
+      .filter((topic) => ctx.app.config.kafka.environments.includes(topic.environment))
       .map((topic) => {
         const api = topicApiOf(db, topic);
         const inStage = api ? currentSnapshot(ctx, api.id, topic.environment) !== null : false;
@@ -148,7 +156,7 @@ export function registerKafkaProxyRoutes(router: Router) {
     if (!shared) {
       if (index !== 0)
         throw conflict(
-          `The shared Kafka proxy starts in ${ctx.app.config.promotionChain[0]!.toUpperCase()}; set it up there first.`,
+          `The shared Kafka proxy starts in ${ctx.app.config.kafka.environments[0]!.toUpperCase()}; set it up there first.`,
         );
       return publishResource(
         ctx,
@@ -164,7 +172,7 @@ export function registerKafkaProxyRoutes(router: Router) {
           policy: { ...DEFAULT_POLICY, ...produce },
           ...SHARED_DOMAIN,
         },
-        { columns: { platform_role: KAFKA_PROXY_ROLE, visibility: "unlisted" } },
+        { columns: { platform_role: KAFKA_PROXY_ROLE, visibility: "unlisted" }, environment },
       );
     }
     const row = getResource(ctx, shared.id);
@@ -178,7 +186,7 @@ export function registerKafkaProxyRoutes(router: Router) {
         { generated: true },
       );
     }
-    const previous = currentSnapshot(ctx, row.id, ctx.app.config.promotionChain[index - 1]!);
+    const previous = currentSnapshot(ctx, row.id, ctx.app.config.kafka.environments[index - 1]!);
     return promoteResource(ctx, row, {
       environment,
       backendUrl,
@@ -189,7 +197,8 @@ export function registerKafkaProxyRoutes(router: Router) {
   /**
    * A topic's owner gives it an API — or carries the one it has into the topic's stage.
    *
-   * In the chain's first stage this publishes a new API generated from the topic; in a later one it
+   * In Kafka's first stage this publishes a new API generated from the topic — in TEST, not the API
+   * chain's DEV, because the API is only as real as the topic it produces to; in a later one it
    * promotes that API, bound to this stage's shared proxy and this topic's certificate. Refused, with
    * the first reason, while the topic cannot have one (`topicApiBlockers`).
    */
@@ -212,8 +221,8 @@ export function registerKafkaProxyRoutes(router: Router) {
     }
     if (index !== 0)
       throw conflict(
-        `A topic's API starts in ${ctx.app.config.promotionChain[0]!.toUpperCase()}, where the chain ` +
-          `does. Create ${topic.name} there and give it an API, then promote it.`,
+        `A topic's API starts in ${ctx.app.config.kafka.environments[0]!.toUpperCase()}, where Kafka's ` +
+          `stages do. Give ${topic.name} an API there, then promote it.`,
       );
     const row = { application_id: topic.application_id, kafka_topic: topic.name };
     const binding = topicApiBinding(ctx.app.db, row, topic.environment);
@@ -230,7 +239,7 @@ export function registerKafkaProxyRoutes(router: Router) {
         domain: topic.domain ?? undefined,
         subdomain: topic.subdomain,
       },
-      { managed: managedUnitsFor(row), columns: { kafka_topic: topic.name } },
+      { managed: managedUnitsFor(row), columns: { kafka_topic: topic.name }, environment: topic.environment },
     );
   });
 }

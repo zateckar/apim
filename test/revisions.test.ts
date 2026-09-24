@@ -580,6 +580,81 @@ describe("correcting an unfrozen revision", () => {
     }
   });
 
+  test("a release that lands while the definition is being fetched wins, and the correction is refused", async () => {
+    const backend = startBackend();
+    // The definition is fetched from a URL, and the revision is released while that fetch is in
+    // flight: the window between the handler's checks and its write.
+    let released: Response | null = null;
+    let target = { resourceId: "", pavel: "" };
+    const slow = Bun.serve({
+      port: 0,
+      async fetch() {
+        released = await cp.call("POST", `/api/resources/${target.resourceId}/releases`, {
+          cookie: target.pavel,
+          body: { revision: 2, environment: "dev" },
+        });
+        return Response.json({ ...SPEC_V2, info: { ...SPEC_V2.info, version: "9.9.9" } });
+      },
+    });
+    try {
+      const api = await publishApi(cp, { backendUrl: backend.url, spec: SPEC_V1, subscribe: false });
+      target = { resourceId: api.resourceId, pavel: api.pavel };
+      await cp.call("POST", `/api/resources/${api.resourceId}/revisions`, {
+        cookie: api.pavel,
+        body: { spec: SPEC_V2 },
+      });
+      const second = (await revisions(api.resourceId, api.pavel)).items.find((item) => item.rev === 2)!;
+      expect(second.editable).toBe(true);
+
+      const response = await cp.call("PUT", `/api/revisions/${second.id}/spec`, {
+        cookie: api.pavel,
+        headers: { "if-match": String(second.versionDigest) },
+        body: { specUrl: `http://127.0.0.1:${slow.port}/openapi.json` },
+      });
+      expect(released!.status).toBe(202);
+      // Unguarded, this was a 200 that rewrote a revision DEV was already serving.
+      expect(response.status).toBe(409);
+      expect((await response.json()).detail).toContain("was released to DEV");
+      const after = (await revisions(api.resourceId, api.pavel)).items.find((item) => item.rev === 2)!;
+      expect(after.versionDigest).toBe(second.versionDigest);
+      expect(after.source).not.toBe("corrected");
+    } finally {
+      slow.stop(true);
+      backend.stop();
+    }
+  });
+
+  test("a revision an operation is waiting to publish is frozen when the operation is queued", async () => {
+    const pavel = await cp.login("pavel");
+    const queued = await cp.call("POST", "/api/publish", {
+      cookie: pavel,
+      headers: { "idempotency-key": "frozen-on-queue" },
+      body: {
+        applicationId: "application_platform",
+        name: "queued-api",
+        productName: "queued-api-product",
+        backendUrl: "http://127.0.0.1:9999",
+        domain: "IT",
+        subdomain: "Solution",
+        spec: SPEC_V1,
+      },
+    });
+    expect(queued.status).toBe(202);
+    const op = await queued.json();
+    // Nothing has run the spine yet: the operation is accepted, not applied.
+    expect(op.state).toBe("queued");
+    const first = (await revisions(op.resourceId, pavel)).items[0]!;
+    expect(first.editable).toBe(false);
+
+    const response = await cp.call("PUT", `/api/revisions/${first.id}/spec`, {
+      cookie: pavel,
+      headers: { "if-match": String(first.versionDigest) },
+      body: { spec: SPEC_V2 },
+    });
+    expect(response.status).toBe(409);
+    expect((await response.json()).detail).toContain("is queued for publishing");
+  });
+
   test("a definition of another kind is refused, naming both", async () => {
     const { alice, revisionId, digest } = await draft();
     const wsdl = await Bun.file("tools/backend/petstore.wsdl").text();
@@ -725,6 +800,35 @@ describe("retention", () => {
     } finally {
       backend.stop();
     }
+  });
+
+  test("a revision an operation has not yet applied survives any bound", async () => {
+    const pavel = await cp.login("pavel");
+    const queued = await cp.call("POST", "/api/publish", {
+      cookie: pavel,
+      headers: { "idempotency-key": "prune-while-queued" },
+      body: {
+        applicationId: "application_platform",
+        name: "waiting-api",
+        productName: "waiting-api-product",
+        backendUrl: "http://127.0.0.1:9999",
+        domain: "IT",
+        subdomain: "Solution",
+        spec: SPEC_V1,
+      },
+    });
+    const op = await queued.json();
+    expect(op.state).toBe("queued");
+    const bounds = { keepCount: 0, keepDays: 0, planRetentionHours: 0, now: Date.now() + 1000 };
+    // Released nowhere and no plan names it: only the queued operation holds it.
+    expect(prunableRevisions(cp.app.db, bounds).filter((row) => row.resource_id === op.resourceId)).toEqual([]);
+
+    cp.app.db.run("UPDATE operation SET state = 'complete' WHERE id = ?", [op.id]);
+    expect(
+      prunableRevisions(cp.app.db, bounds)
+        .filter((row) => row.resource_id === op.resourceId)
+        .map((row) => row.rev),
+    ).toEqual([1]);
   });
 
   test("a plan older than JOB_RETENTION_HOURS protects nothing", async () => {

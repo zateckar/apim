@@ -5,6 +5,7 @@ import {
   LeaveDialog,
   Link,
   Notice,
+  PageActionsProvider,
   PageTitleProvider,
   Segmented,
   envLabel,
@@ -71,17 +72,30 @@ export function Portal({ session: s, path }: { session: Session; path: string })
    * reload. Every other screen answers `null`, and `null` means "offer the whole chain".
    */
   const resourceId = route.id === "api" ? (match.params.resourceId ?? null) : null;
+  // A topic is one row per stage under one name, so the stages it is in are the rows that exist
+  // (kafka-workspace, "A topic is staged along the chain") — the same question, asked of the topic list.
+  const topicName = route.id === "kafka-topic" ? (match.params.topic ?? null) : null;
+  const kafkaScreen = Boolean(topicName) || route.id === "kafka-proxy";
+  const reachScope = resourceId ? `api:${resourceId}` : topicName ? `kafka:${topicName}` : "";
   const reach = useAsync(
     () =>
       resourceId
         ? api.get<{ environments: string[] }>(
             `/api/resources/${encodeURIComponent(resourceId)}/environments`,
           )
-        : Promise.resolve(null),
-    [resourceId, tick],
-    resourceId ?? "",
+        : topicName
+          ? api
+              .get<{ items: Array<{ environment: string; state: string }> }>(
+                `/api/kafka/topics?name=${encodeURIComponent(topicName)}`,
+              )
+              .then((r) => ({ environments: r.items.filter((t) => t.state !== "deleted").map((t) => t.environment) }))
+          : Promise.resolve(null),
+    [reachScope, tick],
+    reachScope,
   );
   const reachable = reach.data?.environments ?? null;
+  // Where a detail screen's own controls go (see `PageActions`).
+  const [actionsSlot, setActionsSlot] = useState<HTMLElement | null>(null);
   const [theme, setTheme] = useState(() => localStorage.getItem("portal-theme") ?? "light");
   useEffect(() => {
     document.documentElement.dataset.theme = theme;
@@ -280,7 +294,10 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                   label="Environment"
                   value={s.environment}
                   onChange={(next) => whenLeaving(() => s.setEnvironment(next))}
-                  options={s.meta.chain.map((environment) => {
+                  // A topic's stages are Kafka's — TEST and PROD — so its page and the proxy screen
+                  // offer those and not a DEV that could never hold anything (kafka-workspace,
+                  // "Kafka has its own stages"; kafka-rest-proxy, "Kafka's stages bound the proxy").
+                  options={(kafkaScreen ? s.meta.kafkaChain : s.meta.chain).map((environment) => {
                     // Disabled with the reason, never hidden: a chain drawn short would misstate
                     // how many stages the estate has. Unknown — no resource on screen, or the read
                     // has not landed — offers everything, because a switcher that greys out while
@@ -296,12 +313,15 @@ export function Portal({ session: s, path }: { session: Session; path: string })
                       label: envLabel(environment),
                       disabled: absent,
                       reason: absent
-                        ? `Not in ${envLabel(environment)} yet — promote it there from the stage before.`
+                        ? topicName
+                          ? `Not in ${envLabel(environment)} yet — stage it there from the stage before.`
+                          : `Not in ${envLabel(environment)} yet — promote it there from the stage before.`
                         : undefined,
                     };
                   })}
                 />
               )}
+              <span className="page-actions-slot" ref={setActionsSlot} />{/* PageActions portal here */}
               {["apis", "mcp", "a2a", "dashboard"].includes(section) && route.id !== "api" && applicationId && (
                 <Link
                   className="btn primary"
@@ -326,12 +346,13 @@ export function Portal({ session: s, path }: { session: Session; path: string })
           {/* Where the read of which stages this API is in failed. It degrades to the safe answer —
               every stage offered — so this is a line, not a banner. */}
           {reach.error && (
-            <p className="hint">Every stage is offered: which ones this API is in could not be read — {reach.error}</p>
+            <p className="hint">Every stage is offered: which ones this {topicName ? "topic" : "API"} is in could not be read — {reach.error}</p>
           )}
           <Notice kind="error">{operations.error}</Notice>
           {/* Screens written before this shell bring no table styling of their own; `.native-legacy`
               lends them the estate's. Which ones need it is declared in the route table. */}
           <PageTitleProvider value={setObjectTitle}>
+            <PageActionsProvider value={actionsSlot}>
             <Fragment key={`${path}:${applicationId}:${route.environmentScoped ? s.environment : ""}`}>
             {route.plainChrome ? (
               <div className="native-legacy">
@@ -341,6 +362,7 @@ export function Portal({ session: s, path }: { session: Session; path: string })
               screenFor({ match, session: effective, operations: items, operationsLoading: operations.loading && !operations.data, tick })
             )}
             </Fragment>
+            </PageActionsProvider>
           </PageTitleProvider>
         </main>
       </div>

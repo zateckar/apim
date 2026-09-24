@@ -542,6 +542,46 @@ describe("config distribution", () => {
     expect(dp.health().ok).toBe(false);
   });
 
+  test("a poll that starts while another is in flight is skipped, so a late answer cannot undo a revocation", async () => {
+    await publishApi(cp, { backendUrl: backend.url, basePath: "/petstore" });
+    // The first poll is answered by the real control plane, but only once the test says so; every
+    // poll after it is refused, as it would be once the instance's token was revoked.
+    let seen = 0;
+    let arrived!: () => void;
+    const firstArrived = new Promise<void>((resolve) => (arrived = resolve));
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => (release = resolve));
+    const slow = Bun.serve({
+      port: 0,
+      async fetch(request) {
+        seen += 1;
+        if (seen > 1) return new Response("revoked", { status: 401 });
+        const body = await request.text();
+        arrived();
+        await gate;
+        const url = new URL(request.url);
+        return fetch(`${served.url}${url.pathname}`, { method: "POST", headers: request.headers, body });
+      },
+    });
+    try {
+      const dp = newDataPlane(`http://127.0.0.1:${slow.port}`, cp.token, cp.dir, { pollIntervalMs: 3_600_000 });
+      planes.push(dp);
+      const first = dp.client.pollOnce();
+      await firstArrived;
+      // Unguarded, this one was answered 401 and took the routes down, and then the first — sent
+      // before the revocation — landed and put them back.
+      const second = dp.client.pollOnce();
+      release();
+      expect([await first, await second]).toEqual(["updated", "skipped"]);
+      expect(seen).toBe(1);
+
+      expect(await dp.client.pollOnce()).toBe("revoked");
+      expect(dp.client.table).toBeNull();
+    } finally {
+      slow.stop(true);
+    }
+  });
+
   test("an unchanged config is a 304 and does not rebuild the route table", async () => {
     await publishApi(cp, { backendUrl: backend.url, basePath: "/petstore" });
     const dp = makeDp();

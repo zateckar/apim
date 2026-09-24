@@ -68,6 +68,14 @@ export function prunableRevisions(
                  WHERE state IN ('pending', 'converging', 'converged')
               )
           AND id NOT IN (SELECT revision_id FROM release_plan WHERE computed_at >= ?)
+          -- An operation not yet applied publishes its snapshot's revision when its turn comes, and
+          -- a tombstone by then has no definition left to publish. Only 'complete' and
+          -- 'superseded' are done; anything else will be retried (operations.ts).
+          AND id NOT IN (
+                SELECT json_extract(input_json, '$.revisionId') FROM operation
+                 WHERE state NOT IN ('complete', 'superseded')
+                   AND json_extract(input_json, '$.revisionId') IS NOT NULL
+              )
         ORDER BY resource_id, rev`,
     )
     .all(options.keepCount, ageCutoff, planCutoff);

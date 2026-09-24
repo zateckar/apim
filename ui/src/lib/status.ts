@@ -52,7 +52,7 @@ export function releaseChip(state: ReleaseState): Chip {
     case "failed":
       return { label: "Failed", tone: "stop", title: "failed — publishing did not complete, and nothing changed" };
     case "stale":
-      return { label: "Needs confirming", tone: "stop", title: "stale — the plan changed between confirmation and apply, so nothing was published" };
+      return { label: "Needs confirming", tone: "stop", title: "stale — a release confirmed later reached this environment first, so nothing was published; release this revision again to roll back to it" };
   }
 }
 
@@ -201,7 +201,7 @@ export function kafkaGrantChip(state: KafkaGrantState): Chip {
     case "activating":
       return { label: "Activating", tone: "wait", title: "activating — approved, waiting for the simulated broker to apply the access" };
     case "active":
-      return { label: "Active", tone: "live", title: "active — this application can produce to and consume from the topic" };
+      return { label: "Active", tone: "live", title: "active — the principal holds this operation on the topic" };
     case "revoking":
       return { label: "Revoking", tone: "wait", title: "revoking — withdrawn here, waiting for the simulated broker to remove the access" };
     case "revoked":
